@@ -1,0 +1,72 @@
+# The gates that need no Hermes install run on both runners; the checks that need the application's
+# own sources get a SPARSE, pinned checkout of the core so they RUN instead of quietly skipping
+# themselves. The two gates that need a real install — the backend selftest and the measured Electron
+# render with its contrast gate — stay local; see README § "Continuous integration" for why.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # The core revision whose tokens and stylesheet this panel is verified against. Bump deliberately:
+  # it is what makes "the app defines every var(--ui-*) the panel uses" a real check in CI.
+  CORE_REPO: https://github.com/NousResearch/hermes-agent.git
+  CORE_SHA: 54718306e348dbf62ab18a256cb8299615cc0493
+
+jobs:
+  gates:
+    name: gates (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install the jsdom gate dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Core sources for the token and stylesheet checks (sparse, pinned)
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/hermes-core"
+          git init -q "$core"
+          git -C "$core" remote add origin "$CORE_REPO"
+          git -C "$core" sparse-checkout init --cone
+          git -C "$core" sparse-checkout set apps/desktop/src
+          git -C "$core" fetch -q --filter=blob:none --depth 1 origin "$CORE_SHA"
+          git -C "$core" checkout -q FETCH_HEAD
+          test -d "$core/apps/desktop/src" || { echo "core sources missing"; exit 1; }
+          echo "HERMES_AGENT_DIR=$core" >> "$GITHUB_ENV"
+
+      - name: Static audit
+        run: python tests/audit_static.py
+
+      - name: Canary run (every rule must be able to fail)
+        run: python tests/canary_audit.py
+
+      - name: Render and behaviour (jsdom)
+        working-directory: tests
+        run: node render_check.mjs
+
+      - name: Static preview (4 frames, app stylesheet)
+        working-directory: tests
+        run: node preview.mjs

@@ -1,0 +1,14 @@
+name: pending-approvals
+label: Approvals
+version: 1.6.0
+description: >-
+  Approvals — review, approve and undo the memory/skill writes Hermes is holding for approval.
+author: enesa
+kind: standalone
+license: MIT
+homepage: https://github.com/thealps01-netizen/hermes-approvals-ui
+tags:
+  - approvals
+  - memory
+  - skills
+  - desktop
