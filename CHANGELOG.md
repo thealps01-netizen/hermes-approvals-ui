@@ -5,6 +5,27 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.2
+
+A senior-dev review of the approve/reject/undo path fixed two findings and the panel now triggers the
+external-change scan over an explicit POST. Nothing else in the execution path changed.
+
+* **`GET /pending` no longer scans.** The external-change detection that ran behind every default
+  `GET /pending` (`scan=1` → `_scan_external()`, which writes the watch index, moves `last/` copies
+  and appends external history entries) moved to an explicit `POST /scan`. The panel now scans by POST
+  and polls a side-effect-free GET; `?scan=1` callers keep working; the selftest names its scan
+  explicitly where the old default hid it.
+* **Undo refuses a history record that points outside the profile.** The restore loop built paths as
+  `_home() / f["path"]` and `snapshots / entry_id / f["snap"]` straight from the history file, and the
+  same unvalidated path is the `unlink()` target for created entries — for reads AND deletes, so a
+  hand-edited `history.jsonl` could escape the profile. The record is now refused
+  (`err_unsafe_spec`) before any file is touched, and `_prune`/`history_clear` derive the snapshots
+  directory through the same id validation the undo path already had. The selftest stages tampered
+  path/snap/id records and asserts nothing outside the profile moves.
+* **The memory fill is measured once per record.** `_explain` already computed `_memory_fit`, then
+  `_recommendation` read the store again; the fit now rides the `plain` dict, with a fallback for
+  callers that pass a plain without it.
+
 ## 1.6.1
 
 Two undo-path fixes, both found by reviewing 1.6.0. Nothing else in the approve/reject/undo path

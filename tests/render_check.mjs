@@ -445,6 +445,7 @@ async function mount(appLocale) {
         if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
+        if (path === '/scan') return { ok: true }
         throw new Error(`unexpected POST: ${path}`)
       }
       const table = {

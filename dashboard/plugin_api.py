@@ -99,6 +99,20 @@ def _valid_id(value: object) -> str:
     return text if _ID_RE.match(text) else ""
 
 
+def _safe_rel(value: object) -> str:
+    rel = str(value or "").replace("\\", "/").strip("/")
+    if not rel or rel.startswith("/") or ".." in rel.split("/") or re.match(r"^[A-Za-z]:", rel):
+        return ""
+    return rel
+
+
+def _remove_snapshots(entry_id: object) -> None:
+    rid = _valid_id(entry_id)
+    if not rid:
+        return
+    shutil.rmtree(_state() / "snapshots" / rid, ignore_errors=True)
+
+
 def _undoable(entry: dict) -> bool:
     return entry.get("kind") in UNDOABLE and not entry.get("undone")
 
@@ -136,10 +150,10 @@ def _prune() -> None:
     dropped, kept = lines[:-MAX_ENTRIES], lines[-MAX_ENTRIES:]
     for line in dropped:
         try:
-            rid = json.loads(line).get("id", "")
+            entry_id = json.loads(line).get("id")
         except Exception:
             continue
-        shutil.rmtree(_state() / "snapshots" / rid, ignore_errors=True)
+        _remove_snapshots(entry_id)
     path.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 
@@ -365,6 +379,7 @@ _TEXT = {
     'err_not_undoable': 'This record cannot be undone (a rejected record has no file effect).',
     'err_conflict': 'The file changed after this record; send force to undo anyway.',
     'err_no_copies': 'This record has no undo copy (it may have been rejected or the copy cleaned up) — no file was touched.',
+    'err_unsafe_spec': 'This history record names a location outside your profile; undo refused.',
     'err_bad_scope': 'invalid subsystem/decision.',
     'err_no_ids': 'The id list is empty.',
     'err_no_ops_selected': 'No operation in the selected skill.',
@@ -526,6 +541,7 @@ def _explain(subsystem: str, record: dict) -> dict:
     what: list[str] = []
     stale: list[str] = []
     notes: list[dict] = []
+    fit: dict = {}
 
     purpose_from_disk = ""
     if subsystem != wa.MEMORY:
@@ -643,7 +659,8 @@ def _explain(subsystem: str, record: dict) -> dict:
             unique.append(note)
 
     return {"kind_label": kind_label, "target": target_label, "headline": headline, "why": why,
-            "what": what, "groups": groups, "notes": unique, "effect": effect, "stale": stale}
+            "what": what, "groups": groups, "notes": unique, "effect": effect, "stale": stale,
+            "fit": fit}
 
 
 def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
@@ -662,7 +679,7 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
         if new_skills:
             return {"verdict": _tx("rec_approve"), "reason": _tx("rec_new_reason")}
         return {"verdict": _tx("rec_approve"), "reason": _tx("rec_patch_reason")}
-    fit = _memory_fit(record)
+    fit = plain.get("fit") or _memory_fit(record)
     if fit.get("over"):
         return {"verdict": _tx("rec_reject"),
                 "reason": _tx("rec_memory_limit_reason", file=fit["file"], after=fit["after"],
@@ -682,7 +699,7 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
 
 
 @router.get("/pending")
-async def pending(scan: int = 1):
+async def pending(scan: int = 0):
     from tools import write_approval as wa
 
     if scan:
@@ -729,6 +746,12 @@ async def pending(scan: int = 1):
         out[subsystem] = items
     out["counts"] = {wa.MEMORY: len(out[wa.MEMORY]), wa.SKILLS: len(out[wa.SKILLS])}
     return out
+
+
+@router.post("/scan")
+async def scan_now():
+    _scan_external()
+    return {"ok": True}
 
 
 def _one_op_diff(wa, op: dict) -> str:
@@ -1004,7 +1027,7 @@ async def history_clear(body: dict):
             kept.append(json.dumps(row, ensure_ascii=False))
             continue
         removed += 1
-        shutil.rmtree(_state() / "snapshots" / str(row.get("id") or ""), ignore_errors=True)
+        _remove_snapshots(row.get("id"))
     path.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
     return {"ok": True, "removed": removed, "kept": len(kept)}
 
@@ -1071,32 +1094,47 @@ async def undo(body: dict):
     if entry.get("kind") not in UNDOABLE:
         return {"ok": False, "error": _tx("err_not_undoable")}
 
-    conflicts = []
+    targets = []
     for f in entry.get("files", []):
-        path = _home() / f["path"]
+        rel = _safe_rel(f.get("path"))
+        if not rel:
+            return {"ok": False, "error": _tx("err_unsafe_spec")}
+        if f.get("created"):
+            targets.append((f, rel, ""))
+            continue
+        snap = str(f.get("snap") or "")
+        if not snap:
+            continue
+        if snap in (".", "..") or "/" in snap.replace("\\", "/"):
+            return {"ok": False, "error": _tx("err_unsafe_spec")}
+        targets.append((f, rel, snap))
+
+    conflicts = []
+    for f, rel, _snap in targets:
+        path = _home() / rel
         if path.exists() and not force and _sha(path) != f.get("sha_after"):
-            conflicts.append(f["path"])
+            conflicts.append(rel)
     if conflicts:
         return {"ok": False, "conflicts": conflicts,
                 "error": _tx("err_conflict")}
 
     restored, removed = [], []
-    for f in entry.get("files", []):
-        dst = _home() / f["path"]
+    for f, rel, snap in targets:
+        dst = _home() / rel
         if f.get("created"):
             if dst.exists():
                 dst.unlink()
-                removed.append(f["path"])
+                removed.append(rel)
                 with suppress(OSError):
                     dst.parent.rmdir()
             continue
-        if not f.get("snap"):
+        if not snap:
             continue
-        src = _state() / "snapshots" / entry_id / f["snap"]
+        src = _state() / "snapshots" / entry_id / snap
         if src.exists():
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
-            restored.append(f["path"])
+            restored.append(rel)
     if not restored and not removed:
         return {"ok": False, "restored": [], "removed": [],
                 "error": _tx("err_no_copies")}
@@ -1351,6 +1389,20 @@ def _selftest() -> int:
     assert asyncio.run(undo({"id": "../../MEMORY.md"}))["ok"] is False
     assert asyncio.run(decide({"subsystem": "memory", "ids": ["../x"], "decision": "approve"}))["ok"] is False
 
+    _append({"id": "99999999", "ts": time.time(), "kind": "apply", "subsystem": "skills",
+             "summary": "tampered path", "files": [{"path": "memories/../trap.txt", "snap": "0.bin",
+                                                    "before_sha": None, "sha_after": None}],
+             "undone": False})
+    refused = asyncio.run(undo({"id": "99999999"}))
+    assert refused["ok"] is False and "outside" in refused["error"], refused
+    assert not (tmp / "trap.txt").exists(), "an escaping path must never be touched"
+    _append({"id": "88888888", "ts": time.time(), "kind": "apply", "subsystem": "skills",
+             "summary": "tampered snap", "files": [{"path": "memories/MEMORY.md", "snap": "../0.bin",
+                                                    "before_sha": None, "sha_after": None}],
+             "undone": False})
+    refused = asyncio.run(undo({"id": "88888888"}))
+    assert refused["ok"] is False and "outside" in refused["error"], refused
+
     mem = asyncio.run(memory_view())
     assert mem["memory"]["file"] == "MEMORY.md" and mem["user"]["file"] == "USER.md", mem
     assert mem["memory"]["entries"] == ["Prefers terse replies"], mem["memory"]
@@ -1390,7 +1442,7 @@ def _selftest() -> int:
 
     asyncio.run(pending())
     memory.write_text("Prefers terse replies\nForeign write\n", encoding="utf-8")
-    asyncio.run(pending())
+    asyncio.run(pending(scan=1))
     ext = next(e for e in asyncio.run(history(limit=5))["entries"] if e["kind"] == "external")
     assert "memories/MEMORY.md" in [f["path"] for f in ext["files"]], ext
     back = asyncio.run(undo({"id": ext["id"]}))
@@ -1407,6 +1459,11 @@ def _selftest() -> int:
     assert "skills/cat/existing-skill/scripts/temporary.py" not in _read_index(), "a deleted file stayed in the watch index"
     assert not wasted_copy.exists(), "the copy of a deleted file stayed in last/"
 
+    outer_escape = tmp / "escape.txt"
+    outer_escape.write_text("keep\n", encoding="utf-8")
+    _append({"id": "../escape.txt", "ts": time.time(), "kind": "apply", "subsystem": "skills",
+             "summary": "tampered id", "files": [], "undone": False})
+
     kinds_before = {e["kind"] for e in asyncio.run(history(limit=99))["entries"]}
     kept = asyncio.run(history_clear({"keep_undoable": True}))
     assert kept["ok"] and kept["removed"] >= 1, kept
@@ -1417,6 +1474,7 @@ def _selftest() -> int:
     assert asyncio.run(history(limit=99))["entries"] == [], "the history should have been empty"
     leftovers = [p.name for p in (_state() / "snapshots").iterdir() if p.is_dir()]
     assert not leftovers, f"a snapshot directory stayed after clearing: {leftovers}"
+    assert outer_escape.read_text(encoding="utf-8") == "keep\n", "a tampered id must not escape the snapshots dir"
 
     from tools.memory_tool import load_on_disk_store as _load_store
 
