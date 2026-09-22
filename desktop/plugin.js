@@ -802,7 +802,7 @@ function HistoryCard({ entry, onChanged }) {
     try {
       const res = await api.undo(entry.id, force)
       if (!res?.ok) {
-        setConflict(res?.conflicts || [])
+        setConflict(Array.isArray(res?.conflicts) && res.conflicts.length ? res.conflicts : null)
         host.notify({ kind: 'warn', message: res?.error || t('pa.notify.undoFailed') })
       } else {
         setConflict(null)

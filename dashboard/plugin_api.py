@@ -861,11 +861,13 @@ def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
     return wa.get_pending(subsystem, pending_id) is None, (text or "").strip()
 
 
-def _touched(subsystem: str, ops: list) -> list[Path]:
+def _touched(subsystem: str, ops: list, payload: dict | None = None) -> list[Path]:
     from tools import write_approval as wa
 
     if subsystem == wa.MEMORY:
-        return [p for p in (_home() / "memories" / n for n in ("MEMORY.md", "USER.md")) if p.exists()]
+        name = _MEM_FILE.get(str((payload or {}).get("target") or "memory"), "MEMORY.md")
+        path = _home() / "memories" / name
+        return [path] if path.exists() else []
     out: list[Path] = []
     for name in {op.get("name") for op in ops if op.get("name")}:
         out += [p for p in _skill_files(name) if p.exists()]
@@ -914,11 +916,12 @@ def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
                    else _tx("apply_done", n=len(apply_ops)))
 
 
-def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list) -> None:
+def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list,
+                    payload: dict | None = None) -> None:
     for f in entry["files"]:
         path = _home() / f["path"]
         f["sha_after"] = _sha(path) if path.exists() else None
-    for path in sorted(set(_touched(subsystem, ops)) - set(before)):
+    for path in sorted(set(_touched(subsystem, ops, payload)) - set(before)):
         entry["files"].append({"path": _rel(path), "snap": None, "before_sha": None,
                                "sha_after": _sha(path), "created": True})
 
@@ -953,9 +956,10 @@ async def decide(body: dict):
             results.append({"id": pending_id, "ok": ok, "message": message, "error": "" if ok else message})
             continue
 
-        entry, before, ops = None, [], (record.get("payload") or {}).get("operations") or []
+        payload = record.get("payload") or {}
+        entry, before, ops = None, [], payload.get("operations") or []
         if decision == "approve":
-            before = _touched(subsystem, ops)
+            before = _touched(subsystem, ops, payload)
             entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": subsystem,
                      "summary": record.get("summary", ""), "files": [], "undone": False}
             for n, path in enumerate(before):
@@ -971,7 +975,7 @@ async def decide(body: dict):
             results.append({"id": pending_id, "ok": False, "error": message or _tx("apply_failed")})
             continue
         if entry:
-            _finalize_entry(entry, subsystem, ops, before)
+            _finalize_entry(entry, subsystem, ops, before, payload)
             _append(entry)
         else:
             _append({"id": _new_id(), "ts": time.time(), "kind": "rejected", "subsystem": subsystem,
@@ -1216,6 +1220,26 @@ def _selftest() -> int:
     assert forced["ok"] and forced["restored"] == ["memories/MEMORY.md"], forced
     assert memory.read_text(encoding="utf-8") == "Prefers terse replies\n", memory.read_text(encoding="utf-8")
     assert asyncio.run(undo({"id": entry["id"]}))["ok"] is False
+
+    profile = tmp / "memories" / "USER.md"
+    profile.write_text("Name: Selftest\n", encoding="utf-8")
+    (tmp / "pending" / "memory" / "abcd1234.json").write_text(json.dumps({
+        "id": "abcd1234", "subsystem": "memory", "action": "batch", "summary": "add one entry",
+        "origin": "foreground", "created_at": time.time(),
+        "payload": {"action": "batch", "target": "memory",
+                    "operations": [{"action": "add", "content": "Selftest entry"}]},
+    }), encoding="utf-8")
+    second = asyncio.run(decide({"subsystem": "memory", "ids": ["abcd1234"], "decision": "approve"}))
+    assert second["results"][0]["ok"], second
+    mem_entry = next(e for e in asyncio.run(history(limit=5))["entries"]
+                     if e["kind"] == "apply" and not e["undone"])
+    assert [f["path"] for f in mem_entry["files"]] == ["memories/MEMORY.md"], mem_entry["files"]
+    profile.write_text("Name: Selftest\nWritten after the record\n", encoding="utf-8")
+    kept = profile.read_text(encoding="utf-8")
+    back = asyncio.run(undo({"id": mem_entry["id"]}))
+    assert back["ok"] and back["restored"] == ["memories/MEMORY.md"], back
+    assert profile.read_text(encoding="utf-8") == kept, "a MEMORY.md undo reverted the other memory file"
+    assert "Selftest entry" not in memory.read_text(encoding="utf-8"), memory.read_text(encoding="utf-8")
 
     existing = tmp / "skills" / "cat" / "existing-skill"
     existing.mkdir(parents=True)
@@ -1548,7 +1572,8 @@ def _selftest() -> int:
 
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
-          "history, conflict, force-undo, second undo refused, partial skill approval, foreign "
+          "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
+          "memory file alone, partial skill approval, foreign "
           "change + undo, memory view, new-skill precheck (long description → not applicable), "
           "memory delete + undo, memory limit precheck + failed attempt recorded, watch/apply "
           "single resolver, deleted file cleanup, id validation, patch precheck (references/*.md "

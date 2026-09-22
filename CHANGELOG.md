@@ -5,6 +5,26 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.1
+
+Two undo-path fixes, both found by reviewing 1.6.0. Nothing else in the approve/reject/undo path
+changed.
+
+* **A memory record no longer snapshots the other memory file.** `_touched()` returned `MEMORY.md`
+  AND `USER.md` for every memory record, ignoring the record's own `target`, so a record that wrote
+  only `MEMORY.md` carried a `USER.md` copy as well. The undo then conflicted on `USER.md` as soon as
+  anything else had written it (`/memory` from chat, another approval), and the forced undo restored
+  that older copy over the newer text — an unrelated note was lost with no error. Snapshot, conflict
+  check and restore now follow the record's `target`. The backend selftest stages a memory record
+  against a `USER.md` that changes afterwards and asserts the undo restores `MEMORY.md` alone.
+* **An undo failure that reports no conflict no longer offers "Force undo".** The card did
+  `setConflict(res?.conflicts || [])`; a response without the field (no undo copy, record decided
+  elsewhere, id no longer in the history) became `[]`, which is truthy in JavaScript, so the button
+  switched to `Force undo` and the summary read "⚠  changed after this record" with no file name.
+  A failure now clears the conflict state unless the backend named the files. `render_check.mjs`
+  drives that path — a refused undo on the "changed outside the pane" record — and fails when the
+  conflict line appears or the label escalates.
+
 ## 1.6.0
 
 Packaging, gates and portability. Nothing in the approve/reject/undo execution path changed, and the

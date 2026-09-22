@@ -467,3 +467,19 @@ pinned core checkout exported as `HERMES_AGENT_DIR` so the CSS-token rule really
 skipping itself). The backend selftest and the measured Electron render stay local gates: CI cannot
 build them a core, because Hermes refuses to build a wheel and the newest PyPI wheel predates
 `tools/memory_tool_store.py`.
+
+1.6.1 — two undo-path fixes, both from a review of 1.6.0. `_touched()` returned BOTH memory files for
+every memory record (the record's own `target` was ignored), so a record that wrote only `MEMORY.md`
+carried a `USER.md` snapshot as well: as soon as anything else wrote `USER.md` (chat `/memory`, another
+approval), the undo conflicted on it and the forced undo restored the older copy over the newer text —
+an unrelated note disappeared with no error. Snapshot, conflict check and restore now follow `target`,
+and the backend selftest stages a record against a `USER.md` that changes afterwards, asserting that
+`MEMORY.md` alone comes back. Second: the history card's undo did `setConflict(res?.conflicts || [])`,
+and since `[]` is truthy in JavaScript a response WITHOUT a `conflicts` field (no undo copy, record
+decided elsewhere, id aged out of the history) turned the button into `Force undo` and drew
+"⚠  changed after this record" with an empty file name; a failure now clears the conflict state unless
+the backend named the files, and `render_check.mjs` drives that path. The README's "a blocked record
+cannot be approved" claim was narrowed to what the code does — the reason is listed in the card and
+Reject is recommended, a repair exists only for the description fix, and an approve attempt on a
+blocked record is refused at write time and recorded on the card, a deliberate path the backend
+selftest covers.

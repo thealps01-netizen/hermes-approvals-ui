@@ -18,7 +18,9 @@
  *   7. TWO-STEP DESTRUCTIVE ACTIONS: the note delete and the history clearing both ask first, and
  *      only the confirmed click reaches the backend.
  *   8. TWO-STEP UNDO: a conflict is reported as `Force undo` and only the second click sends
- *      `force: true`.
+ *      `force: true`. An undo failure that reports NO conflict (a lost copy, a record decided
+ *      elsewhere) keeps the plain `Undo` and draws no conflict line: the card must not offer a
+ *      forced undo for a failure no force can fix, nor name a file no conflict touched.
  *   9. The memory tab: the glossary restatement is an UNLABELLED sub-line, and no label reading
  *      "Turkish" survives.
  *  10. LANGUAGE: exactly ONE bundle is registered, the DOM has no language picker, every visible
@@ -431,6 +433,10 @@ async function mount(appLocale) {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
         if (path === '/undo') {
+          if (opts.body.id === 'cc33dd44') {
+            return { ok: false, error: 'This record has no undo copy (it may have been rejected ' +
+              'or the copy cleaned up) — no file was touched.' }
+          }
           if (opts.body.force) return { ok: true, restored: ['memories/MEMORY.md'] }
           return { ok: false, conflicts: ['memories/MEMORY.md'],
                    error: 'The file changed after this record; send force to undo anyway.' }
@@ -782,6 +788,28 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(forced, 60)
   const after = stub.calls.posts.filter(p => p.path === '/undo')
   if (after.length !== 2 || after[1].body.force !== true) fail(`the forced undo request is wrong: ${JSON.stringify(after)}`)
+}
+{
+  const cards = () => [...en.hostEl.querySelectorAll('.pa-card')]
+  const external = cards().find(c => c.textContent.includes('outside the pane'))
+  if (!external) fail('the record changed outside the pane is missing from the history')
+  const undoBtn = buttons(external || en.hostEl, /^Undo$/)[0]
+  if (!undoBtn) fail('the outside change lost its plain Undo button')
+  await click(undoBtn, 60)
+  const sent = stub.calls.posts.filter(p => p.path === '/undo')
+  const last = sent[sent.length - 1]
+  if (!last || last.body.id !== 'cc33dd44' || last.body.force !== false) {
+    fail(`an undo failure with no conflict escalated to force: ${JSON.stringify(last)}`)
+  }
+  const escalated = buttons(en.hostEl, /^Force undo$/)
+  if (escalated.length) fail(`a Force undo appeared for a failure no force can fix (${escalated.length})`)
+  const after = cards().find(c => c.textContent.includes('outside the pane'))
+  if (!after || !buttons(after, /^Undo$/).length) {
+    fail('an undo failure with no conflict turned the button into “Force undo”')
+  }
+  if (after?.querySelector('.pa-bad')) fail('an undo failure with no conflict drew the conflict line')
+  const notified = stub.calls.notify.map(n => n.message || '').join(' | ')
+  if (!notified.includes('no undo copy')) fail(`the refused undo was not reported: ${notified}`)
 }
 {
   const clear = buttons(en.hostEl, /Clear/)[0]

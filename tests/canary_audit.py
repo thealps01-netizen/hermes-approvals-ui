@@ -111,7 +111,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
     ("CSS variables are defined by the app", JS, "const cardBase = {",
      "const cardBase = { canaryColor: 'var(--ui-canary-nope)',", 1,
      "CSS variable --ui-canary-nope is not defined"),
-    ("one version everywhere", MANIFEST, '"version": "1.6.0"', '"version": "9.9.9"', 1,
+    ("one version everywhere", MANIFEST, '"version": "1.6.1"', '"version": "9.9.9"', 1,
      "the two must agree"),
 ]
 

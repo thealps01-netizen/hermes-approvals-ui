@@ -130,9 +130,13 @@ releasing — they are the two gates that see what jsdom cannot.
   be discarded.
 * **Destructive actions are two-step.** Deleting a memory note, clearing the history and force-undo all
   require the confirming click; nothing is sent before it.
-* **A blocked record cannot be approved.** The precheck (skill description over the prompt budget, a
-  patch that no longer matches its target) names the reason in a themed tooltip and offers only the
-  action that can work.
+* **A blocked record is named before you click, and never half-applied.** The precheck (the skill
+  description over the prompt budget, a patch that no longer matches its target, a memory note that
+  would overflow the file) lists the reason under **Why It Can't Be Applied** and recommends Reject;
+  where a repair exists — the description fix — Approve stays disabled with the reason in its themed
+  tooltip and the card offers **Shorten and create** instead. Approving a blocked record anyway is
+  possible and harmless: the write path refuses it, nothing is written, and the refusal is recorded
+  on the card as **Approve Failed Before**.
 * **No silent truncation.** An operation body is drawn whole in its own scrolling box with its size in
   the label; the backend caps a body at 20 000 characters and still reports the full length.
 * **Outbound content is inspection only.** The panel reads memory and skill state; it never uploads
