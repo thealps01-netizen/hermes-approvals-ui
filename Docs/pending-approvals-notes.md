@@ -243,7 +243,7 @@ why they are drawn whole with their size in the label (§6).
 | Gate | Command | What it proves |
 |---|---|---|
 | Static audit | `python tests/audit_static.py` | one `en` bundle reaching `ctx.i18n.register`; every `t()` key resolves; no language switch (literal, `lang`, `ctx.storage`, `?lang=`); no `panes` claim; no comment/docstring; 120-column and whitespace rules; loader imports allowed; `jsx` third argument is a key; **no native `title=` on a button** (the rule reads INSIDE the props of every `jsx(Button, …)`/`jsx('button', …)` call in the raw source); theme colors; two-step clear/delete/force-undo intact; the restatement glossary stays gone (rule added with the removal, §4); one English `_TEXT` table with exact placeholders |
-| Canary run | `python tests/canary_audit.py` | every one of those 30 rules really fires: one violation is injected per rule (the native-`title` canary injects `jsx(Button, { title: 'canary' }, 'canary')`), the audit exits 1 with that rule's message, the file is restored and the audit exits 0 again — byte for byte |
+| Canary run | `python tests/canary_audit.py` | every one of those 34 rules really fires: one violation is injected per rule (the native-`title` canary injects `jsx(Button, { title: 'canary' }, 'canary')`), the audit exits 1 with that rule's message, the file is restored and the audit exits 0 again — byte for byte |
 | Render/behaviour | `cd tests && node render_check.mjs` | jsdom + the real React + a stub of the HOST UI KIT: registration, the kit skeleton (`PanelMeta`/`PanelSectionLabel`/`Badge`/`PanelBlock`/`LogView`/`Button` + size/variant contract), no native `title=` and an accessible name per control, the blocked-record lock (reason in a themed `Tip`), the description fix, details/diff, two-step delete/clear/force-undo, KPI + chip, FLIP, English text under two app locales, and the coherence locks of 1.4.0: a refused record shows the warn "Approve Failed Before" state with a destructive advice badge (not a green "Applicable"), a fixable record keeps a destructive state with a warn advice badge and the note pointing at the button, a clean record is success/success, the Applied KPI counts the outside change, an empty "What Will Change" prints a sentence instead of a button label, and the field-text locks: a 602-character op body is drawn WHOLE in both sides with its size in the label (the fixture's tail marker sits past the old 400-character cut), and a 240-character history summary reaches the screen in full |
 | Static preview | `cd tests && node preview.mjs` | draws FOUR frames (the blocked record AND the record with the long op bodies, both with the details open · the multi-skill group layer · the Applied tab with the reported conflict · the Memory tab with the delete armed) with the real React into `preview.html`; fails on a raw `pa.*` key or a native `title=` in any frame. Frame 1 opens both pending cards so the WCAG gate below measures the op bodies and their size labels |
 | Real render + **WCAG contrast** | `cd tests && node preview.mjs && node shot.mjs preview.html preview.png` (`shot.mjs` resolves the Electron binary: `HERMES_ELECTRON`, else the core checkout's own) | everything 1.2.1 measured (frames, overflow, clipping, native `title=`/`<select>`, language pickers, raw keys, kit traces, the fixed-layer table 80 · 168 · 96 · 340 · 58 · 38 · 30 at declared px, the embedded app stylesheet in force) **plus three new keys**: `contrast` (every painted text node, its composited text/background ratio, 4.5:1 normal and 3:1 large — each failure named with its text, size, weight, ratio and path), `toneText` (a tone token worn as text `color`) and `pills` / `compare` (one pill height/radius/padding; every `.pa-cmp` really 2 columns with one row height). Scope: the gate hard-fails on the PANEL's own nodes and prints kit-primitive-owned failures as `contrast.host` + a `host kit:` line, because the panel may not restyle kit internals |
@@ -483,3 +483,20 @@ cannot be approved" claim was narrowed to what the code does — the reason is l
 Reject is recommended, a repair exists only for the description fix, and an approve attempt on a
 blocked record is refused at write time and recorded on the card, a deliberate path the backend
 selftest covers.
+
+1.6.2 — a senior-dev review of the path found a state-mutating GET and an undo that trusted its history
+file, and fixed the notes count that had drifted. The external-change detection that ran behind every
+default `GET /pending` (`scan=1` → `_scan_external()`, which writes the watch index, moves `last/`
+copies and appends external history entries) moved to an explicit `POST /scan`: the panel scans by POST
+and polls a side-effect-free GET, `?scan=1` callers keep working, and the selftest names its scan
+explicitly where the old default hid it. Undo now builds no path from the history file unchecked: the
+restore loop used to do `_home() / f["path"]` and `snapshots / entry_id / f["snap"]` raw — the same
+`f["path"]` that is the `unlink()` target for created entries — so a hand-edited `history.jsonl` could
+escape the profile for both reads and deletes; the record is refused (`err_unsafe_spec`) before any
+touch, and `_prune`/`history_clear` route the snapshots directory through the same id validation undo
+already used (the selftest stages tampered path/snap/id records and asserts nothing outside the profile
+moves). `_explain` already computed the memory fit and `_recommendation` then read the store again; the
+fit now rides the `plain` dict, with a fallback for callers that pass a plain without it. Docs: the
+canary-run gate table said "30 rules" while the suite is 34 in-tree (+1 out-of-tree), the tests README
+repeated a stale canary ordinal, and the README's gate count (6 rows against a 7-row table) was aligned
+to seven with the contrast negative control.

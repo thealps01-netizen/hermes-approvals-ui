@@ -68,7 +68,7 @@ status-bar chip appear with it. Every edit to `desktop/plugin.js` needs the copy
 
 ## Gates
 
-Six gates; each runs the real file, none reads the source as text to decide behaviour. The long form —
+Seven gates; each runs the real file, none reads the source as text to decide behaviour. The long form —
 what every rule and every measurement asserts — is in [`tests/README.md`](tests/README.md).
 
 | Gate | Command (from `tests/`) | Proves |
@@ -78,6 +78,7 @@ what every rule and every measurement asserts — is in [`tests/README.md`](test
 | Render/behaviour | `node render_check.mjs` | jsdom + real React + a host-kit stub: registration, the kit skeleton, no native `title=`, accessible names, the blocked-record lock, the description fix, details/diff, two-step destructive actions, KPI + chip, FLIP, English text under two app locales |
 | Static preview | `node preview.mjs` | The four frames rendered into `preview.html` inside the app's own theme and compiled stylesheet; fails on a raw `pa.*` key or a native `title=` |
 | Real render + WCAG | `node shot.mjs preview.html preview.png` | The only gate that paints and measures pixels (Electron/Chromium): overflow, clipped text, native controls, kit traces, the declared layer heights read back from the screen, and every painted text node's contrast ratio (4.5:1 / 3:1) |
+| Contrast negative control | `PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png`, then again without it | That the WCAG gate can fail: two violations injected into the already-drawn page must turn the gate red and name both nodes; the unmodified page must go green again |
 | Backend selftest | `PYTHONPATH="$HERMES_AGENT_DIR" "$CORE_PYTHON" ../dashboard/plugin_api.py --selftest` | The whole approve → history → undo loop against a throwaway `HERMES_HOME`: partial skill approval, the conflict path, force-undo, memory arithmetic, the patch precheck against the real target file, and the dead-approve block |
 
 ```bash
@@ -157,7 +158,7 @@ dashboard/manifest.json      Dashboard manifest (same version)
 dashboard/plugin_api.py      FastAPI router: pending list, decide, fix, undo, memory, history
 desktop/plugin.js            the Desktop panel (ESM disk plugin, no build step)
 Docs/pending-approvals-notes.md   why every rule and every pixel decision exists
-tests/                       the six gates + their fixtures, stubs and committed evidence PNGs
+tests/                       the seven gates + their fixtures, stubs and committed evidence PNGs
 CHANGELOG.md                 what shipped when
 ```
 
@@ -165,7 +166,7 @@ CHANGELOG.md                 what shipped when
 
 `plugin.yaml` is the source of the version; `dashboard/manifest.json` and the top `CHANGELOG.md`
 heading must match it, and the static audit fails when they do not. Release checklist: bump the three,
-run all six gates, re-copy the desktop panel, then tag.
+run all seven gates, re-copy the desktop panel, then tag.
 
 ## License
 

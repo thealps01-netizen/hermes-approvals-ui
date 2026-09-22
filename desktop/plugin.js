@@ -177,7 +177,8 @@ function registerTitle() {
 
 
 const api = {
-  pending: scan => ctxRef.rest(scan === false ? '/pending?scan=0' : '/pending'),
+  pending: () => ctxRef.rest('/pending'),
+  scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
   history: () => ctxRef.rest('/history?limit=50'),
   memory: () => ctxRef.rest('/memory'),
   deleteEntry: (target, text) => ctxRef.rest('/memory/delete', { method: 'POST', body: { target, text } }),
@@ -314,7 +315,11 @@ function usePolling(load, ms) {
 }
 
 function usePending({ scan = true } = {}) {
-  const { data, error, refresh } = usePolling(() => api.pending(scan), 15000)
+  const load = async () => {
+    if (scan) await api.scan()
+    return api.pending()
+  }
+  const { data, error, refresh } = usePolling(load, 15000)
   return { data, error, refresh, n: total(data?.counts) }
 }
 

@@ -65,7 +65,7 @@ committed — they are the measured evidence and the README's screenshots.
   check fails if the panel ever calls it.
 * The restatement glossary is GONE (removed 2026-09-18): nothing in the fleet ever wrote `glosses.json`,
   its stored restatements were stale AND Turkish under English notes, and the panel told the user to run a
-  workflow that was written down nowhere. The audit rule `check_no_glossary` (canary 30 of 33) keeps it gone; the
+  workflow that was written down nowhere. The audit rule `check_no_glossary` (canary 32 of 34) keeps it gone; the
   op bodies — now the only restatement of what a record does — are drawn whole with their size in the label.
   Why, with the measurements: `../Docs/pending-approvals-notes.md` §4.
 
