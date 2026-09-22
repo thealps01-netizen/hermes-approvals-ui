@@ -705,7 +705,8 @@ def check_backend_routes() -> None:
     for gone in ('@router.get("/settings")', '@router.post("/settings")'):
         if gone in src:
             _report(f"plugin_api.py: {gone!r} is back — the panel no longer chooses a language")
-    for route in ('@router.get("/pending")', '@router.post("/decide")', '@router.get("/history")',
+    for route in ('@router.get("/pending")', '@router.post("/scan")', '@router.post("/decide")',
+                  '@router.get("/history")',
                   '@router.post("/undo")', '@router.get("/memory")', '@router.post("/memory/delete")',
                   '@router.post("/history/clear")', '@router.post("/fix")'):
         if route not in src:

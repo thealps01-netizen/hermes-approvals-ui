@@ -901,6 +901,11 @@ if ([...stub.calls.posts, ...stub.calls.navigate].some(p => JSON.stringify(p).in
   fail('a language parameter is still sent')
 }
 
+// --- 15) The panel asks for the scan by POST, never by polling a GET that writes ----------------
+if (!stub.calls.posts.some(p => p.path === '/scan')) {
+  fail('the panel never asked for a scan: the poll must POST /scan and then read the side-effect-free GET')
+}
+
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
   process.exit(1)

@@ -1,7 +1,8 @@
 # The gates that need no Hermes install run on both runners; the checks that need the application's
 # own sources get a SPARSE, pinned checkout of the core so they RUN instead of quietly skipping
-# themselves. The two gates that need a real install — the backend selftest and the measured Electron
-# render with its contrast gate — stay local; see README § "Continuous integration" for why.
+# themselves (`tools/`, `agent/` and `hermes_cli/` are read by the core-contract gate, which never
+# imports them). The two gates that need a real install — the backend selftest and the measured
+# Electron render with its contrast gate — stay local; see README § "Continuous integration" for why.
 name: CI
 
 on:
@@ -51,10 +52,11 @@ jobs:
           git init -q "$core"
           git -C "$core" remote add origin "$CORE_REPO"
           git -C "$core" sparse-checkout init --cone
-          git -C "$core" sparse-checkout set apps/desktop/src
+          git -C "$core" sparse-checkout set apps/desktop/src tools agent hermes_cli
           git -C "$core" fetch -q --filter=blob:none --depth 1 origin "$CORE_SHA"
           git -C "$core" checkout -q FETCH_HEAD
           test -d "$core/apps/desktop/src" || { echo "core sources missing"; exit 1; }
+          test -f "$core/tools/write_approval.py" || { echo "core backend sources missing"; exit 1; }
           echo "HERMES_AGENT_DIR=$core" >> "$GITHUB_ENV"
 
       - name: Static audit
@@ -62,6 +64,12 @@ jobs:
 
       - name: Canary run (every rule must be able to fail)
         run: python tests/canary_audit.py
+
+      - name: Core contract (the core names the plugin calls, at the pinned sha)
+        run: python tests/contract_core.py
+
+      - name: Core contract canary (every way it can fail must fire)
+        run: python tests/contract_core.py --selftest
 
       - name: Render and behaviour (jsdom)
         working-directory: tests

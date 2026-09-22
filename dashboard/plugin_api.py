@@ -754,12 +754,16 @@ async def scan_now():
     return {"ok": True}
 
 
+def _core_diff_or_blank(text: str) -> str:
+    return "" if str(text).lstrip().startswith("(") else str(text)[:4000]
+
+
 def _one_op_diff(wa, op: dict) -> str:
     try:
         text = wa.skill_pending_diff({"payload": dict(op)}) or ""
     except Exception:
         return ""
-    return "" if text.lstrip().startswith("(") else text[:4000]
+    return _core_diff_or_blank(text)
 
 
 def _skill_diff_text(wa, record: dict) -> str:
@@ -1403,6 +1407,17 @@ def _selftest() -> int:
     refused = asyncio.run(undo({"id": "88888888"}))
     assert refused["ok"] is False and "outside" in refused["error"], refused
 
+    peek = _state() / "snapshots" / "99998888"
+    peek.mkdir(parents=True, exist_ok=True)
+    (peek / "0.bin").write_text("outside copy\n", encoding="utf-8")
+    _append({"id": "99998888", "ts": time.time(), "kind": "apply", "subsystem": "skills",
+             "summary": "record pointing outside the home", "files": [{"path": "../outside.md", "snap": "0.bin",
+                                                                      "before_sha": None, "sha_after": None}],
+             "undone": False})
+    outside = asyncio.run(undo({"id": "99998888"}))
+    assert outside["ok"] is False and outside["error"] == _tx("err_unsafe_spec"), outside
+    assert not (tmp.parent / "outside.md").exists(), "an escaping path copied a file outside the home"
+
     mem = asyncio.run(memory_view())
     assert mem["memory"]["file"] == "MEMORY.md" and mem["user"]["file"] == "USER.md", mem
     assert mem["memory"]["entries"] == ["Prefers terse replies"], mem["memory"]
@@ -1448,6 +1463,15 @@ def _selftest() -> int:
     back = asyncio.run(undo({"id": ext["id"]}))
     assert back["ok"] and back["restored"] == ["memories/MEMORY.md"], (back, ext)
     assert memory.read_text(encoding="utf-8") == "Prefers terse replies\n", memory.read_text(encoding="utf-8")
+
+    quiet = len(_entries(MAX_ENTRIES))
+    index_before = (_state() / "files.json").read_bytes()
+    memory.write_text("Prefers terse replies\nOne more foreign write\n", encoding="utf-8")
+    asyncio.run(pending())
+    assert len(_entries(MAX_ENTRIES)) == quiet, "a bare GET /pending wrote history (the scan belongs to POST /scan)"
+    assert (_state() / "files.json").read_bytes() == index_before, "a bare GET /pending rewrote the watch index"
+    asyncio.run(pending(scan=1))
+    assert len(_entries(MAX_ENTRIES)) == quiet + 1, "the scan did not record the outside change"
 
     wasted = tmp / "skills" / "cat" / "existing-skill" / "scripts" / "temporary.py"
     wasted.write_text("temporary\n", encoding="utf-8")
