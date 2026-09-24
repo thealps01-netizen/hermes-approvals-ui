@@ -53,7 +53,7 @@ jobs:
           git -C "$core" remote add origin "$CORE_REPO"
           git -C "$core" sparse-checkout init --cone
           git -C "$core" sparse-checkout set apps/desktop/src tools agent hermes_cli
-          git -C "$core" fetch -q --filter=blob:none --depth 1 origin "$CORE_SHA"
+          for i in 1 2 3; do git -C "$core" fetch -q --depth 1 origin "$CORE_SHA" && break; sleep $((i*20)); done
           git -C "$core" checkout -q FETCH_HEAD
           test -d "$core/apps/desktop/src" || { echo "core sources missing"; exit 1; }
           test -f "$core/tools/write_approval.py" || { echo "core backend sources missing"; exit 1; }
