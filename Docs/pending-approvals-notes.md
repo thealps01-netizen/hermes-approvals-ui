@@ -401,6 +401,110 @@ own type rung) while keeping cursor's uppercase + tracked caption treatment.
 - Where the panel's chip is the panel's own pill and where it stays the host kit's `Badge` (state,
   history kind, verdict): the reference has no notion of a host component library.
 
+## Visual pass — the Fleet Routing language (2026-09-22)
+
+The panel now speaks the same visual language as Fleet Routing, the most finished of the five panels.
+
+- **One type table.** Every size comes from `FS` (micro 10.5 · meta 11.5 · body 12.5 · lead 13.5 ·
+  title 16 · kpi 28). The audit rule `check_visual_scale` fails on a literal `fontSize: <n>` or
+  `font-size:<n>px`, and the canary proves each rule fires.
+- **KPI cards** (`.pa-kpi`): a small caps label, a status pill with a dot, a large figure, then one
+  sub-line. The tone sits on the card SURFACE (border/wash) and the pill dot, never on the figure text:
+  the measured contrast gate (`shot.cjs`, `toneText`) rejects a tone token worn as text.
+  - Pending: `warn` while anything waits.
+  - A memory file: `bad` only when `chars >= limit`, `warn` from 90 %, otherwise `ok`. The figure is
+    `floor(chars*100/limit)`, so 2189/2200 reads `99% · Nearly full`, never a rounded `100% · Full`
+    with room left.
+  - Applied: `bad` when a record failed (the pill names the count).
+- **File names keep their case** (`.pa-kpi-file`): `MEMORY.md`, not `MEMORY.MD`.
+- **Percent is number-first** (`84%`); the audit bans `` `%${` ``.
+- **Header**: title over subtitle, an `Updated HH:MM` stamp from the last successful poll, then the
+  refresh icon.
+- **The pane answers its own width** (`container-type:inline-size` on `.pa-root`): the KPI row goes
+  4 → 2 columns under 560 px and the description-fix comparison stacks under 520 px.
+- **Not changed on purpose:** equal card heights and the fixed scroll layers (the user's rule: cards
+  do not grow with content). Reject stays the kit `destructive` variant: a quieter outline restyle
+  would have to recolour kit internals, which the measured gate forbids.
+- Sentence case for running copy (`Nothing to undo`, `Last change`, the footer hint); status chips
+  stay capitalised as labels.
+
+## Visual pass to 9 (2026-09-22)
+
+Look only; no data, i18n meaning or behaviour changed.
+
+- **Details and fix inside the scroll layer.** The details (op bodies + full diff) and the
+  description-fix comparison live inside the fixed 340 px card scroll layer; `Shorten and create` sits
+  inside the advice note. Opening `Details and Changes` scrolls that layer to the details block
+  (`detailsAt` ref → `layer.scrollTop`), so the card never grows.
+- **No void above the buttons.** The advice note (`.pa-advice`) takes the card's free height
+  (`flex:1 1 auto`), its reason block (`.pa-advice-reason`) absorbs it, and the note line plus
+  `Shorten and create` sit on one foot row (`.pa-advice-foot`). A shorter advice therefore stretches
+  instead of leaving an empty band between it and Reject/Approve; the equal-height rule is untouched.
+- **No nested scroll inside the scroll layer.** The labelled notes (`What it does`) and both fix
+  sides (`As Written` / `Shortened`) are plain `PanelBlock`s at natural height — the 340 px layer is the
+  only scroll. `Why It Arrived` / `What Will Change` / `If You Approve` keep their fixed 80 px boxes
+  (declared layer heights unchanged: 80 · 168 · 96 · 340 · 58 · 38 · 30). The fix group lost its
+  second tinted frame: the two comparison cards are its only surface.
+- **Labels wrap, never clip.** Field labels carry `.pa-wrap` (`white-space:normal`) inside the kit
+  `PanelSectionLabel`; `Shortened Suggestion (N chars)` became `Shortened (N chars)` beside
+  `As Written (N chars)` (same meaning, fits a half-card).
+- **One badge size.** Status badges on pending and history cards and the group badges use the kit
+  Badge's default size, the same as the advice verdict badge; the `xs` size (≈9 px) is gone.
+- **The header "dot"** was the refresh icon drawn empty in the preview stub (no glyph). The stub now
+  draws the real RefreshCw paths; the control itself (kit `outline`/`icon-xs` Button + `Refresh` Tip)
+  is unchanged.
+- **Primary action weight.** Reject/Approve share one row at 1 : 2 (`.pa-actions`): Approve, the
+  primary, is the wider control. Reject keeps the kit `destructive` fill — the outlined form fails AA
+  because `--ui-red` text is below 4.5:1.
+- Locks in `render_check.mjs`: fix sides and labelled notes are `panel-block`s without a height, fix
+  labels wrap, all card badges share one `data-size`, the 1 : 2 action grid, the advice foot row.
+- **Awaiting a behaviour decision (not changed):** `✓ Approve` stays enabled on a record whose state
+  badge reads `Not Applicable` from stale targets (only a staged fix disables it); a failing `/scan`
+  makes the whole poll fail and hides the pending list instead of showing the last `/pending` result.
+
+## Visual pass round 3 (2026-09-23)
+
+Look only; no data, i18n meaning or behaviour changed. Blind judge before this pass: 6.8/10.
+
+- **No line cut in half.** Every fixed box (`Why It Arrived` / `What Will Change` / `If You Approve`
+  80 px, the history summary 58 px and file list 38 px, the failed-attempt and blocked-target
+  `LogView`s) sets `line-height: LINE` (16 px) and a vertical padding computed by
+  `inset(height, frame)`, so the text window is a whole number of lines (80 px → 4 lines, 58 → 3,
+  38 → 1). The fixed heights themselves are unchanged (80 · 340 · 58 · 38 · 30).
+- **Overflow reads as scrollable.** A fixed box (and the 340 px card layer) carries `.pa-fade`; while
+  content remains below (`data-more="1"`, measured on render and on scroll by `useFade`) its bottom
+  line fades out through a mask. Scrolled to the end, the fade goes away.
+- **Fewer nested scrolls.** Removed: the 96 px group list (`H.groups`), the 168 px op old/new bodies
+  and content preview (`H.diff`), and the 336 px full diff. They sit inside the 340 px card layer at
+  natural height, so that layer is the only scroll there. The 80 px text boxes stay: render_check
+  locks them and the card rule wants fixed boxes. `H.diff` and `H.groups` are retired.
+- **Calmer action pair.** Reject / Approve moved onto one foot row with `Details and Changes` (the
+  row no longer adds its own line under the buttons). Height is 28 px, the gap is 8 px, the ratio is
+  2 : 3 (was 1 : 2). The `render_check` lock "the primary action must be the wider one" is updated,
+  not removed. Reason: the judge read 1 : 2 as unbalanced; 2 : 3 keeps Approve as the wider primary
+  control. The fills are `.pa-reject` / `.pa-approve`: in dark mode each is the kit colour mixed 72 % /
+  74 % with the sidebar neutral, which is darker and less saturated, with white text. Reject keeps a
+  red fill (the outlined form fails AA). The same `.pa-reject` fill is used by every destructive
+  confirm (`Force undo`, `Clear N Records`, `Delete`), so there is one red in the panel. The kit
+  variants stay `destructive` / `default`. `Shorten and create` wears `.pa-approve` too (one primary
+  fill; the kit default measured 3.4:1 under white text, the calmer fill passes AA).
+- **One tag family.** Every kit `Badge` in the panel (state, advice verdict, group kind, history
+  kind) and every `.pa-pill` (id, kind, op, op count) share one `TAG` form: 20 px high, 999 px radius,
+  `0 8px`, `FS.micro` / 600, sentence case. The mixed-case uppercase pill is gone. Tone stays on the
+  fill.
+- **A lone last card spans the row.** Pending and Applied grids are `.pa-cols.pa-two`: 2 columns, one
+  column under 640 px (container query). A last card in an odd position spans both columns. Row
+  heights stay equal and the card still never grows.
+- **Scrollbar arrows hidden** (`::-webkit-scrollbar-button`), so a thin box shows no stepper glyphs.
+- Locks: `render_check.mjs` checks the tag form on every card Badge, the whole-line arithmetic on
+  every fixed `LogView`, the `.pa-lines` / fade CSS, the lone-card rule, no nested scroll other than
+  the 80 px boxes inside the 340 px layer, the 2 : 3 pair and its fills. `audit_static.py`
+  `check_round3_surface` covers whole lines, the fade, the tag form on every Badge and the lone card.
+  Its four canaries are in `canary_audit.py` (now 42 in-tree rules).
+- **Awaiting a behaviour decision (not changed, same as before):** `✓ Approve` stays enabled on a
+  record whose state reads `Not Applicable` from stale targets; a failing `/scan` hides the pending
+  list instead of showing the last `/pending` result.
+
 ## Version
 
 1.1.0 — single `en` bundle resolved from the app language (no picker, no `lang` state, no `?lang=`), comment-free production files with the rationale in this file, per-rule canary suite, external checker text mapped to English with the raw line kept.

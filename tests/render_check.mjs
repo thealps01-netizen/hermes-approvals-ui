@@ -101,7 +101,16 @@ export const relativeTime = () => '2 hours ago'
 
 // The kit's icon namespace: every glyph is an <svg>, exactly like the app's own set.
 export const icons = {
-  RefreshCw: () => jsx('svg', { 'data-icon': 'refresh', viewBox: '0 0 24 24' })
+  RefreshCw: () => jsx('svg', {
+    'data-icon': 'refresh', viewBox: '0 0 24 24', width: 14, height: 14, fill: 'none', stroke: 'currentColor',
+    strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    children: [
+      jsx('path', { d: 'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8' }, 'a'),
+      jsx('path', { d: 'M21 3v5h-5' }, 'b'),
+      jsx('path', { d: 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16' }, 'c'),
+      jsx('path', { d: 'M8 16H3v5' }, 'd')
+    ]
+  })
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -719,11 +728,64 @@ for (const mounted of [en, other]) {
   if ((noteBox?.textContent || '').trim() !== FIX_RAW_DESC) {
     fail(`the "What it does" box does not show the record's own text: ${(noteBox?.textContent || '').slice(0, 80)}`)
   }
-  const fixLabel = byText(en.hostEl, 'Shortened Suggestion (53 chars)')
-  if (!fixLabel) fail('the "Shortened Suggestion (N chars)" label is missing')
+  const fixLabel = byText(en.hostEl, 'Shortened (53 chars)')
+  if (!fixLabel) fail('the "Shortened (N chars)" label is missing')
   const fixBox = fixLabel?.nextElementSibling
-  if (![noteBox, fixBox].every(b => b && b.style.height === '80px')) {
-    fail('the two fix boxes are not at the fixed 80px height')
+  // The fix sides and the labelled notes sit inside the fixed 340px layer: they draw at their
+  // natural height (no scroll box nested in the scroll layer) and their labels may wrap.
+  if (![noteBox, fixBox].every(b => b && b.getAttribute('data-slot') === 'panel-block' && !b.style.height)) {
+    fail('a fix side or a labelled note is a nested fixed-height scroll box again')
+  }
+  if (!fixLabel?.querySelector('.pa-wrap')) fail('the fix labels cannot wrap (no .pa-wrap span)')
+  const badgeSizes = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')].map(b => b.getAttribute('data-size'))
+  if (new Set(badgeSizes).size !== 1) fail(`the card badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
+  // Round 3 (2026-09-23): the pair went from 1 : 2 to 2 : 3 so it reads as a pair of equals-in-kind
+  // (the judge flagged 1 : 2 as unbalanced) while Approve stays the primary, i.e. still the wider one.
+  // It sits on the card's foot row beside `Details and Changes`, with calmer opaque fills.
+  const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
+  const cols = (en.hostEl.innerHTML.match(/\.pa-actions\{display:grid;grid-template-columns:minmax\(0,(\d+)fr\) minmax\(0,(\d+)fr\)/) || [])
+  if (!actions || !cols.length || !(Number(cols[2]) > Number(cols[1]))) {
+    fail('Reject and Approve carry equal weight again (the primary action must be the wider one)')
+  }
+  const fills = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.className)
+  if (!fills.includes('pa-reject') || !fills.includes('pa-approve')) {
+    fail(`the action pair lost its calmer fills (.pa-reject / .pa-approve): ${JSON.stringify(fills)}`)
+  }
+  // One tag family: every kit Badge in a card wears the TAG form (the .pa-pill height/radius/weight).
+  const tags = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')]
+  const odd = tags.filter(b => !b.classList.contains('pa-tag') || b.style.height !== '20px'
+    || b.style.borderRadius !== '999px' || b.style.fontWeight !== '600')
+  if (!tags.length || odd.length) {
+    fail(`a status tag is not drawn in the one tag form: ${JSON.stringify(odd.map(b => b.textContent))}`)
+  }
+  // A fixed text box shows WHOLE lines: its line height divides the height left after the padding,
+  // and an overflowing box carries the bottom fade (`data-more`), never a half-cut last line.
+  const LINE = 16
+  const boxes = [...en.hostEl.querySelectorAll('.pa-card .pa-fade')]
+  if (boxes.length < 4) fail(`the fixed text boxes carry no fade wrapper (${boxes.length})`)
+  for (const log of en.hostEl.querySelectorAll('.pa-card [data-slot="log-view"].pa-scroll')) {
+    const h = parseFloat(log.style.height)
+    const inner = h - 2 - parseFloat(log.style.paddingTop) - parseFloat(log.style.paddingBottom)
+    if (log.style.lineHeight !== LINE + 'px' || inner % LINE !== 0) {
+      fail(`a fixed box cuts a line: ${h}px box, ${inner}px text window, line ${log.style.lineHeight}`)
+    }
+  }
+  if (!en.hostEl.innerHTML.includes('.pa-lines{min-height:100%;max-height:none !important;overflow:visible !important;')
+    || !en.hostEl.innerHTML.includes('line-height:' + LINE + 'px !important;padding:8px 10px !important}')) {
+    fail('the 80px prose box no longer holds a whole number of lines (line-height/padding lock)')
+  }
+  if (!en.hostEl.innerHTML.includes('.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom')) {
+    fail('an overflowing fixed box has no bottom fade: it reads as clipped, not scrollable')
+  }
+  if (!en.hostEl.innerHTML.includes('.pa-two>:last-child:nth-child(odd){grid-column:1/-1}')
+    || !en.hostEl.querySelector('.pa-cols.pa-two')) {
+    fail('a lone last card sits in half the grid again (the .pa-two lone-card rule is gone)')
+  }
+  const nested = [...en.hostEl.querySelectorAll('.pa-card [style*="height: 340px"] [style*="overflow-y: auto"]')]
+    .filter(el => el.style.height !== '80px')
+  if (nested.length) fail(`a scroll box other than the 80px text boxes is nested in the card layer (${nested.length})`)
+  if (!en.hostEl.querySelector('.pa-cell .pa-advice .pa-advice-foot')) {
+    fail('the advice note no longer absorbs the free height above the buttons')
   }
   must(en.hostEl.textContent, ['As Written (172 chars)', FIX_SUGGESTED], 'the fix surfaces')
   const fixBtn = buttons(en.hostEl, /Shorten and create/)[0]
@@ -739,7 +801,7 @@ for (const mounted of [en, other]) {
 const memoryTab = tab(en.hostEl, /Memory/)
 if (!memoryTab) fail('the Memory tab is missing')
 await click(memoryTab, 60)
-must(en.hostEl.textContent, ['Note 1', 'MEMORY.md', 'USER.md', 'Last Change'],
+must(en.hostEl.textContent, ['Note 1', 'MEMORY.md', 'USER.md', 'Last change'],
   'memory tab')
 if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
 {
@@ -829,7 +891,25 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 {
   const kpi = [...(en.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
   if (kpi.length !== 4) fail(`expected 4 KPI cards, found ${kpi.length}: ${JSON.stringify(kpi)}`)
-  must(kpi.join(' | '), ['MEMORY.md', '%100', 'USER.md', '%84'], 'KPI cards')
+  must(kpi.join(' | '), ['MEMORY.md', '99%', 'USER.md', '84%', 'Nearly full'], 'KPI cards')
+  const figs = [...en.hostEl.querySelectorAll('.pa-kpis')[0].querySelectorAll('.pa-kpi-val')].map(v => v.textContent)
+  if (figs.some(f => /^%/.test(f || ''))) fail(`a percent sign leads its number: ${JSON.stringify(figs)}`)
+  const kbox = [...en.hostEl.querySelectorAll('.pa-kpis')[0].children]
+  const tones = kbox.map(k => k.querySelector('.pa-kpi-pill')?.getAttribute('data-tone'))
+  if (JSON.stringify(tones) !== JSON.stringify(['warn', 'warn', 'ok', 'bad'])) {
+    fail(`KPI tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
+  }
+  if (kbox[1].getAttribute('data-tone') !== 'warn') fail('a file with room left is marked full (2189 of 2200 is not full)')
+  if (!kbox[1].querySelector('.pa-kpi-label')?.classList.contains('pa-kpi-file')) {
+    fail('a file name is set in caps (MEMORY.MD): file labels keep their own case')
+  }
+  if (kbox.some(k => k.querySelector('.pa-kpi-val')?.hasAttribute('data-tone'))) {
+    fail('a KPI figure wears a tone as text — the tone belongs on the card surface')
+  }
+  if (!/Updated \d\d:\d\d/.test(en.hostEl.querySelector('.pa-updated')?.textContent || '')) {
+    fail('the header carries no “Updated HH:MM” stamp')
+  }
+  if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
   const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
   if (appliedFigure !== '2') {
     fail(`the Applied card must count the change made outside the pane too (figured ${JSON.stringify(appliedFigure)})`)
