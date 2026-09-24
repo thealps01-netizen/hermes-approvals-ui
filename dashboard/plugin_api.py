@@ -4,10 +4,12 @@ import datetime
 import hashlib
 import difflib
 import json
+import os
 import re
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from contextlib import suppress
@@ -21,6 +23,35 @@ router = APIRouter()
 MAX_ENTRIES = 100
 UNDOABLE = ("apply", "external")
 _OP_TEXT_LIMIT = 20000
+_LOCK = threading.RLock()
+_ISSUES: dict = {}
+_ISSUE_TTL = 3600
+
+
+def _log(message: str) -> None:
+    print(f"[pending-approvals] {message}", flush=True)
+
+
+def _note_issue(key: str, text: str) -> None:
+    _log(text)
+    _ISSUES[key] = {"text": text, "at": time.time()}
+
+
+def _issues() -> list[str]:
+    now = time.time()
+    return [v["text"] for v in _ISSUES.values() if now - v["at"] < _ISSUE_TTL]
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".part")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _home() -> Path:
@@ -38,14 +69,17 @@ def _skill_files(name: str | None = None) -> list[Path]:
     skills = _home() / "skills"
     if not skills.exists():
         return []
+    roots = {p.parent for p in skills.rglob("SKILL.md")} if name is not None else set()
     out: list[Path] = []
     for path in sorted(skills.rglob("*")):
         if not path.is_file() or "__pycache__" in path.parts:
             continue
         if any(part.startswith(".") for part in path.relative_to(skills).parts):
             continue
-        if name is not None and path.parent.name != name and name not in path.parts:
-            continue
+        if name is not None:
+            owner = next((d for d in path.parents if d in roots or d == skills), skills)
+            if owner == skills or owner.name != name:
+                continue
         out.append(path)
     return out
 
@@ -73,14 +107,30 @@ def _stat_key(path: Path) -> str:
 
 
 def _read_index() -> dict:
-    try:
-        return json.loads((_state() / "files.json").read_text(encoding="utf-8"))
-    except Exception:
+    path = _state() / "files.json"
+    with _LOCK:
+        if not path.exists():
+            return {}
+        try:
+            index = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(index, dict):
+                return index
+            problem = "not a JSON object"
+        except (OSError, ValueError) as exc:
+            problem = str(exc)
+        aside = path.with_name(f"files.json.corrupt-{int(time.time())}")
+        try:
+            os.replace(path, aside)
+            name = aside.name
+        except OSError as exc:
+            name = f"(could not be moved: {exc})"
+        _note_issue("index", _tx("issue_index", name=name, problem=_short_error(problem)))
         return {}
 
 
 def _write_index(index: dict) -> None:
-    (_state() / "files.json").write_text(json.dumps(index, indent=1), encoding="utf-8")
+    with _LOCK:
+        _atomic_write(_state() / "files.json", json.dumps(index, indent=1))
 
 
 def _store_copy(path: Path, entry_id: str, n: int) -> str:
@@ -122,9 +172,10 @@ def _history_path() -> Path:
 
 
 def _append(entry: dict) -> None:
-    with _history_path().open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    _prune()
+    with _LOCK:
+        with _history_path().open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _prune()
 
 
 def _entries(limit: int = 50) -> list[dict]:
@@ -154,7 +205,7 @@ def _prune() -> None:
         except Exception:
             continue
         _remove_snapshots(entry_id)
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    _atomic_write(path, "\n".join(kept) + "\n")
 
 
 def _new_id() -> str:
@@ -237,6 +288,11 @@ def _counts() -> dict:
 
 
 def _refresh_index(paths, full: bool = False) -> None:
+    with _LOCK:
+        _refresh_index_locked(paths, full)
+
+
+def _refresh_index_locked(paths, full: bool) -> None:
     index = _read_index()
     last = _state() / "last"
     last.mkdir(parents=True, exist_ok=True)
@@ -257,6 +313,11 @@ def _refresh_index(paths, full: bool = False) -> None:
 
 
 def _scan_external() -> None:
+    with _LOCK:
+        _scan_external_locked()
+
+
+def _scan_external_locked() -> None:
     index = _read_index()
     entry_id = _new_id()
     changed = []
@@ -437,6 +498,14 @@ _TEXT = {
     'apply_failed': 'Could not apply',
     'fix_chars': '{names} characters',
     'deleted': 'the note was deleted.',
+    'err_unvalidated': 'the skill validator could not run',
+    'stale_unvalidated': '{what} → could not be validated: Hermes\' skill validator could not run, so this record was not checked.',
+    'rec_unvalidated': 'Could not validate',
+    'rec_unvalidated_reason': 'Hermes\' skill validator could not run, so nothing here was checked and approving is not recommended. Refresh once Hermes is healthy; the error is in the Hermes log.',
+    'stale_mem_ambiguous': '{file}: {text} matches more than one note, so Hermes cannot tell which one to change.',
+    'stale_mem_unmatched': '{file}: no note matches {text} any more.',
+    'issue_index': 'The watch index was unreadable ({problem}); it was set aside as {name} and rebuilt. Changes made outside the pane while it was unreadable were not recorded.',
+    'err_read': 'Could not read: {error}',
 }
 
 
@@ -454,12 +523,14 @@ def _tx(key: str, **kw) -> str:
 def _skill_problem(content: str) -> str:
     try:
         from tools.skill_manager_tool import _validate_frontmatter
-    except Exception:
-        return ""
+    except Exception as exc:
+        _log(f"the skill validator could not be imported: {exc}")
+        return _tx("err_unvalidated")
     try:
         return _validate_frontmatter(content, new_skill=True) or ""
-    except Exception:
-        return ""
+    except Exception as exc:
+        _log(f"the skill validator failed: {exc}")
+        return _tx("err_unvalidated")
 
 
 def _short_error(text: str, limit: int = 150) -> str:
@@ -500,7 +571,8 @@ def _memory_fit(record: dict) -> dict:
         store = load_on_disk_store()
         entries = list(store.user_entries if target == "user" else store.memory_entries)
         limit = store.user_char_limit if target == "user" else store.memory_char_limit
-    except Exception:
+    except Exception as exc:
+        _log(f"the memory store could not be read for the fill precheck: {exc}")
         return {}
     before = len(ENTRY_DELIMITER.join(entries))
     working = list(entries)
@@ -515,7 +587,10 @@ def _memory_fit(record: dict) -> dict:
             continue
         idx, ambiguous = _find_unique_match(working, old)
         if idx is None or ambiguous:
-            return {}
+            problem = (_tx("stale_mem_ambiguous", file=file_label, text=_preview(old)) if ambiguous
+                       else _tx("stale_mem_unmatched", file=file_label, text=_preview(old)))
+            _log(problem)
+            return {"file": file_label, "problem": problem}
         working = working[:idx] + ([content] if action == "replace" else []) + working[idx + 1:]
     after = len(ENTRY_DELIMITER.join(working))
     return {"file": file_label, "before": before, "after": after, "limit": limit,
@@ -542,6 +617,7 @@ def _explain(subsystem: str, record: dict) -> dict:
     stale: list[str] = []
     notes: list[dict] = []
     fit: dict = {}
+    unvalidated = False
 
     purpose_from_disk = ""
     if subsystem != wa.MEMORY:
@@ -602,7 +678,10 @@ def _explain(subsystem: str, record: dict) -> dict:
                 what.append(_tx("what_create", name=name))
                 content = op.get("content_original") or op.get("content") or ""
                 problem = _skill_problem(content)
-                if problem:
+                if problem == _tx("err_unvalidated"):
+                    unvalidated = True
+                    stale.append(_tx("stale_unvalidated", what=what[-1]))
+                elif problem:
                     stale.append(_tx("stale_frontmatter", what=what[-1], problem=problem.strip().rstrip(".")))
                 what_it_does = _frontmatter(content).get("description") or ""
                 if what_it_does:
@@ -651,6 +730,8 @@ def _explain(subsystem: str, record: dict) -> dict:
         if fit.get("over"):
             stale.append(_tx("stale_memory_limit", file=fit["file"], after=fit["after"],
                              limit=fit["limit"], over=fit["over"]))
+        if fit.get("problem") and not stale:
+            stale.append(fit["problem"])
 
     seen, unique = set(), []
     for note in notes:
@@ -660,7 +741,7 @@ def _explain(subsystem: str, record: dict) -> dict:
 
     return {"kind_label": kind_label, "target": target_label, "headline": headline, "why": why,
             "what": what, "groups": groups, "notes": unique, "effect": effect, "stale": stale,
-            "fit": fit}
+            "fit": fit, "unvalidated": unvalidated}
 
 
 def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
@@ -670,6 +751,8 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
     groups = plain.get("groups") or []
     new_skills = [g["name"] for g in groups if g.get("kind") == "new"]
 
+    if plain.get("unvalidated"):
+        return {"verdict": _tx("rec_unvalidated"), "reason": _tx("rec_unvalidated_reason")}
     if stale:
         return {"verdict": _tx("rec_reject"), "reason": _tx("rec_reject_reason", n=len(stale))}
     if subsystem == wa.SKILLS:
@@ -680,6 +763,8 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
             return {"verdict": _tx("rec_approve"), "reason": _tx("rec_new_reason")}
         return {"verdict": _tx("rec_approve"), "reason": _tx("rec_patch_reason")}
     fit = plain.get("fit") or _memory_fit(record)
+    if fit.get("problem"):
+        return {"verdict": _tx("rec_reject"), "reason": fit["problem"]}
     if fit.get("over"):
         return {"verdict": _tx("rec_reject"),
                 "reason": _tx("rec_memory_limit_reason", file=fit["file"], after=fit["after"],
@@ -698,8 +783,21 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
     return {"verdict": _tx("rec_approve"), "reason": _tx("rec_mem_unmeasured_reason", file=file_label)}
 
 
+def _read_failed(where: str, exc: Exception) -> JSONResponse:
+    _log(f"{where} could not be read: {exc!r}")
+    return JSONResponse({"ok": False, "error": _tx("err_read", error=_short_error(str(exc) or repr(exc)))},
+                        status_code=500)
+
+
 @router.get("/pending")
 async def pending(scan: int = 0):
+    try:
+        return _pending(scan)
+    except Exception as exc:
+        return _read_failed("/pending", exc)
+
+
+def _pending(scan: int) -> dict:
     from tools import write_approval as wa
 
     if scan:
@@ -745,6 +843,7 @@ async def pending(scan: int = 0):
             items.append(item)
         out[subsystem] = items
     out["counts"] = {wa.MEMORY: len(out[wa.MEMORY]), wa.SKILLS: len(out[wa.SKILLS])}
+    out["issues"] = _issues()
     return out
 
 
@@ -848,7 +947,8 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
             op.setdefault("content_original", op.get("content"))
             op["content"] = fix["content"]
     path = wa._pending_path(wa.SKILLS, str(record.get("id")))
-    path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    with _LOCK:
+        _atomic_write(path, json.dumps(record, ensure_ascii=False))
     return True, _tx("fix_chars",
                      names=", ".join(f"{f['name']}: {f['before']} → {f['after']}" for f in fixes.values()))
 
@@ -1014,7 +1114,11 @@ async def decide(body: dict):
 
 @router.post("/history/clear")
 async def history_clear(body: dict):
-    keep_undoable = bool((body or {}).get("keep_undoable"))
+    with _LOCK:
+        return _history_clear(bool((body or {}).get("keep_undoable")))
+
+
+def _history_clear(keep_undoable: bool) -> dict:
     path = _history_path()
     if not path.exists():
         return {"ok": True, "removed": 0, "kept": 0}
@@ -1032,12 +1136,19 @@ async def history_clear(body: dict):
             continue
         removed += 1
         _remove_snapshots(row.get("id"))
-    path.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
+    _atomic_write(path, ("\n".join(kept) + "\n") if kept else "")
     return {"ok": True, "removed": removed, "kept": len(kept)}
 
 
 @router.get("/memory")
 async def memory_view():
+    try:
+        return _memory_view()
+    except Exception as exc:
+        return _read_failed("/memory", exc)
+
+
+def _memory_view() -> dict:
     from tools.memory_tool import load_on_disk_store
     from tools.memory_tool_store import ENTRY_DELIMITER
 
@@ -1083,7 +1194,11 @@ async def history(limit: int = 50):
     entries = []
     for e in _entries(max(1, min(int(limit), MAX_ENTRIES))):
         entries.append({**e, "undoable": _undoable(e)})
-    return {"entries": entries}
+    every = _entries(MAX_ENTRIES)
+    counts = {"applied": sum(1 for e in every if e.get("kind") in UNDOABLE),
+              "failed": sum(1 for e in every if e.get("kind") == "failed"),
+              "undoable": sum(1 for e in every if _undoable(e)), "total": len(every)}
+    return {"entries": entries, "counts": counts}
 
 
 @router.post("/undo")
@@ -1148,6 +1263,11 @@ async def undo(body: dict):
 
 
 def _write_undone(entry_id: str) -> None:
+    with _LOCK:
+        _write_undone_locked(entry_id)
+
+
+def _write_undone_locked(entry_id: str) -> None:
     path = _history_path()
     out = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -1161,7 +1281,7 @@ def _write_undone(entry_id: str) -> None:
         if record.get("id") == entry_id:
             record["undone"] = True
         out.append(json.dumps(record, ensure_ascii=False))
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    _atomic_write(path, "\n".join(out) + "\n")
 
 
 def _selftest() -> int:
@@ -1652,6 +1772,107 @@ def _selftest() -> int:
               "new_string": "- patched line"}
     assert _patch_problem(live_dup / "SKILL.md", dup_op, "dup-skill/SKILL.md") == "", "precheck must read the live file"
 
+    unchecked_rec = {"id": "ffff0004", "origin": "assistant_tool", "summary": "create",
+                     "payload": {"action": "batch", "operations": [{
+                         "action": "create", "name": "unchecked-skill",
+                         "content": "---\nname: unchecked-skill\ndescription: \"Short.\"\n---\n\nBody\n"}]}}
+    _saved_validator = sys.modules.get("tools.skill_manager_tool")
+    sys.modules["tools.skill_manager_tool"] = None
+    try:
+        unchecked_plain = _explain("skills", unchecked_rec)
+        unchecked_advice = _recommendation("skills", unchecked_plain, unchecked_rec)
+    finally:
+        sys.modules["tools.skill_manager_tool"] = _saved_validator
+    assert unchecked_plain["stale"], "a record the validator could not check was read as clean"
+    assert unchecked_advice["verdict"] == _tx("rec_unvalidated"), unchecked_advice
+    assert unchecked_advice["verdict"] != _tx("rec_approve"), unchecked_advice
+
+    index_path = _state() / "files.json"
+    index_path.write_text("{not json", encoding="utf-8")
+    _ISSUES.clear()
+    assert _read_index() == {}, "a corrupt index must still let the scan run"
+    assert _ISSUES.get("index"), "a corrupt index was read as empty in silence"
+    assert list(_state().glob("files.json.corrupt-*")), "the corrupt index was not kept aside"
+    assert asyncio.run(pending(scan=0))["issues"], "the corrupt index is not surfaced by /pending"
+    _ISSUES.clear()
+
+    memory.write_text("alpha one\n\n§\n\nalpha two\n", encoding="utf-8")
+    amb_rec = {"payload": {"action": "batch", "target": "memory",
+                           "operations": [{"action": "remove", "old_text": "alpha"}]}}
+    amb_fit = _memory_fit(amb_rec)
+    assert amb_fit.get("problem"), f"an ambiguous memory match came back silently empty: {amb_fit}"
+    amb_advice = _recommendation("memory", _explain("memory", amb_rec), amb_rec)
+    assert amb_advice["verdict"] == _tx("rec_reject"), amb_advice
+    memory.write_text("Prefers terse replies\n", encoding="utf-8")
+
+    for rel in ("cat/beta/SKILL.md", "cat/beta/references/b.md", "beta/alpha/SKILL.md",
+                "cat/gamma/SKILL.md", "cat/gamma/templates/beta/x.md"):
+        seg = tmp / "skills" / rel
+        seg.parent.mkdir(parents=True, exist_ok=True)
+        seg.write_text("x\n", encoding="utf-8")
+    beta_files = {p.relative_to(tmp / "skills").as_posix() for p in _skill_files("beta")}
+    assert beta_files == {"cat/beta/SKILL.md", "cat/beta/references/b.md"}, beta_files
+    alpha_files = {p.relative_to(tmp / "skills").as_posix() for p in _skill_files("alpha")}
+    assert alpha_files == {"beta/alpha/SKILL.md"}, alpha_files
+
+    asyncio.run(history_clear({}))
+    for n in range(60):
+        _append({"id": f"{n:08x}", "ts": time.time(), "kind": "apply" if n % 2 else "external",
+                 "subsystem": "memory", "summary": "count", "files": [], "undone": False})
+    _append({"id": "0000fa11", "ts": time.time(), "kind": "failed", "subsystem": "memory",
+             "summary": "count", "files": [], "undone": False})
+    counted = asyncio.run(history(limit=50))
+    assert len(counted["entries"]) == 50, len(counted["entries"])
+    assert counted["counts"]["applied"] == 60 and counted["counts"]["failed"] == 1, counted["counts"]
+    assert counted["counts"]["undoable"] == 60, counted["counts"]
+    asyncio.run(history_clear({}))
+
+    import tools.memory_tool as _mt
+    _saved_store = _mt.load_on_disk_store
+    _mt.load_on_disk_store = lambda: (_ for _ in ()).throw(RuntimeError("store exploded"))
+    try:
+        broken_mem = asyncio.run(memory_view())
+    finally:
+        _mt.load_on_disk_store = _saved_store
+    assert getattr(broken_mem, "status_code", 200) == 500, broken_mem
+    assert "store exploded" in json.loads(broken_mem.body)["error"], broken_mem.body
+    from tools import write_approval as _wa_mod
+    _saved_list = _wa_mod.list_pending
+    _wa_mod.list_pending = lambda subsystem: (_ for _ in ()).throw(RuntimeError("list exploded"))
+    try:
+        broken_pending = asyncio.run(pending(scan=0))
+    finally:
+        _wa_mod.list_pending = _saved_list
+    assert getattr(broken_pending, "status_code", 200) == 500, broken_pending
+    assert "list exploded" in json.loads(broken_pending.body)["error"], broken_pending.body
+
+    import os as _os
+    import threading as _threading
+    index_path.write_text(json.dumps({"keep": {"sha": "1"}}), encoding="utf-8")
+    _saved_replace = _os.replace
+    _os.replace = lambda *a: (_ for _ in ()).throw(OSError("replace refused"))
+    try:
+        with suppress(OSError):
+            _write_index({"torn": {}})
+    finally:
+        _os.replace = _saved_replace
+    assert json.loads(index_path.read_text(encoding="utf-8")) == {"keep": {"sha": "1"}}, \
+        "an interrupted index write tore the file"
+    assert not [p for p in _state().iterdir() if p.name.startswith(".tmp")], "a temp file was left behind"
+    order: list[str] = []
+    _LOCK.acquire()
+    try:
+        worker = _threading.Thread(target=lambda: (_append({
+            "id": "0000beef", "ts": time.time(), "kind": "rejected", "subsystem": "memory",
+            "summary": "locked", "files": [], "undone": False}), order.append("append")))
+        worker.start()
+        worker.join(0.3)
+        order.append("released")
+    finally:
+        _LOCK.release()
+    worker.join(5)
+    assert order == ["released", "append"], f"the history write did not wait for the lock: {order}"
+
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
@@ -1660,7 +1881,11 @@ def _selftest() -> int:
           "memory delete + undo, memory limit precheck + failed attempt recorded, watch/apply "
           "single resolver, deleted file cleanup, id validation, patch precheck (references/*.md "
           "target + Hermes matcher + undo), history clearing, dead approve attempt blocked "
-          "(record stays, history stays clean), archived twin never wins the skill lookup")
+          "(record stays, history stays clean), archived twin never wins the skill lookup, an unimportable "
+          "validator never recommends approval, a corrupt index is set aside and surfaced, an ambiguous memory "
+          "match is a stated problem, a skill's files are its own directory only, the Applied count covers the "
+          "whole history, /memory and /pending fail with a structured error, index writes are atomic and "
+          "history writes wait for the lock")
     return 0
 
 

@@ -5,6 +5,37 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.3
+
+A blind review found eight places where the panel or its backend said something untrue when a read
+failed or had not finished yet. Each is fixed and locked by the selftest or the render check.
+
+* **Loading no longer reads as "nothing".** Before the first answer arrived, Pending said "Nothing
+  awaits approval", Applied said "No records yet" and the KPI cards claimed 0% / "Has room". Each tab
+  now shows the kit `Loader` until its data is in, and the KPI cards read "—" with a "Reading" pill.
+* **A skill the validator could not check is never recommended.** When `tools.skill_manager_tool`
+  failed to import (or its validator raised), a new-skill record was treated as clean and the advice
+  said "Approve". It is now listed as "could not be validated" and the advice reads "Could not
+  validate", never "Approve".
+* **A corrupt watch index is surfaced, not swallowed.** An unreadable `files.json` used to read as an
+  empty index in silence. It is now moved aside as `files.json.corrupt-<time>`, logged, and shown as a
+  notice above the pending list (outside changes made meanwhile were not recorded).
+* **An ambiguous memory match is a stated problem.** A replace/remove whose text matched several notes
+  (or none) returned an empty fill, so the card fell back to an approvable "could not be read" advice.
+  It now names the problem and advises Reject.
+* **A skill's files are its own directory only.** `_skill_files(name)` matched any path segment with
+  that name, so skill `beta` also collected `templates/beta/…` of another skill, and an undo copy could
+  cover the wrong files. It now takes the files under the directory whose `SKILL.md` is named `name`.
+* **The Applied KPI counts the whole history.** It counted only the 50 rows the History tab loads;
+  `GET /history` now returns `counts` (applied, failed, undoable) over every stored record.
+* **`/memory` and `/pending` fail with a message.** An exception inside them was a bare 500; both now
+  answer `{ok: false, error}` with status 500, and the panel shows that error.
+* **History, index and pending-record rewrites are atomic and serialised.** They were rewritten in
+  place while `POST /scan` runs every 15 s. Every rewrite now goes through a temp file and
+  `os.replace`, and every read-modify-write holds one in-process lock.
+* **Errors offer Retry.** The error copy said "Restart the desktop app"; each error state now has a kit
+  Retry button that reloads just that data.
+
 ## 1.6.2
 
 A senior-dev review of the approve/reject/undo path fixed two findings and the panel now triggers the

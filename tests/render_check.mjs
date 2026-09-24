@@ -420,7 +420,7 @@ const HISTORY = { entries: [
   { id: 'bb22cc33', ts: Date.now() / 1000 - 3600, kind: 'rejected', subsystem: 'skills', summary: 'batch(12 ops: ' + 'patch, '.repeat(28) + 'on hermes-desktop-plugin-dev — ' + HIST_TAIL, files: [], undoable: false },
   { id: 'cc33dd44', ts: Date.now() / 1000 - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: ' + 'long description '.repeat(30), files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
   { id: 'dd44ee55', ts: Date.now() / 1000 - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused', files: [], undoable: false }
-] }
+], counts: { applied: 57, failed: 1, undoable: 2 } }
 const MEMORY = {
   memory: { file: 'MEMORY.md', chars: 2189, limit: 2200, percent: 100, entries: ['A note'],
             updated: Date.now() / 1000 - 600 },
@@ -433,6 +433,8 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
+const REST = { mode: 'normal', gets: 0 }
+const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 let version = 0
 async function mount(appLocale) {
   stub.state.appLocale = appLocale
@@ -457,8 +459,11 @@ async function mount(appLocale) {
         if (path === '/scan') return { ok: true }
         throw new Error(`unexpected POST: ${path}`)
       }
+      REST.gets += 1
+      if (REST.mode === 'hold') return new Promise(() => {})
+      if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       const table = {
-        '/pending': PENDING,
+        '/pending': REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] } : PENDING,
         '/pending?scan=0': PENDING,
         '/history?limit=50': HISTORY,
         '/memory': MEMORY
@@ -911,8 +916,8 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
   const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
-  if (appliedFigure !== '2') {
-    fail(`the Applied card must count the change made outside the pane too (figured ${JSON.stringify(appliedFigure)})`)
+  if (appliedFigure !== '57') {
+    fail(`the Applied card must use the backend's full count, not the last 50 rows (figured ${JSON.stringify(appliedFigure)})`)
   }
   const icon = en.hostEl.querySelector('.pa-refresh')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
@@ -984,6 +989,44 @@ if ([...stub.calls.posts, ...stub.calls.navigate].some(p => JSON.stringify(p).in
 // --- 15) The panel asks for the scan by POST, never by polling a GET that writes ----------------
 if (!stub.calls.posts.some(p => p.path === '/scan')) {
   fail('the panel never asked for a scan: the poll must POST /scan and then read the side-effect-free GET')
+}
+
+// --- 16) No data yet: the kit Loader, never an empty state or a 0% KPI -------------------------
+{
+  REST.mode = 'hold'
+  const held = await mount('en')
+  const kpis = [...(held.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
+  if (held.hostEl.textContent.includes('Nothing awaits approval')) fail('loading reads as “Nothing awaits approval”')
+  if (!held.hostEl.querySelector('[data-slot="loader"]')) fail('no kit Loader while the pending list loads')
+  if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
+    fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
+  }
+  await click(tab(held.hostEl, /Applied/))
+  if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
+  if (!held.hostEl.querySelector('.pa-root > div:nth-child(3) [data-slot="loader"]')) {
+    fail('no kit Loader while the history loads')
+  }
+  held.hostEl.remove()
+}
+
+// --- 17) A read failure offers Retry, and Retry reloads; backend issues are shown ------------
+{
+  REST.mode = 'fail'
+  const broken = await mount('en')
+  if (!broken.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed read shows no kit ErrorState')
+  if (/Restart the desktop app/.test(broken.hostEl.textContent)) fail('the error still asks for an app restart')
+  if (!broken.hostEl.textContent.includes('list exploded')) fail('the backend error message is not shown')
+  const retry = buttons(broken.hostEl, /^Retry$/)[0]
+  if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error state carries no kit Retry button')
+  REST.mode = 'issues'
+  const before = REST.gets
+  if (retry) await click(retry, 80)
+  if (REST.gets <= before) fail('Retry did not reload the data')
+  if (broken.hostEl.querySelector('[data-slot="error-state"]')) fail('the error stays after a successful Retry')
+  if (broken.hostEl.querySelectorAll('.pa-cell').length !== 3) fail('Retry did not bring the records back')
+  if (!broken.hostEl.textContent.includes(ISSUE)) fail('an issue the backend reported is not shown')
+  broken.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 if (problems.length) {

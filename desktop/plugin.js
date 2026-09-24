@@ -46,6 +46,7 @@ const BUNDLES = {
         room: 'Has room',
         memorySplit: (m, s) => `Memory: ${m} · Skills: ${s}`,
         chars: (c, l) => `${c} / ${l} characters`,
+        waiting: 'Reading',
       },
       tab: {
         memory: 'Memory',
@@ -131,7 +132,9 @@ const BUNDLES = {
       },
       empty: {
         errorTitle: 'The pane could not read its data',
-        errorBody: 'Restart the desktop app and try again.',
+        errorBody: 'Retry reads it again; if it keeps failing, the Hermes log names the reason.',
+        retry: 'Retry',
+        loadingData: 'Reading…',
         pendingTitle: 'Nothing awaits approval',
         pendingBody: 'When Hermes wants to save something it appears here: what it is, why it arrived, what approving does, and the agent\'s suggestion.',
         historyTitle: 'No records yet',
@@ -479,6 +482,42 @@ function Stat({ title, figure, delta, tone, pill, file }) {
     ]
   })
 }
+
+const errText = e => {
+  const text = String(e?.message || e || '')
+  const at = text.indexOf('{')
+  if (at >= 0) {
+    try {
+      return JSON.parse(text.slice(at)).error || text
+    } catch {
+      return text
+    }
+  }
+  return text
+}
+
+function Loading({ label: text }) {
+  return jsx('div', {
+    style: { display: 'grid', padding: 12, placeItems: 'center' },
+    children: jsx(Loader, { label: text, type: 'lemniscate-bloom' }, 'loader')
+  }, 'loading')
+}
+
+function LoadError({ title: heading, error, onRetry }) {
+  const t = usePluginI18n(ID)
+  return jsx(ErrorState, {
+    title: heading,
+    description: [errText(error), t('pa.empty.errorBody')].filter(Boolean).join(' — '),
+    children: jsx(Button, {
+      variant: 'outline',
+      size: 'sm',
+      onClick: onRetry,
+      children: t('pa.empty.retry')
+    }, 'retry')
+  }, 'error')
+}
+
+const WAITING = { figure: '—', tone: 'off', delta: '' }
 
 const fill = f => {
   const chars = Number(f?.chars) || 0
@@ -1083,20 +1122,24 @@ function PendingList({ data, error, refresh }) {
     seen.current = next
   })
 
-  if (error) {
-    return jsx(ErrorState, {
-      title: t('pa.empty.errorTitle'),
-      description: t('pa.empty.errorBody')
-    }, 'error')
-  }
-  if (!total(data?.counts)) {
-    return jsx(PanelEmpty, {
-      icon: 'inbox',
-      title: t('pa.empty.pendingTitle'),
-      description: t('pa.empty.pendingBody')
-    }, 'empty')
-  }
-  return jsx('div', {
+  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  const issues = data.issues || []
+  const notice = issues.length
+    ? jsx('div', {
+        className: 'pa-alert pa-alert-danger',
+        role: 'alert',
+        style: { margin: '12px 12px 0' },
+        children: issues.map(text => jsx('div', { children: text }, text))
+      }, 'issues')
+    : null
+  const body = !total(data.counts)
+    ? jsx(PanelEmpty, {
+        icon: 'inbox',
+        title: t('pa.empty.pendingTitle'),
+        description: t('pa.empty.pendingBody')
+      }, 'empty')
+    : jsx('div', {
     ref: gridRef,
     className: 'pa-cols pa-two',
     style: { padding: 12 },
@@ -1106,7 +1149,8 @@ function PendingList({ data, error, refresh }) {
         'data-key': `${subsystem}:${item.id}`,
         children: jsx(PendingCard, { subsystem, item, onChanged: refresh }, 'card')
       }, `${subsystem}:${item.id}`))
-  })
+  }, 'grid')
+  return notice ? jsxs('div', { children: [notice, body] }, 'with-issues') : body
 }
 
 function HistoryList({ data, error, refresh }) {
@@ -1131,7 +1175,8 @@ function HistoryList({ data, error, refresh }) {
     }
   }
 
-  if (error) return jsx(ErrorState, { title: t('pa.empty.historyError') }, 'error')
+  if (error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
   if (!entries.length) {
     return jsx(EmptyState, {
       title: t('pa.empty.historyTitle'),
@@ -1215,13 +1260,8 @@ function MemoryView({ data, error, refresh, onChanged }) {
     }
   }
 
-  if (error) return jsx(ErrorState, { title: t('pa.empty.memoryError') }, 'error')
-  if (!store) {
-    return jsx('div', {
-      style: { display: 'grid', padding: 12, placeItems: 'center' },
-      children: jsx(Loader, { label: t('pa.empty.loading'), type: 'lemniscate-bloom' }, 'loader')
-    }, 'loading')
-  }
+  if (error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
+  if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
@@ -1331,11 +1371,14 @@ function Pane() {
   const hist = usePolling(api.history, 30000)
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
-  const undoable = entries.filter(e => e.undoable && !e.undone).length
-  const applied = entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
-  const failedCount = entries.filter(e => e.kind === 'failed').length
+  const hc = hist.data?.counts || {}
+  const undoable = hc.undoable ?? entries.filter(e => e.undoable && !e.undone).length
+  const applied = hc.applied ?? entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
+  const failedCount = hc.failed ?? entries.filter(e => e.kind === 'failed').length
+  const waiting = { ...WAITING, pill: t('pa.kpi.waiting') }
   const fileStat = (key, fallback) => {
     const f = mem.data?.[key]
+    if (!f) return { ...waiting, title: fallback, file: true }
     const { pct, tone, key: pillKey } = fill(f)
     return {
       title: f?.file || fallback,
@@ -1380,18 +1423,18 @@ function Pane() {
           jsxs('div', {
             className: 'pa-kpis',
             children: [
-              jsx(Stat, {
+              jsx(Stat, data ? {
                 title: t('pa.kpi.pending'), figure: String(n), tone: n ? 'warn' : 'ok',
                 pill: t(n ? 'pa.kpi.review' : 'pa.kpi.clear'),
                 delta: t('pa.kpi.memorySplit', counts.memory || 0, counts.skills || 0)
-              }, 'pending'),
+              } : { ...waiting, title: t('pa.kpi.pending') }, 'pending'),
               jsx(Stat, { ...fileStat('memory', 'MEMORY.md') }, 'memory'),
               jsx(Stat, { ...fileStat('user', 'USER.md') }, 'user'),
-              jsx(Stat, {
+              jsx(Stat, hist.data ? {
                 title: t('pa.kpi.applied'), figure: String(applied), tone: failedCount ? 'bad' : 'ok',
                 pill: failedCount ? t('pa.kpi.failedN', failedCount) : t('pa.kpi.noFailures'),
                 delta: t('pa.kpi.undoable', undoable)
-              }, 'history')
+              } : { ...waiting, title: t('pa.kpi.applied') }, 'history')
             ]
           }, 'kpis'),
           jsx('div', {
