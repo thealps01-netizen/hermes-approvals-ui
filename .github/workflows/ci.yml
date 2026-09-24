@@ -13,6 +13,7 @@ permissions:
   contents: read
 
 env:
+  PYTHONUTF8: "1"   # Windows runners print cp1252 otherwise; audit messages carry non-ASCII
   # The core revision whose tokens and stylesheet this panel is verified against. Bump deliberately:
   # it is what makes "the app defines every var(--ui-*) the panel uses" a real check in CI.
   CORE_REPO: https://github.com/NousResearch/hermes-agent.git
