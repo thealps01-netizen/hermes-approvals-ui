@@ -211,7 +211,7 @@ def check_card_surface_from_table() -> None:
     js = JS.read_text(encoding="utf-8")
     if "boxShadow: LIT_EDGE" not in js or "borderRadius: R.card" not in js:
         _report("plugin.js: cardBase no longer reads LIT_EDGE / R.card")
-    for rule in (".pa-card{", ".pa-cmp-side{"):
+    for rule in (".pa-card{", ".pa-cmp-side{", ".pa-kpi{"):
         if rule not in js:
             _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the card surface lost its class")
             continue
@@ -705,7 +705,8 @@ def check_backend_routes() -> None:
     for gone in ('@router.get("/settings")', '@router.post("/settings")'):
         if gone in src:
             _report(f"plugin_api.py: {gone!r} is back — the panel no longer chooses a language")
-    for route in ('@router.get("/pending")', '@router.post("/decide")', '@router.get("/history")',
+    for route in ('@router.get("/pending")', '@router.post("/scan")', '@router.post("/decide")',
+                  '@router.get("/history")',
                   '@router.post("/undo")', '@router.get("/memory")', '@router.post("/memory/delete")',
                   '@router.post("/history/clear")', '@router.post("/fix")'):
         if route not in src:
@@ -748,6 +749,43 @@ def check_css_vars() -> None:
     for name in used:
         if name not in defined:
             _report(f"plugin.js: CSS variable {name} is not defined by the app")
+
+
+def check_visual_scale() -> None:
+    """The visual language is one table: type sizes come from FS, the pane answers its own width
+    through a container query, and a percentage reads number-first."""
+    src = JS.read_text(encoding="utf-8")
+    for m in re.finditer(r"fontSize: \d", src):
+        line = src.count("\n", 0, m.start()) + 1
+        _report(f"plugin.js:{line}: a literal fontSize — type sizes come from the FS table")
+    for m in re.finditer(r"font-size:\d", src):
+        line = src.count("\n", 0, m.start()) + 1
+        _report(f"plugin.js:{line}: a literal font-size in the sheet — read it from ${{FS.*}}px")
+    if "container-type:inline-size" not in src or "@container (max-width:560px)" not in src:
+        _report("plugin.js: the pane lost its container query — the KPI row no longer answers the pane width")
+    if "`%${" in src:
+        _report("plugin.js: a percent sign is written before its number — write `${n}%`")
+
+
+def check_round3_surface() -> None:
+    """Round 3 (2026-09-23) look, locked: a fixed text box shows whole lines (its line height and
+    padding come from LINE/inset, so the box height is a whole number of lines), an overflowing box
+    fades at the bottom instead of cutting, every kit Badge in the panel wears the one tag form, and
+    a lone last card spans the row instead of sitting in half of it."""
+    js = JS.read_text(encoding="utf-8")
+    if ("line-height:${LINE}px !important;padding:${inset(H.prose, 0)}px" not in js
+            or "paddingTop: pad, paddingBottom: pad" not in js or "const pad = height ? inset(height, 2)" not in js):
+        _report("plugin.js: a fixed text box can cut a line — its line height/padding no longer come from LINE/inset")
+    if ('.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(' not in js
+            or "mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}" not in js):
+        _report("plugin.js: an overflowing fixed box has no bottom fade — it reads as clipped")
+    for m in re.finditer(r"jsx\(Badge, \{", js):
+        head = js[m.end():m.end() + 80]
+        if "className: 'pa-tag'" not in head:
+            line = js.count("\n", 0, m.start()) + 1
+            _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
+    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 2:
+        _report("plugin.js: a lone last card sits in half the grid (the .pa-two lone-card rule is gone)")
 
 
 def check_version_consistency() -> None:
@@ -820,6 +858,8 @@ def main() -> int:
     check_backend_routes()
     check_no_glossary()
     check_css_vars()
+    check_visual_scale()
+    check_round3_surface()
     check_version_consistency()
     check_installed_copy()
     if problems:
@@ -834,7 +874,8 @@ def main() -> int:
           "no comment or docstring, code lines within 120 characters, no trailing whitespace, no tab "
           "indent, single-quoted strings, loader imports allowed, jsx third argument is a key, no "
           "native `title` on a button (the themed Tip / aria-label owns hover text), theme "
-          "colors only, CSS variables defined, the two-step clear/delete/force-undo unchanged, no "
+          "colors only, CSS variables defined, type sizes from one FS table, a container-query KPI row, "
+          "number-first percentages, the two-step clear/delete/force-undo unchanged, no "
           "undefined name, the restatement glossary stays gone, one version across plugin.yaml, the "
           "Dashboard manifest and the changelog, the installed desktop copy byte-identical to "
           "desktop/plugin.js, and the backend keeps ONE English "

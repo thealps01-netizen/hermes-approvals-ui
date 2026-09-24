@@ -28,6 +28,7 @@ const BUNDLES = {
       pane: {
         title: 'Approvals',
         subtitle: 'Hermes waits for your decision before writing',
+        updated: at => `Updated ${at}`,
       },
       action: {
         refresh: 'Refresh',
@@ -35,10 +36,17 @@ const BUNDLES = {
       kpi: {
         pending: 'Pending',
         applied: 'Applied',
-        undoable: n => (n ? `${n} Can Be Undone` : 'Nothing To Undo'),
-        failed: 'Failed',
+        undoable: n => (n ? `${n} can be undone` : 'Nothing to undo'),
+        failedN: n => `${n} failed`,
+        noFailures: 'No failures',
+        review: 'Needs review',
+        clear: 'All clear',
+        full: 'Full',
+        nearlyFull: 'Nearly full',
+        room: 'Has room',
         memorySplit: (m, s) => `Memory: ${m} · Skills: ${s}`,
         chars: (c, l) => `${c} / ${l} characters`,
+        waiting: 'Reading',
       },
       tab: {
         memory: 'Memory',
@@ -61,7 +69,7 @@ const BUNDLES = {
         affected: 'Affected Files',
         fix: 'Description fix',
         fixCurrent: n => `As Written (${n} chars)`,
-        fixSuggested: n => `Shortened Suggestion (${n} chars)`,
+        fixSuggested: n => `Shortened (${n} chars)`,
       },
       kind: {
         memory: 'Memory note',
@@ -124,8 +132,10 @@ const BUNDLES = {
       },
       empty: {
         errorTitle: 'The pane could not read its data',
-        errorBody: 'Restart the desktop app and try again.',
-        pendingTitle: 'Nothing Awaits Approval',
+        errorBody: 'Retry reads it again; if it keeps failing, the Hermes log names the reason.',
+        retry: 'Retry',
+        loadingData: 'Reading…',
+        pendingTitle: 'Nothing awaits approval',
         pendingBody: 'When Hermes wants to save something it appears here: what it is, why it arrived, what approving does, and the agent\'s suggestion.',
         historyTitle: 'No records yet',
         historyBody: 'Everything you approve or reject, and every change made outside this pane, collects here; undo lives here too.',
@@ -134,7 +144,7 @@ const BUNDLES = {
         memoryError: 'Memory could not be read.',
       },
       memory: {
-        warnTitle: 'Memory Is Nearly Full',
+        warnTitle: 'Memory is nearly full',
         warnBody: p => `${p}% full: a new note fits only if an older one is shortened or merged. Ask in chat to merge.`,
         delete: 'Delete',
         deleteConfirm: 'About to delete — undoable from the “Applied” tab',
@@ -142,8 +152,8 @@ const BUNDLES = {
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         readonly: 'Add notes by asking in chat (the write lands under Pending); delete one here with the Delete button.',
-        entries: n => `${n} Notes`,
-        lastChange: when => `Last Change: ${when}`,
+        entries: n => `${n} notes`,
+        lastChange: when => `Last change: ${when}`,
         note: (i, len) => `Note ${i} · ${len} Characters`,
       },
       chip: {
@@ -162,9 +172,9 @@ const BUNDLES = {
         noFiles: 'no changed files',
       },
       footer: {
-        pending: n => (n ? `${n} Awaiting Approval` : 'Nothing Pending'),
+        pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
         split: (m, s) => `Memory: ${m} · Skills: ${s}`,
-        hint: 'Approve → Written Immediately, Undoable',
+        hint: 'Approve → written immediately, undoable',
       },
     }
   }
@@ -215,12 +225,22 @@ const OP_TONE = {
 const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
-const R = { tag: 4, box: 8, card: 12, pill: 999 }
+const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
+const FS = { micro: 10.5, meta: 11.5, body: 12.5, lead: 13.5, title: 16, kpi: 28 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
+const H = {
+  prose: 80, cardScroll: 340, histSummary: 58, histFiles: 38, histAction: 30
+}
+const LINE = 16
+const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
+const TAG = {
+  height: 20, padding: '0 8px', borderRadius: R.pill, fontSize: FS.micro, fontWeight: 600,
+  letterSpacing: '.02em', lineHeight: 1, textTransform: 'none'
+}
 const tint = (tone, pct) => `color-mix(in srgb, ${tone} ${pct}%, transparent)`
-const label = { fontSize: 10, fontWeight: 500, letterSpacing: '.02em', color: 'var(--ui-text-secondary)' }
-const value = { fontSize: 12, lineHeight: 1.55, color: 'var(--ui-text-secondary)' }
-const hintLine = { fontSize: 11, lineHeight: 1.5, color: 'var(--ui-text-secondary)', whiteSpace: 'pre-wrap' }
+const label = { fontSize: FS.micro, fontWeight: 500, letterSpacing: '.02em', color: 'var(--ui-text-secondary)' }
+const value = { fontSize: FS.body, lineHeight: 1.55, color: 'var(--ui-text-secondary)' }
+const hintLine = { fontSize: FS.meta, lineHeight: 1.5, color: 'var(--ui-text-secondary)', whiteSpace: 'pre-wrap' }
 const EASE = {
   standard: 'cubic-bezier(0.2, 0, 0.38, 0.9)',
   enter: 'cubic-bezier(0, 0, 0.38, 0.9)',
@@ -243,8 +263,48 @@ const cardBase = {
 const STYLE = `
 .pa-cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));align-items:stretch}
 .pa-cell{display:flex;min-width:0}
-.pa-kpis{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
-.pa-fill{max-height:100%}
+.pa-root{container-type:inline-size}
+.pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.pa-kpis-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pa-kpi{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
+  box-shadow:${LIT_EDGE};padding:12px 14px;display:flex;flex-direction:column;min-width:0}
+.pa-kpi-top{display:flex;align-items:center;gap:8px;min-width:0}
+.pa-kpi-label{font-size:${FS.micro}px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ui-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pa-kpi-pill{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;
+  flex-shrink:0;border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;
+  font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap}
+.pa-kpi-dot{width:5px;height:5px;border-radius:50%;background:var(--ui-green)}
+.pa-kpi-pill[data-tone="warn"] .pa-kpi-dot{background:var(--ui-orange)}
+.pa-kpi-pill[data-tone="bad"] .pa-kpi-dot{background:var(--ui-red)}
+.pa-kpi-pill[data-tone="off"] .pa-kpi-dot{background:var(--ui-text-tertiary)}
+.pa-kpi-file{text-transform:none;letter-spacing:.02em}
+.pa-kpi-val{margin-top:10px;font-size:${FS.kpi}px;font-weight:650;letter-spacing:-.02em;line-height:1.15;
+  color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-kpi[data-tone="warn"]{border-color:color-mix(in srgb,var(--ui-orange) 42%,transparent)}
+.pa-kpi[data-tone="bad"]{border-color:color-mix(in srgb,var(--ui-red) 50%,transparent);
+  background:color-mix(in srgb,var(--ui-red) 6%,var(--ui-bg-card))}
+.pa-kpi-sub{margin-top:6px;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pa-head{display:flex;align-items:center;gap:12px;min-width:0}
+.pa-title{font-size:${FS.title}px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
+.pa-sub{margin-top:2px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
+  border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
+  color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+@container (max-width:560px){.pa-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
+@container (max-width:360px){.pa-kpi-top{flex-wrap:wrap}.pa-kpi-pill{margin-left:0}}
+.pa-free{max-height:none !important;overflow:visible !important}
+.pa-lines{min-height:100%;max-height:none !important;overflow:visible !important;
+  line-height:${LINE}px !important;padding:${inset(H.prose, 0)}px 10px !important}
+.pa-fade{--pa-fade:${LINE}px}
+.pa-layer{--pa-fade:${G.xl}px}
+.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent);
+  mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}
+.pa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pa-two>:last-child:nth-child(odd){grid-column:1/-1}
+@container (max-width:640px){.pa-two{grid-template-columns:minmax(0,1fr)}}
 .pa-card{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
@@ -255,24 +315,42 @@ const STYLE = `
 .pa-cmp-side{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};padding:${G.sm}px;display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-cmp-wide{grid-column:1/-1}
-.pa-pill{display:inline-flex;align-items:center;height:18px;padding:0 8px;border-radius:999px;
-  border:1px solid transparent;background:var(--ui-bg-tertiary);color:var(--ui-text-secondary);
-  font-size:10px;font-weight:600;letter-spacing:.06em;line-height:1;text-transform:uppercase;flex-shrink:0}
-.pa-pill-id{text-transform:none;letter-spacing:0}
-.pa-note{font-size:11px;font-weight:500;color:var(--ui-text-secondary)}
+.pa-wrap{white-space:normal;overflow-wrap:anywhere}
+.pa-advice{flex:1 1 auto;min-height:0}
+.pa-advice-reason{flex:1 1 auto;min-height:0}
+.pa-advice-foot{display:flex;align-items:center;gap:${G.sm}px;padding-top:${G.xxs}px}
+.pa-advice-foot>div{flex:1;min-width:0}
+.pa-advice-foot>button{flex-shrink:0}
+.pa-foot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;min-width:0}
+.pa-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:${G.xs}px;
+  margin-left:auto;flex:1 1 220px;max-width:300px;min-width:0}
+.pa-actions [data-slot="button"]{width:100%;height:28px}
+.pa-root{--pa-reject:var(--dt-destructive);--pa-approve:var(--dt-primary)}
+.dark .pa-root{--pa-reject:color-mix(in srgb,var(--dt-destructive) 72%,var(--theme-neutral-sidebar));
+  --pa-approve:color-mix(in srgb,var(--dt-primary) 74%,var(--theme-neutral-sidebar))}
+.pa-reject[data-variant="destructive"]{background:var(--pa-reject) !important;color:var(--dt-primary-foreground) !important}
+.pa-approve{background:var(--pa-approve) !important;color:var(--dt-primary-foreground) !important}
+.pa-reject:hover:not(:disabled),.pa-approve:hover:not(:disabled){filter:brightness(1.12)}
+.pa-pill{display:inline-flex;align-items:center;height:${TAG.height}px;padding:${TAG.padding};
+  border-radius:${TAG.borderRadius}px;border:1px solid transparent;background:var(--ui-bg-tertiary);
+  color:var(--ui-text-secondary);font-size:${TAG.fontSize}px;font-weight:${TAG.fontWeight};
+  letter-spacing:${TAG.letterSpacing};line-height:1;white-space:nowrap;flex-shrink:0}
+.pa-pill-id{font-variant-numeric:tabular-nums}
+.pa-note{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
 .pa-note-warn{border-left:3px solid var(--ui-orange);padding-left:8px}
-.pa-alert{font-size:10.5px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
+.pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
   background:color-mix(in srgb,var(--ui-orange) 12%,transparent);
   border-left:3px solid var(--ui-orange);padding:8px 12px}
 .pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
 .pa-bad{color:var(--ui-text-primary);border-left:3px solid var(--ui-red);padding-left:8px;display:inline-block}
 .pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
-  font:inherit;font-size:12px;color:var(--ui-text-secondary);cursor:pointer}
+  font:inherit;font-size:${FS.body}px;color:var(--ui-text-secondary);cursor:pointer}
 .pa-tab[data-on="1"]{color:var(--ui-text-primary);font-weight:600;border-bottom-color:var(--ui-accent)}
 .pa-tab:hover{color:var(--ui-text-primary)}
 .pa-scroll{${THIN_SCROLL}}
 .pa-pane ::-webkit-scrollbar{width:8px;height:8px}
 .pa-pane ::-webkit-scrollbar-track{background:transparent}
+.pa-pane ::-webkit-scrollbar-button{display:none;width:0;height:0}
 .pa-pane ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ui-text-tertiary) 42%,transparent);
   border-radius:4px}
 .pa-pane ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ui-text-tertiary) 62%,transparent)}
@@ -282,14 +360,12 @@ const STYLE = `
 }
 `
 
-const H = {
-  prose: 80, diff: 168, groups: 96, cardScroll: 340, histSummary: 58, histFiles: 38, histAction: 30
-}
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
 
 function usePolling(load, ms) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [at, setAt] = useState(null)
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let alive = true
@@ -299,6 +375,7 @@ function usePolling(load, ms) {
         if (alive) {
           setData(d)
           setError(null)
+          setAt(Date.now())
         }
       } catch (e) {
         if (alive) setError(e)
@@ -311,7 +388,7 @@ function usePolling(load, ms) {
       clearInterval(h)
     }
   }, [ms, tick])
-  return { data, error, refresh: () => setTick(t => t + 1) }
+  return { data, error, at, refresh: () => setTick(t => t + 1) }
 }
 
 function usePending({ scan = true } = {}) {
@@ -319,31 +396,58 @@ function usePending({ scan = true } = {}) {
     if (scan) await api.scan()
     return api.pending()
   }
-  const { data, error, refresh } = usePolling(load, 15000)
-  return { data, error, refresh, n: total(data?.counts) }
+  const { data, error, at, refresh } = usePolling(load, 15000)
+  return { data, error, at, refresh, n: total(data?.counts) }
+}
+
+function useFade(inner) {
+  const ref = useRef(null)
+  const [more, setMore] = useState(false)
+  const sync = () => {
+    const el = inner ? ref.current?.firstElementChild : ref.current
+    if (el) setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
+  }
+  useLayoutEffect(sync)
+  return { ref, more: more ? '1' : '0', sync }
 }
 
 function Boxed({ children, height }) {
+  const fade = useFade(false)
   return jsx('div', {
-    className: 'pa-scroll',
+    ref: fade.ref,
+    className: 'pa-scroll pa-fade',
+    'data-more': fade.more,
+    onScroll: fade.sync,
     style: fieldBox(height),
-    children: jsx(PanelBlock, { className: 'pa-fill', children }, 'block')
+    children: jsx(PanelBlock, { className: 'pa-lines', children }, 'block')
   }, 'box')
 }
 
 function Raw({ children, height, tone, className }) {
+  const fade = useFade(true)
   const diff = tone === 'remove' ? DIFF_OLD : tone === 'add' ? DIFF_NEW : null
-  return jsx(LogView, {
-    className: ['pa-scroll', diff ? 'pa-diff' : '', className || ''].filter(Boolean).join(' '),
-    style: diff ? { ...fieldBox(height), ...diff } : fieldBox(height),
-    children
-  }, 'raw')
+  const pad = height ? inset(height, 2) : null
+  const box = height ? { ...fieldBox(height), paddingTop: pad, paddingBottom: pad } : null
+  return jsx('div', {
+    ref: fade.ref,
+    className: height ? 'pa-fade' : undefined,
+    'data-more': fade.more,
+    children: jsx(LogView, {
+      className: [height ? 'pa-scroll' : 'pa-free', diff ? 'pa-diff' : '', className || ''].filter(Boolean).join(' '),
+      onScroll: fade.sync,
+      style: { ...box, lineHeight: `${LINE}px`, ...diff },
+      children
+    }, 'raw')
+  }, 'fade')
 }
 
 function Field({ label: title, children }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.xxs, minWidth: 0 },
-    children: [jsx(PanelSectionLabel, { children: title }, 'label'), children]
+    children: [
+      jsx(PanelSectionLabel, { children: jsx('span', { className: 'pa-wrap', children: title }, 'text') }, 'label'),
+      children
+    ]
   })
 }
 
@@ -353,15 +457,79 @@ function ToneLabel({ children }) {
   }, 'label')
 }
 
-function Stat({ title, figure, delta, accent }) {
+function Stat({ title, figure, delta, tone, pill, file }) {
   return jsxs('div', {
-    style: { ...cardBase, borderLeft: `3px solid ${accent}`, padding: `${G.xs}px ${G.sm}px`, display: 'flex', flexDirection: 'column', gap: G.xxs },
+    className: 'pa-kpi',
+    'data-tone': tone,
     children: [
-      jsx('div', { style: label, children: title }, 'title'),
-      jsx('div', { style: { fontSize: 17, fontWeight: 600, color: 'var(--ui-text-primary)', lineHeight: 1.15 }, children: figure }, 'figure'),
-      jsx('div', { style: { fontSize: 10.5, lineHeight: 1.5, color: 'var(--ui-text-secondary)' }, children: delta }, 'delta')
+      jsxs('div', {
+        className: 'pa-kpi-top',
+        children: [
+          jsx('span', {
+            className: file ? 'pa-kpi-label pa-kpi-file' : 'pa-kpi-label', children: title
+          }, 'title'),
+          pill
+            ? jsxs('span', {
+                className: 'pa-kpi-pill',
+                'data-tone': tone,
+                children: [jsx('span', { className: 'pa-kpi-dot' }, 'dot'), pill]
+              }, 'pill')
+            : null
+        ]
+      }, 'top'),
+      jsx('div', { className: 'pa-kpi-val', children: figure }, 'figure'),
+      jsx('div', { className: 'pa-kpi-sub', children: delta }, 'delta')
     ]
   })
+}
+
+const errText = e => {
+  const text = String(e?.message || e || '')
+  const at = text.indexOf('{')
+  if (at >= 0) {
+    try {
+      return JSON.parse(text.slice(at)).error || text
+    } catch {
+      return text
+    }
+  }
+  return text
+}
+
+function Loading({ label: text }) {
+  return jsx('div', {
+    style: { display: 'grid', padding: 12, placeItems: 'center' },
+    children: jsx(Loader, { label: text, type: 'lemniscate-bloom' }, 'loader')
+  }, 'loading')
+}
+
+function LoadError({ title: heading, error, onRetry }) {
+  const t = usePluginI18n(ID)
+  return jsx(ErrorState, {
+    title: heading,
+    description: [errText(error), t('pa.empty.errorBody')].filter(Boolean).join(' — '),
+    children: jsx(Button, {
+      variant: 'outline',
+      size: 'sm',
+      onClick: onRetry,
+      children: t('pa.empty.retry')
+    }, 'retry')
+  }, 'error')
+}
+
+const WAITING = { figure: '—', tone: 'off', delta: '' }
+
+const fill = f => {
+  const chars = Number(f?.chars) || 0
+  const limit = Number(f?.limit) || 0
+  const pct = limit ? Math.floor((chars * 100) / limit) : Number(f?.percent) || 0
+  const full = limit ? chars >= limit : pct >= 100
+  const tone = full ? 'bad' : pct >= 90 ? 'warn' : 'ok'
+  return { pct, tone, key: full ? 'pa.kpi.full' : pct >= 90 ? 'pa.kpi.nearlyFull' : 'pa.kpi.room' }
+}
+const clock = ms => {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function RefreshButton({ onClick, label: title }) {
@@ -421,7 +589,6 @@ function OldNew({ op, t }) {
                     children: [
                       jsx(Raw, {
                         tone: 'remove',
-                        height: H.diff,
                         children: jsxs('span', {
                           children: [
                             jsx('span', {
@@ -445,7 +612,6 @@ function OldNew({ op, t }) {
                     children: [
                       jsx(Raw, {
                         tone: 'add',
-                        height: H.diff,
                         children: jsxs('span', {
                           children: [
                             jsx('span', {
@@ -468,7 +634,7 @@ function OldNew({ op, t }) {
           style: { display: 'flex', flexDirection: 'column', gap: G.xxs },
           children: [
             jsx('div', { style: { ...label, opacity: .8 }, children: t('pa.op.preview') }, 'lbl'),
-            jsx(Raw, { height: H.diff, children: op.preview.join(String.fromCharCode(10)) }, 'preview')
+            jsx(Raw, { children: op.preview.join(String.fromCharCode(10)) }, 'preview')
           ]
         }, 'preview')
     ]
@@ -478,6 +644,13 @@ function OldNew({ op, t }) {
 function PendingCard({ subsystem, item, onChanged }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
+  const layerFade = useFade(false)
+  const layer = layerFade.ref
+  const detailsAt = useRef(null)
+  useEffect(() => {
+    if (!open || !layer.current || !detailsAt.current) return
+    layer.current.scrollTop = Math.max(0, detailsAt.current.offsetTop - layer.current.offsetTop - 4)
+  }, [open])
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const plain = item.plain || {}
@@ -543,6 +716,7 @@ function PendingCard({ subsystem, item, onChanged }) {
   }
 
   const approve = jsx(Button, {
+    className: 'pa-approve',
     variant: 'default',
     size: 'sm',
     disabled: busy || approveBlocked,
@@ -558,7 +732,10 @@ function PendingCard({ subsystem, item, onChanged }) {
     style: { display: 'flex', height: '100%', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
-        className: 'pa-scroll',
+        className: 'pa-scroll pa-fade pa-layer',
+        ref: layer,
+        'data-more': layerFade.more,
+        onScroll: layerFade.sync,
         style: {
           height: H.cardScroll, overflowY: 'auto', overflowX: 'hidden', display: 'flex',
           flexDirection: 'column', gap: G.sm, paddingRight: 4, marginRight: -4
@@ -569,10 +746,10 @@ function PendingCard({ subsystem, item, onChanged }) {
             children: [
               jsx('span', { className: 'pa-pill pa-pill-id', children: `#${item.id}` }, 'id'),
               jsx('span', {
-                style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--ui-text-secondary)' },
+                style: { marginLeft: 'auto', fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
                 children: when(item.staged_at)
               }, 'at'),
-              jsx(Badge, { variant: stateVariant, size: 'xs', children: stateText }, 'state')
+              jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: stateText }, 'state')
             ]
           }, 'head'),
 
@@ -581,7 +758,7 @@ function PendingCard({ subsystem, item, onChanged }) {
             children: [
               jsx('span', { className: 'pa-pill', children: plain.kind_label || kind }, 'kind'),
               jsx('div', {
-                style: { ...value, fontSize: 12.5, fontWeight: 600, color: 'var(--ui-text-primary)', flex: 1, minWidth: 0 },
+                style: { ...value, fontSize: FS.lead, fontWeight: 600, color: 'var(--ui-text-primary)', flex: 1, minWidth: 0 },
                 children: plain.headline || kind
               }, 'headline')
             ]
@@ -604,7 +781,9 @@ function PendingCard({ subsystem, item, onChanged }) {
           }, 'why'),
 
           ...(plain.notes || []).map((n, i) =>
-            jsx(Field, { label: n.label, children: jsx(Boxed, { height: H.prose, children: n.text }, 'note') }, i)),
+            jsx(Field, {
+              label: n.label, children: jsx(PanelBlock, { className: 'pa-free', children: n.text }, 'note')
+            }, i)),
 
           jsx(Field, {
             label: t('pa.field.what'),
@@ -654,18 +833,15 @@ function PendingCard({ subsystem, item, onChanged }) {
               children: [
                 jsx(PanelSectionLabel, { children: t('pa.group.multi') }, 'label'),
                 jsx('div', {
-                  className: 'pa-scroll',
-                  style: {
-                    height: H.groups, overflowY: 'auto', overflowX: 'hidden',
-                    display: 'flex', flexDirection: 'column', gap: G.xs
-                  },
+                  style: { display: 'flex', flexDirection: 'column', gap: G.xs },
                   children: groups.map(g =>
                     jsxs('div', {
                       style: { display: 'flex', alignItems: 'center', gap: G.xs },
                       children: [
                         jsx(Badge, {
+                          className: 'pa-tag',
+                          style: TAG,
                           variant: g.kind === 'new' ? 'success' : 'muted',
-                          size: 'xs',
                           children: t(g.kind === 'new' ? 'pa.group.new' : 'pa.group.update')
                         }, 'kind'),
                         jsx('span', { className: 'pa-pill', children: t('pa.group.ops', (g.ops || []).length) }, 'ops'),
@@ -692,11 +868,53 @@ function PendingCard({ subsystem, item, onChanged }) {
               ]
             }, 'groups'),
 
+          fix &&
+            jsxs('div', {
+              style: { display: 'flex', flexDirection: 'column', gap: G.xxs },
+              children: [
+                jsx(PanelSectionLabel, { children: t('pa.field.fix') }, 'label'),
+                jsxs('div', {
+                  className: 'pa-cmp',
+                  children: [
+                    jsx('div', {
+                      className: 'pa-cmp-side',
+                      children: jsx(Field, {
+                        label: t('pa.field.fixCurrent', fix.before),
+                        children: jsx(PanelBlock, { className: 'pa-free', children: fix.text || '' }, 'before')
+                      }, 'as-written')
+                    }, 'written'),
+                    jsx('div', {
+                      className: 'pa-cmp-side',
+                      children: jsx(Field, {
+                        label: t('pa.field.fixSuggested', fix.after),
+                        children: jsx(PanelBlock, { className: 'pa-free', children: `“${fix.description}”` }, 'after')
+                      }, 'suggested')
+                    }, 'shortened')
+                  ]
+                }, 'cmp')
+              ]
+            }, 'fix'),
+
+          open &&
+            jsxs('div', {
+              ref: detailsAt,
+              style: { display: 'flex', flexDirection: 'column', gap: G.sm, borderTop: HAIRLINE, paddingTop: G.sm },
+              children: [
+                ...(item.ops || []).map((op, i) => jsx(OldNew, { op, t }, i)),
+                item.diff && item.has_change !== false
+                  ? jsx(Raw, {
+                      className: 'pa-diff-all',
+                      children: String(item.diff).split(String.fromCharCode(13)).join('').slice(0, 4000)
+                    }, 'diff')
+                  : null
+              ]
+            }, 'open')
         ]
       }, 'scroll'),
 
       rec.verdict &&
         jsxs('div', {
+          className: 'pa-advice',
           style: {
             display: 'flex', flexDirection: 'column', gap: G.xxs, borderRadius: R.box, padding: `${G.xs}px ${G.sm}px`,
             background: tint(adviceTone, 8),
@@ -705,92 +923,63 @@ function PendingCard({ subsystem, item, onChanged }) {
           children: [
             jsx(PanelSectionLabel, { children: t('pa.field.advice') }, 'label'),
             jsx(Badge, {
+              className: 'pa-tag',
+              style: { ...TAG, alignSelf: 'flex-start' },
               variant: adviceVariant,
               children: rec.verdict
             }, 'verdict'),
-            jsx(PanelBlock, { children: rec.reason }, 'reason'),
-            jsx('div', {
-              style: { fontSize: 10.5, color: 'var(--ui-text-secondary)' },
-              children: t(fix ? 'pa.advice.fix' : 'pa.advice.note')
-            }, 'note')
+            jsx(PanelBlock, { className: 'pa-advice-reason', children: rec.reason }, 'reason'),
+            jsxs('div', {
+              className: 'pa-advice-foot',
+              children: [
+                jsx('div', {
+                  style: { fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
+                  children: t(fix ? 'pa.advice.fix' : 'pa.advice.note')
+                }, 'note'),
+                fix
+                  ? jsx(Button, {
+                      className: 'pa-approve',
+                      variant: 'default',
+                      size: 'sm',
+                      disabled: busy,
+                      onClick: () => void applyFix(),
+                      children: t('pa.btn.fix')
+                    }, 'apply')
+                  : null
+              ]
+            }, 'foot')
           ]
         }, 'advice'),
 
-      fix &&
-        jsxs('div', {
-          style: { display: 'flex', flexDirection: 'column', gap: G.xs, borderRadius: R.card, padding: G.sm, background: 'var(--ui-bg-secondary)' },
-          children: [
-            jsx(PanelSectionLabel, { children: t('pa.field.fix') }, 'label'),
-            jsxs('div', {
-              className: 'pa-cmp',
-              children: [
-                jsx('div', {
-                  className: 'pa-cmp-side',
-                  children: jsx(Field, {
-                    label: t('pa.field.fixCurrent', fix.before),
-                    children: jsx(Boxed, { height: H.prose, children: fix.text || '' }, 'before')
-                  }, 'as-written')
-                }, 'written'),
-                jsx('div', {
-                  className: 'pa-cmp-side',
-                  children: jsx(Field, {
-                    label: t('pa.field.fixSuggested', fix.after),
-                    children: jsx(Boxed, { height: H.prose, children: `“${fix.description}”` }, 'after')
-                  }, 'suggested')
-                }, 'shortened')
-              ]
-            }, 'cmp'),
-            jsx(Button, {
-              variant: 'default',
-              size: 'sm',
-              disabled: busy,
-              onClick: () => void applyFix(),
-              children: t('pa.btn.fix')
-            }, 'apply')
-          ]
-        }, 'fix'),
-
       jsxs('div', {
-        style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: G.xs, marginTop: 'auto' },
+        className: 'pa-foot',
+        style: { marginTop: rec.verdict ? 0 : 'auto' },
         children: [
           jsx(Button, {
-            variant: 'destructive',
+            variant: 'text',
             size: 'sm',
-            disabled: busy,
-            onClick: () => void decideAndLeave('reject'),
-            children: t('pa.btn.reject')
-          }, 'reject'),
-          jsx(Tip, {
-            label: approveBlocked ? rec.reason : '',
-            children: jsx('span', { style: { display: 'grid', minWidth: 0 }, children: approve }, 'hold')
-          }, 'approve-tip')
+            onClick: () => setOpen(v => !v),
+            children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
+          }, 'details'),
+          jsxs('div', {
+            className: 'pa-actions',
+            children: [
+              jsx(Button, {
+                className: 'pa-reject',
+                variant: 'destructive',
+                size: 'sm',
+                disabled: busy,
+                onClick: () => void decideAndLeave('reject'),
+                children: t('pa.btn.reject')
+              }, 'reject'),
+              jsx(Tip, {
+                label: approveBlocked ? rec.reason : '',
+                children: jsx('span', { style: { display: 'grid', minWidth: 0 }, children: approve }, 'hold')
+              }, 'approve-tip')
+            ]
+          }, 'actions')
         ]
-      }, 'actions'),
-
-      jsx('div', {
-        style: { display: 'flex', alignItems: 'center', gap: G.sm },
-        children: jsx(Button, {
-          variant: 'text',
-          size: 'sm',
-          onClick: () => setOpen(v => !v),
-          children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
-        }, 'details')
-      }, 'details-row'),
-
-      open &&
-        jsxs('div', {
-          style: { display: 'flex', flexDirection: 'column', gap: G.sm, borderTop: HAIRLINE, paddingTop: G.sm },
-          children: [
-            ...(item.ops || []).map((op, i) => jsx(OldNew, { op, t }, i)),
-            item.diff && item.has_change !== false
-              ? jsx(Raw, {
-                  className: 'pa-diff-all',
-                  height: H.diff * 2,
-                  children: String(item.diff).split(String.fromCharCode(13)).join('').slice(0, 4000)
-                }, 'diff')
-              : null
-          ]
-        }, 'open')
+      }, 'foot')
     ]
   })
 }
@@ -830,12 +1019,13 @@ function HistoryCard({ entry, onChanged }) {
         children: [
           jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
           jsx('span', {
-            style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--ui-text-secondary)' },
+            style: { marginLeft: 'auto', fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
             children: when(entry.ts)
           }, 'at'),
           jsx(Badge, {
+            className: 'pa-tag',
+            style: TAG,
             variant: KIND_VARIANT[entry.kind] || 'muted',
-            size: 'xs',
             children: kindKey ? t(kindKey) : entry.kind
           }, 'kind')
         ]
@@ -876,6 +1066,7 @@ function HistoryCard({ entry, onChanged }) {
           ? jsx(Tip, {
               label: conflict ? t('pa.hist.conflict', conflict.join(', ')) : '',
               children: jsx(Button, {
+                className: conflict ? 'pa-reject' : undefined,
                 variant: conflict ? 'destructive' : 'outline',
                 size: 'sm',
                 disabled: busy,
@@ -931,22 +1122,26 @@ function PendingList({ data, error, refresh }) {
     seen.current = next
   })
 
-  if (error) {
-    return jsx(ErrorState, {
-      title: t('pa.empty.errorTitle'),
-      description: t('pa.empty.errorBody')
-    }, 'error')
-  }
-  if (!total(data?.counts)) {
-    return jsx(PanelEmpty, {
-      icon: 'inbox',
-      title: t('pa.empty.pendingTitle'),
-      description: t('pa.empty.pendingBody')
-    }, 'empty')
-  }
-  return jsx('div', {
+  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  const issues = data.issues || []
+  const notice = issues.length
+    ? jsx('div', {
+        className: 'pa-alert pa-alert-danger',
+        role: 'alert',
+        style: { margin: '12px 12px 0' },
+        children: issues.map(text => jsx('div', { children: text }, text))
+      }, 'issues')
+    : null
+  const body = !total(data.counts)
+    ? jsx(PanelEmpty, {
+        icon: 'inbox',
+        title: t('pa.empty.pendingTitle'),
+        description: t('pa.empty.pendingBody')
+      }, 'empty')
+    : jsx('div', {
     ref: gridRef,
-    className: 'pa-cols',
+    className: 'pa-cols pa-two',
     style: { padding: 12 },
     children: items.map(({ subsystem, item }) =>
       jsx('div', {
@@ -954,7 +1149,8 @@ function PendingList({ data, error, refresh }) {
         'data-key': `${subsystem}:${item.id}`,
         children: jsx(PendingCard, { subsystem, item, onChanged: refresh }, 'card')
       }, `${subsystem}:${item.id}`))
-  })
+  }, 'grid')
+  return notice ? jsxs('div', { children: [notice, body] }, 'with-issues') : body
 }
 
 function HistoryList({ data, error, refresh }) {
@@ -979,7 +1175,8 @@ function HistoryList({ data, error, refresh }) {
     }
   }
 
-  if (error) return jsx(ErrorState, { title: t('pa.empty.historyError') }, 'error')
+  if (error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
   if (!entries.length) {
     return jsx(EmptyState, {
       title: t('pa.empty.historyTitle'),
@@ -1010,6 +1207,7 @@ function HistoryList({ data, error, refresh }) {
                       children: t('pa.hist.clearCancel')
                     }, 'cancel'),
                     jsx(Button, {
+                      className: 'pa-reject',
                       variant: 'destructive',
                       size: 'sm',
                       disabled: busy,
@@ -1029,7 +1227,7 @@ function HistoryList({ data, error, refresh }) {
             }, 'arm')
       }, 'header'),
       jsx('div', {
-        className: 'pa-cols',
+        className: 'pa-cols pa-two',
         children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged: refresh }, e.id))
       }, 'grid')
     ]
@@ -1062,24 +1260,21 @@ function MemoryView({ data, error, refresh, onChanged }) {
     }
   }
 
-  if (error) return jsx(ErrorState, { title: t('pa.empty.memoryError') }, 'error')
-  if (!store) {
-    return jsx('div', {
-      style: { display: 'grid', padding: 12, placeItems: 'center' },
-      children: jsx(Loader, { label: t('pa.empty.loading'), type: 'lemniscate-bloom' }, 'loader')
-    }, 'loading')
-  }
+  if (error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
+  if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsx('div', {
-        className: 'pa-kpis',
+        className: 'pa-kpis pa-kpis-2',
         children: ['memory', 'user'].map(nm =>
           jsx(Stat, {
             title: data?.[nm]?.file || nm,
-            figure: `%${data?.[nm]?.percent ?? 0}`,
+            figure: `${fill(data?.[nm]).pct}%`,
             delta: t('pa.kpi.chars', data?.[nm]?.chars ?? 0, data?.[nm]?.limit ?? 0),
-            accent: nm === target ? 'var(--ui-accent)' : 'var(--ui-stroke-tertiary)'
+            tone: fill(data?.[nm]).tone,
+            pill: t(fill(data?.[nm]).key),
+            file: true
           }, nm))
       }, 'kpis'),
       jsxs('div', {
@@ -1097,7 +1292,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
         ]
       }, 'tabs'),
       jsxs('div', {
-        style: { display: 'flex', flexWrap: 'wrap', gap: G.sm, fontSize: 10.5, color: 'var(--ui-text-secondary)' },
+        style: { display: 'flex', flexWrap: 'wrap', gap: G.sm, fontSize: FS.meta, color: 'var(--ui-text-secondary)' },
         children: [
           jsx('span', { children: t('pa.memory.entries', store.entries.length) }, 'count'),
           store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(store.updated)) }, 'updated') : null
@@ -1137,6 +1332,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
                           children: t('pa.memory.deleteCancel')
                         }, 'cancel'),
                         jsx(Button, {
+                          className: 'pa-reject',
                           variant: 'destructive',
                           size: 'sm',
                           disabled: busy,
@@ -1160,7 +1356,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
         }, i)
       }),
       jsx('div', {
-        style: { fontSize: 10.5, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
+        style: { fontSize: FS.meta, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
         children: t('pa.memory.readonly')
       }, 'readonly')
     ]
@@ -1170,25 +1366,32 @@ function MemoryView({ data, error, refresh, onChanged }) {
 function Pane() {
   const t = usePluginI18n(ID)
   const [view, setView] = useState('pending')
-  const { data, error, refresh, n } = usePending()
+  const { data, error, at, refresh, n } = usePending()
   const mem = usePolling(api.memory, 60000)
   const hist = usePolling(api.history, 30000)
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
-  const undoable = entries.filter(e => e.undoable && !e.undone).length
-  const applied = entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
-  const failedCount = entries.filter(e => e.kind === 'failed').length
+  const hc = hist.data?.counts || {}
+  const undoable = hc.undoable ?? entries.filter(e => e.undoable && !e.undone).length
+  const applied = hc.applied ?? entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
+  const failedCount = hc.failed ?? entries.filter(e => e.kind === 'failed').length
+  const waiting = { ...WAITING, pill: t('pa.kpi.waiting') }
   const fileStat = (key, fallback) => {
     const f = mem.data?.[key]
+    if (!f) return { ...waiting, title: fallback, file: true }
+    const { pct, tone, key: pillKey } = fill(f)
     return {
       title: f?.file || fallback,
-      figure: `%${f?.percent ?? 0}`,
-      accent: (f?.percent ?? 0) >= 90 ? 'var(--ui-orange)' : 'var(--ui-stroke-tertiary)',
+      file: true,
+      figure: `${pct}%`,
+      tone,
+      pill: t(pillKey),
       delta: t('pa.kpi.chars', f?.chars ?? 0, f?.limit ?? 0)
     }
   }
 
   return jsxs('div', {
+    className: 'pa-root',
     style: {
       display: 'flex', height: '100%', minHeight: 0, flexDirection: 'column',
       background: 'var(--ui-bg-sidebar)', color: 'var(--ui-text-primary)'
@@ -1197,16 +1400,20 @@ function Pane() {
       jsx('style', { children: STYLE }, 'css'),
 
       jsxs('div', {
-        style: { display: 'flex', flexDirection: 'column', gap: G.xs, padding: '12px 12px 0' },
+        style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: '16px 16px 0' },
         children: [
           jsxs('div', {
-            style: { display: 'flex', alignItems: 'center', gap: G.sm },
+            className: 'pa-head',
             children: [
-              jsx('div', { style: { fontSize: 14, fontWeight: 600 }, children: t('pa.pane.title') }, 'title'),
-              jsx('div', {
-                style: { fontSize: 10.5, color: 'var(--ui-text-secondary)', flex: 1 },
-                children: t('pa.pane.subtitle')
-              }, 'subtitle'),
+              jsxs('div', {
+                style: { minWidth: 0 },
+                children: [
+                  jsx('div', { className: 'pa-title', children: t('pa.pane.title') }, 'title'),
+                  jsx('div', { className: 'pa-sub', children: t('pa.pane.subtitle') }, 'subtitle')
+                ]
+              }, 'titles'),
+              at ? jsx('span', { className: 'pa-updated', children: t('pa.pane.updated', clock(at)) }, 'updated')
+                : jsx('span', { style: { marginLeft: 'auto' } }, 'spacer'),
               jsx(RefreshButton, {
                 label: t('pa.action.refresh'),
                 onClick: () => { refresh(); mem.refresh(); hist.refresh() }
@@ -1216,16 +1423,18 @@ function Pane() {
           jsxs('div', {
             className: 'pa-kpis',
             children: [
-              jsx(Stat, {
-                title: t('pa.kpi.pending'), figure: String(n), accent: n ? 'var(--ui-orange)' : 'var(--ui-stroke-tertiary)',
+              jsx(Stat, data ? {
+                title: t('pa.kpi.pending'), figure: String(n), tone: n ? 'warn' : 'ok',
+                pill: t(n ? 'pa.kpi.review' : 'pa.kpi.clear'),
                 delta: t('pa.kpi.memorySplit', counts.memory || 0, counts.skills || 0)
-              }, 'pending'),
+              } : { ...waiting, title: t('pa.kpi.pending') }, 'pending'),
               jsx(Stat, { ...fileStat('memory', 'MEMORY.md') }, 'memory'),
               jsx(Stat, { ...fileStat('user', 'USER.md') }, 'user'),
-              jsx(Stat, {
-                title: t('pa.kpi.applied'), figure: String(applied), accent: 'var(--ui-stroke-tertiary)',
-                delta: failedCount ? `${t('pa.kpi.undoable', undoable)} · ${failedCount} ${t('pa.kpi.failed')}` : t('pa.kpi.undoable', undoable)
-              }, 'history')
+              jsx(Stat, hist.data ? {
+                title: t('pa.kpi.applied'), figure: String(applied), tone: failedCount ? 'bad' : 'ok',
+                pill: failedCount ? t('pa.kpi.failedN', failedCount) : t('pa.kpi.noFailures'),
+                delta: t('pa.kpi.undoable', undoable)
+              } : { ...waiting, title: t('pa.kpi.applied') }, 'history')
             ]
           }, 'kpis'),
           jsx('div', {
@@ -1259,7 +1468,7 @@ function Pane() {
       jsxs('div', {
         style: {
           display: 'flex', alignItems: 'center', gap: G.sm, borderTop: HAIRLINE,
-          padding: '8px 12px', fontSize: 10.5, color: 'var(--ui-text-secondary)'
+          padding: '8px 16px', fontSize: FS.meta, color: 'var(--ui-text-secondary)'
         },
         children: [
           jsx('span', { children: t('pa.footer.pending', n) }, 'pending'),
