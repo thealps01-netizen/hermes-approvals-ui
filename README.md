@@ -112,15 +112,14 @@ render check and the static preview. It also checks out the core **sparsely and 
 at `CORE_SHA`) and exports it as `HERMES_AGENT_DIR`, so the audit's CSS-token rule really runs in CI
 instead of skipping itself.
 
-Two gates stay local, and the reason is the same for both: they need a **real install**, which CI
-cannot build. The backend selftest imports the core's own modules (`tools.write_approval`,
-`hermes_cli.write_approval_commands`, `tools.memory_tool_store`, `agent.skill_utils`) and has to
-compare behaviour against the core that is actually running — Hermes ships through its installer,
-Docker and Nix and refuses to build a wheel (verified: installing `hermes-agent @ git+…@<sha>` stops
-with *"Building wheels or sdists for hermes-agent is not supported"*), and the newest PyPI wheel,
-0.19.0, predates `tools/memory_tool_store.py`. The measured render and its contrast gate need the
-app's own Electron (a desktop Chromium session) plus its compiled stylesheet. Run both before
-releasing — they are the two gates that see what jsdom cannot.
+The backend selftest also runs in CI: it imports the core's own modules (`tools.write_approval`,
+`hermes_cli.write_approval_commands`, `tools.memory_tool_store`, `agent.skill_utils`) straight from the
+pinned sparse checkout, with only `fastapi pyyaml requests httpx` installed — no Hermes wheel needed
+(Hermes refuses to build one). It covers the end-to-end `/fix` with `approve: true`: the shortened
+skill is created, and a refused apply leaves the pending record byte-identical.
+
+One gate stays local: the measured render and its contrast gate need the app's own Electron (a desktop
+Chromium session) plus its compiled stylesheet. Run it before releasing — it sees what jsdom cannot.
 
 ## Safety model
 

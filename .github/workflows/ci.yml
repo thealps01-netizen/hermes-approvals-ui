@@ -1,8 +1,8 @@
 # The gates that need no Hermes install run on both runners; the checks that need the application's
 # own sources get a SPARSE, pinned checkout of the core so they RUN instead of quietly skipping
-# themselves (`tools/`, `agent/` and `hermes_cli/` are read by the core-contract gate, which never
-# imports them). The two gates that need a real install — the backend selftest and the measured
-# Electron render with its contrast gate — stay local; see README § "Continuous integration" for why.
+# themselves (`tools/`, `agent/` and `hermes_cli/` are read by the core-contract gate and imported by
+# the backend selftest, which runs against that checkout with fastapi/pyyaml/requests/httpx). Only the
+# measured Electron render with its contrast gate stays local; see README § "Continuous integration".
 name: CI
 
 on:
@@ -71,6 +71,13 @@ jobs:
 
       - name: Core contract canary (every way it can fail must fire)
         run: python tests/contract_core.py --selftest
+
+      - name: Backend selftest (against the pinned core, end-to-end /fix approve included)
+        run: |
+          set -euo pipefail
+          python -m pip install -q fastapi pyyaml requests httpx
+          unset HERMES_HOME
+          PYTHONPATH="$HERMES_AGENT_DIR" python dashboard/plugin_api.py --selftest
 
       - name: Render and behaviour (jsdom)
         working-directory: tests

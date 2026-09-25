@@ -5,6 +5,43 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.4
+
+A second blind review. Every item is locked by the backend selftest (now also run in CI against the
+pinned core) or by the render check, and each new check was seen failing on 1.6.3 first.
+
+### Fixes
+
+* **"Shorten and create" works.** It never created the skill: the saved original description was
+  read back first, the fix was found again and the approve was refused — and the record on disk had
+  already been rewritten. The shortened skill is now created; when the apply is refused, the pending
+  record is restored byte for byte and the error says it was left exactly as staged.
+* **Undo and note deletion are safe under concurrency.** Undo restores files atomically under the
+  panel lock, approve takes its snapshots inside the lock, and deleting a note takes the lock too.
+* **No more bare 500s.** `/scan`, `/undo` and `/memory/delete` answer a structured error; unreadable
+  history lines are counted and reported instead of silently dropped.
+* **Deleting one of two identical notes** arms only that note's confirmation.
+* **Leave animations** no longer fire a refresh after the pane is gone.
+
+### Accessibility
+
+* The view and memory-file tabs are a real `tablist`: `role=tab`, `aria-selected`, a roving
+  `tabIndex`, Arrow/Home/End keys, and a labelled `tabpanel`.
+* A blocked Approve is `aria-disabled` instead of `disabled`, so keyboard users reach its reason Tip;
+  clicking it still sends nothing.
+* Button names no longer start with ✓/✕; the smallest text is 11px (was 10.5px).
+* A running action shows progress (`aria-busy`, the kit's loading state), and the status chip says
+  "Approvals unavailable" when the list cannot be read.
+
+### Layout and copy
+
+* Cards grow with their content instead of a fixed 340px scroll layer, so there is no scroll box
+  inside a scroll box. The kind pill that repeated the Type row, and the footer split that repeated
+  the Pending card, are gone; the footer and tab strip wrap/scroll on narrow panes. The advice box
+  tint is lighter. Buttons use the kit's own colours (no `!important`, no brightness hover).
+* Sentence case throughout ("Why it arrived", "Not applicable"), real plurals ("1 note",
+  "2 files changed", "Clear 1 record"), and times in the user's locale format.
+
 ## 1.6.3
 
 A blind review found eight places where the panel or its backend said something untrue when a read

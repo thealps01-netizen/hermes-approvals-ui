@@ -22,6 +22,8 @@ const RefreshIcon = icons?.RefreshCw || null
 
 let ctxRef = null
 
+const plural = (n, one, many) => `${n} ${Number(n) === 1 ? one : many}`
+
 const BUNDLES = {
   en: {
     pa: {
@@ -52,24 +54,25 @@ const BUNDLES = {
         memory: 'Memory',
         pending: 'Pending',
         history: 'Applied',
+        label: 'Approval views',
       },
       field: {
         type: 'Type',
         source: 'Source',
         target: 'Target',
         ops: 'Operations',
-        why: 'Why It Arrived',
-        what: 'What Will Change',
+        why: 'Why it arrived',
+        what: 'What will change',
         whyNone: 'No reason text was recorded with this write; only its source (above) shows why it appeared.',
-        whatNone: 'No operation detail was recorded for this write — open “Details and Changes”.',
-        effect: 'If You Approve',
-        advice: 'Agent\'s Suggestion',
-        blocked: 'Why It Can\'t Be Applied',
-        failedBefore: 'Approving Was Attempted',
-        affected: 'Affected Files',
+        whatNone: 'No operation detail was recorded for this write — open “Details and changes”.',
+        effect: 'If you approve',
+        advice: 'Agent\'s suggestion',
+        blocked: 'Why it can\'t be applied',
+        failedBefore: 'Approving was attempted',
+        affected: 'Affected files',
         fix: 'Description fix',
-        fixCurrent: n => `As Written (${n} chars)`,
-        fixSuggested: n => `Shortened (${n} chars)`,
+        fixCurrent: n => `As written (${plural(n, 'character', 'characters')})`,
+        fixSuggested: n => `Shortened (${plural(n, 'character', 'characters')})`,
       },
       kind: {
         memory: 'Memory note',
@@ -82,49 +85,49 @@ const BUNDLES = {
       },
       state: {
         ready: 'Applicable',
-        blocked: 'Not Applicable',
-        newSkill: 'New Skill',
-        failedBefore: 'Approve Failed Before',
+        blocked: 'Not applicable',
+        newSkill: 'New skill',
+        failedBefore: 'Approve failed before',
       },
       group: {
-        new: 'New Skill',
+        new: 'New skill',
         update: 'Update',
-        multi: 'This Record Touches More Than One Skill — You Can Apply Just One',
-        ops: n => `${n} Operations`,
+        multi: 'This record touches more than one skill — you can apply just one',
+        ops: n => plural(n, 'operation', 'operations'),
       },
       advice: {
         note: 'Your call — the buttons apply it immediately.',
         fix: 'It cannot be applied as staged — the “Shorten and create” button writes it.',
       },
       btn: {
-        reject: '✕ Reject',
-        approve: '✓ Approve',
+        reject: 'Reject',
+        approve: 'Approve',
         undo: 'Undo',
         forceUndo: 'Force undo',
-        details: 'Details and Changes',
+        details: 'Details and changes',
         fix: 'Shorten and create',
-        detailsHide: 'Hide Details',
-        onlyCreate: 'Create Only This',
-        onlyApply: 'Apply Only This',
+        detailsHide: 'Hide details',
+        onlyCreate: 'Create only this',
+        onlyApply: 'Apply only this',
       },
       op: {
         current: 'current:',
         new: 'new:',
         preview: 'Start of the content',
-        chars: n => `${n} characters`,
+        chars: n => plural(n, 'character', 'characters'),
         cut: (shown, total) => `… first ${shown} of ${total} characters`,
       },
       hist: {
         apply: 'Approved and applied',
         rejected: 'Rejected',
-        clear: n => (n ? `Clear ${n} Records` : 'Clear'),
+        clear: n => (n ? `Clear ${plural(n, 'record', 'records')}` : 'Clear'),
         clearConfirm: 'Clearing drops the undo copies — those records can no longer be taken back.',
         clearCancel: 'Cancel',
-        cleared: n => `Cleared ${n} records`,
+        cleared: n => `Cleared ${plural(n, 'record', 'records')}`,
         clearFailed: 'Could not clear the history',
-        external: 'Changed Outside the Pane',
-        externalDetail: n => `${n} file(s) changed outside the pane`,
-        failed: 'Approve Failed',
+        external: 'Changed outside the pane',
+        externalDetail: n => `${plural(n, 'file', 'files')} changed outside the pane`,
+        failed: 'Approve failed',
         undone: 'Undone — the files are back to the state before this record',
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
         noFiles: 'No file changes',
@@ -152,17 +155,19 @@ const BUNDLES = {
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         readonly: 'Add notes by asking in chat (the write lands under Pending); delete one here with the Delete button.',
-        entries: n => `${n} notes`,
+        entries: n => plural(n, 'note', 'notes'),
+        files: 'Memory files',
         lastChange: when => `Last change: ${when}`,
-        note: (i, len) => `Note ${i} · ${len} Characters`,
+        note: (i, len) => `Note ${i} · ${plural(len, 'character', 'characters')}`,
       },
       chip: {
-        pending: n => (n ? `${n} Awaiting Approval` : 'No Pending Approvals'),
+        pending: n => (n ? `${n} awaiting approval` : 'No pending approvals'),
+        error: 'Approvals unavailable',
       },
       notify: {
-        awaiting: n => `${n} writes await your approval`,
+        awaiting: n => `${plural(n, 'write awaits', 'writes await')} your approval`,
         title: 'Hermes — pending approvals',
-        body: (n, m, s) => `${n} writes await you (memory ${m}, skill ${s})`,
+        body: (n, m, s) => `${plural(n, 'write awaits', 'writes await')} you (memory ${m}, skill ${s})`,
         saved: 'Saved — you can undo it from the “Applied” tab',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
@@ -173,7 +178,6 @@ const BUNDLES = {
       },
       footer: {
         pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
-        split: (m, s) => `Memory: ${m} · Skills: ${s}`,
         hint: 'Approve → written immediately, undoable',
       },
     }
@@ -226,10 +230,10 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
-const FS = { micro: 10.5, meta: 11.5, body: 12.5, lead: 13.5, title: 16, kpi: 28 }
+const FS = { micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, kpi: 28 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
-  prose: 80, cardScroll: 340, histSummary: 58, histFiles: 38, histAction: 30
+  prose: 80, histSummary: 58, histFiles: 38, histAction: 30
 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
@@ -299,7 +303,6 @@ const STYLE = `
 .pa-lines{min-height:100%;max-height:none !important;overflow:visible !important;
   line-height:${LINE}px !important;padding:${inset(H.prose, 0)}px 10px !important}
 .pa-fade{--pa-fade:${LINE}px}
-.pa-layer{--pa-fade:${G.xl}px}
 .pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent);
   mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}
 .pa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -325,12 +328,7 @@ const STYLE = `
 .pa-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:${G.xs}px;
   margin-left:auto;flex:1 1 220px;max-width:300px;min-width:0}
 .pa-actions [data-slot="button"]{width:100%;height:28px}
-.pa-root{--pa-reject:var(--dt-destructive);--pa-approve:var(--dt-primary)}
-.dark .pa-root{--pa-reject:color-mix(in srgb,var(--dt-destructive) 72%,var(--theme-neutral-sidebar));
-  --pa-approve:color-mix(in srgb,var(--dt-primary) 74%,var(--theme-neutral-sidebar))}
-.pa-reject[data-variant="destructive"]{background:var(--pa-reject) !important;color:var(--dt-primary-foreground) !important}
-.pa-approve{background:var(--pa-approve) !important;color:var(--dt-primary-foreground) !important}
-.pa-reject:hover:not(:disabled),.pa-approve:hover:not(:disabled){filter:brightness(1.12)}
+.pa-held{opacity:.5;cursor:not-allowed}
 .pa-pill{display:inline-flex;align-items:center;height:${TAG.height}px;padding:${TAG.padding};
   border-radius:${TAG.borderRadius}px;border:1px solid transparent;background:var(--ui-bg-tertiary);
   color:var(--ui-text-secondary);font-size:${TAG.fontSize}px;font-weight:${TAG.fontWeight};
@@ -343,8 +341,10 @@ const STYLE = `
   border-left:3px solid var(--ui-orange);padding:8px 12px}
 .pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
 .pa-bad{color:var(--ui-text-primary);border-left:3px solid var(--ui-red);padding-left:8px;display:inline-block}
+.pa-tabs{display:flex;align-items:center;min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
 .pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
-  font:inherit;font-size:${FS.body}px;color:var(--ui-text-secondary);cursor:pointer}
+  font:inherit;font-size:${FS.body}px;color:var(--ui-text-secondary);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.pa-tab:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px;border-radius:${R.tag}px}
 .pa-tab[data-on="1"]{color:var(--ui-text-primary);font-weight:600;border-bottom-color:var(--ui-accent)}
 .pa-tab:hover{color:var(--ui-text-primary)}
 .pa-scroll{${THIN_SCROLL}}
@@ -527,10 +527,7 @@ const fill = f => {
   const tone = full ? 'bad' : pct >= 90 ? 'warn' : 'ok'
   return { pct, tone, key: full ? 'pa.kpi.full' : pct >= 90 ? 'pa.kpi.nearlyFull' : 'pa.kpi.room' }
 }
-const clock = ms => {
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+const clock = ms => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
 function RefreshButton({ onClick, label: title }) {
   return jsx(Tip, {
@@ -641,18 +638,62 @@ function OldNew({ op, t }) {
   })
 }
 
+function useLeave(onChanged) {
+  const [leaving, setLeaving] = useState(false)
+  const timer = useRef(null)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const leave = () => {
+    setLeaving(true)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => onChanged(), 340)
+  }
+  return { leaving, leave }
+}
+
+function Tabs({ label: name, items, value, onSelect, idBase }) {
+  const refs = useRef({})
+  const keys = items.map(item => item.id)
+  const onKeyDown = e => {
+    const at = keys.indexOf(value)
+    const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: keys.length - 1 }[e.key]
+    if (next === undefined) return
+    e.preventDefault()
+    const id = keys[(next + keys.length) % keys.length]
+    refs.current[id]?.focus()
+    onSelect(id)
+  }
+  return jsx('div', {
+    role: 'tablist',
+    'aria-label': name,
+    className: 'pa-tabs',
+    style: { overflowX: 'auto', flex: '1 1 auto' },
+    onKeyDown,
+    children: items.map(item =>
+      jsx('button', {
+        ref: el => { refs.current[item.id] = el },
+        type: 'button',
+        role: 'tab',
+        id: `${idBase}-${item.id}`,
+        'aria-selected': value === item.id,
+        'aria-controls': `${idBase}-panel`,
+        tabIndex: value === item.id ? 0 : -1,
+        className: 'pa-tab',
+        'data-on': value === item.id ? '1' : '0',
+        onClick: () => onSelect(item.id),
+        children: item.label
+      }, item.id))
+  }, 'tabs')
+}
+
 function PendingCard({ subsystem, item, onChanged }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
-  const layerFade = useFade(false)
-  const layer = layerFade.ref
   const detailsAt = useRef(null)
   useEffect(() => {
-    if (!open || !layer.current || !detailsAt.current) return
-    layer.current.scrollTop = Math.max(0, detailsAt.current.offsetTop - layer.current.offsetTop - 4)
+    if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const [busy, setBusy] = useState(false)
-  const [leaving, setLeaving] = useState(false)
+  const [busy, setBusy] = useState('')
+  const { leaving, leave } = useLeave(onChanged)
   const plain = item.plain || {}
   const stale = plain.stale || []
   const groups = plain.groups || []
@@ -673,25 +714,22 @@ function PendingCard({ subsystem, item, onChanged }) {
   const adviceVariant = fix ? 'warn' : cannot || failedBefore ? 'destructive' : 'success'
 
   const applyFix = async () => {
-    setBusy(true)
+    setBusy('fix')
     try {
       const res = await api.fix(item.id, true)
       host.notify(res?.ok
         ? { kind: 'success', message: res.message || t('pa.notify.saved') }
         : { kind: 'error', message: res?.error || t('pa.notify.failed') })
-      if (res?.ok) {
-        setLeaving(true)
-        window.setTimeout(() => onChanged(), 340)
-      }
+      if (res?.ok) leave()
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.applyError'))
     } finally {
-      setBusy(false)
+      setBusy('')
     }
   }
 
   const decide = async (decision, only) => {
-    setBusy(true)
+    setBusy(only?.length ? `only:${only[0]}` : decision)
     try {
       const res = await api.decide(subsystem, [item.id], decision, only)
       const r = (res?.results || [])[0] || {}
@@ -703,24 +741,24 @@ function PendingCard({ subsystem, item, onChanged }) {
       host.notifyError?.(e, t('pa.notify.applyError'))
       return { ok: false }
     } finally {
-      setBusy(false)
+      setBusy('')
     }
   }
 
   const decideAndLeave = async (decision, only) => {
     const res = await decide(decision, only)
-    if (res?.ok) {
-      setLeaving(true)
-      window.setTimeout(() => onChanged(), 340)
-    }
+    if (res?.ok) leave()
   }
 
   const approve = jsx(Button, {
-    className: 'pa-approve',
+    className: approveBlocked ? 'pa-held' : undefined,
     variant: 'default',
     size: 'sm',
-    disabled: busy || approveBlocked,
+    'aria-disabled': approveBlocked || undefined,
+    disabled: Boolean(busy) && busy !== 'approve',
+    loading: busy === 'approve',
     onClick: () => {
+      if (approveBlocked) return
       haptic('tap')
       void decideAndLeave('approve')
     },
@@ -729,17 +767,11 @@ function PendingCard({ subsystem, item, onChanged }) {
 
   return jsxs('div', {
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
+    'aria-busy': Boolean(busy) || undefined,
     style: { display: 'flex', height: '100%', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
-        className: 'pa-scroll pa-fade pa-layer',
-        ref: layer,
-        'data-more': layerFade.more,
-        onScroll: layerFade.sync,
-        style: {
-          height: H.cardScroll, overflowY: 'auto', overflowX: 'hidden', display: 'flex',
-          flexDirection: 'column', gap: G.sm, paddingRight: 4, marginRight: -4
-        },
+        style: { display: 'flex', flexDirection: 'column', gap: G.sm, flex: '1 1 auto', minHeight: 0 },
         children: [
           jsxs('div', {
             style: { display: 'flex', alignItems: 'center', gap: G.xs },
@@ -753,15 +785,9 @@ function PendingCard({ subsystem, item, onChanged }) {
             ]
           }, 'head'),
 
-          jsxs('div', {
-            style: { display: 'flex', alignItems: 'center', gap: G.xs, flexWrap: 'wrap' },
-            children: [
-              jsx('span', { className: 'pa-pill', children: plain.kind_label || kind }, 'kind'),
-              jsx('div', {
-                style: { ...value, fontSize: FS.lead, fontWeight: 600, color: 'var(--ui-text-primary)', flex: 1, minWidth: 0 },
-                children: plain.headline || kind
-              }, 'headline')
-            ]
+          jsx('div', {
+            style: { ...value, fontSize: FS.lead, fontWeight: 600, color: 'var(--ui-text-primary)', minWidth: 0 },
+            children: plain.headline || kind
           }, 'headline'),
 
           jsx(PanelMeta, {
@@ -852,10 +878,14 @@ function PendingCard({ subsystem, item, onChanged }) {
                         jsx(Tip, {
                           label: fix && fix.name === g.name ? rec.reason : '',
                           children: jsx(Button, {
+                            className: fix && fix.name === g.name ? 'pa-held' : undefined,
                             variant: 'outline',
                             size: 'xs',
-                            disabled: busy || Boolean(fix && fix.name === g.name),
+                            'aria-disabled': Boolean(fix && fix.name === g.name) || undefined,
+                            disabled: Boolean(busy) && busy !== `only:${g.name}`,
+                            loading: busy === `only:${g.name}`,
                             onClick: () => {
+                              if (fix && fix.name === g.name) return
                               haptic('tap')
                               void decideAndLeave('approve', [g.name])
                             },
@@ -917,7 +947,7 @@ function PendingCard({ subsystem, item, onChanged }) {
           className: 'pa-advice',
           style: {
             display: 'flex', flexDirection: 'column', gap: G.xxs, borderRadius: R.box, padding: `${G.xs}px ${G.sm}px`,
-            background: tint(adviceTone, 8),
+            background: tint(adviceTone, 4),
             borderLeft: `3px solid ${adviceTone}`
           },
           children: [
@@ -938,10 +968,10 @@ function PendingCard({ subsystem, item, onChanged }) {
                 }, 'note'),
                 fix
                   ? jsx(Button, {
-                      className: 'pa-approve',
                       variant: 'default',
                       size: 'sm',
-                      disabled: busy,
+                      disabled: Boolean(busy) && busy !== 'fix',
+                      loading: busy === 'fix',
                       onClick: () => void applyFix(),
                       children: t('pa.btn.fix')
                     }, 'apply')
@@ -965,17 +995,14 @@ function PendingCard({ subsystem, item, onChanged }) {
             className: 'pa-actions',
             children: [
               jsx(Button, {
-                className: 'pa-reject',
                 variant: 'destructive',
                 size: 'sm',
-                disabled: busy,
+                disabled: Boolean(busy) && busy !== 'reject',
+                loading: busy === 'reject',
                 onClick: () => void decideAndLeave('reject'),
                 children: t('pa.btn.reject')
               }, 'reject'),
-              jsx(Tip, {
-                label: approveBlocked ? rec.reason : '',
-                children: jsx('span', { style: { display: 'grid', minWidth: 0 }, children: approve }, 'hold')
-              }, 'approve-tip')
+              jsx(Tip, { label: approveBlocked ? rec.reason : '', children: approve }, 'approve-tip')
             ]
           }, 'actions')
         ]
@@ -1066,10 +1093,9 @@ function HistoryCard({ entry, onChanged }) {
           ? jsx(Tip, {
               label: conflict ? t('pa.hist.conflict', conflict.join(', ')) : '',
               children: jsx(Button, {
-                className: conflict ? 'pa-reject' : undefined,
                 variant: conflict ? 'destructive' : 'outline',
                 size: 'sm',
-                disabled: busy,
+                loading: busy,
                 onClick: () => void undo(Boolean(conflict)),
                 children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
               }, 'undo')
@@ -1207,10 +1233,9 @@ function HistoryList({ data, error, refresh }) {
                       children: t('pa.hist.clearCancel')
                     }, 'cancel'),
                     jsx(Button, {
-                      className: 'pa-reject',
                       variant: 'destructive',
                       size: 'sm',
-                      disabled: busy,
+                      loading: busy,
                       onClick: () => void clear(),
                       children: t('pa.hist.clear', entries.length)
                     }, 'confirm')
@@ -1240,6 +1265,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
   const store = data?.[target]
+  const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
 
   const removeEntry = async text => {
     setBusy(true)
@@ -1278,16 +1304,15 @@ function MemoryView({ data, error, refresh, onChanged }) {
           }, nm))
       }, 'kpis'),
       jsxs('div', {
-        style: { display: 'flex', alignItems: 'center', gap: G.sm },
+        style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
-          ...['memory', 'user'].map(nm =>
-            jsx('button', {
-              type: 'button',
-              className: 'pa-tab',
-              'data-on': target === nm ? '1' : '0',
-              onClick: () => setTarget(nm),
-              children: data?.[nm]?.file || nm
-            }, nm)),
+          jsx(Tabs, {
+            label: t('pa.memory.files'),
+            idBase: 'pa-mem',
+            value: target,
+            onSelect: nm => { setTarget(nm); setConfirming(null) },
+            items: ['memory', 'user'].map(nm => ({ id: nm, label: data?.[nm]?.file || nm }))
+          }, 'tabs'),
           jsx(RefreshButton, { label: t('pa.action.refresh'), onClick: refresh }, 'refresh')
         ]
       }, 'tabs'),
@@ -1306,14 +1331,19 @@ function MemoryView({ data, error, refresh, onChanged }) {
             t('pa.memory.warnBody', store.percent)
           ]
         }, 'warn'),
-      ...store.entries.map((entry, i) => {
+      jsx('div', {
+        role: 'tabpanel',
+        id: 'pa-mem-panel',
+        'aria-labelledby': `pa-mem-${target}`,
+        style: { display: 'flex', flexDirection: 'column', gap: G.sm },
+        children: store.entries.map((entry, i) => {
         return jsxs('div', {
           className: 'pa-card',
           style: { display: 'flex', flexDirection: 'column', gap: G.xs, padding: G.sm },
           children: [
             jsx(PanelSectionLabel, { children: t('pa.memory.note', i + 1, entry.length) }, 'label'),
             jsx(PanelBlock, { children: entry }, 'text'),
-            confirming === entry
+            armed(i, entry)
               ? jsxs('div', {
                   style: { display: 'flex', flexDirection: 'column', gap: G.xs, borderTop: HAIRLINE, paddingTop: G.xs },
                   children: [
@@ -1332,10 +1362,9 @@ function MemoryView({ data, error, refresh, onChanged }) {
                           children: t('pa.memory.deleteCancel')
                         }, 'cancel'),
                         jsx(Button, {
-                          className: 'pa-reject',
                           variant: 'destructive',
                           size: 'sm',
-                          disabled: busy,
+                          loading: busy,
                           onClick: () => void removeEntry(entry),
                           children: t('pa.memory.delete')
                         }, 'confirm')
@@ -1348,13 +1377,14 @@ function MemoryView({ data, error, refresh, onChanged }) {
                   children: jsx(Button, {
                     variant: 'text',
                     size: 'sm',
-                    onClick: () => setConfirming(entry),
+                    onClick: () => setConfirming({ target, i, text: entry }),
                     children: t('pa.memory.delete')
                   }, 'arm')
                 }, 'arm-row')
           ]
         }, i)
-      }),
+      })
+      }, 'notes'),
       jsx('div', {
         style: { fontSize: FS.meta, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
         children: t('pa.memory.readonly')
@@ -1438,22 +1468,25 @@ function Pane() {
             ]
           }, 'kpis'),
           jsx('div', {
-            style: { display: 'flex', alignItems: 'center', borderBottom: HAIRLINE },
-            children: ['pending', 'history', 'memory'].map(id =>
-              jsx('button', {
-                type: 'button',
-                className: 'pa-tab',
-                'data-on': view === id ? '1' : '0',
-                onClick: () => setView(id),
-                children: id === 'pending'
-                  ? `${t('pa.tab.pending')}${n ? ` (${n})` : ''}`
-                  : t(TAB_KEY[id])
-              }, id))
+            style: { display: 'flex', alignItems: 'center', borderBottom: HAIRLINE, minWidth: 0 },
+            children: jsx(Tabs, {
+              label: t('pa.tab.label'),
+              idBase: 'pa-view',
+              value: view,
+              onSelect: setView,
+              items: ['pending', 'history', 'memory'].map(id => ({
+                id,
+                label: id === 'pending' ? `${t('pa.tab.pending')}${n ? ` (${n})` : ''}` : t(TAB_KEY[id])
+              }))
+            }, 'tabs')
           }, 'tabs')
         ]
       }, 'top'),
 
       jsx('div', {
+        role: 'tabpanel',
+        id: 'pa-view-panel',
+        'aria-labelledby': `pa-view-${view}`,
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
         children: view === 'memory'
           ? jsx(MemoryView, {
@@ -1466,13 +1499,13 @@ function Pane() {
       }, 'body'),
 
       jsxs('div', {
+        className: 'pa-footer',
         style: {
-          display: 'flex', alignItems: 'center', gap: G.sm, borderTop: HAIRLINE,
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${G.xxs}px ${G.sm}px`, borderTop: HAIRLINE,
           padding: '8px 16px', fontSize: FS.meta, color: 'var(--ui-text-secondary)'
         },
         children: [
           jsx('span', { children: t('pa.footer.pending', n) }, 'pending'),
-          jsx('span', { children: t('pa.footer.split', counts.memory || 0, counts.skills || 0) }, 'split'),
           jsx('span', { style: { marginLeft: 'auto' }, children: t('pa.footer.hint') }, 'hint')
         ]
       }, 'footer')
@@ -1482,7 +1515,7 @@ function Pane() {
 
 function Chip() {
   const t = usePluginI18n(ID)
-  const { data, n } = usePending({ scan: false })
+  const { data, error, n } = usePending({ scan: false })
   const seen = useRef(null)
 
   useEffect(() => {
@@ -1511,9 +1544,12 @@ function Chip() {
     },
     children: [
       jsx('span', {
-        style: { display: 'inline-block', width: 6, height: 6, borderRadius: R.pill, background: n ? 'var(--ui-orange)' : 'var(--ui-stroke-tertiary)' }
+        style: {
+          display: 'inline-block', width: 6, height: 6, borderRadius: R.pill,
+          background: error ? 'var(--ui-red)' : n ? 'var(--ui-orange)' : 'var(--ui-stroke-tertiary)'
+        }
       }, 'dot'),
-      t('pa.chip.pending', n)
+      error ? t('pa.chip.error') : t('pa.chip.pending', n)
     ]
   })
 }

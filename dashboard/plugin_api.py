@@ -54,6 +54,18 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 def _home() -> Path:
     from hermes_constants import get_hermes_home
     return Path(get_hermes_home())
@@ -182,13 +194,20 @@ def _entries(limit: int = 50) -> list[dict]:
     path = _history_path()
     if not path.exists():
         return []
-    out = []
+    out, bad = [], 0
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             try:
-                out.append(json.loads(line))
-            except Exception:
+                row = json.loads(line)
+            except ValueError:
+                bad += 1
                 continue
+            if isinstance(row, dict):
+                out.append(row)
+            else:
+                bad += 1
+    if bad:
+        _note_issue("history", _tx("issue_history", n=bad, file=path.name))
     out.reverse()
     return out[:limit]
 
@@ -240,7 +259,7 @@ def _op_change_stat(wa, op: dict) -> dict:
 
 def _ops(record: dict) -> list[dict]:
     payload = record.get("payload") or {}
-    ops = payload.get("operations") or ([payload] if payload.get("action") else [])
+    ops = _raw_ops(record)
     out = []
     for op in ops:
         action = op.get("action", "")
@@ -506,6 +525,10 @@ _TEXT = {
     'stale_mem_unmatched': '{file}: no note matches {text} any more.',
     'issue_index': 'The watch index was unreadable ({problem}); it was set aside as {name} and rebuilt. Changes made outside the pane while it was unreadable were not recorded.',
     'err_read': 'Could not read: {error}',
+    'err_route': 'The request could not be completed: {error}',
+    'fix_nothing': 'Nothing to shorten: the validator already accepts this content.',
+    'fix_restored': '{error} The record was left exactly as it was staged; nothing was written.',
+    'issue_history': '{file} has unreadable lines ({n}); they were skipped and are not shown.',
 }
 
 
@@ -676,14 +699,14 @@ def _explain(subsystem: str, record: dict) -> dict:
             where = name + "/" + rel
             if action == "create":
                 what.append(_tx("what_create", name=name))
-                content = op.get("content_original") or op.get("content") or ""
+                content = op.get("content") or ""
                 problem = _skill_problem(content)
                 if problem == _tx("err_unvalidated"):
                     unvalidated = True
                     stale.append(_tx("stale_unvalidated", what=what[-1]))
                 elif problem:
                     stale.append(_tx("stale_frontmatter", what=what[-1], problem=problem.strip().rstrip(".")))
-                what_it_does = _frontmatter(content).get("description") or ""
+                what_it_does = _frontmatter(op.get("content_original") or content).get("description") or ""
                 if what_it_does:
                     notes.append({"label": _tx("note_what"), "text": what_it_does})
             elif action == "delete":
@@ -789,6 +812,12 @@ def _read_failed(where: str, exc: Exception) -> JSONResponse:
                         status_code=500)
 
 
+def _route_failed(where: str, exc: Exception) -> JSONResponse:
+    _log(f"{where} failed: {exc!r}")
+    return JSONResponse({"ok": False, "error": _tx("err_route", error=_short_error(str(exc) or repr(exc)))},
+                        status_code=500)
+
+
 @router.get("/pending")
 async def pending(scan: int = 0):
     try:
@@ -849,7 +878,10 @@ def _pending(scan: int) -> dict:
 
 @router.post("/scan")
 async def scan_now():
-    _scan_external()
+    try:
+        _scan_external()
+    except Exception as exc:
+        return _route_failed("/scan", exc)
     return {"ok": True}
 
 
@@ -867,8 +899,7 @@ def _one_op_diff(wa, op: dict) -> str:
 
 def _skill_diff_text(wa, record: dict) -> str:
     payload = record.get("payload") or {}
-    ops = payload.get("operations") or ([payload] if payload.get("action") else [])
-    parts = [d for d in (_one_op_diff(wa, op) for op in ops) if d]
+    parts = [d for d in (_one_op_diff(wa, op) for op in _raw_ops(record)) if d]
     return "\n".join(parts)[:4000] if parts else _one_op_diff(wa, payload)
 
 
@@ -895,7 +926,7 @@ def _skill_description_fix(record: dict) -> list[dict]:
     for op in ((record.get("payload") or {}).get("operations")) or []:
         if op.get("action") != "create":
             continue
-        content = op.get("content_original") or op.get("content") or ""
+        content = op.get("content") or ""
         match = re.search(r"^description:[ \t]*(.+)$", content, re.M)
         if not match:
             continue
@@ -939,7 +970,7 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
 
     fixes = {f["name"]: f for f in _skill_description_fix(record)}
     if not fixes:
-        return False, "nothing to shorten (the validator already accepts this content)"
+        return False, _tx("fix_nothing")
     ops = (record.get("payload") or {}).get("operations") or []
     for op in ops:
         fix = fixes.get(op.get("name") or "")
@@ -955,25 +986,45 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
 
 @router.post("/fix")
 async def fix(body: dict):
+    try:
+        with _LOCK:
+            return _fix_locked(body or {})
+    except Exception as exc:
+        return _route_failed("/fix", exc)
+
+
+def _fix_locked(body: dict) -> dict:
     from tools import write_approval as wa
 
-    subsystem = str((body or {}).get("subsystem") or "")
-    record_id = _valid_id((body or {}).get("id"))
+    subsystem = str(body.get("subsystem") or "")
+    record_id = _valid_id(body.get("id"))
     if subsystem != wa.SKILLS or not record_id:
         return {"ok": False, "error": _tx("fix_bad_request")}
     record = wa.get_pending(subsystem, record_id)
     if not record:
         return {"ok": False, "error": _tx("fix_gone")}
+    path = wa._pending_path(wa.SKILLS, record_id)
+    original = path.read_bytes()
     ok, detail = _apply_description_fix(record)
     if not ok:
         return {"ok": False, "error": detail}
-    if not (body or {}).get("approve"):
+    if not body.get("approve"):
         return {"ok": True, "message": _tx("fix_done", detail=detail)}
-    res = await decide({"subsystem": wa.SKILLS, "ids": [record_id], "decision": "approve"})
-    first = ((res or {}).get("results") or [{}])[0]
+    try:
+        res = _decide_locked({"subsystem": wa.SKILLS, "ids": [record_id], "decision": "approve"})
+        first = ((res or {}).get("results") or [{}])[0]
+    except Exception:
+        _restore_record(path, original)
+        raise
     if not first.get("ok"):
-        return {"ok": False, "error": first.get("error") or _tx("apply_failed")}
+        _restore_record(path, original)
+        return {"ok": False, "error": _tx("fix_restored", error=first.get("error") or _tx("apply_failed"))}
     return {"ok": True, "message": _tx("fix_applied", detail=detail)}
+
+
+def _restore_record(path: Path, original: bytes) -> None:
+    if path.exists():
+        _atomic_write_bytes(path, original)
 
 
 def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
@@ -1055,6 +1106,14 @@ def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list,
 
 @router.post("/decide")
 async def decide(body: dict):
+    try:
+        with _LOCK:
+            return _decide_locked(body or {})
+    except Exception as exc:
+        return _route_failed("/decide", exc)
+
+
+def _decide_locked(body: dict) -> dict:
     from tools import write_approval as wa
 
     subsystem = str(body.get("subsystem") or "")
@@ -1181,10 +1240,14 @@ async def memory_delete(body: dict):
     if target not in ("memory", "user") or not text.strip():
         return JSONResponse({"ok": False, "error": _tx("err_target_text")},
                             status_code=400)
-    result = load_on_disk_store().remove(target, text)
-    if not result.get("success"):
-        return {"ok": False, "error": result.get("error") or _tx("err_not_deleted")}
-    _scan_external()
+    try:
+        with _LOCK:
+            result = load_on_disk_store().remove(target, text)
+            if not result.get("success"):
+                return {"ok": False, "error": result.get("error") or _tx("err_not_deleted")}
+            _scan_external()
+    except Exception as exc:
+        return _route_failed("/memory/delete", exc)
     return {"ok": True, "target": target, "message": result.get("message") or _tx("deleted"),
             "usage": result.get("usage"), "entry_count": result.get("entry_count")}
 
@@ -1203,6 +1266,14 @@ async def history(limit: int = 50):
 
 @router.post("/undo")
 async def undo(body: dict):
+    try:
+        with _LOCK:
+            return _undo_locked(body or {})
+    except Exception as exc:
+        return _route_failed("/undo", exc)
+
+
+def _undo_locked(body: dict) -> dict:
     entry_id = _valid_id(body.get("id"))
     force = bool(body.get("force"))
     entry = next((e for e in _entries(MAX_ENTRIES) if e.get("id") == entry_id), None)
@@ -1252,7 +1323,7 @@ async def undo(body: dict):
         src = _state() / "snapshots" / entry_id / snap
         if src.exists():
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dst)
+            _atomic_write_bytes(dst, src.read_bytes())
             restored.append(rel)
     if not restored and not removed:
         return {"ok": False, "restored": [], "removed": [],
@@ -1728,8 +1799,9 @@ def _selftest() -> int:
 
     assert _own_note(json.loads(json.dumps(long_desc_rec))) == fixed["text"], "the note does not show the record's own text"
     assert _own_note(on_disk) == fixed["text"], "the record's own text is lost after shortening"
-    again = _skill_description_fix(on_disk)
-    assert again and again[0]["description"] == fixed["description"], again
+    assert not _skill_description_fix(on_disk), "a shortened record still reads as needing the fix"
+    assert not _blocked_approve_reason(on_disk, []), "a shortened record is still blocked from approval"
+    assert not _explain("skills", on_disk)["stale"], "a shortened record is still read as not applicable"
     assert (_shorten_description("Use when Hermes stages your skill/memory writes for approval.", 60)
             == "Use when Hermes stages your skill/memory writes."), \
         _shorten_description("Use when Hermes stages your skill/memory writes for approval.", 60)
@@ -1754,6 +1826,24 @@ def _selftest() -> int:
     assert asyncio.run(fix({"subsystem": "skills", "id": "ffff0002"}))["ok"] is True
     assert not _skill_problem(json.loads(long_pending.read_text(encoding="utf-8"))["payload"]["operations"][0]["content"])
     long_pending.unlink()
+
+    long_pending.write_text(json.dumps(long_desc_rec, ensure_ascii=False), encoding="utf-8")
+    original_bytes = long_pending.read_bytes()
+    _saved_apply = _apply
+    globals()["_apply"] = lambda *a: (False, "apply refused by the selftest")
+    try:
+        refused = asyncio.run(fix({"subsystem": "skills", "id": "ffff0002", "approve": True}))
+    finally:
+        globals()["_apply"] = _saved_apply
+    assert refused["ok"] is False and "apply refused by the selftest" in refused["error"], refused
+    assert "left exactly as it was staged" in refused["error"], refused
+    assert long_pending.read_bytes() == original_bytes, "a failed /fix left the pending record rewritten"
+    created = asyncio.run(fix({"subsystem": "skills", "id": "ffff0002", "approve": True}))
+    assert created["ok"] is True, created
+    assert not long_pending.exists(), "the record was not consumed by the approve"
+    made = _skill_file("long-description")
+    assert made and fixed["description"] in made.read_text(encoding="utf-8"), made
+    assert _entries()[0]["kind"] == "apply", _entries()[0]
 
 
     ghost = tmp / "skills" / ".archive" / "ghost-skill-20260101" / "ghost-skill"
@@ -1872,6 +1962,53 @@ def _selftest() -> int:
         _LOCK.release()
     worker.join(5)
     assert order == ["released", "append"], f"the history write did not wait for the lock: {order}"
+    for route, call in (("/undo", lambda: undo({"id": "0000beef"})),
+                        ("/memory/delete", lambda: memory_delete({"target": "memory", "text": "x"})),
+                        ("/decide", lambda: decide({"subsystem": "memory", "ids": ["0000beef"],
+                                                    "decision": "reject"}))):
+        waited: list[str] = []
+        _LOCK.acquire()
+        try:
+            worker = _threading.Thread(target=lambda c=call: (asyncio.run(c()), waited.append("route")))
+            worker.start()
+            worker.join(0.3)
+            waited.append("released")
+        finally:
+            _LOCK.release()
+        worker.join(5)
+        assert waited == ["released", "route"], f"{route} did not wait for the lock: {waited}"
+
+    _saved_scan = _scan_external
+    globals()["_scan_external"] = lambda: (_ for _ in ()).throw(RuntimeError("scan exploded"))
+    try:
+        broken_scan = asyncio.run(scan_now())
+    finally:
+        globals()["_scan_external"] = _saved_scan
+    assert getattr(broken_scan, "status_code", 200) == 500, broken_scan
+    assert "scan exploded" in json.loads(broken_scan.body)["error"], broken_scan.body
+    _saved_entries = _entries
+    globals()["_entries"] = lambda *a: (_ for _ in ()).throw(RuntimeError("undo exploded"))
+    try:
+        broken_undo = asyncio.run(undo({"id": "0000beef"}))
+    finally:
+        globals()["_entries"] = _saved_entries
+    assert getattr(broken_undo, "status_code", 200) == 500, broken_undo
+    assert "undo exploded" in json.loads(broken_undo.body)["error"], broken_undo.body
+    _mt.load_on_disk_store = lambda: (_ for _ in ()).throw(RuntimeError("delete exploded"))
+    try:
+        broken_delete = asyncio.run(memory_delete({"target": "memory", "text": "x"}))
+    finally:
+        _mt.load_on_disk_store = _saved_store
+    assert getattr(broken_delete, "status_code", 200) == 500, broken_delete
+    assert "delete exploded" in json.loads(broken_delete.body)["error"], broken_delete.body
+
+    with _history_path().open("a", encoding="utf-8") as fh:
+        fh.write("{torn line\n")
+    _ISSUES.clear()
+    assert all(isinstance(e, dict) for e in _entries()), "a torn history line reached the list"
+    assert _ISSUES.get("history"), "a torn history line was dropped in silence"
+    assert asyncio.run(pending(scan=0))["issues"], "the torn history line is not surfaced by /pending"
+    _ISSUES.clear()
 
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "

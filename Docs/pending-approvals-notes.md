@@ -604,3 +604,20 @@ fit now rides the `plain` dict, with a fallback for callers that pass a plain wi
 canary-run gate table said "30 rules" while the suite is 34 in-tree (+1 out-of-tree), the tests README
 repeated a stale canary ordinal, and the README's gate count (6 rows against a 7-row table) was aligned
 to seven with the contrast negative control.
+
+## 1.6.4 — second blind review
+
+- **`wa._pending_path` stays (S1).** The core is private here, but offers no public way to rewrite a
+  staged record (only `stage_write` / `get_pending` / `list_pending` / `discard_pending`), and
+  discard + stage would give the record a new id under the card. `tests/contract_core.py` pins the
+  name, so a core rename fails the build rather than the panel.
+- **`/fix` restores on refusal (C1).** The record's bytes are read before the fix is written; a refused
+  or raising apply writes them back atomically, so a failed `/fix` leaves the record byte-identical.
+- **Button fills (U2).** The `.pa-reject` / `.pa-approve` `!important` fills and brightness hover
+  described above are removed; the kit `destructive` / `default` variants are used as they are.
+  Any AA shortfall of a kit fill is a host contract, reported by the measured shot as host-owned.
+- **Blocked Approve (A1).** It is `aria-disabled` (focusable, its Tip reachable), not `disabled`.
+- **No fixed card layer (U1/L1).** `H.cardScroll` (340px) is gone; cards grow, the 80px text boxes are
+  the only inner scroll boxes.
+- **Backend English strings (CP1).** Backend messages all come from the single `_tx` English table;
+  the panel shows them as they are because the panel is English-only (one bundle) — not changed.
