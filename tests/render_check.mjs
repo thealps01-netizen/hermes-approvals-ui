@@ -422,7 +422,7 @@ const HISTORY = { entries: [
   { id: 'dd44ee55', ts: Date.now() / 1000 - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused', files: [], undoable: false }
 ], counts: { applied: 57, failed: 1, undoable: 2 } }
 const MEMORY = {
-  memory: { file: 'MEMORY.md', chars: 2189, limit: 2200, percent: 100, entries: ['A note'],
+  memory: { file: 'MEMORY.md', chars: 2189, limit: 2200, percent: 100, entries: ['A note', 'A note'],
             updated: Date.now() / 1000 - 600 },
   user: { file: 'USER.md', chars: 1158, limit: 1375, percent: 84, entries: ['A profile note'],
           updated: Date.now() / 1000 - 600 }
@@ -433,7 +433,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0 }
+const REST = { mode: 'normal', gets: 0, post: 'normal' }
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 let version = 0
 async function mount(appLocale) {
@@ -451,6 +451,10 @@ async function mount(appLocale) {
           if (opts.body.force) return { ok: true, restored: ['memories/MEMORY.md'] }
           return { ok: false, conflicts: ['memories/MEMORY.md'],
                    error: 'The file changed after this record; send force to undo anyway.' }
+        }
+        if (REST.post === 'hold') return new Promise(() => {})
+        if (path === '/fix' && REST.post === 'fixfail') {
+          return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
         if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
@@ -509,7 +513,7 @@ async function mount(appLocale) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return { hostEl, text, chipText: chipEl.textContent.trim(), registrations, title }
+  return { hostEl, root, chipEl, text, chipText: chipEl.textContent.trim(), registrations, title }
 }
 
 // The register-time label path is exercised for real: `ctx.i18n.t` resolves through the SAME
@@ -526,9 +530,9 @@ const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', "Agent's Suggestion", '✕ Reject',
-  '✓ Approve', 'Not Applicable', 'New Skill', '#abc12345', '#def67890',
-  'Details and Changes', 'MEMORY.md', 'USER.md'], 'en')
+must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', "Agent's suggestion", 'Reject',
+  'Approve', 'Not applicable', 'New skill', '#abc12345', '#def67890',
+  'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
 noRawKeys(en.text, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
@@ -537,7 +541,7 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
-must(other.text, ['Approvals', 'Pending', 'Not Applicable', 'New Skill'], 'app locale tr')
+must(other.text, ['Approvals', 'Pending', 'Not applicable', 'New skill'], 'app locale tr')
 noRawKeys(other.text, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
@@ -547,6 +551,36 @@ for (const mounted of [en, other]) {
   for (const word of ['Panel Language', 'Yenile', 'Onaylar', 'Reddet', 'Uygulanamaz', 'Türkçesi', 'Turkish']) {
     if (mounted.hostEl.textContent.includes(word)) fail(`a foreign-language string is on screen: ${word}`)
   }
+}
+
+// --- 2b) Tabs are a real tablist: roles, aria-selected, roving tabIndex, arrow keys, overflow ----
+{
+  const lists = [...en.hostEl.querySelectorAll('[role="tablist"]')]
+  if (!lists.length) fail('the view tabs are plain buttons (no role=tablist)')
+  const top = lists[0]
+  const tabs = [...(top?.querySelectorAll('[role="tab"]') || [])]
+  if (tabs.length !== 3) fail(`the view tablist does not hold 3 role=tab controls (${tabs.length})`)
+  const selected = tabs.filter(b => b.getAttribute('aria-selected') === 'true')
+  if (selected.length !== 1 || selected[0]?.tabIndex !== 0 || tabs.filter(b => b.tabIndex === -1).length !== 2) {
+    fail('the tabs carry no single aria-selected tab with a roving tabIndex')
+  }
+  if (top && top.style.overflowX !== 'auto') fail('the tab strip has no overflow handling')
+  if (selected[0]) {
+    await act(async () => {
+      selected[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
+    if (!now || !/Applied/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
+    if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
+    const panel = en.hostEl.querySelector('[role="tabpanel"]')
+    if (!panel || panel.getAttribute('aria-labelledby') !== now?.id) fail('the tab panel is not labelled by its tab')
+    await act(async () => {
+      now.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    })
+    await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+  }
+  const glyph = [...en.hostEl.querySelectorAll('button')].filter(b => /[✓✕]/.test(b.textContent || ''))
+  if (glyph.length) fail(`a glyph is part of a button name: ${glyph.map(b => b.textContent).join(', ')}`)
 }
 
 // --- 3) No native `title=`, and every control keeps an accessible name --------------------------
@@ -574,8 +608,8 @@ for (const mounted of [en, other]) {
   const plainCell = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
   if (slot(plainCell, 'log-view')) fail('a raw LogView is drawn outside the details on a plain record')
   if (!slot(cell, 'log-view')) fail('the failed attempt is not drawn on the record whose approve was refused')
-  const reject = buttonsInCard.find(b => /✕ Reject/.test(b.textContent || ''))
-  const approve = buttonsInCard.find(b => /✓ Approve/.test(b.textContent || ''))
+  const reject = buttonsInCard.find(b => /^Reject$/.test(b.textContent || ''))
+  const approve = buttonsInCard.find(b => /^Approve$/.test(b.textContent || ''))
   if (reject?.getAttribute('data-variant') !== 'destructive') fail('Reject is not the kit destructive variant')
   if (approve?.getAttribute('data-variant') !== 'default') fail('Approve is not the kit default variant')
   if (buttonsInCard.some(b => b.getAttribute('data-size') === null || b.getAttribute('data-variant') === null)) {
@@ -613,13 +647,25 @@ for (const mounted of [en, other]) {
   const prose = boxStyles.filter(h => h === 80)
   const others = [...new Set(boxStyles.filter(h => h !== 80 && h !== 168 && h !== 340))]
   if (prose.length < 4 || others.length) fail(`text boxes are not all 80px: ${JSON.stringify(boxStyles)}`)
-  if (!html.includes('height: 340px; overflow-y: auto')) fail('the card scroll layer is not fixed')
-  const scrollEnd = html.indexOf('height: 340px; overflow-y: auto')
-  const adviceAt = html.indexOf("Agent's Suggestion")
-  if (scrollEnd === -1 || adviceAt === -1 || scrollEnd > adviceAt) {
-    fail('the scroll layer swallows the advice/buttons: they must stay visible')
+  for (const card of en.hostEl.querySelectorAll('.pa-cell .pa-card')) {
+    const scrollers = [...card.querySelectorAll('*')].filter(el => el.style.overflowY === 'auto')
+    const nestedIn = scrollers.filter(el => scrollers.some(o => o !== el && o.contains(el)))
+    if (nestedIn.length) fail(`a scroll box sits inside another scroll box in a card (${nestedIn.length})`)
+    if ([...card.querySelectorAll('*')].some(el => el.style.height === '340px')) {
+      fail('a card is cut to a fixed 340px layer whatever its content')
+    }
+    const advice = card.querySelector('.pa-advice')
+    if (advice && scrollers.some(el => el.contains(advice))) fail('a scroll box swallows the advice/buttons')
   }
   must(html, ['align-items:stretch'], 'equal card heights')
+  for (const cell of cells) {
+    const kindPill = [...cell.querySelectorAll('.pa-pill')].find(p => /^(Memory note|Skill file)/.test(p.textContent || ''))
+    if (kindPill) fail(`the kind pill repeats the Type row: ${kindPill.textContent}`)
+  }
+  const split = (en.hostEl.textContent.match(/Memory: 1 · Skills: 2/g) || []).length
+  if (split !== 1) fail(`the pending split is printed ${split} times (the footer repeats the KPI card)`)
+  const footer = en.hostEl.querySelector('.pa-footer')
+  if (!footer || footer.style.flexWrap !== 'wrap') fail('the footer row cannot wrap')
   must(en.hostEl.textContent, ['No operation detail was recorded for this write'],
     'a record with no operation detail must explain itself, not print a button label')
 }
@@ -627,16 +673,22 @@ for (const mounted of [en, other]) {
 // --- 6) The blocked record keeps Approve disabled, an open record does not ----------------------
 {
   const blocked = en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
-  const approve = [...(blocked?.querySelectorAll('button') || [])].find(b => /✓ Approve/.test(b.textContent || ''))
-  if (!approve || !approve.disabled) fail('the blocked record still offers a clickable “✓ Approve”')
+  const approve = [...(blocked?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
+  if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('the blocked record still offers a clickable “Approve”')
+  if (approve?.disabled) fail('the blocked Approve is a disabled button: keyboard users can never reach its reason Tip')
+  if (approve) {
+    const before = stub.calls.posts.filter(p => p.path === '/decide').length
+    await click(approve)
+    if (stub.calls.posts.filter(p => p.path === '/decide').length !== before) fail('the held Approve still sends /decide')
+  }
   const tip = approve?.closest('[data-tip]')
   if (!tip || !String(tip.getAttribute('data-tip')).includes('long text')) {
     fail('the blocked Approve carries no themed Tip with the reason')
   }
   if (approve?.getAttribute('title')) fail('the blocked Approve still carries a native title')
   const open = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
-  const openApprove = [...(open?.querySelectorAll('button') || [])].find(b => /✓ Approve/.test(b.textContent || ''))
-  if (!openApprove || openApprove.disabled) fail('a record that needs no fix has Approve disabled')
+  const openApprove = [...(open?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
+  if (!openApprove || openApprove.disabled || openApprove.getAttribute('aria-disabled') === 'true') fail('a record that needs no fix has Approve disabled')
   if (openApprove?.closest('[data-tip]')) fail('a record that needs no fix carries a tooltip on Approve')
 }
 
@@ -645,7 +697,7 @@ for (const mounted of [en, other]) {
   const badgesOf = key => [...(en.hostEl.querySelector('.pa-cell[data-key="' + key + '"]')
     ?.querySelectorAll('[data-slot="badge"]') || [])]
   const failed = badgesOf('memory:abc12345')
-  if ((failed[0]?.textContent || '') !== 'Approve Failed Before') {
+  if ((failed[0]?.textContent || '') !== 'Approve failed before') {
     fail(`a record whose approve was refused still claims a state: ${JSON.stringify(failed[0]?.textContent)}`)
   }
   if (failed[0]?.getAttribute('data-variant') !== 'warn') fail('the refused record is not marked as a warning')
@@ -662,14 +714,14 @@ for (const mounted of [en, other]) {
   }
   must(en.hostEl.textContent, ['the “Shorten and create” button writes it'], 'the fixable advice note')
   const clean = badgesOf('skills:aaa11111')
-  if (clean[0]?.textContent !== 'New Skill' || clean[1]?.getAttribute('data-variant') !== 'success') {
+  if (clean[0]?.textContent !== 'New skill' || clean[1]?.getAttribute('data-variant') !== 'success') {
     fail(`a clean new-skill record is not drawn as approvable: ${JSON.stringify(clean.map(b => b.textContent))}`)
   }
 }
 
 // --- 7) Details: the real diff and the write_file content ---------------------------------------
 {
-  for (const b of buttons(en.hostEl, /Details and Changes/)) await click(b)
+  for (const b of buttons(en.hostEl, /Details and changes/)) await click(b)
   const allRaws = [...en.hostEl.querySelectorAll('[data-slot="log-view"]')]
   const diff = allRaws.map(d => d.textContent || '').find(t => t.includes('+++'))
   if (!diff || !diff.includes('# New file')) fail(`no real diff in the details: ${allRaws.map(d => (d.textContent || '').slice(0, 40))}`)
@@ -679,7 +731,7 @@ for (const mounted of [en, other]) {
   }
   must(en.hostEl.textContent, ['# New file', 'The text'], 'write_file content')
   must(en.hostEl.textContent, ['current:', 'new:'], 'before/after box labels')
-  if (!buttons(en.hostEl, /Hide Details/).length) fail('the details toggle does not flip to “Hide Details”')
+  if (!buttons(en.hostEl, /Hide details/).length) fail('the details toggle does not flip to “Hide details”')
   const sides = [...en.hostEl.querySelectorAll('.pa-cmp-side')]
   const label = kind => `${kind}: ${LONG_OP.length} characters`
   const oldSide = sides.find(s => (s.textContent || '').includes(label('current')))
@@ -733,7 +785,7 @@ for (const mounted of [en, other]) {
   if ((noteBox?.textContent || '').trim() !== FIX_RAW_DESC) {
     fail(`the "What it does" box does not show the record's own text: ${(noteBox?.textContent || '').slice(0, 80)}`)
   }
-  const fixLabel = byText(en.hostEl, 'Shortened (53 chars)')
+  const fixLabel = byText(en.hostEl, 'Shortened (53 characters)')
   if (!fixLabel) fail('the "Shortened (N chars)" label is missing')
   const fixBox = fixLabel?.nextElementSibling
   // The fix sides and the labelled notes sit inside the fixed 340px layer: they draw at their
@@ -746,16 +798,21 @@ for (const mounted of [en, other]) {
   if (new Set(badgeSizes).size !== 1) fail(`the card badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
   // Round 3 (2026-09-23): the pair went from 1 : 2 to 2 : 3 so it reads as a pair of equals-in-kind
   // (the judge flagged 1 : 2 as unbalanced) while Approve stays the primary, i.e. still the wider one.
-  // It sits on the card's foot row beside `Details and Changes`, with calmer opaque fills.
+  // It sits on the card's foot row beside `Details and changes`, with calmer opaque fills.
   const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
   const cols = (en.hostEl.innerHTML.match(/\.pa-actions\{display:grid;grid-template-columns:minmax\(0,(\d+)fr\) minmax\(0,(\d+)fr\)/) || [])
   if (!actions || !cols.length || !(Number(cols[2]) > Number(cols[1]))) {
     fail('Reject and Approve carry equal weight again (the primary action must be the wider one)')
   }
-  const fills = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.className)
-  if (!fills.includes('pa-reject') || !fills.includes('pa-approve')) {
-    fail(`the action pair lost its calmer fills (.pa-reject / .pa-approve): ${JSON.stringify(fills)}`)
+  const variants = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.getAttribute('data-variant'))
+  if (JSON.stringify(variants) !== JSON.stringify(['destructive', 'default'])) {
+    fail(`the action pair is not the kit destructive/default pair: ${JSON.stringify(variants)}`)
   }
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-(reject|approve)\b/.test(sheet) || /filter:brightness/.test(sheet) || /var\(--(dt|theme)-/.test(sheet)) {
+    fail('the panel restyles the kit buttons (!important fills, --dt-*/--theme-* mixes or a brightness hover)')
+  }
+  if (/font-size:10\.5px/.test(sheet)) fail('10.5px text is back (FS.micro below 11px)')
   // One tag family: every kit Badge in a card wears the TAG form (the .pa-pill height/radius/weight).
   const tags = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')]
   const odd = tags.filter(b => !b.classList.contains('pa-tag') || b.style.height !== '20px'
@@ -786,13 +843,10 @@ for (const mounted of [en, other]) {
     || !en.hostEl.querySelector('.pa-cols.pa-two')) {
     fail('a lone last card sits in half the grid again (the .pa-two lone-card rule is gone)')
   }
-  const nested = [...en.hostEl.querySelectorAll('.pa-card [style*="height: 340px"] [style*="overflow-y: auto"]')]
-    .filter(el => el.style.height !== '80px')
-  if (nested.length) fail(`a scroll box other than the 80px text boxes is nested in the card layer (${nested.length})`)
   if (!en.hostEl.querySelector('.pa-cell .pa-advice .pa-advice-foot')) {
     fail('the advice note no longer absorbs the free height above the buttons')
   }
-  must(en.hostEl.textContent, ['As Written (172 chars)', FIX_SUGGESTED], 'the fix surfaces')
+  must(en.hostEl.textContent, ['As written (172 characters)', FIX_SUGGESTED], 'the fix surfaces')
   const fixBtn = buttons(en.hostEl, /Shorten and create/)[0]
   if (!fixBtn) fail('the "Shorten and create" button is missing')
   await click(fixBtn, 60)
@@ -806,13 +860,16 @@ for (const mounted of [en, other]) {
 const memoryTab = tab(en.hostEl, /Memory/)
 if (!memoryTab) fail('the Memory tab is missing')
 await click(memoryTab, 60)
-must(en.hostEl.textContent, ['Note 1', 'MEMORY.md', 'USER.md', 'Last change'],
+must(en.hostEl.textContent, ['Note 1 · 6 characters', 'Note 2', '2 notes', 'MEMORY.md', 'USER.md', 'Last change'],
   'memory tab')
+if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memory file tabs are not a tablist')
 if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
 {
   const del = buttons(en.hostEl, /^Delete$/)[0]
   if (!del) fail('the note delete control is missing')
   await click(del)
+  const armed = en.hostEl.querySelectorAll(DESTRUCTIVE).length
+  if (armed !== 1) fail(`arming one of two identical notes armed ${armed} confirmations`)
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
@@ -830,8 +887,8 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 const appliedTab = tab(en.hostEl, /Applied/)
 if (!appliedTab) fail('the Applied tab is missing')
 await click(appliedTab, 60)
-must(en.hostEl.textContent, ['file(s) changed outside the pane', 'Approved and applied', 'Rejected',
-  'Changed Outside the Pane', 'Approve Failed'], 'applied tab')
+must(en.hostEl.textContent, ['2 files changed outside the pane', 'Approved and applied', 'Rejected',
+  'Changed outside the pane', 'Approve failed'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 {
   const cards = [...en.hostEl.querySelectorAll('.pa-card')]
@@ -881,6 +938,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 {
   const clear = buttons(en.hostEl, /Clear/)[0]
+  if ((clear?.textContent || '') !== 'Clear 4 records') fail(`the clear label is not a real plural: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
   await click(clear)
   must(en.hostEl.textContent, ['Clearing drops the undo copies'], 'clear confirmation copy')
@@ -928,7 +986,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
   if (icon?.closest('[data-tip]')?.getAttribute('data-tip') !== 'Refresh') fail('the refresh control carries no Tip')
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
-  if (!/Awaiting Approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
+  if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
 }
 
@@ -980,6 +1038,50 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   observer.disconnect()
 }
 
+// --- 13b) A running action shows progress; a failed /fix keeps the card; leave timers die with the pane
+{
+  const timers = new Map()
+  const cleared = new Set()
+  const realSet = dom.window.setTimeout.bind(dom.window)
+  const realClear = dom.window.clearTimeout.bind(dom.window)
+  dom.window.setTimeout = (fn, ms, ...a) => {
+    const id = realSet(fn, ms, ...a)
+    timers.set(id, ms)
+    return id
+  }
+  dom.window.clearTimeout = id => {
+    cleared.add(id)
+    return realClear(id)
+  }
+  const fresh = await mount('en')
+  REST.post = 'fixfail'
+  const fixBtn = buttons(fresh.hostEl, /Shorten and create/)[0]
+  if (fixBtn) await click(fixBtn, 60)
+  const fixCell = fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"] .pa-card')
+  if (!fixCell || fixCell.classList.contains('pa-leaving')) fail('a failed /fix removed the card')
+  const said = stub.calls.notify.map(n => n.message || '').join(' | ')
+  if (!said.includes('left exactly as it was staged')) fail(`a failed /fix was not reported: ${said}`)
+  REST.post = 'normal'
+  const rejectBtn = buttons(fresh.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Reject$/)[0]
+  if (rejectBtn) await click(rejectBtn, 0)
+  const leaveIds = [...timers].filter(([, ms]) => ms === 340).map(([id]) => id)
+  if (!leaveIds.length) fail('no leave timer was started by a successful decision')
+  await act(async () => { fresh.root.unmount() })
+  if (leaveIds.some(id => !cleared.has(id))) fail('a leave timer survives the unmount (setTimeout never cleared)')
+  dom.window.setTimeout = realSet
+  dom.window.clearTimeout = realClear
+  fresh.hostEl.remove()
+
+  const busy = await mount('en')
+  REST.post = 'hold'
+  const approve = buttons(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Approve$/)[0]
+  if (approve) await click(approve, 20)
+  const running = buttons(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Approve$/)[0]
+  if (running?.getAttribute('aria-busy') !== 'true') fail('a running approve shows no progress (aria-busy/loading)')
+  REST.post = 'normal'
+  busy.hostEl.remove()
+}
+
 // --- 14) The panel never touches the removed language route ------------------------------------
 if (stub.calls.posts.some(p => p.path === '/settings')) fail('the removed /settings route was called')
 if ([...stub.calls.posts, ...stub.calls.navigate].some(p => JSON.stringify(p).includes('lang'))) {
@@ -1016,6 +1118,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (!broken.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed read shows no kit ErrorState')
   if (/Restart the desktop app/.test(broken.hostEl.textContent)) fail('the error still asks for an app restart')
   if (!broken.hostEl.textContent.includes('list exploded')) fail('the backend error message is not shown')
+  if (!/unavailable/i.test(broken.chipText)) fail(`the status chip has no error state: ${JSON.stringify(broken.chipText)}`)
   const retry = buttons(broken.hostEl, /^Retry$/)[0]
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error state carries no kit Retry button')
   REST.mode = 'issues'
@@ -1036,7 +1139,7 @@ if (problems.length) {
 console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons, fixed text boxes, status chip')
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')
-console.log('  blocked record: ✓ Approve disabled with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
+console.log('  blocked record: Approve held (aria-disabled, still focusable) with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
 console.log(`  language: ${JSON.stringify(stub.calls.registered[0].locales)} bundle registered, no picker in the DOM, English under the app locale "en" AND "tr", no raw pa.* key`)
 console.log('  two-step: delete “A note” and clear the history ask first; the conflicting undo turns into "Force undo" and only then sends force:true')
 console.log(`  chip: "${en.chipText}" · KPI cards: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)

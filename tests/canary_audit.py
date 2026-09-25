@@ -127,7 +127,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "jsx(Badge, { variant: stateVariant", 1, "a Badge outside the one tag form"),
     ("a lone last card spans the row", JS, ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}",
      ".pa-two>:last-child:nth-child(odd){}", 1, "a lone last card sits in half the grid"),
-    ("one version everywhere", MANIFEST, '"version": "1.6.3"', '"version": "9.9.9"', 1,
+    ("one version everywhere", MANIFEST, '"version": "1.6.4"', '"version": "9.9.9"', 1,
      "the two must agree"),
 ]
 
