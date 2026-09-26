@@ -5,6 +5,17 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.5
+
+### Fixes
+
+* **"Shorten and create" only touches the frontmatter description.** It rewrote the long description
+  with a whole-file text replace, so the same sentence anywhere in the SKILL.md body was rewritten too
+  (and the validator checked that wrongly edited file). Now only the `description:` value inside the
+  `---` frontmatter block is replaced; the body stays byte-identical, and a `description:` line in the
+  body is never mistaken for the frontmatter one. Locked by the backend selftest (bare, double- and
+  single-quoted descriptions repeated in the body), seen failing on 1.6.4 first.
+
 ## 1.6.4
 
 A second blind review. Every item is locked by the backend selftest (now also run in CI against the

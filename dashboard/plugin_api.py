@@ -919,6 +919,21 @@ def _shorten_description(text: str, limit: int) -> str:
     return (" ".join(words) or cut).rstrip(" ,;:") + "."
 
 
+_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(.*?)^---[ \t]*$", re.S | re.M)
+
+
+def _replace_frontmatter_description(content: str, value: str) -> tuple[str, str] | None:
+    front = _FRONTMATTER.match(content)
+    if not front:
+        return None
+    match = re.search(r"^description:[ \t]*(.+?)[ \t\r]*$", front.group(1), re.M)
+    if not match:
+        return None
+    start = front.start(1) + match.start(1)
+    end = front.start(1) + match.end(1)
+    return match.group(1), content[:start] + value + content[end:]
+
+
 def _skill_description_fix(record: dict) -> list[dict]:
     from tools.skill_manager_tool import SKILL_PROMPT_DESC_LIMIT as limit
 
@@ -927,15 +942,17 @@ def _skill_description_fix(record: dict) -> list[dict]:
         if op.get("action") != "create":
             continue
         content = op.get("content") or ""
-        match = re.search(r"^description:[ \t]*(.+)$", content, re.M)
-        if not match:
+        found = _replace_frontmatter_description(content, "")
+        if not found:
             continue
-        raw = match.group(1).strip()
-        desc = raw.strip("'\"")
+        desc = found[0].strip("'\"")
         if len(desc) <= limit:
             continue
         short = _shorten_description(desc, limit)
-        if not short or len(short) > limit or _skill_problem(content.replace(raw, f'"{short}"')):
+        if not short or len(short) > limit:
+            continue
+        new_content = _replace_frontmatter_description(content, f'"{short}"')[1]
+        if _skill_problem(new_content):
             continue
         fixes.append({
             "name": op.get("name") or "",
@@ -943,7 +960,7 @@ def _skill_description_fix(record: dict) -> list[dict]:
             "before": len(desc),
             "after": len(short),
             "description": short,
-            "content": content.replace(raw, f'"{short}"'),
+            "content": new_content,
         })
     return fixes
 
@@ -1805,6 +1822,25 @@ def _selftest() -> int:
     assert (_shorten_description("Use when Hermes stages your skill/memory writes for approval.", 60)
             == "Use when Hermes stages your skill/memory writes."), \
         _shorten_description("Use when Hermes stages your skill/memory writes for approval.", 60)
+    for quote in ("", '"', "'"):
+        rep_desc = ("Use when building or auditing a Hermes desktop plugin panel. Three runnable checks "
+                    "and the silent-failure classes to hunt.")
+        rep_raw = f"{quote}{rep_desc}{quote}"
+        rep_body = (f"\n# Repeats\n\n{rep_raw}\n\n{rep_desc}\n\ndescription: {rep_raw}\n\n"
+                    f"> {rep_raw} (quoted again)\n")
+        rep_content = f"---\nname: repeats\ndescription: {rep_raw}\n---\n{rep_body}"
+        rep_fix = _skill_description_fix({"payload": {"operations": [
+            {"action": "create", "name": "repeats", "content": rep_content}]}})
+        assert len(rep_fix) == 1, rep_fix
+        rep_new = rep_fix[0]["content"]
+        rep_head, _, rep_tail = rep_new.partition("\n---\n")
+        assert rep_tail == rep_body, "the description fix rewrote the SKILL.md body"
+        assert rep_head == f'---\nname: repeats\ndescription: "{rep_fix[0]["description"]}"', rep_head
+    body_only = ("---\nname: body-only\ndescription: short\n---\n\ndescription: "
+                 + "A body line that is far longer than any description limit allows " * 6 + "\n")
+    assert not _skill_description_fix({"payload": {"operations": [
+        {"action": "create", "name": "body-only", "content": body_only}]}}), \
+        "a description: line in the body was read as the frontmatter description"
     long_text = "A long English note. " + ("detail " * 120)
     long_op = _ops({"payload": {"action": "patch", "name": "x", "file_path": "SKILL.md",
                                 "old_string": "gone", "new_string": long_text}})[0]
