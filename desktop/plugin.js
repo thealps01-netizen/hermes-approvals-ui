@@ -261,16 +261,16 @@ const LIT_EDGE = `inset 0 1px 0 ${tint('var(--ui-text-primary)', 7)}`
 const THIN_SCROLL = 'scrollbar-width:thin;'
   + 'scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 45%,transparent) transparent'
 const cardBase = {
-  background: 'var(--ui-bg-card)', border: HAIRLINE, borderRadius: R.card, boxShadow: LIT_EDGE
+  background: 'var(--hx-card)', border: HAIRLINE, borderRadius: R.card, boxShadow: LIT_EDGE
 }
 
 const STYLE = `
 .pa-cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));align-items:stretch}
 .pa-cell{display:flex;min-width:0}
-.pa-root{container-type:inline-size}
+.pa-root{container-type:inline-size;
+  --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
-.pa-kpis-2{grid-template-columns:repeat(2,minmax(0,1fr))}
-.pa-kpi{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
+.pa-kpi{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};padding:12px 14px;display:flex;flex-direction:column;min-width:0}
 .pa-kpi-top{display:flex;align-items:center;gap:8px;min-width:0}
 .pa-kpi-label{font-size:${FS.micro}px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
@@ -287,7 +287,7 @@ const STYLE = `
   color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-kpi[data-tone="warn"]{border-color:color-mix(in srgb,var(--ui-orange) 42%,transparent)}
 .pa-kpi[data-tone="bad"]{border-color:color-mix(in srgb,var(--ui-red) 50%,transparent);
-  background:color-mix(in srgb,var(--ui-red) 6%,var(--ui-bg-card))}
+  background:color-mix(in srgb,var(--ui-red) 6%,var(--hx-card))}
 .pa-kpi-sub{margin-top:6px;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pa-head{display:flex;align-items:center;gap:12px;min-width:0}
@@ -308,14 +308,14 @@ const STYLE = `
 .pa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .pa-two>:last-child:nth-child(odd){grid-column:1/-1}
 @container (max-width:640px){.pa-two{grid-template-columns:minmax(0,1fr)}}
-.pa-card{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
+.pa-card{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
 .pa-card:hover{border-color:var(--ui-stroke-primary,var(--ui-stroke-secondary))}
 .pa-leaving{opacity:0;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
 .pa-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
 .pa-cmp>*{min-width:0}
-.pa-cmp-side{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
+.pa-cmp-side{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};padding:${G.sm}px;display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-cmp-wide{grid-column:1/-1}
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
@@ -1291,18 +1291,6 @@ function MemoryView({ data, error, refresh, onChanged }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
-      jsx('div', {
-        className: 'pa-kpis pa-kpis-2',
-        children: ['memory', 'user'].map(nm =>
-          jsx(Stat, {
-            title: data?.[nm]?.file || nm,
-            figure: `${fill(data?.[nm]).pct}%`,
-            delta: t('pa.kpi.chars', data?.[nm]?.chars ?? 0, data?.[nm]?.limit ?? 0),
-            tone: fill(data?.[nm]).tone,
-            pill: t(fill(data?.[nm]).key),
-            file: true
-          }, nm))
-      }, 'kpis'),
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
@@ -1424,7 +1412,7 @@ function Pane() {
     className: 'pa-root',
     style: {
       display: 'flex', height: '100%', minHeight: 0, flexDirection: 'column',
-      background: 'var(--ui-bg-sidebar)', color: 'var(--ui-text-primary)'
+      background: 'transparent', color: 'var(--ui-text-primary)'
     },
     children: [
       jsx('style', { children: STYLE }, 'css'),
