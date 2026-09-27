@@ -16,7 +16,12 @@ chat tells you a write is waiting; this panel is where you inspect it and decide
   budget) the shortened alternative with a "Shorten and create" action.
 * **Applied** — every approve, reject, outside change and failed attempt, with per-record **Undo**.
 * **Memory** — the live `MEMORY.md` / `USER.md` entries with the budget they consume, and a two-step
-  delete (adding a note stays a chat action — the panel does not invent a second write path).
+  delete (adding a note stays a chat action — the panel does not invent a second write path). Past 90%
+  the warning can **draft a merge request** into the chat box; you read and send it, and the result
+  comes back to Pending like any other write.
+
+Several pending records can be ticked and decided together (two-step, one request per subsystem).
+Ctrl+K offers **Open Approvals** and **Approval alerts** (mute the alerts; the chip keeps counting).
 
 Approve and reject call the same function the `/memory approve` command uses, success is read from the
 record leaving the pending directory (never from a message), and the "before" copy of every touched
@@ -73,9 +78,9 @@ what every rule and every measurement asserts — is in [`tests/README.md`](test
 
 | Gate | Command (from `tests/`) | Proves |
 |---|---|---|
-| Static audit | `python audit_static.py` | One `en` bundle reaching `ctx.i18n.register`, every `t()` key resolving, no language switch left, no `panes` claim, no comment/docstring, loader-safe imports, host-kit usage, theme variables only, the two-step delete/clear/force-undo intact, one version across the manifests, and the installed copy byte-identical to the repo file |
+| Static audit | `python audit_static.py` | One `en` bundle reaching `ctx.i18n.register`, every `t()` key resolving, no language switch left, no `panes` claim, no comment/docstring, loader-safe imports, host-kit usage, theme variables only, the two-step delete/clear/force-undo and bulk decisions intact, one version across the manifests, and the installed copy byte-identical to the repo file |
 | Canary run | `python canary_audit.py` | That the audit **can** fail: one violation injected per rule, exit 1 with that rule's message, file restored byte for byte, audit green again |
-| Render/behaviour | `node render_check.mjs` | jsdom + real React + a host-kit stub: registration, the kit skeleton, no native `title=`, accessible names, the blocked-record lock, the description fix, details/diff, two-step destructive actions, KPI + chip, FLIP, English text under two app locales |
+| Render/behaviour | `node render_check.mjs` | jsdom + real React + a host-kit stub: registration, the kit skeleton, no native `title=`, accessible names, the blocked-record lock, the description fix, details/diff, two-step destructive actions, bulk decisions, palette rows, the alert mute, the merge draft, KPI + chip, FLIP, English text under two app locales |
 | Static preview | `node preview.mjs` | The four frames rendered into `preview.html` inside the app's own theme and compiled stylesheet; fails on a raw `pa.*` key or a native `title=` |
 | Real render + WCAG | `node shot.mjs preview.html preview.png` | The only gate that paints and measures pixels (Electron/Chromium): overflow, clipped text, native controls, kit traces, the declared layer heights read back from the screen, and every painted text node's contrast ratio (4.5:1 / 3:1) |
 | Contrast negative control | `PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png`, then again without it | That the WCAG gate can fail: two violations injected into the already-drawn page must turn the gate red and name both nodes; the unmodified page must go green again |
@@ -128,8 +133,10 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
 * **Undo is real.** The before-copy of each touched file is stored with the record; undo restores it.
   A file that changed *after* the record was written asks for **Force undo** and says what else would
   be discarded.
-* **Destructive actions are two-step.** Deleting a memory note, clearing the history and force-undo all
-  require the confirming click; nothing is sent before it.
+* **Destructive actions are two-step.** Deleting a memory note, clearing the history, force-undo and
+  every bulk approve/reject require the confirming click; nothing is sent before it.
+* **A chat draft is not an approval.** The merge draft only writes text into the chat box; sending it
+  asks the agent for a proposal, which is held for approval like any other write.
 * **A blocked record is named before you click, and never half-applied.** The precheck (the skill
   description over the prompt budget, a patch that no longer matches its target, a memory note that
   would overflow the file) lists the reason under **Why It Can't Be Applied** and recommends Reject;

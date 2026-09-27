@@ -5,6 +5,33 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.7.0
+
+### New
+
+* **Bulk decisions.** Every pending card carries a checkbox and a bar above the queue reads
+  "N of M selected · Select all · Reject N · Approve N". Both actions arm first (a confirmation strip
+  names the count; nothing is sent before **Confirm**, **Cancel** sends nothing). Each subsystem goes out
+  as ONE `/decide` with its own ids — the endpoint that already took a list — and the result is one
+  notification with the done count and, on a partial failure, the first reason. Records that cannot be
+  applied as staged (stale, or waiting on a fix) are not selectable and the bar says so; they stay
+  single-card decisions.
+* **Command palette.** Ctrl+K lists **Open Approvals** with the live waiting count (the README promised
+  this command; nothing registered it) and **Approval alerts** (on / muted), which toggles without
+  closing the palette.
+* **Mute alerts.** A footer switch and the palette row mute the in-app and OS alerts for new records;
+  the status chip keeps counting. The choice lives in `ctx.storage` (`muted`).
+* **Draft a merge request.** Past 90% the memory warning offers a button that writes a merge request
+  into the active chat box with `host.composer.insertText` — never sent, never a decision. The text asks
+  for a proposal staged through the memory tool and states it is not an approval, so the result comes
+  back here for your approval. No open chat box is reported as a warning, not swallowed.
+
+### Fixes
+
+* **Record ids are matched whole.** `_ID_RE` used `^…$` with `match`, so an id with a trailing newline
+  (`"abcdef12\n"`) passed validation. It is `fullmatch` now; the selftest checks the newline, CRLF,
+  a ninth character, a leading space and upper case, and was seen failing on the old pattern first.
+
 ## 1.6.6
 
 ### Look

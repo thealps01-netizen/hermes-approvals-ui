@@ -153,12 +153,12 @@ def _store_copy(path: Path, entry_id: str, n: int) -> str:
     return name
 
 
-_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+_ID_RE = re.compile(r"[0-9a-f]{8}")
 
 
 def _valid_id(value: object) -> str:
     text = str(value or "")
-    return text if _ID_RE.match(text) else ""
+    return text if _ID_RE.fullmatch(text) else ""
 
 
 def _safe_rel(value: object) -> str:
@@ -1600,6 +1600,9 @@ def _selftest() -> int:
 
     assert asyncio.run(undo({"id": "../../MEMORY.md"}))["ok"] is False
     assert asyncio.run(decide({"subsystem": "memory", "ids": ["../x"], "decision": "approve"}))["ok"] is False
+    assert _valid_id("abcdef12") == "abcdef12", "a well-formed id was refused"
+    for bad in ("abcdef12\n", "abcdef12\r\n", "abcdef123", " abcdef12", "ABCDEF12"):
+        assert _valid_id(bad) == "", f"a malformed id passed validation: {bad!r}"
 
     _append({"id": "99999999", "ts": time.time(), "kind": "apply", "subsystem": "skills",
              "summary": "tampered path", "files": [{"path": "memories/../trap.txt", "snap": "0.bin",

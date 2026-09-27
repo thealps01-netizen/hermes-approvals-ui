@@ -27,6 +27,14 @@
  *      sentence is English and a raw `pa.*` key never reaches the screen — under ANY app locale,
  *      because the app translator resolves the plugin's own bundle by app locale.
  *  11. The panel never polls or writes `/settings`: the removed language route is not called at all.
+ *  11b. PALETTE + ALERTS: `Open Approvals` (live waiting count, navigates to the page) and the
+ *      `Approval alerts` toggle; muting stops the in-app and OS alerts while the chip keeps counting,
+ *      and the footer switch, the palette row and ctx.storage agree.
+ *  11c. BULK DECISIONS: only records that can be applied as staged are selectable; the bar arms
+ *      first and nothing is sent before Confirm; each subsystem goes out as ONE /decide with its own
+ *      ids; a partial failure is reported with its reason.
+ *  11d. MERGE DRAFT: past 90% the memory warning offers "Draft a merge request"; it writes a request
+ *      into the active chat box (never sends it, never calls /decide), and says so when no chat box answers.
  *  12. THE HOST UI KIT is the panel's skeleton: the controls are kit `Button`s (variant + size, no
  *      private height/padding overrides), the status chips are kit `Badge`s, the inspector is kit
  *      `PanelMeta`, the record's own text sits in kit `PanelBlock`, raw/diff bodies in kit `LogView`,
@@ -46,8 +54,8 @@ const STUB = `
 import { cloneElement } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
-export const calls = { notify: [], navigate: [], posts: [], os: [], registered: [] }
-export const state = { appLocale: 'en' }
+export const calls = { notify: [], navigate: [], posts: [], os: [], registered: [], composer: [] }
+export const state = { appLocale: 'en', composerLive: true }
 
 const bundles = new Map()
 
@@ -92,7 +100,13 @@ export function useI18n() {
 export const host = {
   notify: m => calls.notify.push(m),
   notifyError: (e, t) => calls.notify.push({ kind: 'error', message: String(t || e) }),
-  navigate: r => calls.navigate.push(r)
+  navigate: r => calls.navigate.push(r),
+  composer: {
+    insertText: async (sessionId, text, opts) => {
+      calls.composer.push({ sessionId, text, opts })
+      return state.composerLive
+    }
+  }
 }
 
 export const haptic = () => {}
@@ -434,6 +448,7 @@ const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
 const REST = { mode: 'normal', gets: 0, post: 'normal' }
+const STORE = new Map()
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 let version = 0
 async function mount(appLocale) {
@@ -456,6 +471,9 @@ async function mount(appLocale) {
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
+        if (path === '/decide' && REST.post === 'bulkfail' && opts.body.subsystem === 'skills') {
+          return { ok: true, results: opts.body.ids.map(id => ({ id, ok: false, error: 'Hermes refused it' })) }
+        }
         if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
@@ -467,7 +485,9 @@ async function mount(appLocale) {
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       const table = {
-        '/pending': REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] } : PENDING,
+        '/pending': REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
+          : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
+          : PENDING,
         '/pending?scan=0': PENDING,
         '/history?limit=50': HISTORY,
         '/memory': MEMORY
@@ -476,7 +496,10 @@ async function mount(appLocale) {
       return table[path]
     },
     os: { notify: (...a) => stub.calls.os.push(a) },
-    storage: { get: () => '0', set: () => {} },
+    storage: {
+      get: (key, fallback) => (STORE.has(key) ? STORE.get(key) : key === 'lastCount' ? '0' : fallback),
+      set: (key, value) => { if (key !== 'lastCount') STORE.set(key, value) }
+    },
     i18n: {
       register: bundles => stub.registerBundles(PLUGIN_ID, bundles),
       t: (key, ...args) => stub.resolveKey(PLUGIN_ID, key, args)
@@ -883,6 +906,28 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   if (!notified.includes('Deleted: A note')) fail(`no delete notification: ${notified}`)
 }
 
+// --- 10b) The merge draft -----------------------------------------------------------------------
+{
+  const draft = buttons(en.hostEl, /^Draft a merge request$/)[0]
+  if (!draft) fail('the nearly-full memory warning offers no merge draft')
+  if (!en.hostEl.textContent.includes('Memory is nearly full')) fail('the merge draft sits outside the warning')
+  const decided = stub.calls.posts.filter(p => p.path === '/decide').length
+  await click(draft, 40)
+  const put = stub.calls.composer[stub.calls.composer.length - 1]
+  if (!put || put.sessionId !== null || put.opts?.mode !== 'block') fail(`the draft did not go to the active chat box: ${JSON.stringify(put)}`)
+  must(put?.text, ['MEMORY.md is 100% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
+  if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
+  if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
+  if (stub.calls.notify[stub.calls.notify.length - 1]?.message !== 'Merge request is in the chat box — read it, then send.') {
+    fail('placing the draft was not confirmed')
+  }
+  stub.state.composerLive = false
+  await click(draft, 40)
+  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  if (told?.kind !== 'warning' || !/No chat box is open/.test(told?.message || '')) fail(`no chat box went unreported: ${JSON.stringify(told)}`)
+  stub.state.composerLive = true
+}
+
 // --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
 const appliedTab = tab(en.hostEl, /Applied/)
 if (!appliedTab) fail('the Applied tab is missing')
@@ -988,6 +1033,103 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
   if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
+}
+
+// --- 12b) Palette rows and the alert switch -----------------------------------------------------
+{
+  const rows = en.registrations.filter(r => r.area === 'palette')
+  const open = rows.find(r => r.data?.id === 'approvals.open')?.data
+  const alerts = rows.find(r => r.data?.id === 'approvals.alerts')?.data
+  if (rows.length !== 2 || !open || !alerts) fail(`palette rows wrong: ${rows.map(r => r.data?.id)}`)
+  if (open?.label !== 'Open Approvals') fail(`palette label not resolved: ${JSON.stringify(open?.label)}`)
+  if (open?.detail?.() !== '3 waiting') fail(`palette count wrong: ${JSON.stringify(open?.detail?.())}`)
+  const navBefore = stub.calls.navigate.length
+  open?.run?.()
+  if (stub.calls.navigate[navBefore] !== '/approvals') fail('the palette row does not open the page')
+  noRawKeys(`${open?.label} ${alerts?.label} ${alerts?.detail?.()}`, 'palette rows')
+  if (alerts?.detail?.() !== 'on' || !alerts?.keepOpen) fail('the alert row does not read on / keep the palette open')
+  if (!stub.calls.notify.some(n => /awaits? your approval/.test(n.message || '')) || !stub.calls.os.length) {
+    fail('unmuted: the new records raised no in-app or OS alert')
+  }
+  const toggle = en.hostEl.querySelector('.pa-alerts')
+  if (toggle?.getAttribute('aria-pressed') !== 'true' || toggle?.textContent !== 'Alerts on') {
+    fail(`footer alert switch wrong: ${toggle?.getAttribute('aria-pressed')} ${toggle?.textContent}`)
+  }
+  if (toggle) await click(toggle)
+  if (STORE.get('muted') !== true) fail('muting did not reach ctx.storage')
+  if (alerts?.detail?.() !== 'muted') fail('the palette row does not read the muted state')
+  if (toggle?.textContent !== 'Alerts muted') fail('the footer switch did not follow the mute')
+  const said = stub.calls.notify.length
+  const osSaid = stub.calls.os.length
+  const quiet = await mount('en')
+  if (stub.calls.notify.length !== said || stub.calls.os.length !== osSaid) fail('muted, a new record still alerted')
+  if (!/3 awaiting approval/.test(quiet.chipText)) fail('muted, the chip stopped counting')
+  await act(async () => { alerts?.run?.() })
+  if (STORE.get('muted') !== false) fail('the palette row does not unmute')
+  quiet.hostEl.remove()
+}
+
+// --- 12c) Bulk decisions ------------------------------------------------------------------------
+{
+  const bulk = await mount('en')
+  const bar = bulk.hostEl.querySelector('.pa-bulk')
+  if (!bar) fail('no bulk bar over three pending records')
+  const picks = [...bulk.hostEl.querySelectorAll('input.pa-pick')]
+  if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
+  const fixCard = [...bulk.hostEl.querySelectorAll('.pa-cell')].find(c => c.getAttribute('data-key') === 'skills:def67890')
+  if (!fixCard?.querySelector('input.pa-pick')?.disabled) fail('a record that needs a fix is selectable')
+  if (picks.some(p => !/^Select this record #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
+    fail('a selection checkbox has no accessible name')
+  }
+  must(bar?.textContent, ['0 of 2 selected', 'Select all', 'cannot be applied as staged'], 'bulk bar idle')
+  if (buttons(bar, /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
+  const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const before = posts().length
+  await click(buttons(bar, /^Select all$/)[0])
+  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['2 of 2 selected', 'Clear selection'], 'bulk all')
+  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Approve 2$/)[0])
+  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['Apply 2 records now?'], 'bulk arming')
+  if (posts().length !== before) fail('bulk approve fired before Confirm')
+  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Cancel$/)[0])
+  if (posts().length !== before) fail('Cancel still sent a decision')
+  const memPick = [...bulk.hostEl.querySelectorAll('.pa-cell')]
+    .find(c => c.getAttribute('data-key') === 'memory:abc12345')?.querySelector('input.pa-pick')
+  await click(memPick)
+  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['1 of 2 selected'], 'bulk one unticked')
+  await click(memPick)
+  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Reject 2$/)[0])
+  const arm = bulk.hostEl.querySelector('.pa-bulk .pa-alert-danger')
+  if (!arm || !/Reject 2 records\?/.test(arm.textContent)) fail('bulk reject does not arm with its own warning')
+  await click(bulk.hostEl.querySelector('.pa-bulk-go'), 80)
+  const sent = posts().slice(before)
+  const shape = sent.map(p => `${p.body.subsystem}:${p.body.decision}:${p.body.ids.join('+')}`).join(' ')
+  if (shape !== 'memory:reject:abc12345 skills:reject:aaa11111') fail(`bulk requests wrong: ${shape}`)
+  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  if (said?.kind !== 'success' || said?.message !== '2 of 2 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
+  bulk.hostEl.remove()
+
+  REST.post = 'bulkfail'
+  const partial = await mount('en')
+  await click(buttons(partial.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
+  await click(buttons(partial.hostEl.querySelector('.pa-bulk'), /^Approve 2$/)[0])
+  await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
+  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  if (told?.kind !== 'error' || told?.message !== '1 of 2 done · 1 record failed: Hermes refused it') {
+    fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
+  }
+  REST.post = 'normal'
+  partial.hostEl.remove()
+
+  REST.mode = 'twomem'
+  const batch = await mount('en')
+  const from = posts().length
+  await click(buttons(batch.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
+  await click(buttons(batch.hostEl.querySelector('.pa-bulk'), /^Approve 3$/)[0])
+  await click(batch.hostEl.querySelector('.pa-bulk-go'), 80)
+  const out = posts().slice(from).map(p => `${p.body.subsystem}:${p.body.ids.join('+')}`).join(' ')
+  if (out !== 'memory:abc12345+abc99999 skills:aaa11111') fail(`one /decide per subsystem expected: ${out}`)
+  REST.mode = 'normal'
+  batch.hostEl.remove()
 }
 
 // --- 13) FLIP: unchanged positions animate nothing, changed ones animate then settle ------------
@@ -1138,6 +1280,9 @@ if (problems.length) {
 }
 console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons, fixed text boxes, status chip')
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
+console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
+console.log('  bulk: only applicable records selectable · arm → Confirm → one /decide per subsystem · Cancel sends nothing')
+console.log('  palette: "Open Approvals" (3 waiting → /approvals) · "Approval alerts" on/muted; muted = no toast, no OS alert, chip still counts')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')
 console.log('  blocked record: Approve held (aria-disabled, still focusable) with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
 console.log(`  language: ${JSON.stringify(stub.calls.registered[0].locales)} bundle registered, no picker in the DOM, English under the app locale "en" AND "tr", no raw pa.* key`)

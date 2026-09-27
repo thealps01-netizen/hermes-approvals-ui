@@ -459,10 +459,10 @@ def check_no_auto_pane() -> None:
         _report(f"plugin.js:{line}: the panel claims the `panes` area again ({m.group(0)!r}) — "
                 "closing that tab disables the whole plugin")
     areas = set(re.findall(r"AREA_[A-Z_]+ = '([^']+)'", src))
-    allowed = {"routes", "sidebar.nav", "statusBar.right"}
+    allowed = {"routes", "sidebar.nav", "statusBar.right", "palette"}
     if areas and not areas <= allowed:
-        _report(f"plugin.js: the panel may contribute a page, a sidebar entry and a status chip "
-                f"only: {sorted(areas)}")
+        _report(f"plugin.js: the panel may contribute a page, a sidebar entry, a status chip and "
+                f"palette rows only: {sorted(areas)}")
 
 
 def check_jsx_key_form() -> None:
@@ -552,7 +552,12 @@ def check_two_step_actions() -> None:
                         ("onClick: () => void undo(Boolean(conflict))",
                          "the undo button does not pass the resolved conflict"),
                         ("force: Boolean(force)", "the force flag does not reach the backend"),
-                        ("'pa.btn.forceUndo'", "the forced undo carries no label")):
+                        ("'pa.btn.forceUndo'", "the forced undo carries no label"),
+                        ("onClick: () => setArming('approve')", "bulk approve does not arm first"),
+                        ("onClick: () => setArming('reject')", "bulk reject does not arm first"),
+                        ("onClick: () => void run(arming)", "the confirmed bulk click does not decide"),
+                        ("return !(plain.stale || []).length && !plain.fix",
+                         "a record that cannot be applied as staged is selectable in bulk")):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — {why}")
 

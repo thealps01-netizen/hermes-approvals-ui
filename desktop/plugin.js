@@ -10,6 +10,7 @@ const ROUTE = '/approvals'
 const AREA_STATUS_RIGHT = 'statusBar.right'
 const AREA_ROUTES = 'routes'
 const AREA_SIDEBAR_NAV = 'sidebar.nav'
+const AREA_PALETTE = 'palette'
 
 const KIT = {
   Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
@@ -99,6 +100,21 @@ const BUNDLES = {
         note: 'Your call — the buttons apply it immediately.',
         fix: 'It cannot be applied as staged — the “Shorten and create” button writes it.',
       },
+      bulk: {
+        select: 'Select this record',
+        selected: (n, all) => `${n} of ${all} selected`,
+        all: 'Select all',
+        none: 'Clear selection',
+        approve: n => `Approve ${n}`,
+        reject: n => `Reject ${n}`,
+        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Applied” and can be undone there.`,
+        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? Rejected records are dropped from the queue.`,
+        confirm: 'Confirm',
+        cancel: 'Cancel',
+        done: (ok, all) => `${ok} of ${all} done`,
+        failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
+        skipped: 'Records that cannot be applied as staged are left out of the selection.',
+      },
       btn: {
         reject: 'Reject',
         approve: 'Approve',
@@ -148,7 +164,11 @@ const BUNDLES = {
       },
       memory: {
         warnTitle: 'Memory is nearly full',
-        warnBody: p => `${p}% full: a new note fits only if an older one is shortened or merged. Ask in chat to merge.`,
+        warnBody: p => `${p}% full: a new note fits only if an older one is shortened or merged.`,
+        draftMerge: 'Draft a merge request',
+        draftHint: 'Writes a request into the chat box without sending it. The proposal still lands here for your approval.',
+        drafted: 'Merge request is in the chat box — read it, then send.',
+        noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
         deleteConfirm: 'About to delete — undoable from the “Applied” tab',
         deleteCancel: 'Cancel',
@@ -164,6 +184,13 @@ const BUNDLES = {
         pending: n => (n ? `${n} awaiting approval` : 'No pending approvals'),
         error: 'Approvals unavailable',
       },
+      palette: {
+        open: 'Open Approvals',
+        waiting: n => (n ? `${n} waiting` : 'nothing waiting'),
+        alerts: 'Approval alerts',
+        on: 'on',
+        off: 'muted',
+      },
       notify: {
         awaiting: n => `${plural(n, 'write awaits', 'writes await')} your approval`,
         title: 'Hermes — pending approvals',
@@ -178,6 +205,8 @@ const BUNDLES = {
       },
       footer: {
         pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
+        alertsOn: 'Alerts on',
+        alertsOff: 'Alerts muted',
         hint: 'Approve → written immediately, undoable',
       },
     }
@@ -187,6 +216,30 @@ const BUNDLES = {
 function registerTitle() {
   const viaApp = ctxRef?.i18n?.t?.('pa.pane.title')
   return viaApp && viaApp !== 'pa.pane.title' ? viaApp : BUNDLES.en.pa.pane.title
+}
+
+function say(key, ...args) {
+  const viaApp = ctxRef?.i18n?.t?.(key, ...args)
+  if (viaApp && viaApp !== key) return viaApp
+  const leaf = key.split('.').reduce((node, part) => node?.[part], BUNDLES.en)
+  return typeof leaf === 'function' ? leaf(...args) : String(leaf ?? '')
+}
+
+let livePending = null
+const alertListeners = new Set()
+const alertsMuted = () => ctxRef?.storage?.get?.('muted', false) === true
+const setAlertsMuted = on => {
+  ctxRef?.storage?.set?.('muted', Boolean(on))
+  for (const listener of alertListeners) listener(Boolean(on))
+}
+
+function useAlertsMuted() {
+  const [muted, setMuted] = useState(alertsMuted)
+  useEffect(() => {
+    alertListeners.add(setMuted)
+    return () => { alertListeners.delete(setMuted) }
+  }, [])
+  return muted
 }
 
 
@@ -267,6 +320,12 @@ const cardBase = {
 const STYLE = `
 .pa-cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));align-items:stretch}
 .pa-cell{display:flex;min-width:0}
+.pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
+  border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
+.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
+.pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
+.pa-pick:disabled{cursor:not-allowed;opacity:.4}
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -685,7 +744,12 @@ function Tabs({ label: name, items, value, onSelect, idBase }) {
   }, 'tabs')
 }
 
-function PendingCard({ subsystem, item, onChanged }) {
+const pickable = item => {
+  const plain = item.plain || {}
+  return !(plain.stale || []).length && !plain.fix
+}
+
+function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const detailsAt = useRef(null)
@@ -776,6 +840,16 @@ function PendingCard({ subsystem, item, onChanged }) {
           jsxs('div', {
             style: { display: 'flex', alignItems: 'center', gap: G.xs },
             children: [
+              onPick
+                ? jsx('input', {
+                    type: 'checkbox',
+                    className: 'pa-pick',
+                    checked: Boolean(picked),
+                    disabled: cannot,
+                    'aria-label': `${t('pa.bulk.select')} #${item.id}`,
+                    onChange: () => onPick()
+                  }, 'pick')
+                : null,
               jsx('span', { className: 'pa-pill pa-pill-id', children: `#${item.id}` }, 'id'),
               jsx('span', {
                 style: { marginLeft: 'auto', fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
@@ -1109,14 +1183,117 @@ function HistoryCard({ entry, onChanged }) {
   })
 }
 
+function BulkBar({ items, picked, setPicked, onChanged }) {
+  const t = usePluginI18n(ID)
+  const [arming, setArming] = useState('')
+  const [busy, setBusy] = useState(false)
+  const open = items.filter(({ item }) => pickable(item))
+  const chosen = open.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
+  const n = chosen.length
+  if (open.length < 2) return null
+
+  const run = async decision => {
+    setBusy(true)
+    let ok = 0
+    const bad = []
+    try {
+      for (const subsystem of ['memory', 'skills']) {
+        const ids = chosen.filter(c => c.subsystem === subsystem).map(c => c.item.id)
+        if (!ids.length) continue
+        try {
+          const res = await api.decide(subsystem, ids, decision)
+          const results = res?.results || []
+          ok += results.filter(r => r.ok).length
+          bad.push(...results.filter(r => !r.ok).map(r => r.error || t('pa.notify.failed')))
+          if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
+        } catch (e) {
+          bad.push(String(e?.message || e))
+        }
+      }
+      host.notify(bad.length
+        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
+        : { kind: 'success', message: t('pa.bulk.done', ok, n) })
+    } finally {
+      setBusy(false)
+      setArming('')
+      setPicked(new Set())
+      onChanged()
+    }
+  }
+
+  const skipped = open.length < items.length
+  return jsxs('div', {
+    className: 'pa-bulk',
+    role: 'group',
+    'aria-label': t('pa.bulk.selected', n, open.length),
+    children: [
+      arming
+        ? jsxs('div', {
+            className: arming === 'reject' ? 'pa-alert pa-alert-danger' : 'pa-alert',
+            role: 'alert',
+            style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, width: '100%' },
+            children: [
+              jsx('span', {
+                style: { flex: '1 1 240px' },
+                children: t(arming === 'reject' ? 'pa.bulk.confirmReject' : 'pa.bulk.confirmApprove', n)
+              }, 'copy'),
+              jsx(Button, {
+                variant: 'outline', size: 'sm', disabled: busy,
+                onClick: () => setArming(''), children: t('pa.bulk.cancel')
+              }, 'cancel'),
+              jsx(Button, {
+                className: 'pa-bulk-go',
+                variant: arming === 'reject' ? 'destructive' : 'default', size: 'sm', loading: busy,
+                onClick: () => void run(arming), children: t('pa.bulk.confirm')
+              }, 'go')
+            ]
+          }, 'arming')
+        : jsxs('div', {
+            style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, width: '100%' },
+            children: [
+              jsx('span', { className: 'pa-bulk-count', children: t('pa.bulk.selected', n, open.length) }, 'count'),
+              jsx(Button, {
+                variant: 'text', size: 'sm',
+                onClick: () => setPicked(n === open.length
+                  ? new Set()
+                  : new Set(open.map(({ subsystem, item }) => `${subsystem}:${item.id}`))),
+                children: t(n === open.length ? 'pa.bulk.none' : 'pa.bulk.all')
+              }, 'all'),
+              jsx('span', { style: { marginLeft: 'auto' } }, 'gap'),
+              n
+                ? jsx(Button, {
+                    variant: 'destructive', size: 'sm',
+                    onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
+                  }, 'reject')
+                : null,
+              n
+                ? jsx(Button, {
+                    variant: 'default', size: 'sm',
+                    onClick: () => setArming('approve'), children: t('pa.bulk.approve', n)
+                  }, 'approve')
+                : null
+            ]
+          }, 'idle'),
+      skipped ? jsx('div', { className: 'pa-bulk-note', children: t('pa.bulk.skipped') }, 'skipped') : null
+    ]
+  })
+}
+
 function PendingList({ data, error, refresh }) {
   const t = usePluginI18n(ID)
   const gridRef = useRef(null)
   const seen = useRef(new Map())
+  const [picked, setPicked] = useState(() => new Set())
   const items = [
     ...(data?.memory || []).map(item => ({ subsystem: 'memory', item })),
     ...(data?.skills || []).map(item => ({ subsystem: 'skills', item }))
   ]
+  const togglePick = key => setPicked(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
 
   useLayoutEffect(() => {
     const grid = gridRef.current
@@ -1173,10 +1350,17 @@ function PendingList({ data, error, refresh }) {
       jsx('div', {
         className: 'pa-cell',
         'data-key': `${subsystem}:${item.id}`,
-        children: jsx(PendingCard, { subsystem, item, onChanged: refresh }, 'card')
+        children: jsx(PendingCard, {
+          subsystem, item, onChanged: refresh,
+          picked: picked.has(`${subsystem}:${item.id}`),
+          onPick: () => togglePick(`${subsystem}:${item.id}`)
+        }, 'card')
       }, `${subsystem}:${item.id}`))
   }, 'grid')
-  return notice ? jsxs('div', { children: [notice, body] }, 'with-issues') : body
+  const bar = total(data.counts)
+    ? jsx(BulkBar, { items, picked, setPicked, onChanged: refresh }, 'bulk')
+    : null
+  return jsxs('div', { children: [notice, bar, body] }, 'list')
 }
 
 function HistoryList({ data, error, refresh }) {
@@ -1259,6 +1443,16 @@ function HistoryList({ data, error, refresh }) {
   })
 }
 
+function mergeRequest(file, percent) {
+  return [
+    `${file} is ${percent}% full. Propose how to free space in it: merge notes that say the same thing,`,
+    'shorten wordy ones, and drop notes that are stale or already covered elsewhere.',
+    'Keep every rule, preference and fact that still applies, word-for-word where it is exact.',
+    'Stage the change through the memory tool so it waits for my approval, and list next to it which',
+    'notes you merged, shortened or dropped. This message is a request, not an approval.'
+  ].join(' ')
+}
+
 function MemoryView({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
   const [target, setTarget] = useState('memory')
@@ -1266,6 +1460,17 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const [busy, setBusy] = useState(false)
   const store = data?.[target]
   const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
+  const draftMerge = async () => {
+    let placed = false
+    try {
+      placed = await host.composer?.insertText?.(null, mergeRequest(store.file, store.percent), { mode: 'block' })
+    } catch {
+      placed = false
+    }
+    host.notify(placed
+      ? { kind: 'success', message: t('pa.memory.drafted') }
+      : { kind: 'warning', message: t('pa.memory.noComposer') })
+  }
 
   const removeEntry = async text => {
     setBusy(true)
@@ -1316,7 +1521,22 @@ function MemoryView({ data, error, refresh, onChanged }) {
           className: 'pa-alert',
           children: [
             jsx('div', { style: { fontWeight: 600, color: 'var(--ui-text-primary)' }, children: t('pa.memory.warnTitle') }, 'title'),
-            t('pa.memory.warnBody', store.percent)
+            t('pa.memory.warnBody', store.percent),
+            jsxs('div', {
+              style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, marginTop: G.xs },
+              children: [
+                jsx(Tip, {
+                  label: t('pa.memory.draftHint'),
+                  children: jsx(Button, {
+                    className: 'pa-draft-merge',
+                    variant: 'outline',
+                    size: 'sm',
+                    onClick: () => void draftMerge(),
+                    children: t('pa.memory.draftMerge')
+                  }, 'draft')
+                }, 'tip')
+              ]
+            }, 'actions')
           ]
         }, 'warn'),
       jsx('div', {
@@ -1394,6 +1614,7 @@ function Pane() {
   const applied = hc.applied ?? entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
   const failedCount = hc.failed ?? entries.filter(e => e.kind === 'failed').length
   const waiting = { ...WAITING, pill: t('pa.kpi.waiting') }
+  const muted = useAlertsMuted()
   const fileStat = (key, fallback) => {
     const f = mem.data?.[key]
     if (!f) return { ...waiting, title: fallback, file: true }
@@ -1494,6 +1715,14 @@ function Pane() {
         },
         children: [
           jsx('span', { children: t('pa.footer.pending', n) }, 'pending'),
+          jsx(Button, {
+            className: 'pa-alerts',
+            variant: 'text',
+            size: 'sm',
+            'aria-pressed': !muted,
+            onClick: () => setAlertsMuted(!muted),
+            children: t(muted ? 'pa.footer.alertsOff' : 'pa.footer.alertsOn')
+          }, 'alerts'),
           jsx('span', { style: { marginLeft: 'auto' }, children: t('pa.footer.hint') }, 'hint')
         ]
       }, 'footer')
@@ -1508,8 +1737,9 @@ function Chip() {
 
   useEffect(() => {
     if (data?.counts === undefined) return
+    livePending = n
     const last = seen.current ?? Number(ctxRef.storage?.get?.('lastCount', '-1') ?? -1)
-    if (last >= 0 && n > last) {
+    if (last >= 0 && n > last && !alertsMuted()) {
       host.notify({ kind: 'info', message: t('pa.notify.awaiting', n) })
       ctxRef.os?.notify?.({
         title: t('pa.notify.title'),
@@ -1570,6 +1800,30 @@ export default {
       area: AREA_STATUS_RIGHT,
       order: 120,
       render: () => jsx(Chip, {}, 'chip')
+    })
+    ctx.register({
+      id: 'palette-open',
+      area: AREA_PALETTE,
+      data: {
+        id: 'approvals.open',
+        label: say('pa.palette.open'),
+        keywords: ['approvals', 'pending', 'approve', 'reject', 'memory', 'skill'],
+        detail: () => (livePending === null ? '' : say('pa.palette.waiting', livePending)),
+        run: () => host.navigate(ROUTE)
+      }
+    })
+    ctx.register({
+      id: 'palette-alerts',
+      area: AREA_PALETTE,
+      data: {
+        id: 'approvals.alerts',
+        label: say('pa.palette.alerts'),
+        keywords: ['approvals', 'alerts', 'notifications', 'mute', 'unmute'],
+        detail: () => say(alertsMuted() ? 'pa.palette.off' : 'pa.palette.on'),
+        detailVariant: 'state',
+        keepOpen: true,
+        run: () => setAlertsMuted(!alertsMuted())
+      }
     })
   }
 }

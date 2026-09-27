@@ -228,7 +228,25 @@ why they are drawn whole with their size in the label (§6).
   stay silent (`variant: 'text'` for arming Delete/Clear, `outline` for Undo); the irreversible click
   and Reject stay the kit's `destructive` Button and Approve stays the kit's primary one.
 * **Status chip** (`statusBar.right`) shows the counter and raises a notification when the number
-  grows; the counter is what it keeps in `ctx.storage` (`lastCount`).
+  grows; the counter is what it keeps in `ctx.storage` (`lastCount`). The alerts can be muted
+  (`ctx.storage` `muted`, from the footer switch or the palette row); muting silences the in-app and OS
+  alerts only — the chip keeps counting, so a muted queue is still visible.
+* **Palette rows** (`palette` area): `approvals.open` navigates to the page and shows the live count
+  the chip last read (`livePending`, empty before the first read rather than a guessed 0);
+  `approvals.alerts` flips the mute with `keepOpen`. Labels resolve through `ctx.i18n.t` with the
+  panel's own `en` bundle as the fallback, because the palette entry is plain data, not a component.
+* **Bulk decisions** reuse `/decide`, which always took a list of ids for ONE subsystem, so a mixed
+  selection is two requests. Only `pickable` records (no `plain.stale`, no `plain.fix`) can be ticked:
+  those are exactly the records whose card would offer a plain Approve; the others need their own
+  card's decision (Shorten and create, Force, or a fresh record). The bar arms first like every other
+  multi-file write, and the selection is cleared after the run whatever the outcome, so a stale
+  selection never survives a refresh.
+* **The merge draft** (memory warning, past 90%) is modelled on memory-review's consolidation button
+  but deliberately NOT its wording: that plugin's prompt declares the click itself the approval to
+  apply. Here the text asks for a proposal staged through the memory tool and says it is not an
+  approval, so the result is held in Pending like any other write. It targets the active composer
+  (`insertText(null, …, { mode: 'block' })`, never `submit`), and a `false` acknowledgement (no chat
+  box on screen) is reported as a warning instead of a silent no-op.
 * **Refresh is an icon** (the SDK's own refresh glyph inside a kit `Button`) whose meaning rides the
   themed `Tip` plus an `aria-label`, so it survives without a word.
 * **The kit primitives are used directly, with no fallback**: `EmptyState`/`PanelEmpty`, `Loader`,
@@ -506,6 +524,8 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   list instead of showing the last `/pending` result.
 
 ## Version
+
+1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.
 
 1.1.0 — single `en` bundle resolved from the app language (no picker, no `lang` state, no `?lang=`), comment-free production files with the rationale in this file, per-rule canary suite, external checker text mapped to English with the raw line kept.
 
