@@ -270,7 +270,6 @@ const STYLE = `
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
-.pa-kpis-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .pa-kpi{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};padding:12px 14px;display:flex;flex-direction:column;min-width:0}
 .pa-kpi-top{display:flex;align-items:center;gap:8px;min-width:0}
@@ -1292,18 +1291,6 @@ function MemoryView({ data, error, refresh, onChanged }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
-      jsx('div', {
-        className: 'pa-kpis pa-kpis-2',
-        children: ['memory', 'user'].map(nm =>
-          jsx(Stat, {
-            title: data?.[nm]?.file || nm,
-            figure: `${fill(data?.[nm]).pct}%`,
-            delta: t('pa.kpi.chars', data?.[nm]?.chars ?? 0, data?.[nm]?.limit ?? 0),
-            tone: fill(data?.[nm]).tone,
-            pill: t(fill(data?.[nm]).key),
-            file: true
-          }, nm))
-      }, 'kpis'),
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [

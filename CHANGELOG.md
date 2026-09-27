@@ -14,6 +14,9 @@ look has no version at all.
   ground shows through. Same token set as wiki-automation and wiki-watchdog. Measured by the WCAG gate:
   the panel's lowest text contrast 5.93:1 → 5.17:1 (AA 4.5:1 still met); host-kit labels below AA
   64 → 77 (kit-owned, reported, not the panel's to restyle).
+* **The Memory tab no longer repeats the strip.** Its own MEMORY.md / USER.md card pair showed the same
+  two figures the KPI strip above already shows; it is gone (and the `.pa-kpis-2` rule with it). The tab
+  now opens on the file tabs, the note count and the fill warning.
 
 ## 1.6.5
 
