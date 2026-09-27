@@ -216,7 +216,7 @@ def check_card_surface_from_table() -> None:
             _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the card surface lost its class")
             continue
         body = js.split(rule, 1)[-1].split("\n.", 1)[0]
-        for needle, why in (("var(--ui-bg-card)", "the card ground"),
+        for needle, why in (("var(--hx-card)", "the card ground"),
                             ("var(--ui-stroke-tertiary)", "the hairline stroke"),
                             ("${R.card}px", "the card radius"),
                             ("${LIT_EDGE}", "the lit edge")):

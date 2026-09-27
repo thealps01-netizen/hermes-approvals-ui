@@ -5,6 +5,16 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.6.6
+
+### Look
+
+* **Cards read as surfaces.** The card, KPI and comparison-side ground moved from `--ui-bg-card` to the
+  panel-local `--hx-card` (= `--ui-bg-secondary`), and the pane root is `transparent` so the app's own
+  ground shows through. Same token set as wiki-automation and wiki-watchdog. Measured by the WCAG gate:
+  the panel's lowest text contrast 5.93:1 → 5.17:1 (AA 4.5:1 still met); host-kit labels below AA
+  64 → 77 (kit-owned, reported, not the panel's to restyle).
+
 ## 1.6.5
 
 ### Fixes
