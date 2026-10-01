@@ -106,6 +106,11 @@ why they are drawn whole with their size in the label (§6).
   recommendation used to fall through to a message that printed `0% full` — a number nobody measured.
   The unmeasured case has its own message (`rec_mem_unmeasured_reason`) that says the fill could not be
   read and that Hermes refuses a write that does not fit.
+* **File paths are checked with Hermes' own rule.** `skill_manage` stages a `write_file` /
+  `remove_file` before validating its `file_path` (the gate in `_run_write_gate` runs first, the path
+  check `_validate_file_path` only on replay), so an out-of-tree path such as `agents/openai.yaml`
+  queued cleanly and failed only on approve. `_path_problem` calls that same validator and the card
+  reads "cannot be applied"; an unimportable validator marks the record unvalidated, never approvable.
 * **Patch precheck uses Hermes' own matcher** (`tools.fuzzy_match.fuzzy_find_and_replace`) against the
   record's REAL target file (`_skill_target`: `file_path` when given, else `SKILL.md`). A hand-written
   `content.count(old) != 1` check answered "cannot be applied" for `references/*.md` patches that
