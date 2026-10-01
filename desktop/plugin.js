@@ -763,7 +763,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const groups = plain.groups || []
   const rec = plain.recommendation || {}
   const fix = plain.fix || null
-  const approveBlocked = Boolean(fix)
+  const refused = plain.refused || []
+  const approveBlocked = Boolean(fix) || refused.length > 0
+  const heldGroup = name => Boolean(fix && fix.name === name) || refused.includes(name)
   const failedBefore = Boolean(plain.last_error)
   const cannot = stale.length > 0 || approveBlocked
   const isNewSkill = groups.some(g => g.kind === 'new')
@@ -950,16 +952,16 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                           children: g.name
                         }, 'name'),
                         jsx(Tip, {
-                          label: fix && fix.name === g.name ? rec.reason : '',
+                          label: heldGroup(g.name) ? rec.reason : '',
                           children: jsx(Button, {
-                            className: fix && fix.name === g.name ? 'pa-held' : undefined,
+                            className: heldGroup(g.name) ? 'pa-held' : undefined,
                             variant: 'outline',
                             size: 'xs',
-                            'aria-disabled': Boolean(fix && fix.name === g.name) || undefined,
+                            'aria-disabled': heldGroup(g.name) || undefined,
                             disabled: Boolean(busy) && busy !== `only:${g.name}`,
                             loading: busy === `only:${g.name}`,
                             onClick: () => {
-                              if (fix && fix.name === g.name) return
+                              if (heldGroup(g.name)) return
                               haptic('tap')
                               void decideAndLeave('approve', [g.name])
                             },

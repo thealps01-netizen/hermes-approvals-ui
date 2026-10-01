@@ -5,6 +5,17 @@ Notable changes to the Approvals panel. The version is carried in three places โ
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.7.2
+
+### Fixed
+
+* **Approve is held on such a record, not only advised against.** The card read "cannot be applied"
+  but Approve stayed clickable, so a click still sent the doomed record to Hermes. The backend now
+  lists the skills whose path Hermes refuses (`plain.refused`); the card's Approve and that skill's
+  "only this" button are held (`aria-disabled`, reason in the Tip) exactly like a record awaiting a
+  fix. Other "cannot be applied" findings keep Approve open: they come from the panel's own
+  precheck, which has misread an applicable record before (notes ยง9). The render check locks it.
+
 ## 1.7.1
 
 ### Fixed

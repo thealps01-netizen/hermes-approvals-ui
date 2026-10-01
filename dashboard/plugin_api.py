@@ -655,6 +655,7 @@ def _explain(subsystem: str, record: dict) -> dict:
     notes: list[dict] = []
     fit: dict = {}
     unvalidated = False
+    refused: list[str] = []
 
     purpose_from_disk = ""
     if subsystem != wa.MEMORY:
@@ -736,6 +737,8 @@ def _explain(subsystem: str, record: dict) -> dict:
                     stale.append(_tx("stale_unvalidated", what=what[-1]))
                 elif problem:
                     stale.append(_tx("stale_path", what=what[-1], problem=problem.strip().rstrip(".")))
+                    if name not in refused:
+                        refused.append(name)
             else:
                 target = _skill_target(name, op.get("file_path"))
                 section = _section_of(target, op.get("old_string") or "") if target else ""
@@ -785,7 +788,7 @@ def _explain(subsystem: str, record: dict) -> dict:
 
     return {"kind_label": kind_label, "target": target_label, "headline": headline, "why": why,
             "what": what, "groups": groups, "notes": unique, "effect": effect, "stale": stale,
-            "fit": fit, "unvalidated": unvalidated}
+            "fit": fit, "unvalidated": unvalidated, "refused": refused}
 
 
 def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
@@ -1489,6 +1492,7 @@ def _selftest() -> int:
         bad_item = next(i for i in asyncio.run(pending(scan=0))["skills"] if i["id"] == bad_id)
         assert bad_item["plain"]["stale"], (bad_path, bad_item["plain"])
         assert "cannot be applied" in bad_item["plain"]["stale"][0], bad_item["plain"]["stale"]
+        assert bad_item["plain"]["refused"] == ["existing-skill"], bad_item["plain"]
         assert bad_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), \
             bad_item["plain"]["recommendation"]
         (tmp / "pending" / "skills" / f"{bad_id}.json").unlink()

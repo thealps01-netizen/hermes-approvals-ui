@@ -111,6 +111,9 @@ why they are drawn whole with their size in the label (§6).
   check `_validate_file_path` only on replay), so an out-of-tree path such as `agents/openai.yaml`
   queued cleanly and failed only on approve. `_path_problem` calls that same validator and the card
   reads "cannot be applied"; an unimportable validator marks the record unvalidated, never approvable.
+  A refused path also HOLDS Approve (`plain.refused` → `aria-disabled`): the verdict is Hermes' own
+  deterministic rule, not a panel guess, so no click on it can succeed. Every other stale finding
+  stays advice only — §9 is the case where the panel's own precheck was wrong.
 * **Patch precheck uses Hermes' own matcher** (`tools.fuzzy_match.fuzzy_find_and_replace`) against the
   record's REAL target file (`_skill_target`: `file_path` when given, else `SKILL.md`). A hand-written
   `content.count(old) != 1` check answered "cannot be applied" for `references/*.md` patches that
