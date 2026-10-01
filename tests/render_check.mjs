@@ -429,6 +429,11 @@ const PENDING = {
     }
   }]
 }
+const REFUSED_LINE = 'writes the file new-skill/agents/x.yaml → cannot be applied: Hermes refuses this file path'
+const REFUSED = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s : {
+  ...s, plain: { ...s.plain, stale: [REFUSED_LINE], refused: ['new-skill'],
+                 groups: [...s.plain.groups, { kind: 'update', name: 'other-skill', ops: [{ action: 'patch' }] }],
+                 recommendation: { verdict: 'Reject', reason: 'refused path reason' } } }) }
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: Date.now() / 1000 - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
   { id: 'bb22cc33', ts: Date.now() / 1000 - 3600, kind: 'rejected', subsystem: 'skills', summary: 'batch(12 ops: ' + 'patch, '.repeat(28) + 'on hermes-desktop-plugin-dev — ' + HIST_TAIL, files: [], undoable: false },
@@ -485,10 +490,11 @@ async function mount(appLocale) {
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       const table = {
-        '/pending': REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
+        '/pending': REST.mode === 'refused' ? REFUSED
+          : REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
           : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
           : PENDING,
-        '/pending?scan=0': PENDING,
+        '/pending?scan=0': REST.mode === 'refused' ? REFUSED : PENDING,
         '/history?limit=50': HISTORY,
         '/memory': MEMORY
       }
@@ -713,6 +719,32 @@ for (const mounted of [en, other]) {
   const openApprove = [...(open?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
   if (!openApprove || openApprove.disabled || openApprove.getAttribute('aria-disabled') === 'true') fail('a record that needs no fix has Approve disabled')
   if (openApprove?.closest('[data-tip]')) fail('a record that needs no fix carries a tooltip on Approve')
+}
+
+// --- 6c) A path Hermes refuses holds Approve and the per-skill button --------------------------
+{
+  REST.mode = 'refused'
+  const ref = await mount('en')
+  const cell = ref.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+  const approve = [...(cell?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
+  if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('a refused path still offers a clickable Approve')
+  if (!String(approve?.closest('[data-tip]')?.getAttribute('data-tip')).includes('refused path reason')) {
+    fail('the held Approve of a refused path carries no Tip with the reason')
+  }
+  const sent = () => stub.calls.posts.filter(p => p.path === '/decide').length
+  const before = sent()
+  if (approve) await click(approve)
+  const details = buttons(cell, /^Details$/)[0]
+  if (details) await click(details)
+  const onlys = [...(cell?.querySelectorAll('button') || [])].filter(b => /only this$/.test(b.textContent || ''))
+  if (onlys.length !== 2) fail(`the two-skill refused record shows ${onlys.length} per-skill buttons, not 2`)
+  const [onlyRefused, onlyOther] = onlys
+  if (onlyRefused?.getAttribute('aria-disabled') !== 'true') fail('the refused skill still has a clickable per-skill approve')
+  if (onlyOther?.getAttribute('aria-disabled') === 'true') fail('the skill with a valid path lost its per-skill approve')
+  if (onlyRefused) await click(onlyRefused)
+  if (sent() !== before) fail('a refused path still sends /decide')
+  ref.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 // --- 6b) The state badge and the agent's suggestion tell the same story -------------------------

@@ -486,6 +486,7 @@ _TEXT = {
     'stale_memory_limit': '{file}: this change would put the file at {after}/{limit} chars ({over} over). Hermes refuses the write; a record that frees room (merge/remove) must be approved first.',
     'rec_memory_limit_reason': '{file} is {percent_before}% full and this record would reach {after}/{limit} chars — Hermes refuses the write. Reject it; approve a record that frees room instead.',
     'rec_mem_fit_reason': 'It adds a note; {file} goes {before}% → {after}% ({limit} chars max). It fits and can be approved.',
+    'stale_path': '{what} → cannot be applied: Hermes refuses this file path — {problem}.',
     'stale_frontmatter': '{what} → cannot be applied: the validator rejects it — {problem}.',
     'head_new': 'New skill: {names}',
     'head_upd': 'Update: {names}',
@@ -553,6 +554,19 @@ def _skill_problem(content: str) -> str:
         return _validate_frontmatter(content, new_skill=True) or ""
     except Exception as exc:
         _log(f"the skill validator failed: {exc}")
+        return _tx("err_unvalidated")
+
+
+def _path_problem(file_path: str) -> str:
+    try:
+        from tools.skill_manager_tool import _validate_file_path
+    except Exception as exc:
+        _log(f"the skill path validator could not be imported: {exc}")
+        return _tx("err_unvalidated")
+    try:
+        return _validate_file_path(file_path) or ""
+    except Exception as exc:
+        _log(f"the skill path validator failed: {exc}")
         return _tx("err_unvalidated")
 
 
@@ -641,6 +655,7 @@ def _explain(subsystem: str, record: dict) -> dict:
     notes: list[dict] = []
     fit: dict = {}
     unvalidated = False
+    refused: list[str] = []
 
     purpose_from_disk = ""
     if subsystem != wa.MEMORY:
@@ -711,10 +726,19 @@ def _explain(subsystem: str, record: dict) -> dict:
                     notes.append({"label": _tx("note_what"), "text": what_it_does})
             elif action == "delete":
                 what.append(_tx("what_delete", name=name))
-            elif action == "write_file":
-                what.append(_tx("what_write", where=where))
-            elif action == "remove_file":
-                what.append(_tx("what_remove_file", where=where))
+            elif action in ("write_file", "remove_file"):
+                if action == "write_file":
+                    what.append(_tx("what_write", where=where))
+                else:
+                    what.append(_tx("what_remove_file", where=where))
+                problem = _path_problem(str(op.get("file_path") or ""))
+                if problem == _tx("err_unvalidated"):
+                    unvalidated = True
+                    stale.append(_tx("stale_unvalidated", what=what[-1]))
+                elif problem:
+                    stale.append(_tx("stale_path", what=what[-1], problem=problem.strip().rstrip(".")))
+                    if name not in refused:
+                        refused.append(name)
             else:
                 target = _skill_target(name, op.get("file_path"))
                 section = _section_of(target, op.get("old_string") or "") if target else ""
@@ -764,7 +788,7 @@ def _explain(subsystem: str, record: dict) -> dict:
 
     return {"kind_label": kind_label, "target": target_label, "headline": headline, "why": why,
             "what": what, "groups": groups, "notes": unique, "effect": effect, "stale": stale,
-            "fit": fit, "unvalidated": unvalidated}
+            "fit": fit, "unvalidated": unvalidated, "refused": refused}
 
 
 def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
@@ -1454,6 +1478,27 @@ def _selftest() -> int:
     assert "cannot be applied" in stale_item["plain"]["stale"][0], stale_item
     assert stale_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), stale_item["plain"]["recommendation"]
     (tmp / "pending" / "memory" / "bbbbbbbb.json").unlink()
+
+    for bad_id, bad_action, bad_path in (("ffff00a1", "write_file", "agents/openai.yaml"),
+                                         ("ffff00a2", "remove_file", "agents/openai.yaml"),
+                                         ("ffff00a3", "write_file", "references/../x.md")):
+        bad_op = {"action": bad_action, "name": "existing-skill", "file_path": bad_path}
+        if bad_action == "write_file":
+            bad_op["file_content"] = "interface: {}\n"
+        (tmp / "pending" / "skills" / f"{bad_id}.json").write_text(json.dumps({
+            "id": bad_id, "subsystem": "skills", "origin": "assistant_tool",
+            "summary": f"batch(1 ops: {bad_action}) on existing-skill", "created_at": time.time(),
+            "payload": {"action": "batch", "operations": [bad_op]}}), encoding="utf-8")
+        bad_item = next(i for i in asyncio.run(pending(scan=0))["skills"] if i["id"] == bad_id)
+        assert bad_item["plain"]["stale"], (bad_path, bad_item["plain"])
+        assert "cannot be applied" in bad_item["plain"]["stale"][0], bad_item["plain"]["stale"]
+        assert bad_item["plain"]["refused"] == ["existing-skill"], bad_item["plain"]
+        assert bad_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), \
+            bad_item["plain"]["recommendation"]
+        (tmp / "pending" / "skills" / f"{bad_id}.json").unlink()
+    from tools.skill_manager_tool import _validate_file_path as _host_path_rule
+    assert _host_path_rule("agents/openai.yaml") in _path_problem("agents/openai.yaml"), \
+        "the path problem must be Hermes' own message, not a copy"
 
     decided = asyncio.run(decide({"subsystem": "memory", "ids": ["aaaaaaaa"], "decision": "approve"}))
     assert decided["results"][0]["ok"], decided

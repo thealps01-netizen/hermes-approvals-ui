@@ -18,6 +18,7 @@ drifted copy turns the audit red, its absence turns it green (see `installed_cop
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +30,7 @@ AUDIT = HERE / "audit_static.py"
 JS = HERE.parent / "desktop" / "plugin.js"
 API = HERE.parent / "dashboard" / "plugin_api.py"
 MANIFEST = HERE.parent / "dashboard" / "manifest.json"
+VERSION = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
 PLUGIN_YAML = HERE.parent / "plugin.yaml"
 CHANGELOG = HERE.parent / "CHANGELOG.md"
 FILES = (JS, API, MANIFEST, PLUGIN_YAML, CHANGELOG)
@@ -131,7 +133,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "onClick: () => void run('approve')", 1, "bulk approve does not arm first"),
     ("bulk skips unapplicable records", JS, "return !(plain.stale || []).length && !plain.fix",
      "return !(plain.stale || []).length", 1, "is selectable in bulk"),
-    ("one version everywhere", MANIFEST, '"version": "1.7.0"', '"version": "9.9.9"', 1,
+    ("one version everywhere", MANIFEST, f'"version": "{VERSION}"', '"version": "9.9.9"', 1,
      "the two must agree"),
 ]
 

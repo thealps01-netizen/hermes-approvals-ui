@@ -5,6 +5,29 @@ Notable changes to the Approvals panel. The version is carried in three places โ
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.7.2
+
+### Fixed
+
+* **Approve is held on such a record, not only advised against.** The card read "cannot be applied"
+  but Approve stayed clickable, so a click still sent the doomed record to Hermes. The backend now
+  lists the skills whose path Hermes refuses (`plain.refused`); the card's Approve and that skill's
+  "only this" button are held (`aria-disabled`, reason in the Tip) exactly like a record awaiting a
+  fix. Other "cannot be applied" findings keep Approve open: they come from the panel's own
+  precheck, which has misread an applicable record before (notes ยง9). The render check locks it.
+
+## 1.7.1
+
+### Fixed
+
+* **A skill record that writes or removes a file outside the allowed folders now reads "cannot be
+  applied" before the click.** Hermes stages `write_file` / `remove_file` without checking the path and
+  checks it only when the approved record is replayed, so a record for `agents/openai.yaml` sat in the
+  queue with an `Approve` recommendation and then failed with `File must be under one of: assets,
+  references, scripts, templates`. The precheck now asks Hermes' own `_validate_file_path` (the rule is
+  not copied) and recommends `Reject` with Hermes' message; the selftest locks it for an out-of-tree
+  write, an out-of-tree removal and a traversal path.
+
 ## 1.7.0
 
 ### New
