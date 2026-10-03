@@ -43,16 +43,7 @@ def _issues() -> list[str]:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".part")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        with suppress(OSError):
-            os.unlink(tmp)
-        raise
-
+    _atomic_write_bytes(path, text.encode("utf-8"))
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".part")
@@ -236,8 +227,9 @@ def _raw_ops(record: dict) -> list[dict]:
     return payload.get("operations") or ([payload] if payload.get("action") else [])
 
 
-def _op_change_stat(wa, op: dict) -> dict:
-    diff = _one_op_diff(wa, op)
+def _op_change_stat(wa, op: dict, diff: str | None = None) -> dict:
+    if diff is None:
+        diff = _one_op_diff(wa, op)
     if not diff:
         return {}
     content = (op.get("content") or op.get("file_content") or op.get("new_string") or "")
@@ -469,8 +461,6 @@ _TEXT = {
     'what_add': 'Adds a new note: {p}',
     'what_replace': 'Changes this note: {p}',
     'what_remove': 'Deletes this note: {p}',
-    'stale_gone': '{what} → cannot be applied: that text is no longer in {file} (another record may have changed it)',
-    'stale_ambiguous': '{what} → ambiguous: that text matches {n} notes in {file}, the target cannot be chosen',
     'count_add': 'Adds {n} note(s)',
     'count_rep': 'updates {n} note(s)',
     'count_rem': 'deletes {n} note(s)',
@@ -522,8 +512,8 @@ _TEXT = {
     'stale_unvalidated': '{what} → could not be validated: Hermes\' skill validator could not run, so this record was not checked.',
     'rec_unvalidated': 'Could not validate',
     'rec_unvalidated_reason': 'Hermes\' skill validator could not run, so nothing here was checked and approving is not recommended. Refresh once Hermes is healthy; the error is in the Hermes log.',
-    'stale_mem_ambiguous': '{file}: {text} matches more than one note, so Hermes cannot tell which one to change.',
-    'stale_mem_unmatched': '{file}: no note matches {text} any more.',
+    'stale_mem_ambiguous': '{file}: {text} cannot be applied because it matches more than one note; Hermes cannot tell which one to change.',
+    'stale_mem_unmatched': '{file}: the operation cannot be applied: no note matches {text} any more.',
     'issue_index': 'The watch index was unreadable ({problem}); it was set aside as {name} and rebuilt. Changes made outside the pane while it was unreadable were not recorded.',
     'err_read': 'Could not read: {error}',
     'err_route': 'The request could not be completed: {error}',
@@ -578,23 +568,22 @@ def _short_error(text: str, limit: int = 150) -> str:
     return (cut or one[:limit]) + "…"
 
 
-def _last_error(record_id: str) -> str:
-    if not record_id:
-        return ""
+def _latest_failures() -> dict[str, str]:
+    path = _history_path()
     try:
-        path = _history_path()
         rows = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    except Exception:
-        return ""
-    for line in reversed(rows):
+    except OSError as exc:
+        _log(f"failure history could not be read: {exc}")
+        return {}
+    errors = {}
+    for line in rows:
         try:
             row = json.loads(line)
-        except Exception:
+        except (ValueError, TypeError):
             continue
-        if row.get("kind") == "failed" and row.get("record_id") == record_id:
-            return str(row.get("summary") or "")
-    return ""
-
+        if isinstance(row, dict) and row.get("kind") == "failed" and row.get("record_id"):
+            errors[str(row["record_id"])] = str(row.get("summary") or "")
+    return errors
 
 def _memory_fit(record: dict) -> dict:
     from tools.memory_tool import load_on_disk_store
@@ -627,7 +616,7 @@ def _memory_fit(record: dict) -> dict:
             problem = (_tx("stale_mem_ambiguous", file=file_label, text=_preview(old)) if ambiguous
                        else _tx("stale_mem_unmatched", file=file_label, text=_preview(old)))
             _log(problem)
-            return {"file": file_label, "problem": problem}
+            return {"file": file_label, "problem": problem, "problems": [problem]}
         working = working[:idx] + ([content] if action == "replace" else []) + working[idx + 1:]
     after = len(ENTRY_DELIMITER.join(working))
     return {"file": file_label, "before": before, "after": after, "limit": limit,
@@ -679,7 +668,6 @@ def _explain(subsystem: str, record: dict) -> dict:
     if subsystem == wa.MEMORY:
         file_label = _MEM_FILE.get(payload.get("target", "memory"), "MEMORY.md")
         kind_label = _tx("kind_memory", file=file_label)
-        entries = _entries_of(_home() / "memories" / file_label)
         for op in ops:
             action, old, new = op.get("action", ""), op.get("old_text", ""), op.get("content", "")
             if action == "add":
@@ -688,12 +676,6 @@ def _explain(subsystem: str, record: dict) -> dict:
                 what.append(_tx("what_replace", p=_preview(old)))
             else:
                 what.append(_tx("what_remove", p=_preview(old)))
-            if action in ("replace", "remove") and old:
-                hits = [e for e in entries if old in e]
-                if not hits:
-                    stale.append(_tx("stale_gone", what=what[-1], file=file_label))
-                elif len(hits) > 1:
-                    stale.append(_tx("stale_ambiguous", what=what[-1], file=file_label, n=len(hits)))
         adds = sum(1 for op in ops if op.get("action") == "add")
         reps = sum(1 for op in ops if op.get("action") == "replace")
         rems = sum(1 for op in ops if op.get("action") == "remove")
@@ -777,8 +759,7 @@ def _explain(subsystem: str, record: dict) -> dict:
         if fit.get("over"):
             stale.append(_tx("stale_memory_limit", file=fit["file"], after=fit["after"],
                              limit=fit["limit"], over=fit["over"]))
-        if fit.get("problem") and not stale:
-            stale.append(fit["problem"])
+        stale.extend(fit.get("problems") or [])
 
     seen, unique = set(), []
     for note in notes:
@@ -809,7 +790,7 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
         if new_skills:
             return {"verdict": _tx("rec_approve"), "reason": _tx("rec_new_reason")}
         return {"verdict": _tx("rec_approve"), "reason": _tx("rec_patch_reason")}
-    fit = plain.get("fit") or _memory_fit(record)
+    fit = plain["fit"] if "fit" in plain else _memory_fit(record)
     if fit.get("problem"):
         return {"verdict": _tx("rec_reject"), "reason": fit["problem"]}
     if fit.get("over"):
@@ -856,6 +837,7 @@ def _pending(scan: int) -> dict:
     if scan:
         _scan_external()
     out: dict = {}
+    latest_failures = _latest_failures()
     for subsystem in (wa.MEMORY, wa.SKILLS):
         items = []
         for record in wa.list_pending(subsystem):
@@ -879,7 +861,7 @@ def _pending(scan: int) -> dict:
                         "reason": _tx("rec_fix_reason", before=fix["before"], limit=limit,
                                       description=fix["description"], after=fix["after"]),
                     }
-            last_error = _last_error(record.get("id"))
+            last_error = latest_failures.get(str(record.get("id") or ""), "")
             if last_error:
                 item["plain"]["last_error"] = last_error
                 if not item["plain"].get("fix"):
@@ -888,10 +870,12 @@ def _pending(scan: int) -> dict:
                         "reason": _tx("rec_failed_before", error=_short_error(last_error)),
                     }
             if subsystem == wa.SKILLS:
-                item["diff"] = _skill_diff_text(wa, record)
-                for i, op in enumerate(_raw_ops(record)):
+                operations = _raw_ops(record)
+                diffs = [_one_op_diff(wa, op) for op in operations]
+                item["diff"] = _skill_diff_text(wa, record, diffs)
+                for i, op in enumerate(operations):
                     if i < len(item["ops"]):
-                        item["ops"][i].update(_op_change_stat(wa, op))
+                        item["ops"][i].update(_op_change_stat(wa, op, diffs[i]))
                 item["has_change"] = any(o.get("has_change") for o in item["ops"])
             items.append(item)
         out[subsystem] = items
@@ -921,10 +905,12 @@ def _one_op_diff(wa, op: dict) -> str:
     return _core_diff_or_blank(text)
 
 
-def _skill_diff_text(wa, record: dict) -> str:
+def _skill_diff_text(wa, record: dict, diffs: list[str] | None = None) -> str:
     payload = record.get("payload") or {}
-    parts = [d for d in (_one_op_diff(wa, op) for op in _raw_ops(record)) if d]
-    return "\n".join(parts)[:4000] if parts else _one_op_diff(wa, payload)
+    if diffs is None:
+        diffs = [_one_op_diff(wa, op) for op in _raw_ops(record)]
+    parts = [d for d in diffs if d]
+    return "\n".join(parts)[:4000] if parts else (_one_op_diff(wa, payload) if payload.get("operations") else "")
 
 
 _DANGLING_WORDS = {"and", "or", "for", "to", "of", "in", "on", "at", "with", "the", "a", "an", "by", "as", "that"}
@@ -1417,6 +1403,52 @@ def _selftest() -> int:
     assert listing["counts"]["memory"] == 1, listing
     assert listing["memory"][0]["ops"][0]["new"] == "Selftest entry", listing
 
+    sequential = {"payload": {"target": "memory", "operations": [
+        {"action": "add", "content": "Temporary sequential entry"},
+        {"action": "replace", "old_text": "Temporary sequential entry", "content": "Replacement entry"}]}}
+    sequential_plain = _explain("memory", sequential)
+    assert sequential_plain["stale"] == [], "sequential preview falsely rejects add-then-replace"
+    assert _recommendation("memory", sequential_plain, sequential)["verdict"] == _tx("rec_approve")
+    assert sequential_plain["fit"]["after"] > sequential_plain["fit"]["before"]
+
+    from types import SimpleNamespace
+    from unittest.mock import patch as mocked
+    fake_store = SimpleNamespace(memory_entries=["one alpha", "two alpha"], user_entries=[],
+                                 memory_char_limit=100, user_char_limit=100)
+    with mocked("tools.memory_tool.load_on_disk_store", return_value=fake_store):
+        for old, expected in (("alpha", "more than one"), ("missing", "no note matches")):
+            record = {"payload": {"target": "memory", "operations": [
+                {"action": "remove", "old_text": old}]}}
+            explanation = _explain("memory", record)
+            assert any(expected in issue for issue in explanation["stale"]), explanation
+            assert _recommendation("memory", explanation, record)["verdict"] == _tx("rec_reject")
+        fresh = {"payload": {"target": "memory", "operations": [
+            {"action": "remove", "old_text": "one alpha"}, {"action": "add", "content": "new note"}]}}
+        assert not _explain("memory", fresh)["stale"]
+        over_record = {"payload": {"target": "memory", "action": "add", "content": "x" * 110}}
+        assert _explain("memory", over_record)["fit"]["over"] > 0
+    with mocked("tools.memory_tool.load_on_disk_store", side_effect=OSError("fixture unavailable")) as unavailable:
+        unmeasured = _explain("memory", sequential)
+        assert unmeasured["fit"] == {}
+        assert _recommendation("memory", unmeasured, sequential)["reason"] == _tx("rec_mem_unmeasured_reason", file="MEMORY.md")
+        assert unavailable.call_count == 1, "an unavailable memory store must not be reread for the recommendation"
+    for sample in ("", "plain\n", "two\r\nlines\r\n", "\u00e7\u00f6\u00fc\n", "\U0001f642", "mixed\r\nline\n", "zero\x00byte"):
+        atomic = tmp / "atomic-preview.txt"
+        with mocked(__name__ + "._atomic_write_bytes", wraps=_atomic_write_bytes) as writer:
+            _atomic_write(atomic, sample)
+            assert writer.call_count == 1, "the text atomic writer must delegate to the byte writer"
+            assert atomic.read_bytes() == sample.encode("utf-8")
+    previous = atomic.read_bytes()
+    with mocked("os.replace", side_effect=OSError("fixture replacement failure")):
+        try:
+            _atomic_write(atomic, "not committed")
+        except OSError:
+            pass
+        else:
+            raise AssertionError("atomic replacement failure was swallowed")
+    assert atomic.read_bytes() == previous
+    assert not list(tmp.glob(".tmp-*.part")), "failed atomic writes left temporary files"
+
     plain = listing["memory"][0]["plain"]
     assert plain["kind_label"].startswith("Memory note → MEMORY.md"), plain
     assert plain["why"] and plain["what"] and "If you approve" in plain["effect"], plain
@@ -1450,7 +1482,32 @@ def _selftest() -> int:
         "payload": {"action": "create", "name": "too-long-skill", "category": "cat",
                     "content": "---\nname: too-long-skill\ndescription: " + long_desc + "\n---\n\nbody\n"},
     }, ensure_ascii=False), encoding="utf-8")
-    long_item = next(i for i in asyncio.run(pending())["skills"] if i["id"] == "dddddddd")
+    failure_path = _history_path()
+    saved_history = failure_path.read_bytes() if failure_path.exists() else None
+    _atomic_write(failure_path, "\n".join(json.dumps(row) for row in [
+        {"kind": "failed", "record_id": "same", "summary": "old"},
+        {"kind": "apply", "record_id": "same", "summary": "unrelated"},
+        {"kind": "failed", "record_id": "same", "summary": "latest"}]) + "\n")
+    original_reader = Path.read_text
+    reads = []
+    def history_reader(path, *args, **kwargs):
+        if path == failure_path:
+            reads.append(path)
+        return original_reader(path, *args, **kwargs)
+    try:
+        with mocked.object(Path, "read_text", autospec=True, side_effect=history_reader):
+            assert _pending(0)["counts"]["memory"] == 1
+        assert len(reads) == 1, "failure history must be read once per pending request"
+    finally:
+        if saved_history is None:
+            failure_path.unlink(missing_ok=True)
+        else:
+            _atomic_write_bytes(failure_path, saved_history)
+
+    with mocked(__name__ + "._one_op_diff", wraps=_one_op_diff) as diffs:
+        long_item = next(i for i in asyncio.run(pending())["skills"] if i["id"] == "dddddddd")
+        assert diffs.call_count == 1, "the displayed diff and its statistics must share one computation"
+
     assert long_item["plain"]["stale"], long_item["plain"]
     assert "cannot be applied" in long_item["plain"]["stale"][0], long_item["plain"]["stale"]
     assert long_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), long_item["plain"]["recommendation"]

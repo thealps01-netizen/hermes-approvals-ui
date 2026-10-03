@@ -790,8 +790,23 @@ def check_round3_surface() -> None:
         if "className: 'pa-tag'" not in head:
             line = js.count("\n", 0, m.start()) + 1
             _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
-    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 2:
-        _report("plugin.js: a lone last card sits in half the grid (the .pa-two lone-card rule is gone)")
+    if "className: 'pa-attention'" not in js or "className: 'pa-inspector'" not in js:
+        _report("plugin.js: the Attention Desk lost its selected inspector")
+    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js:
+        _report("plugin.js: a lone last history card sits in half the grid")
+
+
+def check_attention_desk() -> None:
+    js = JS.read_text(encoding="utf-8")
+    for token, message in (
+        ("className: 'pa-inspector'", "selected inspector missing"),
+        (".pa-evidence-scroll { overflow-y: auto;", "the selected evidence must scroll, not clip"),
+        ("items.sort((a, b) => rank(b.item) - rank(a.item))", "revision-needed records must lead the queue"),
+        ("className: 'pa-decision-confirm'", "individual decision confirmation missing"),
+        ("if (pending) { queued = true; return }", "slow polling must queue instead of overlap"),
+    ):
+        if token not in js:
+            _report("plugin.js: Attention Desk: " + message)
 
 
 def check_version_consistency() -> None:
@@ -866,6 +881,7 @@ def main() -> int:
     check_css_vars()
     check_visual_scale()
     check_round3_surface()
+    check_attention_desk()
     check_version_consistency()
     check_installed_copy()
     if problems:

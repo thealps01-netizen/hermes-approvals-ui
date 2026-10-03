@@ -61,7 +61,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
-const { act } = await import('react-dom/test-utils')
+const { act } = await import('react')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
 const NOW = Date.now() / 1000
@@ -200,18 +200,21 @@ const tab = (hostEl, text) => [...hostEl.querySelectorAll('.pa-tab')].find(b => 
 const frames = []
 
 frames.push({
-  label: 'Pending — the blocked record and the record with the long op bodies, details open (kit Meta / PanelBlock / LogView / Tip)',
+  label: 'Attention Desk — blocked change selected, original and suggested text, details and capacity open',
   html: await frame(async hostEl => {
-    const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
-    await click(byText(card, /Details and Changes/))
-    const memoryCard = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
-    await click(byText(memoryCard, /Details and Changes/))
+    await click(hostEl.querySelector('.pa-attention-item[data-key="skills:def67890"]'))
+    const card = hostEl.querySelector('.pa-inspector .pa-cell')
+    await click(byText(card, /Details and changes/i))
+    hostEl.querySelector('.pa-context')?.setAttribute('open', '')
   })
 })
 
 frames.push({
-  label: 'Pending — one record that touches two skills (the group layer)',
-  html: await frame(async () => {})
+  label: 'Attention Desk — selected memory record, original evidence with the remaining queue visible',
+  html: await frame(async hostEl => {
+    await click(hostEl.querySelector('.pa-attention-item[data-key="memory:abc12345"]'))
+    await click(byText(hostEl.querySelector('.pa-inspector'), /Details and changes/i))
+  })
 })
 
 frames.push({
@@ -333,8 +336,8 @@ html,body{margin:0;background:var(--ui-bg-sidebar);color:var(--ui-text-primary);
 body{padding:16px 18px 28px}
 .pa-frame-wrap{margin:0 auto 22px;max-width:900px}
 .pa-frame-label{font-size:11px;color:var(--ui-text-quaternary);margin:0 0 6px}
-.pa-frame{border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
-.pa-frame>div{flex:1;min-width:0}
+.pa-frame{height:700px;border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
+.pa-frame>div{flex:1;min-width:0;height:100%}
 </style>
 </head>
 <body>
