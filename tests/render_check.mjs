@@ -453,7 +453,7 @@ const { flushSync } = await import('react-dom')
 const { act } = await import('react')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal' }
+const REST = { mode: 'normal', gets: 0, post: 'normal', held: [] }
 const STORE = new Map()
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 let version = 0
@@ -474,13 +474,24 @@ async function mount(appLocale) {
                    error: 'The file changed after this record; send force to undo anyway.' }
         }
         if (REST.post === 'hold') return new Promise(() => {})
+        if (REST.post === 'defer') return new Promise(resolve => REST.held.push({ body: opts.body, resolve }))
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
         if (path === '/decide' && REST.post === 'bulkfail' && opts.body.subsystem === 'skills') {
           return { ok: true, results: opts.body.ids.map(id => ({ id, ok: false, error: 'Hermes refused it' })) }
         }
-        if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
+        if (path === '/decide' && REST.post.startsWith('receipt-')) {
+          const results = opts.body.ids.map(id => ({ id, ok: true }))
+          const variant = REST.post.slice('receipt-'.length)
+          if (variant === 'empty') return { ok: true, results: [] }
+          if (variant === 'missing') return { ok: true, results: results.slice(0, -1) }
+          if (variant === 'duplicate') return { ok: true, results: [...results, results[0]] }
+          if (variant === 'unmatched') return { ok: true, results: results.map((r, i) => i ? r : { ...r, id: 'badcabcd' }) }
+          if (variant === 'implicit') return { ok: true, results: results.map(({ id }) => ({ id })) }
+          if (variant === 'truthy') return { ok: true, results: results.map(r => ({ ...r, ok: 1 })) }
+        }
+        if (path === '/decide') return { ok: true, results: opts.body.ids.map(id => ({ id, ok: true, message: '1 operation(s) applied.' })), counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
@@ -491,7 +502,8 @@ async function mount(appLocale) {
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       const table = {
-        '/pending': REST.mode === 'drop' ? { ...PENDING, skills: PENDING.skills.filter(item => item.id !== 'aaa11111') }
+        '/pending': REST.mode === 'empty' ? { ...PENDING, memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+          : REST.mode === 'drop' ? { ...PENDING, skills: PENDING.skills.filter(item => item.id !== 'aaa11111') }
           : REST.mode === 'refused' ? REFUSED
           : REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
           : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
@@ -1176,6 +1188,103 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   quiet.hostEl.remove()
 }
 
+// Armed individual and bulk confirmations share one dispatch owner, including one event batch.
+{
+  for (const first of ['individual', 'bulk']) {
+    const held = await mount('en')
+    await click(buttons(held.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
+    await click(buttons(held.hostEl.querySelector('.pa-bulk'), /^Approve 2$/)[0])
+    await click(buttons(cardOf(held, 'skills:aaa11111'), /^Approve$/)[0])
+    const singleGo = held.hostEl.querySelector('.pa-decision-confirm')
+    const bulkGo = held.hostEl.querySelector('.pa-bulk-go')
+    const count = () => stub.calls.posts.filter(post => post.path === '/decide').length
+    const before = count()
+    REST.post = 'defer'
+    const offset = REST.held.length
+    await act(async () => {
+      if (first === 'individual') { singleGo.click(); bulkGo.click() }
+      else { bulkGo.click(); singleGo.click() }
+    })
+    if (count() !== before + 1) fail('armed bulk and individual confirmations overlapped one dispatch owner')
+    const other = held.hostEl.querySelector(first === 'individual' ? '.pa-bulk-go' : '.pa-decision-confirm')
+    if (!other?.disabled) fail('the other armed confirmation remains enabled during a decision')
+    REST.post = 'normal'
+    await act(async () => {
+      for (const pending of REST.held.slice(offset)) {
+        pending.resolve({ ok: true, results: pending.body.ids.map(id => ({ id, ok: true })) })
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    if (held.hostEl.querySelector('.pa-attention-item[data-key="memory:abc12345"]')?.disabled) {
+      fail('the completing decision did not release its own parent mutation lock')
+    }
+    await act(async () => held.root.unmount())
+    held.hostEl.remove()
+  }
+}
+// Unknown bulk results must remain failures with the unconfirmed records still selected.
+{
+  REST.mode = 'twomem'
+  for (const variant of ['empty', 'missing', 'duplicate', 'unmatched', 'implicit', 'truthy']) {
+    const receipt = await mount('en')
+    await click(buttons(receipt.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
+    await click(buttons(receipt.hostEl.querySelector('.pa-bulk'), /^Approve 3$/)[0])
+    REST.post = `receipt-${variant}`
+    await click(receipt.hostEl.querySelector('.pa-bulk-go'), 80)
+    const told = stub.calls.notify[stub.calls.notify.length - 1]
+    if (told?.kind !== 'error') fail(`incomplete bulk receipt ${variant} produced a success acknowledgement`)
+    if (receipt.hostEl.querySelectorAll('input.pa-pick:checked').length !== 3) {
+      fail(`incomplete bulk receipt ${variant} cleared unconfirmed selection`)
+    }
+    REST.post = 'normal'
+    await act(async () => receipt.root.unmount())
+    receipt.hostEl.remove()
+  }
+  REST.mode = 'normal'
+}
+// Selected queue-row removal preserves keyboard focus and exposes an empty-state recovery action.
+{
+  const focus = await mount('en')
+  const reload = async () => click(focus.hostEl.querySelector('.pa-refresh'), 150)
+  let row = focus.hostEl.querySelector('.pa-attention-item[data-key="skills:aaa11111"]')
+  await click(row)
+  row.focus()
+  REST.mode = 'drop'
+  await reload()
+  const survivor = focus.hostEl.querySelector('.pa-attention-item[aria-pressed="true"]')
+  if (document.activeElement !== survivor) fail('removed selected approval left focus outside the surviving queue')
+  survivor.focus()
+  REST.mode = 'empty'
+  await reload()
+  if (document.activeElement !== focus.hostEl.querySelector('.pa-empty-refresh')) {
+    fail('empty approval queue did not focus its recovery action')
+  }
+  REST.mode = 'normal'
+  await reload()
+  row = focus.hostEl.querySelector('.pa-attention-item[data-key="skills:aaa11111"]')
+  await click(row)
+  row.focus()
+  const outside = document.createElement('input')
+  document.body.appendChild(outside)
+  outside.focus()
+  REST.mode = 'empty'
+  await reload()
+  if (document.activeElement !== outside) fail('approval removal stole unrelated keyboard focus')
+  outside.remove()
+  REST.mode = 'normal'
+  await reload()
+  row = focus.hostEl.querySelector('.pa-attention-item[data-key="skills:aaa11111"]')
+  await click(row)
+  row.focus()
+  REST.mode = 'fail'
+  await reload()
+  if (document.activeElement !== buttons(focus.hostEl, /^Retry$/)[0]) {
+    fail('failed approval refresh removed focused rows without focusing Retry')
+  }
+  REST.mode = 'normal'
+  await act(async () => focus.root.unmount())
+  focus.hostEl.remove()
+}
 // --- 12c) Bulk decisions ------------------------------------------------------------------------
 {
   const bulk = await mount('en')

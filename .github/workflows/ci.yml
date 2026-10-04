@@ -17,17 +17,19 @@ env:
   # The core revision whose tokens and stylesheet this panel is verified against. Bump deliberately:
   # it is what makes "the app defines every var(--ui-*) the panel uses" a real check in CI.
   CORE_REPO: https://github.com/NousResearch/hermes-agent.git
-  CORE_SHA: 54718306e348dbf62ab18a256cb8299615cc0493
 
 jobs:
   gates:
-    name: gates (${{ matrix.os }})
+    name: gates (${{ matrix.os }}, ${{ matrix.core_sha }})
     runs-on: ${{ matrix.os }}
+    env:
+      CORE_SHA: ${{ matrix.core_sha }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        core_sha: [54718306e348dbf62ab18a256cb8299615cc0493, fd1a93d319044a6780e8aa95ec9ae1c0cf862ba0]
     defaults:
       run:
         shell: bash

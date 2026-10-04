@@ -520,6 +520,7 @@ _TEXT = {
     'fix_nothing': 'Nothing to shorten: the validator already accepts this content.',
     'fix_restored': '{error} The record was left exactly as it was staged; nothing was written.',
     'issue_history': '{file} has unreadable lines ({n}); they were skipped and are not shown.',
+    'issue_failure_history': 'Failure history is unavailable ({problem}); previous decision failures may be missing. Restore history.jsonl and refresh.',
 }
 
 
@@ -571,18 +572,28 @@ def _short_error(text: str, limit: int = 150) -> str:
 def _latest_failures() -> dict[str, str]:
     path = _history_path()
     try:
-        rows = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    except OSError as exc:
-        _log(f"failure history could not be read: {exc}")
+        rows = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
         return {}
-    errors = {}
+    except (OSError, UnicodeError) as exc:
+        _note_issue("failure_history", _tx("issue_failure_history", problem=_short_error(exc)))
+        return {}
+    errors, bad = {}, 0
     for line in rows:
+        if not line.strip():
+            continue
         try:
             row = json.loads(line)
         except (ValueError, TypeError):
+            bad += 1
             continue
-        if isinstance(row, dict) and row.get("kind") == "failed" and row.get("record_id"):
+        if not isinstance(row, dict):
+            bad += 1
+            continue
+        if row.get("kind") == "failed" and row.get("record_id"):
             errors[str(row["record_id"])] = str(row.get("summary") or "")
+    if bad:
+        _note_issue("history", _tx("issue_history", n=bad, file=path.name))
     return errors
 
 def _memory_fit(record: dict) -> dict:
@@ -1766,6 +1777,28 @@ def _selftest() -> int:
     again = next(i for i in asyncio.run(pending())["memory"] if i["id"] == "ffffffff")
     assert again["plain"]["last_error"], again["plain"]
     assert again["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), again["plain"]["recommendation"]
+    from unittest.mock import patch as history_patch
+    _prior_issues = dict(_ISSUES)
+    _saved_history = _history_path().read_bytes()
+    _unreadable_history = tmp / "unreadable-history"
+    _unreadable_history.mkdir()
+    try:
+        _ISSUES.clear()
+        with history_patch(__name__ + "._history_path", return_value=_unreadable_history):
+            degraded = asyncio.run(pending())
+        assert any("failure history" in text.lower() for text in degraded["issues"]), \
+            "an unreadable failure history disappeared from /pending without a visible warning"
+        _ISSUES.clear()
+        _history_path().write_bytes(_saved_history + b"{broken-json\n[]\n")
+        degraded = asyncio.run(pending())
+        assert any("history" in text.lower() for text in degraded["issues"]), \
+            "malformed failure-history lines disappeared from /pending without a visible warning"
+        still_failed = next(i for i in degraded["memory"] if i["id"] == "ffffffff")
+        assert still_failed["plain"]["last_error"], "valid failure history was lost beside malformed lines"
+    finally:
+        _history_path().write_bytes(_saved_history)
+        _ISSUES.clear()
+        _ISSUES.update(_prior_issues)
     (tmp / "pending" / "memory" / "ffffffff.json").unlink()
 
     asyncio.run(pending())
@@ -2017,6 +2050,20 @@ def _selftest() -> int:
     assert unchecked_plain["stale"], "a record the validator could not check was read as clean"
     assert unchecked_advice["verdict"] == _tx("rec_unvalidated"), unchecked_advice
     assert unchecked_advice["verdict"] != _tx("rec_approve"), unchecked_advice
+    import types
+    old_validator = types.ModuleType("tools.skill_manager_tool")
+    old_validator._validate_frontmatter = lambda content: None
+    sys.modules["tools.skill_manager_tool"] = old_validator
+    try:
+        legacy_plain = _explain("skills", unchecked_rec)
+        legacy_advice = _recommendation("skills", legacy_plain, unchecked_rec)
+        assert legacy_plain["stale"] and legacy_advice["verdict"] == _tx("rec_unvalidated"), \
+            "a too-old validator must not recommend approving an unchecked skill"
+        del old_validator._validate_frontmatter
+        absent_plain = _explain("skills", unchecked_rec)
+        assert absent_plain["stale"], "a missing validator callable must not read as clean"
+    finally:
+        sys.modules["tools.skill_manager_tool"] = _saved_validator
 
     index_path = _state() / "files.json"
     index_path.write_text("{not json", encoding="utf-8")

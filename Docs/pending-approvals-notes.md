@@ -684,3 +684,7 @@ to seven with the contrast negative control.
   the only inner scroll boxes.
 - **Backend English strings (CP1).** Backend messages all come from the single `_tx` English table;
   the panel shows them as they are because the panel is English-only (one bundle) — not changed.
+
+## Final review regression fixes
+
+Failure-history read and parse errors use the existing visible issue channel, retaining valid entries. Individual, partial, repair and bulk writes claim one synchronous parent-owned token, released only by its owner. Bulk success requires one uniquely matched explicit receipt for every requested id; unknown/missing/duplicate receipts are failures and unconfirmed selections remain. Removed focused rows recover to a survivor, empty-state Refresh or read-error Retry; unrelated controls keep focus.

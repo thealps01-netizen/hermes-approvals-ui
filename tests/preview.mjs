@@ -33,7 +33,12 @@ import { DESKTOP_APP } from './env.mjs'
 
 const HERE_URL = new URL('.', import.meta.url)
 const HERE = fileURLToPath(HERE_URL).replace(/\\/g, '/') + '/'
-const SRC = process.argv[2] || `${HERE}../desktop/plugin.js`
+const previewWidthArg = process.argv.find(arg => arg.startsWith('--width='))
+const previewWidth = previewWidthArg ? Number(previewWidthArg.slice(8)) : null
+if (previewWidth !== null && (!Number.isFinite(previewWidth) || previewWidth < 320 || previewWidth > 1800)) throw new Error('Invalid preview width')
+const previewLight = process.argv.includes('--light')
+
+const SRC = process.argv.slice(2).find(arg => !arg.startsWith('--')) || `${HERE}../desktop/plugin.js`
 const PLUGIN_ID = 'pending-approvals'
 const THEME = `${HERE}_theme_preview.css`
 // The application's own sources, RESOLVED (HERMES_AGENT_DIR → <HERMES_HOME>/hermes-agent) instead of
@@ -322,7 +327,7 @@ const body = frames.map(f => `<section class="pa-frame-wrap">
 </section>`).join('\n')
 
 const page = `<!doctype html>
-<html class="dark" lang="en">
+<html class="${previewLight ? '' : 'dark'}" lang="en">
 <head><meta charset="utf-8"><title>Approvals panel — preview</title>
 <style>${appCss}</style>
 <style>${theme}</style>
@@ -334,7 +339,7 @@ html,body{margin:0;background:var(--ui-bg-sidebar);color:var(--ui-text-primary);
    heights (80 · 168 · 96 · 340 · 58 · 38 · 30 px) inflate by their padding and the measurement lies. */
 *,*::before,*::after{box-sizing:border-box}
 body{padding:16px 18px 28px}
-.pa-frame-wrap{margin:0 auto 22px;max-width:900px}
+.pa-frame-wrap{margin:0 auto 22px;max-width:${previewWidth ?? 900}px}
 .pa-frame-label{font-size:11px;color:var(--ui-text-quaternary);margin:0 0 6px}
 .pa-frame{height:700px;border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
 .pa-frame>div{flex:1;min-width:0;height:100%}

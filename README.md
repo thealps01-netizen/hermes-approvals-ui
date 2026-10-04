@@ -44,33 +44,14 @@ The contrast gate's negative control (a low-contrast read and a tone token worn 
 
 ## Install
 
-`HERMES_HOME` is the install root: `%LOCALAPPDATA%\hermes` on Windows, `~/.hermes` otherwise
-(`hermes -p <profile>` uses a profile root instead).
+Use **Capabilities → Plugins** in Hermes Desktop and install the unified package from
+`https://github.com/thealps01-netizen/hermes-approvals-ui`. Pin the verified 40-character source revision in the installer's advanced
+options, then enable the package's backend and desktop contribution. Keep existing enable decisions
+when updating. The package is independent of the other Attention Desk panels.
 
-```bash
-hermes plugins install thealps01-netizen/hermes-approvals-ui --enable   # from GitHub
-```
-
-From a local clone instead:
-
-```bash
-git clone https://github.com/thealps01-netizen/hermes-approvals-ui "$HERMES_HOME/plugins/pending-approvals"
-hermes plugins enable pending-approvals
-```
-
-The **Desktop** page loads a *copy* of the panel, not the file in `plugins/`:
-
-```bash
-mkdir -p "$HERMES_HOME/desktop-plugins/pending-approvals"
-cp "$HERMES_HOME/plugins/pending-approvals/desktop/plugin.js" \
-   "$HERMES_HOME/desktop-plugins/pending-approvals/plugin.js"
-```
-
-Then enable `Approvals` in **Settings → Plugins** if it shows as disabled, and restart the desktop app
-(nav items and routes are registered at load). The sidebar entry, the `Open Approvals` command and the
-status-bar chip appear with it. Every edit to `desktop/plugin.js` needs the copy step repeated — the
-`installed copy` rule in the static audit fails when the two drift apart.
-
+The host installer and materializer own the desktop copy. Do not edit or manually copy installed
+files. Python route updates require an application/backend restart; save active work first.
+Panel state is stored under the active Hermes home and is retained on reinstall.
 ## Gates
 
 Seven gates; each runs the real file, none reads the source as text to decide behaviour. The long form —
@@ -168,11 +149,24 @@ tests/                       the seven gates + their fixtures, stubs and committ
 CHANGELOG.md                 what shipped when
 ```
 
+## Compatibility and rollback
+
+CI source contracts are pinned to `54718306e348dbf62ab18a256cb8299615cc0493` and
+`fd1a93d319044a6780e8aa95ec9ae1c0cf862ba0` on Windows and Ubuntu. The built runtime smoke target is the latter revision.
+Other host builds are unverified; this is not a version-wide compatibility guarantee.
+
+Skill validator: disabled/missing/old-signature fixtures never recommend approving an unchecked operation.
+
+Existing host validation, locks, atomic apply and byte-exact rollback remain authoritative. Host-owned light-theme badge contrast is reported, not overridden.
+
+Rollback uses the existing installer at `90b23f18a549e6dc6cd9e53fbf45214d5ec43ba7`. Do not delete panel state,
+change a shared engine, or replace the delivery classifier as part of a rollback.
+
 ## Versioning
 
 `plugin.yaml` is the source of the version; `dashboard/manifest.json` and the top `CHANGELOG.md`
 heading must match it, and the static audit fails when they do not. Release checklist: bump the three,
-run all seven gates, re-copy the desktop panel, then tag.
+run all seven gates, verify the host-materialized desktop copy, then tag.
 
 ## License
 

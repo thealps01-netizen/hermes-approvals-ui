@@ -3,7 +3,7 @@ import {
   PanelSectionLabel, Tip, haptic, host, icons, relativeTime, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const ID = 'pending-approvals'
 const ROUTE = '/approvals'
@@ -123,6 +123,7 @@ const BUNDLES = {
         confirm: 'Confirm',
         cancel: 'Cancel',
         done: (ok, all) => `${ok} of ${all} done`,
+        unverified: 'The decision receipt is incomplete or mismatched. Unconfirmed records stay selected; refresh and check their history before trying again.',
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
         skipped: 'Records that cannot be applied as staged are left out of the selection.',
       },
@@ -787,7 +788,7 @@ const pickable = item => {
   return !(plain.stale || []).length && !plain.fix
 }
 
-function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
+function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claimMutation, releaseMutation }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const detailsAt = useRef(null)
@@ -796,7 +797,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
   }, [open])
   const [busy, setBusy] = useState('')
   const [decision, setDecision] = useState(null)
-  useEffect(() => { onBusy?.(Boolean(busy)); return () => onBusy?.(false) }, [busy, onBusy])
+  const mutationToken = useRef({})
   const { leaving, leave } = useLeave(onChanged)
   const plain = item.plain || {}
   const stale = plain.stale || []
@@ -820,6 +821,8 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
   const adviceVariant = fix ? 'warn' : cannot || failedBefore ? 'destructive' : 'success'
 
   const applyFix = async () => {
+    if (!claimMutation(mutationToken.current)) return
+    setDecision(null)
     setBusy('fix')
     try {
       const res = await api.fix(item.id, true)
@@ -831,10 +834,13 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
       host.notifyError?.(e, t('pa.notify.applyError'))
     } finally {
       setBusy('')
+      releaseMutation(mutationToken.current)
     }
   }
 
   const decide = async (decision, only) => {
+    if (!claimMutation(mutationToken.current)) return { ok: false }
+    setDecision(null)
     setBusy(only?.length ? `only:${only[0]}` : decision)
     try {
       const res = await api.decide(subsystem, [item.id], decision, only)
@@ -848,6 +854,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
       return { ok: false }
     } finally {
       setBusy('')
+      releaseMutation(mutationToken.current)
     }
   }
 
@@ -861,7 +868,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
     variant: 'default',
     size: 'sm',
     'aria-disabled': approveBlocked || undefined,
-    disabled: Boolean(busy) && busy !== 'approve',
+    disabled: locked || Boolean(busy) && busy !== 'approve',
     loading: busy === 'approve',
     onClick: () => {
       if (approveBlocked) return
@@ -999,7 +1006,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
                             variant: 'outline',
                             size: 'xs',
                             'aria-disabled': heldGroup(g.name) || undefined,
-                            disabled: Boolean(busy) && busy !== `only:${g.name}`,
+                            disabled: locked || Boolean(busy) && busy !== `only:${g.name}`,
                             loading: busy === `only:${g.name}`,
                             onClick: () => {
                               if (heldGroup(g.name)) return
@@ -1087,7 +1094,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
                   ? jsx(Button, {
                       variant: 'default',
                       size: 'sm',
-                      disabled: Boolean(busy) && busy !== 'fix',
+                      disabled: locked || Boolean(busy) && busy !== 'fix',
                       loading: busy === 'fix',
                       onClick: () => setDecision({ action: 'fix' }),
                       children: t('pa.btn.fix')
@@ -1115,11 +1122,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
               jsx(Button, {
                 className: 'pa-decision-confirm',
                 variant: decision.action === 'reject' ? 'destructive' : 'default', size: 'sm',
-                disabled: Boolean(busy),
+                disabled: Boolean(busy) || locked,
                 onClick: () => {
-                  if (busy) return
+                  if (busy || locked) return
                   const armed = decision
-                  setDecision(null)
                   if (armed.action === 'fix') void applyFix()
                   else void decideAndLeave(armed.action, armed.only)
                 },
@@ -1146,7 +1152,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, onBusy }) {
               jsx(Button, {
                 variant: 'destructive',
                 size: 'sm',
-                disabled: Boolean(busy) && busy !== 'reject',
+                disabled: locked || Boolean(busy) && busy !== 'reject',
                 loading: busy === 'reject',
                 onClick: () => setDecision({ action: 'reject' }),
                 children: t('pa.btn.reject')
@@ -1258,41 +1264,56 @@ function HistoryCard({ entry, onChanged }) {
   })
 }
 
-function BulkBar({ items, picked, setPicked, onChanged, locked, onBusy }) {
+function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, releaseMutation }) {
   const t = usePluginI18n(ID)
   const [arming, setArming] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { onBusy?.(busy); return () => onBusy?.(false) }, [busy, onBusy])
+  const mutationToken = useRef({})
   const open = items.filter(({ item }) => pickable(item))
   const chosen = open.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
   const n = chosen.length
   if (open.length < 2) return null
 
   const run = async decision => {
+    if (!n || !claimMutation(mutationToken.current)) return
     setBusy(true)
     let ok = 0
     const bad = []
+    const confirmed = new Set()
     try {
       for (const subsystem of ['memory', 'skills']) {
         const ids = chosen.filter(c => c.subsystem === subsystem).map(c => c.item.id)
         if (!ids.length) continue
         try {
           const res = await api.decide(subsystem, ids, decision)
-          const results = res?.results || []
-          ok += results.filter(r => r.ok).length
-          bad.push(...results.filter(r => !r.ok).map(r => r.error || t('pa.notify.failed')))
-          if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
+          const results = Array.isArray(res?.results) ? res.results : []
+          const expected = new Set(ids)
+          const received = results.map(result => result?.id)
+          if (res?.ok !== true || received.length !== ids.length || new Set(received).size !== ids.length
+              || received.some(id => !expected.has(id))) {
+            bad.push(res?.error || t('pa.bulk.unverified'))
+            continue
+          }
+          for (const result of results) {
+            if (result.ok === true) {
+              ok += 1
+              confirmed.add(`${subsystem}:${result.id}`)
+            } else {
+              bad.push(result.error || (result.ok === false ? t('pa.notify.failed') : t('pa.bulk.unverified')))
+            }
+          }
         } catch (e) {
           bad.push(String(e?.message || e))
         }
       }
-      host.notify(bad.length
-        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
+      host.notify(bad.length || ok !== n
+        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', n - ok, bad[0] || t('pa.bulk.unverified'))}` }
         : { kind: 'success', message: t('pa.bulk.done', ok, n) })
     } finally {
       setBusy(false)
       setArming('')
-      setPicked(new Set())
+      setPicked(prev => new Set([...prev].filter(key => !confirmed.has(key))))
+      releaseMutation(mutationToken.current)
       onChanged()
     }
   }
@@ -1319,7 +1340,7 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, onBusy }) {
               }, 'cancel'),
               jsx(Button, {
                 className: 'pa-bulk-go',
-                variant: arming === 'reject' ? 'destructive' : 'default', size: 'sm', loading: busy,
+                variant: arming === 'reject' ? 'destructive' : 'default', size: 'sm', loading: busy, disabled: busy || locked,
                 onClick: () => void run(arming), children: t('pa.bulk.confirm')
               }, 'go')
             ]
@@ -1329,7 +1350,7 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, onBusy }) {
             children: [
               jsx('span', { className: 'pa-bulk-count', children: t('pa.bulk.selected', n, open.length) }, 'count'),
               jsx(Button, {
-                variant: 'text', size: 'sm',
+                variant: 'text', size: 'sm', disabled: locked,
                 onClick: () => setPicked(n === open.length
                   ? new Set()
                   : new Set(open.map(({ subsystem, item }) => `${subsystem}:${item.id}`))),
@@ -1355,11 +1376,49 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, onBusy }) {
   })
 }
 
+function useQueueFocus(keys, selectedKey, fallback, ready = true) {
+  const nodes = useRef(new Map())
+  const removed = useRef(null)
+  useEffect(() => {
+    const key = removed.current
+    if (key === null) return
+    if (nodes.current.has(key)) { removed.current = null; return }
+    if (!ready) return
+    const active = document.activeElement
+    if (active && active !== document.body && active.isConnected) { removed.current = null; return }
+    const target = nodes.current.get(selectedKey) || nodes.current.get(keys[0]) || fallback()
+    if (!target || target.disabled) return
+    removed.current = null
+    target.focus()
+  }, [JSON.stringify(keys), selectedKey, ready])
+  return key => node => {
+    const previous = nodes.current.get(key)
+    if (node) nodes.current.set(key, node)
+    else {
+      if (previous && previous.ownerDocument.activeElement === previous) removed.current = key
+      nodes.current.delete(key)
+    }
+  }
+}
+
 function PendingList({ data, error, refresh }) {
   const t = usePluginI18n(ID)
   const [picked, setPicked] = useState(() => new Set())
   const [selected, setSelected] = useState('')
+  const listRef = useRef(null)
   const [locked, setLocked] = useState(false)
+  const mutationOwner = useRef(null)
+  const claimMutation = useCallback(owner => {
+    if (mutationOwner.current) return false
+    mutationOwner.current = owner
+    setLocked(true)
+    return true
+  }, [])
+  const releaseMutation = useCallback(owner => {
+    if (mutationOwner.current !== owner) return
+    mutationOwner.current = null
+    setLocked(false)
+  }, [])
   const items = [
     ...(data?.memory || []).map(item => ({ subsystem: 'memory', item })),
     ...(data?.skills || []).map(item => ({ subsystem: 'skills', item }))
@@ -1373,6 +1432,8 @@ function PendingList({ data, error, refresh }) {
   items.sort((a, b) => rank(b.item) - rank(a.item))
   const keyOf = ({ subsystem, item }) => `${subsystem}:${item.id}`
   const active = items.find(entry => keyOf(entry) === selected) || items[0]
+  const focusRow = useQueueFocus(error || !data ? [] : items.map(keyOf), active ? keyOf(active) : '',
+    () => listRef.current?.querySelector('button'), !locked)
   const signature = items.map(keyOf).join('|')
   useEffect(() => {
     const current = new Set(items.map(keyOf))
@@ -1385,21 +1446,23 @@ function PendingList({ data, error, refresh }) {
     else next.add(key)
     return next
   })
-  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
-  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  if (error) return jsx('div', { ref: listRef, children: jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error') })
+  if (!data) return jsx('div', { ref: listRef, children: jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading') })
   const issues = data.issues || []
   const notice = issues.length ? jsx('div', {
     className: 'pa-alert pa-alert-danger', role: 'alert',
     children: issues.map(text => jsx('div', { children: text }, text))
   }, 'issues') : null
-  if (!items.length) return jsxs('div', { children: [notice, jsx(PanelEmpty, {
-    icon: 'inbox', title: t('pa.empty.pendingTitle'), description: t('pa.empty.pendingBody')
+  if (!items.length) return jsxs('div', { ref: listRef, children: [notice, jsx(PanelEmpty, {
+    icon: 'inbox', title: t('pa.empty.pendingTitle'), description: t('pa.empty.pendingBody'),
+    action: jsx(Button, { className: 'pa-empty-refresh', variant: 'outline', size: 'sm',
+      onClick: refresh, children: t('pa.action.refresh') })
   }, 'empty')] }, 'empty-list')
   return jsxs('div', {
-    className: 'pa-pending',
+    className: 'pa-pending', ref: listRef,
     children: [
       notice,
-      jsx(BulkBar, { items, picked, setPicked, onChanged: refresh, locked, onBusy: setLocked }, 'bulk'),
+      jsx(BulkBar, { items, picked, setPicked, onChanged: refresh, locked, claimMutation, releaseMutation }, 'bulk'),
       jsxs('div', {
         className: 'pa-attention',
         children: [
@@ -1420,7 +1483,7 @@ function PendingList({ data, error, refresh }) {
                     onChange: () => togglePick(key)
                   }, 'pick'),
                   jsxs('button', {
-                    type: 'button', className: 'pa-attention-item', 'data-key': key,
+                    type: 'button', className: 'pa-attention-item', 'data-key': key, ref: focusRow(key),
                     'aria-pressed': key === keyOf(active), disabled: locked,
                     onClick: () => setSelected(key),
                     children: [
@@ -1440,7 +1503,8 @@ function PendingList({ data, error, refresh }) {
             children: jsx('div', {
               className: 'pa-cell', 'data-key': keyOf(active),
               children: jsx(PendingCard, {
-                subsystem: active.subsystem, item: active.item, onChanged: refresh, onBusy: setLocked,
+                subsystem: active.subsystem, item: active.item, onChanged: refresh,
+                locked, claimMutation, releaseMutation,
                 picked: picked.has(keyOf(active))
               }, keyOf(active))
             }, keyOf(active))

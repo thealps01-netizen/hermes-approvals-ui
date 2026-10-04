@@ -899,8 +899,8 @@ def main() -> int:
           "colors only, CSS variables defined, type sizes from one FS table, a container-query KPI row, "
           "number-first percentages, the two-step clear/delete/force-undo unchanged, no "
           "undefined name, the restatement glossary stays gone, one version across plugin.yaml, the "
-          "Dashboard manifest and the changelog, the installed desktop copy byte-identical to "
-          "desktop/plugin.js, and the backend keeps ONE English "
+          "Dashboard manifest and the changelog; installed equality is checked only when a door copy "
+          "exists (a missing copy is reported as skipped, never as verified), and the backend keeps ONE English "
           "table behind _tx with exact placeholders")
     return 0
 
