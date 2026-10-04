@@ -7,7 +7,12 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -77,7 +82,7 @@ jobs:
       - name: Backend selftest (against the pinned core, end-to-end /fix approve included)
         run: |
           set -euo pipefail
-          python -m pip install -q fastapi pyyaml requests httpx
+          python -m pip install -q fastapi pyyaml requests httpx ruamel.yaml==0.18.17
           unset HERMES_HOME
           PYTHONPATH="$HERMES_AGENT_DIR" python dashboard/plugin_api.py --selftest
 
