@@ -5,14 +5,6 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
-## 1.8.0
-
-- Final review regression fixes: Failure-history read and parse errors use the existing visible issue channel, retaining valid entries. Individual, partial, repair and bulk writes claim one synchronous parent-owned token, released only by its owner. Bulk success requires one uniquely matched explicit receipt for every requested id; unknown/missing/duplicate receipts are failures and unconfirmed selections remain. Removed focused rows recover to a survivor, empty-state Refresh or read-error Retry; unrelated controls keep focus.
-- Issue-first pending-change queue and one selected-change inspector. Individual and bulk decisions have explicit confirmation, busy selection is locked, polling is single-flight, and sequential memory simulation shares one result across capacity, stale checks and advice.
-- Compatibility: CI source-contract matrix at `54718306e348dbf62ab18a256cb8299615cc0493` and `fd1a93d319044a6780e8aa95ec9ae1c0cf862ba0`; runtime smoke verification targets the latter build. No untested host release is advertised as supported.
-- Limits: Existing host validation, locks, atomic apply and byte-exact rollback remain authoritative. Host-owned light-theme badge contrast is reported, not overridden.
-- Rollback: reinstall the prior source revision `90b23f18a549e6dc6cd9e53fbf45214d5ec43ba7` through the host installer; panel state is retained.
-
 ## 1.7.2
 
 ### Fixed

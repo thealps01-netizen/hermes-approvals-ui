@@ -5,41 +5,6 @@ no docstrings**; every reason lives here so the code stays uniform and the reaso
 Displayed name: **Approvals**. `plugin.yaml`'s `name:` and the folder name are the identity and never
 change.
 
-## Current composition: Attention Desk
-
-Pending shows revision-needed records first: previous failures, core-predicted invalid changes,
-then description fixes, then ready records. The queue selects one inspector, never a stack of
-simultaneous cards. That inspector keeps the record's original text, proposed text, character
-counts, diff, blocked reason, recommendation and the existing per-skill actions. Applied history,
-memory entries, alerts, merge drafting and undo remain available. Capacity is a closed context
-section until needed; this is not a replacement for the existing history and memory tabs.
-
-Individual approve, reject, shorten-and-create and apply-only actions arm before sending a
-request; Cancel sends nothing. Bulk has its own confirmation. Selection and bulk controls lock
-while an individual write is in flight. A refresh preserves an unchanged selected row; a record
-removed elsewhere cannot leave stale actionable evidence. Reads are single-flight with one
-coalesced follow-up; old loader generations cannot publish into a newer one. POST is never retried.
-
-The memory preview follows the core matcher against the sequential simulated entries, so
-add-then-replace is not falsely rejected by checking only the original file. Explanation and
-recommendation reuse that one result. Missing memory stores stay explicitly unmeasured. The
-core still owns the apply-time validators; a preview is evidence, not an authorization or a
-transaction guarantee. Host partial-transaction and journaling work is not solved by this panel.
-
-Text atomic writes encode UTF-8 and reuse the byte writer. Isolated tests cover Unicode, LF,
-CRLF, failed replacement cleanup and untouched pre-image bytes. Diff bodies and statistics share
-one computation per operation, and previous failures are loaded once per pending request.
-Regression tests cover unavailable stores, missing/ambiguous matches, over-budget changes,
-sequential changes, one inspector, confirmation, selection loss, focus and read ownership.
-
-Measured host-kit text contrast failures are reported separately by the existing pixel gate;
-this panel does not rewrite host-owned kit internals. They are not counted as panel-owned AA passes.
-At narrow widths the desk keeps a minimum readable height; the pane scrolls instead of crushing
-its decision controls when the optional capacity context is open.
-
-The old pending card grid and its all-cards-at-once presentation are retired. The lone-card
-width rule still belongs to Applied history, not to the selected pending inspector.
-
 ## 1. What it is for
 
 Hermes can hold a memory/skill write back instead of saving it immediately (`memory.write_approval`).
@@ -684,7 +649,3 @@ to seven with the contrast negative control.
   the only inner scroll boxes.
 - **Backend English strings (CP1).** Backend messages all come from the single `_tx` English table;
   the panel shows them as they are because the panel is English-only (one bundle) — not changed.
-
-## Final review regression fixes
-
-Failure-history read and parse errors use the existing visible issue channel, retaining valid entries. Individual, partial, repair and bulk writes claim one synchronous parent-owned token, released only by its owner. Bulk success requires one uniquely matched explicit receipt for every requested id; unknown/missing/duplicate receipts are failures and unconfirmed selections remain. Removed focused rows recover to a survivor, empty-state Refresh or read-error Retry; unrelated controls keep focus.

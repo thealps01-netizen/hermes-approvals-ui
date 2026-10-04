@@ -3,7 +3,7 @@ import {
   PanelSectionLabel, Tip, haptic, host, icons, relativeTime, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const ID = 'pending-approvals'
 const ROUTE = '/approvals'
@@ -32,17 +32,6 @@ const BUNDLES = {
         title: 'Approvals',
         subtitle: 'Hermes waits for your decision before writing',
         updated: at => `Updated ${at}`,
-      },
-      decision: {
-        label: 'Confirm this individual decision',
-        cancel: 'Cancel',
-        confirm: 'Confirm decision',
-        prompt: (action, id) => `Confirm ${action} for #${id}. Nothing is sent until you confirm.`
-      },
-      desk: {
-        queue: 'Changes to review',
-        detail: 'Selected change: reason, original text and decision',
-        context: 'Memory capacity and applied history'
       },
       action: {
         refresh: 'Refresh',
@@ -123,7 +112,6 @@ const BUNDLES = {
         confirm: 'Confirm',
         cancel: 'Cancel',
         done: (ok, all) => `${ok} of ${all} done`,
-        unverified: 'The decision receipt is incomplete or mismatched. Unconfirmed records stay selected; refresh and check their history before trying again.',
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
         skipped: 'Records that cannot be applied as staged are left out of the selection.',
       },
@@ -219,7 +207,7 @@ const BUNDLES = {
         pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
         alertsOn: 'Alerts on',
         alertsOff: 'Alerts muted',
-        hint: 'Approve → confirm → written, undoable',
+        hint: 'Approve → written immediately, undoable',
       },
     }
   }
@@ -298,7 +286,7 @@ const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
 const FS = { micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, kpi: 28 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
-  prose: 80, histSummary: 58, histFiles: 38, histAction: 30, attention: 78, deskMin: 420
+  prose: 80, histSummary: 58, histFiles: 38, histAction: 30
 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
@@ -335,7 +323,7 @@ const STYLE = `
 .pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
-.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-primary)}
+.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
 .pa-pick:disabled{cursor:not-allowed;opacity:.4}
 .pa-root{container-type:inline-size;
@@ -368,7 +356,8 @@ const STYLE = `
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
   color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 @container (max-width:560px){.pa-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@container (max-width:420px){.pa-kpi-top{flex-wrap:wrap}.pa-kpi-pill{margin-left:0}}
+@container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
+@container (max-width:360px){.pa-kpi-top{flex-wrap:wrap}.pa-kpi-pill{margin-left:0}}
 .pa-free{max-height:none !important;overflow:visible !important}
 .pa-lines{min-height:100%;max-height:none !important;overflow:visible !important;
   line-height:${LINE}px !important;padding:${inset(H.prose, 0)}px 10px !important}
@@ -412,7 +401,7 @@ const STYLE = `
 .pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
 .pa-bad{color:var(--ui-text-primary);border-left:3px solid var(--ui-red);padding-left:8px;display:inline-block}
 .pa-tabs{display:flex;align-items:center;min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
-.pa-tab{flex-shrink:0;background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
+.pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
   font:inherit;font-size:${FS.body}px;color:var(--ui-text-secondary);cursor:pointer;white-space:nowrap;flex-shrink:0}
 .pa-tab:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px;border-radius:${R.tag}px}
 .pa-tab[data-on="1"]{color:var(--ui-text-primary);font-weight:600;border-bottom-color:var(--ui-accent)}
@@ -428,28 +417,6 @@ const STYLE = `
   .pa-pane *,.pa-pane *::before,.pa-pane *::after{transition:none !important;animation:none !important}
   .pa-leaving{transform:none}
 }
-
-.pa-pending { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: ${G.sm}px; padding: ${G.sm}px; }
-.pa-attention { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(190px, .65fr) minmax(0, 1.35fr); border: ${HAIRLINE}; border-radius: ${R.card}px; overflow: hidden; }
-.pa-queue { min-width: 0; min-height: 0; overflow-y: auto; border-right: ${HAIRLINE}; scrollbar-width: thin; }
-.pa-queue-row { display: flex; align-items: center; min-width: 0; border-bottom: ${HAIRLINE}; padding-left: ${G.sm}px; }
-.pa-attention-item { min-width: 0; flex: 1; height: ${H.attention}px; padding: ${G.sm}px; display: flex; flex-direction: column; gap: ${G.xs}px; justify-content: center; text-align: left; color: var(--ui-text-primary); }
-.pa-attention-item[aria-pressed=true] { background: var(--ui-row-active-background); }
-.pa-attention-item:hover { background: var(--ui-row-hover-background); }
-.pa-attention-item:focus-visible { outline: 2px solid var(--ui-text-primary); outline-offset: -3px; }
-.pa-queue-title { font-size: ${FS.body}px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; }
-.pa-queue-meta { font-size: ${FS.micro}px; display: flex; gap: ${G.xs}px; flex-wrap: wrap; }
-.pa-inspector { min-width: 0; min-height: 0; overflow: hidden; }
-.pa-inspector .pa-cell { height: 100%; min-height: 0; }
-.pa-inspector .pa-card { border: 0; border-radius: 0; max-height: 100%; }
-.pa-evidence-scroll { overflow-y: auto; ${THIN_SCROLL} }
-.pa-evidence-scroll > * { flex-shrink: 0; }
-.pa-inspector .pa-advice, .pa-inspector .pa-foot, .pa-inspector .pa-decision { flex: 0 0 auto; }
-.pa-decision { display: flex; flex-direction: column; gap: ${G.xs}px; padding: ${G.sm}px; border-top: ${HAIRLINE}; }
-.pa-context { max-height: 150px; overflow-y: auto; }
-.pa-context > summary { cursor: pointer; font-size: ${FS.meta}px; padding: ${G.xs}px 0; color: var(--ui-text-primary); }
-@container (max-width: 520px) { .pa-cmp { grid-template-columns: minmax(0, 1fr); } }
-@container (max-width: 690px) { .pa-attention { min-height: ${H.deskMin}px; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(90px, 28%) minmax(0, 1fr); } .pa-queue { border-right: 0; border-bottom: ${HAIRLINE}; } }
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -458,42 +425,36 @@ function usePolling(load, ms) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [at, setAt] = useState(null)
-  const refreshRef = useRef(() => {})
+  const [tick, setTick] = useState(0)
   useEffect(() => {
     let alive = true
-    let pending = false
-    let queued = false
     const run = async () => {
-      if (!alive) return
-      if (pending) { queued = true; return }
-      pending = true
       try {
         const d = await load()
-        if (alive) { setData(d); setError(null); setAt(Date.now()) }
+        if (alive) {
+          setData(d)
+          setError(null)
+          setAt(Date.now())
+        }
       } catch (e) {
         if (alive) setError(e)
-      } finally {
-        pending = false
-        if (alive && queued) { queued = false; void run() }
       }
     }
-    refreshRef.current = run
     void run()
-    const timer = setInterval(run, ms)
+    const h = setInterval(run, ms)
     return () => {
       alive = false
-      clearInterval(timer)
-      refreshRef.current = () => {}
+      clearInterval(h)
     }
-  }, [load, ms])
-  return { data, error, at, refresh: () => refreshRef.current() }
+  }, [ms, tick])
+  return { data, error, at, refresh: () => setTick(t => t + 1) }
 }
 
 function usePending({ scan = true } = {}) {
-  const load = useMemo(() => async () => {
+  const load = async () => {
     if (scan) await api.scan()
     return api.pending()
-  }, [scan])
+  }
   const { data, error, at, refresh } = usePolling(load, 15000)
   return { data, error, at, refresh, n: total(data?.counts) }
 }
@@ -788,7 +749,7 @@ const pickable = item => {
   return !(plain.stale || []).length && !plain.fix
 }
 
-function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claimMutation, releaseMutation }) {
+function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const detailsAt = useRef(null)
@@ -796,8 +757,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
   const [busy, setBusy] = useState('')
-  const [decision, setDecision] = useState(null)
-  const mutationToken = useRef({})
   const { leaving, leave } = useLeave(onChanged)
   const plain = item.plain || {}
   const stale = plain.stale || []
@@ -821,8 +780,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
   const adviceVariant = fix ? 'warn' : cannot || failedBefore ? 'destructive' : 'success'
 
   const applyFix = async () => {
-    if (!claimMutation(mutationToken.current)) return
-    setDecision(null)
     setBusy('fix')
     try {
       const res = await api.fix(item.id, true)
@@ -834,13 +791,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
       host.notifyError?.(e, t('pa.notify.applyError'))
     } finally {
       setBusy('')
-      releaseMutation(mutationToken.current)
     }
   }
 
   const decide = async (decision, only) => {
-    if (!claimMutation(mutationToken.current)) return { ok: false }
-    setDecision(null)
     setBusy(only?.length ? `only:${only[0]}` : decision)
     try {
       const res = await api.decide(subsystem, [item.id], decision, only)
@@ -854,7 +808,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
       return { ok: false }
     } finally {
       setBusy('')
-      releaseMutation(mutationToken.current)
     }
   }
 
@@ -868,12 +821,12 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
     variant: 'default',
     size: 'sm',
     'aria-disabled': approveBlocked || undefined,
-    disabled: locked || Boolean(busy) && busy !== 'approve',
+    disabled: Boolean(busy) && busy !== 'approve',
     loading: busy === 'approve',
     onClick: () => {
       if (approveBlocked) return
       haptic('tap')
-      setDecision({ action: 'approve' })
+      void decideAndLeave('approve')
     },
     children: t('pa.btn.approve')
   }, 'approve')
@@ -884,7 +837,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
     style: { display: 'flex', height: '100%', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
-        className: 'pa-evidence-scroll',
         style: { display: 'flex', flexDirection: 'column', gap: G.sm, flex: '1 1 auto', minHeight: 0 },
         children: [
           jsxs('div', {
@@ -1006,12 +958,12 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
                             variant: 'outline',
                             size: 'xs',
                             'aria-disabled': heldGroup(g.name) || undefined,
-                            disabled: locked || Boolean(busy) && busy !== `only:${g.name}`,
+                            disabled: Boolean(busy) && busy !== `only:${g.name}`,
                             loading: busy === `only:${g.name}`,
                             onClick: () => {
                               if (heldGroup(g.name)) return
                               haptic('tap')
-                              setDecision({ action: 'approve', only: [g.name] })
+                              void decideAndLeave('approve', [g.name])
                             },
                             children: t(g.kind === 'new' ? 'pa.btn.onlyCreate' : 'pa.btn.onlyApply')
                           }, 'btn')
@@ -1094,9 +1046,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
                   ? jsx(Button, {
                       variant: 'default',
                       size: 'sm',
-                      disabled: locked || Boolean(busy) && busy !== 'fix',
+                      disabled: Boolean(busy) && busy !== 'fix',
                       loading: busy === 'fix',
-                      onClick: () => setDecision({ action: 'fix' }),
+                      onClick: () => void applyFix(),
                       children: t('pa.btn.fix')
                     }, 'apply')
                   : null
@@ -1104,37 +1056,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
             }, 'foot')
           ]
         }, 'advice'),
-
-      decision && jsxs('div', {
-        className: 'pa-decision', role: 'group', 'aria-label': t('pa.decision.label'),
-        children: [
-          jsx('p', {
-            children: t('pa.decision.prompt', decision.action, item.id),
-            style: { margin: 0, fontSize: FS.meta, color: 'var(--ui-text-primary)' }
-          }, 'prompt'),
-          jsxs('div', {
-            className: 'pa-actions',
-            children: [
-              jsx(Button, {
-                className: 'pa-decision-cancel', variant: 'text', size: 'sm',
-                onClick: () => setDecision(null), children: t('pa.decision.cancel')
-              }, 'cancel'),
-              jsx(Button, {
-                className: 'pa-decision-confirm',
-                variant: decision.action === 'reject' ? 'destructive' : 'default', size: 'sm',
-                disabled: Boolean(busy) || locked,
-                onClick: () => {
-                  if (busy || locked) return
-                  const armed = decision
-                  if (armed.action === 'fix') void applyFix()
-                  else void decideAndLeave(armed.action, armed.only)
-                },
-                children: t('pa.decision.confirm')
-              }, 'confirm')
-            ]
-          }, 'actions')
-        ]
-      }, 'confirmation'),
 
       jsxs('div', {
         className: 'pa-foot',
@@ -1152,9 +1073,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick, locked, claim
               jsx(Button, {
                 variant: 'destructive',
                 size: 'sm',
-                disabled: locked || Boolean(busy) && busy !== 'reject',
+                disabled: Boolean(busy) && busy !== 'reject',
                 loading: busy === 'reject',
-                onClick: () => setDecision({ action: 'reject' }),
+                onClick: () => void decideAndLeave('reject'),
                 children: t('pa.btn.reject')
               }, 'reject'),
               jsx(Tip, { label: approveBlocked ? rec.reason : '', children: approve }, 'approve-tip')
@@ -1264,56 +1185,40 @@ function HistoryCard({ entry, onChanged }) {
   })
 }
 
-function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, releaseMutation }) {
+function BulkBar({ items, picked, setPicked, onChanged }) {
   const t = usePluginI18n(ID)
   const [arming, setArming] = useState('')
   const [busy, setBusy] = useState(false)
-  const mutationToken = useRef({})
   const open = items.filter(({ item }) => pickable(item))
   const chosen = open.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
   const n = chosen.length
   if (open.length < 2) return null
 
   const run = async decision => {
-    if (!n || !claimMutation(mutationToken.current)) return
     setBusy(true)
     let ok = 0
     const bad = []
-    const confirmed = new Set()
     try {
       for (const subsystem of ['memory', 'skills']) {
         const ids = chosen.filter(c => c.subsystem === subsystem).map(c => c.item.id)
         if (!ids.length) continue
         try {
           const res = await api.decide(subsystem, ids, decision)
-          const results = Array.isArray(res?.results) ? res.results : []
-          const expected = new Set(ids)
-          const received = results.map(result => result?.id)
-          if (res?.ok !== true || received.length !== ids.length || new Set(received).size !== ids.length
-              || received.some(id => !expected.has(id))) {
-            bad.push(res?.error || t('pa.bulk.unverified'))
-            continue
-          }
-          for (const result of results) {
-            if (result.ok === true) {
-              ok += 1
-              confirmed.add(`${subsystem}:${result.id}`)
-            } else {
-              bad.push(result.error || (result.ok === false ? t('pa.notify.failed') : t('pa.bulk.unverified')))
-            }
-          }
+          const results = res?.results || []
+          ok += results.filter(r => r.ok).length
+          bad.push(...results.filter(r => !r.ok).map(r => r.error || t('pa.notify.failed')))
+          if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
         } catch (e) {
           bad.push(String(e?.message || e))
         }
       }
-      host.notify(bad.length || ok !== n
-        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', n - ok, bad[0] || t('pa.bulk.unverified'))}` }
+      host.notify(bad.length
+        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
         : { kind: 'success', message: t('pa.bulk.done', ok, n) })
     } finally {
       setBusy(false)
       setArming('')
-      setPicked(prev => new Set([...prev].filter(key => !confirmed.has(key))))
-      releaseMutation(mutationToken.current)
+      setPicked(new Set())
       onChanged()
     }
   }
@@ -1335,12 +1240,12 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, r
                 children: t(arming === 'reject' ? 'pa.bulk.confirmReject' : 'pa.bulk.confirmApprove', n)
               }, 'copy'),
               jsx(Button, {
-                variant: 'outline', size: 'sm', disabled: busy || locked,
+                variant: 'outline', size: 'sm', disabled: busy,
                 onClick: () => setArming(''), children: t('pa.bulk.cancel')
               }, 'cancel'),
               jsx(Button, {
                 className: 'pa-bulk-go',
-                variant: arming === 'reject' ? 'destructive' : 'default', size: 'sm', loading: busy, disabled: busy || locked,
+                variant: arming === 'reject' ? 'destructive' : 'default', size: 'sm', loading: busy,
                 onClick: () => void run(arming), children: t('pa.bulk.confirm')
               }, 'go')
             ]
@@ -1350,7 +1255,7 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, r
             children: [
               jsx('span', { className: 'pa-bulk-count', children: t('pa.bulk.selected', n, open.length) }, 'count'),
               jsx(Button, {
-                variant: 'text', size: 'sm', disabled: locked,
+                variant: 'text', size: 'sm',
                 onClick: () => setPicked(n === open.length
                   ? new Set()
                   : new Set(open.map(({ subsystem, item }) => `${subsystem}:${item.id}`))),
@@ -1360,13 +1265,13 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, r
               n
                 ? jsx(Button, {
                     variant: 'destructive', size: 'sm',
-                    disabled: locked, onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
+                    onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
                   }, 'reject')
                 : null,
               n
                 ? jsx(Button, {
                     variant: 'default', size: 'sm',
-                    disabled: locked, onClick: () => setArming('approve'), children: t('pa.bulk.approve', n)
+                    onClick: () => setArming('approve'), children: t('pa.bulk.approve', n)
                   }, 'approve')
                 : null
             ]
@@ -1376,143 +1281,88 @@ function BulkBar({ items, picked, setPicked, onChanged, locked, claimMutation, r
   })
 }
 
-function useQueueFocus(keys, selectedKey, fallback, ready = true) {
-  const nodes = useRef(new Map())
-  const removed = useRef(null)
-  useEffect(() => {
-    const key = removed.current
-    if (key === null) return
-    if (nodes.current.has(key)) { removed.current = null; return }
-    if (!ready) return
-    const active = document.activeElement
-    if (active && active !== document.body && active.isConnected) { removed.current = null; return }
-    const target = nodes.current.get(selectedKey) || nodes.current.get(keys[0]) || fallback()
-    if (!target || target.disabled) return
-    removed.current = null
-    target.focus()
-  }, [JSON.stringify(keys), selectedKey, ready])
-  return key => node => {
-    const previous = nodes.current.get(key)
-    if (node) nodes.current.set(key, node)
-    else {
-      if (previous && previous.ownerDocument.activeElement === previous) removed.current = key
-      nodes.current.delete(key)
-    }
-  }
-}
-
 function PendingList({ data, error, refresh }) {
   const t = usePluginI18n(ID)
+  const gridRef = useRef(null)
+  const seen = useRef(new Map())
   const [picked, setPicked] = useState(() => new Set())
-  const [selected, setSelected] = useState('')
-  const listRef = useRef(null)
-  const [locked, setLocked] = useState(false)
-  const mutationOwner = useRef(null)
-  const claimMutation = useCallback(owner => {
-    if (mutationOwner.current) return false
-    mutationOwner.current = owner
-    setLocked(true)
-    return true
-  }, [])
-  const releaseMutation = useCallback(owner => {
-    if (mutationOwner.current !== owner) return
-    mutationOwner.current = null
-    setLocked(false)
-  }, [])
   const items = [
     ...(data?.memory || []).map(item => ({ subsystem: 'memory', item })),
     ...(data?.skills || []).map(item => ({ subsystem: 'skills', item }))
   ]
-  const rank = item => {
-    const plain = item.plain || {}
-    if (plain.last_error) return 4
-    if ((plain.stale || []).length || (plain.refused || []).length) return 3
-    return plain.fix ? 2 : 0
-  }
-  items.sort((a, b) => rank(b.item) - rank(a.item))
-  const keyOf = ({ subsystem, item }) => `${subsystem}:${item.id}`
-  const active = items.find(entry => keyOf(entry) === selected) || items[0]
-  const focusRow = useQueueFocus(error || !data ? [] : items.map(keyOf), active ? keyOf(active) : '',
-    () => listRef.current?.querySelector('button'), !locked)
-  const signature = items.map(keyOf).join('|')
-  useEffect(() => {
-    const current = new Set(items.map(keyOf))
-    setPicked(prev => new Set([...prev].filter(key => current.has(key))))
-    if (selected && !current.has(selected)) setSelected('')
-  }, [signature])
   const togglePick = key => setPicked(prev => {
     const next = new Set(prev)
     if (next.has(key)) next.delete(key)
     else next.add(key)
     return next
   })
-  if (error) return jsx('div', { ref: listRef, children: jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error') })
-  if (!data) return jsx('div', { ref: listRef, children: jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading') })
-  const issues = data.issues || []
-  const notice = issues.length ? jsx('div', {
-    className: 'pa-alert pa-alert-danger', role: 'alert',
-    children: issues.map(text => jsx('div', { children: text }, text))
-  }, 'issues') : null
-  if (!items.length) return jsxs('div', { ref: listRef, children: [notice, jsx(PanelEmpty, {
-    icon: 'inbox', title: t('pa.empty.pendingTitle'), description: t('pa.empty.pendingBody'),
-    action: jsx(Button, { className: 'pa-empty-refresh', variant: 'outline', size: 'sm',
-      onClick: refresh, children: t('pa.action.refresh') })
-  }, 'empty')] }, 'empty-list')
-  return jsxs('div', {
-    className: 'pa-pending', ref: listRef,
-    children: [
-      notice,
-      jsx(BulkBar, { items, picked, setPicked, onChanged: refresh, locked, claimMutation, releaseMutation }, 'bulk'),
-      jsxs('div', {
-        className: 'pa-attention',
-        children: [
-          jsx('section', {
-            className: 'pa-queue', 'aria-label': t('pa.desk.queue'),
-            children: items.map(entry => {
-              const key = keyOf(entry)
-              const { item } = entry
-              const plain = item.plain || {}
-              const state = plain.last_error ? 'pa.state.failedBefore' : rank(item) ? 'pa.state.blocked'
-                : (plain.groups || []).some(group => group.kind === 'new') ? 'pa.state.newSkill' : 'pa.state.ready'
-              return jsxs('div', {
-                className: 'pa-queue-row',
-                children: [
-                  jsx('input', {
-                    type: 'checkbox', className: 'pa-pick', checked: picked.has(key),
-                    disabled: locked || !pickable(item), 'aria-label': `${t('pa.bulk.select')} #${item.id}`,
-                    onChange: () => togglePick(key)
-                  }, 'pick'),
-                  jsxs('button', {
-                    type: 'button', className: 'pa-attention-item', 'data-key': key, ref: focusRow(key),
-                    'aria-pressed': key === keyOf(active), disabled: locked,
-                    onClick: () => setSelected(key),
-                    children: [
-                      jsx('span', { className: 'pa-queue-title', children: plain.headline || item.summary || `#${item.id}` }, 'title'),
-                      jsxs('span', { className: 'pa-queue-meta', children: [
-                        jsx('span', { children: `#${item.id}` }, 'id'),
-                        jsx('span', { children: t(state) }, 'state')
-                      ] }, 'meta')
-                    ]
-                  }, 'select')
-                ]
-              }, key)
-            })
-          }, 'queue'),
-          jsx('aside', {
-            className: 'pa-inspector', 'aria-label': t('pa.desk.detail'),
-            children: jsx('div', {
-              className: 'pa-cell', 'data-key': keyOf(active),
-              children: jsx(PendingCard, {
-                subsystem: active.subsystem, item: active.item, onChanged: refresh,
-                locked, claimMutation, releaseMutation,
-                picked: picked.has(keyOf(active))
-              }, keyOf(active))
-            }, keyOf(active))
-          }, 'inspector')
-        ]
-      }, 'desk')
-    ]
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    const cells = [...grid.children].filter(c => c.getAttribute('data-key'))
+    const still = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false
+
+    for (const cell of cells) {
+      cell.style.transition = 'none'
+      cell.style.transform = ''
+    }
+    const next = new Map()
+    for (const cell of cells) {
+      const key = cell.getAttribute('data-key')
+      const pos = { left: cell.offsetLeft, top: cell.offsetTop }
+      next.set(key, pos)
+      const before = seen.current.get(key)
+      if (!before || still) continue
+      const dx = before.left - pos.left
+      const dy = before.top - pos.top
+      if (!dx && !dy) continue
+      cell.style.transform = `translate(${dx}px, ${dy}px)`
+      void cell.offsetWidth
+      cell.style.transition = move('enter', 'transform')
+      cell.style.transform = ''
+    }
+    seen.current = next
   })
+
+  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  const issues = data.issues || []
+  const notice = issues.length
+    ? jsx('div', {
+        className: 'pa-alert pa-alert-danger',
+        role: 'alert',
+        style: { margin: '12px 12px 0' },
+        children: issues.map(text => jsx('div', { children: text }, text))
+      }, 'issues')
+    : null
+  const body = !total(data.counts)
+    ? jsx(PanelEmpty, {
+        icon: 'inbox',
+        title: t('pa.empty.pendingTitle'),
+        description: t('pa.empty.pendingBody')
+      }, 'empty')
+    : jsx('div', {
+    ref: gridRef,
+    className: 'pa-cols pa-two',
+    style: { padding: 12 },
+    children: items.map(({ subsystem, item }) =>
+      jsx('div', {
+        className: 'pa-cell',
+        'data-key': `${subsystem}:${item.id}`,
+        children: jsx(PendingCard, {
+          subsystem, item, onChanged: refresh,
+          picked: picked.has(`${subsystem}:${item.id}`),
+          onPick: () => togglePick(`${subsystem}:${item.id}`)
+        }, 'card')
+      }, `${subsystem}:${item.id}`))
+  }, 'grid')
+  const bar = total(data.counts)
+    ? jsx(BulkBar, { items, picked, setPicked, onChanged: refresh }, 'bulk')
+    : null
+  return jsxs('div', { children: [notice, bar, body] }, 'list')
 }
 
 function HistoryList({ data, error, refresh }) {
@@ -1811,9 +1661,7 @@ function Pane() {
               }, 'refresh')
             ]
           }, 'head'),
-          jsx('details', { className: 'pa-context', children: [
-            jsx('summary', { children: t('pa.desk.context') }, 'label'),
-            jsxs('div', {
+          jsxs('div', {
             className: 'pa-kpis',
             children: [
               jsx(Stat, data ? {
@@ -1829,8 +1677,7 @@ function Pane() {
                 delta: t('pa.kpi.undoable', undoable)
               } : { ...waiting, title: t('pa.kpi.applied') }, 'history')
             ]
-          }, 'kpis')
-          ] }, 'context'),
+          }, 'kpis'),
           jsx('div', {
             style: { display: 'flex', alignItems: 'center', borderBottom: HAIRLINE, minWidth: 0 },
             children: jsx(Tabs, {

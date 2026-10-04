@@ -33,12 +33,7 @@ import { DESKTOP_APP } from './env.mjs'
 
 const HERE_URL = new URL('.', import.meta.url)
 const HERE = fileURLToPath(HERE_URL).replace(/\\/g, '/') + '/'
-const previewWidthArg = process.argv.find(arg => arg.startsWith('--width='))
-const previewWidth = previewWidthArg ? Number(previewWidthArg.slice(8)) : null
-if (previewWidth !== null && (!Number.isFinite(previewWidth) || previewWidth < 320 || previewWidth > 1800)) throw new Error('Invalid preview width')
-const previewLight = process.argv.includes('--light')
-
-const SRC = process.argv.slice(2).find(arg => !arg.startsWith('--')) || `${HERE}../desktop/plugin.js`
+const SRC = process.argv[2] || `${HERE}../desktop/plugin.js`
 const PLUGIN_ID = 'pending-approvals'
 const THEME = `${HERE}_theme_preview.css`
 // The application's own sources, RESOLVED (HERMES_AGENT_DIR → <HERMES_HOME>/hermes-agent) instead of
@@ -66,7 +61,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
-const { act } = await import('react')
+const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
 const NOW = Date.now() / 1000
@@ -205,21 +200,18 @@ const tab = (hostEl, text) => [...hostEl.querySelectorAll('.pa-tab')].find(b => 
 const frames = []
 
 frames.push({
-  label: 'Attention Desk — blocked change selected, original and suggested text, details and capacity open',
+  label: 'Pending — the blocked record and the record with the long op bodies, details open (kit Meta / PanelBlock / LogView / Tip)',
   html: await frame(async hostEl => {
-    await click(hostEl.querySelector('.pa-attention-item[data-key="skills:def67890"]'))
-    const card = hostEl.querySelector('.pa-inspector .pa-cell')
-    await click(byText(card, /Details and changes/i))
-    hostEl.querySelector('.pa-context')?.setAttribute('open', '')
+    const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
+    await click(byText(card, /Details and Changes/))
+    const memoryCard = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
+    await click(byText(memoryCard, /Details and Changes/))
   })
 })
 
 frames.push({
-  label: 'Attention Desk — selected memory record, original evidence with the remaining queue visible',
-  html: await frame(async hostEl => {
-    await click(hostEl.querySelector('.pa-attention-item[data-key="memory:abc12345"]'))
-    await click(byText(hostEl.querySelector('.pa-inspector'), /Details and changes/i))
-  })
+  label: 'Pending — one record that touches two skills (the group layer)',
+  html: await frame(async () => {})
 })
 
 frames.push({
@@ -327,7 +319,7 @@ const body = frames.map(f => `<section class="pa-frame-wrap">
 </section>`).join('\n')
 
 const page = `<!doctype html>
-<html class="${previewLight ? '' : 'dark'}" lang="en">
+<html class="dark" lang="en">
 <head><meta charset="utf-8"><title>Approvals panel — preview</title>
 <style>${appCss}</style>
 <style>${theme}</style>
@@ -339,10 +331,10 @@ html,body{margin:0;background:var(--ui-bg-sidebar);color:var(--ui-text-primary);
    heights (80 · 168 · 96 · 340 · 58 · 38 · 30 px) inflate by their padding and the measurement lies. */
 *,*::before,*::after{box-sizing:border-box}
 body{padding:16px 18px 28px}
-.pa-frame-wrap{margin:0 auto 22px;max-width:${previewWidth ?? 900}px}
+.pa-frame-wrap{margin:0 auto 22px;max-width:900px}
 .pa-frame-label{font-size:11px;color:var(--ui-text-quaternary);margin:0 0 6px}
-.pa-frame{height:700px;border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
-.pa-frame>div{flex:1;min-width:0;height:100%}
+.pa-frame{border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
+.pa-frame>div{flex:1;min-width:0}
 </style>
 </head>
 <body>

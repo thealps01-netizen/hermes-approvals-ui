@@ -114,7 +114,3 @@ In a split window the `/approvals` page can come up empty ("no page at /approval
 chip in the same window proves the plugin loaded, so the app's route resolution fails to find the
 registration in that context. Reproduction: split window → ⌘K → "Reload desktop plugins". If the page
 appears it was a load-order problem; if not, a temporary trace log has to go into the panel.
-
-## Theme and pane variants
-
-Generate the preview with `node preview.mjs --light` to measure the host light palette; omit the flag for dark. For a named pane width, use `--width=352` or `--width=380`; the generator accepts 320–1800 px and rejects invalid widths before drawing. Run the existing native measurement command immediately after each generation; its image and JSON then correspond to that exact variant. Tracked baseline PNGs are historical examples, not evidence for a changed candidate.
