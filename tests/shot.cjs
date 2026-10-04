@@ -59,11 +59,6 @@
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs')
 const path = require('path')
-if (process.env.PA_PREVIEW_HOME) {
-  const userData = path.join(path.resolve(process.env.PA_PREVIEW_HOME), String(process.pid))
-  fs.mkdirSync(userData, { recursive: true })
-  app.setPath('userData', userData)
-}
 
 const [pageArg, outArg] = process.argv.slice(2)
 const pagePath = path.resolve(pageArg || 'preview.html')
@@ -71,12 +66,7 @@ const outPath = path.resolve(outArg || 'preview.png')
 app.disableHardwareAcceleration()
 
 const MEASURE = `(() => {
-  const visible = el => {
-    if (!el.getClientRects().length) return false
-    const closed = el.closest('details:not([open])')
-    return !closed || closed.querySelector('summary')?.contains(el)
-  }
-  const qa = sel => [...document.querySelectorAll(sel)].filter(visible)
+  const qa = sel => [...document.querySelectorAll(sel)]
   const txt = el => ((el && el.textContent) || '').replace(/\\\\s+/g, ' ').trim()
   const box = el => el.getBoundingClientRect()
   const LAYERS = [80, 168, 96, 340, 58, 38, 30]
@@ -109,10 +99,6 @@ const MEASURE = `(() => {
       cards: qa('.pa-card').filter(c => wrap.contains(c)).length,
       tabs: qa('.pa-tab').filter(t => wrap.contains(t)).length,
       buttons: qa('[data-slot="button"]').filter(b => wrap.contains(b)).length,
-      deskColumns: wrap.querySelector('.pa-attention')
-        ? getComputedStyle(wrap.querySelector('.pa-attention')).gridTemplateColumns.split(' ').filter(Boolean).length : null,
-      inspectorCards: wrap.querySelectorAll('.pa-inspector .pa-card').length,
-      queuedCards: wrap.querySelectorAll('.pa-queue .pa-card').length,
       reject: qa('[data-slot="button"][data-variant="destructive"]').filter(b => wrap.contains(b))
         .map(txt)
     }
@@ -271,7 +257,6 @@ const MEASURE = `(() => {
   })
   const compare = qa('.pa-cmp').map(el => ({
     cols: getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length,
-    expected: el.closest('.pa-root').getBoundingClientRect().width > 520 ? 2 : 1,
     cells: [...el.children].map(c => Math.round(box(c).height))
   }))
   return {
@@ -343,7 +328,7 @@ const MEASURE = `(() => {
       fonts: [...new Set(pills.map(p => p.font))]
     },
     compare,
-    compareBad: compare.filter(c => c.cols !== c.expected || (c.cols === 2 && new Set(c.cells).size > 1)).length
+    compareBad: compare.filter(c => c.cols !== 2 || new Set(c.cells).size > 1).length
   }
 })()`
 
@@ -396,12 +381,6 @@ app.whenReady().then(async () => {
     console.log(`png: ${outPath} (${png.length} bytes · ${size.width}x${size.height} px) · measurement: ${jsonPath}`)
 
     const bad = []
-    for (const frame of m.frames.filter(frame => frame.deskColumns !== null)) {
-      const expected = frame.frameW > 690 ? 2 : 1
-      if (frame.deskColumns !== expected || frame.inspectorCards !== 1 || frame.queuedCards) {
-        bad.push(`Attention Desk composition changed in frame ${frame.n}`)
-      }
-    }
     if (m.frames.some(f => Number(f.overflowPx) > 0)) bad.push(`overflowPx=${JSON.stringify(m.overflowPx)}`)
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
@@ -411,7 +390,7 @@ app.whenReady().then(async () => {
     if (m.layerMismatch > 0) bad.push(`layerMismatch=${m.layerMismatch}`)
     if (m.frameCount !== 4) bad.push(`frames=${m.frameCount}`)
     if (m.tabs < 3) bad.push(`tabs=${m.tabs}`)
-    if (m.cells !== 2) bad.push(`selected pending inspectors=${m.cells}`)
+    if (m.cells < 3) bad.push(`cells=${m.cells}`)
     if (m.kit.buttons === 0) bad.push('kit.buttons=0 (the kit is not drawn)')
     if (m.kit.destructive === 0) bad.push('kit.destructive=0 (Reject is not a destructive kit Button)')
     if (!m.appStylesheet.twVarsOnButton) bad.push('appStylesheet.twVarsOnButton=null (the app stylesheet is not in force)')

@@ -1,6 +1,6 @@
 name: pending-approvals
 label: Approvals
-version: 1.8.0
+version: 1.7.2
 description: >-
   Approvals — review, approve and undo the memory/skill writes Hermes is holding for approval.
 author: enesa
