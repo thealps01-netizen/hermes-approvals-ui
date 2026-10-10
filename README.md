@@ -33,10 +33,13 @@ gates enforce.
 
 ## Screenshots
 
-The four-frame preview (blocked record + long op bodies, the multi-skill group, the Applied tab after
-a conflict, the Memory tab with a delete armed), drawn from the panel's real React output:
+The five-frame preview (blocked record + long op bodies, the multi-skill group, the Applied tab after
+a conflict, the Memory tab with a delete armed, the same pending list in a 420 px pane), drawn from the
+panel's real React output — dark mode, then the same frames in light mode:
 
 ![Approvals — preview frames](tests/preview.png)
+
+![Approvals — preview frames, light mode](tests/preview-light.png)
 
 The contrast gate's negative control (a low-contrast read and a tone token worn as text, both caught):
 
@@ -81,17 +84,18 @@ what every rule and every measurement asserts — is in [`tests/README.md`](test
 | Static audit | `python audit_static.py` | One `en` bundle reaching `ctx.i18n.register`, every `t()` key resolving, no language switch left, no `panes` claim, no comment/docstring, loader-safe imports, host-kit usage, theme variables only, the two-step delete/clear/force-undo and bulk decisions intact, one version across the manifests, and the installed copy byte-identical to the repo file |
 | Canary run | `python canary_audit.py` | That the audit **can** fail: one violation injected per rule, exit 1 with that rule's message, file restored byte for byte, audit green again |
 | Render/behaviour | `node render_check.mjs` | jsdom + real React + a host-kit stub: registration, the kit skeleton, no native `title=`, accessible names, the blocked-record lock, the description fix, details/diff, two-step destructive actions, bulk decisions, palette rows, the alert mute, the merge draft, KPI + chip, FLIP, English text under two app locales |
-| Static preview | `node preview.mjs` | The four frames rendered into `preview.html` inside the app's own theme and compiled stylesheet; fails on a raw `pa.*` key or a native `title=` |
-| Real render + WCAG | `node shot.mjs preview.html preview.png` | The only gate that paints and measures pixels (Electron/Chromium): overflow, clipped text, native controls, kit traces, the declared layer heights read back from the screen, and every painted text node's contrast ratio (4.5:1 / 3:1) |
-| Contrast negative control | `PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png`, then again without it | That the WCAG gate can fail: two violations injected into the already-drawn page must turn the gate red and name both nodes; the unmodified page must go green again |
+| Static preview | `node preview.mjs` | The five frames (one at a 420 px pane width) rendered into `preview.html` (dark) and `preview-light.html` (light) inside the app's own theme and compiled stylesheet; fails on a raw `pa.*` key, a native `title=`, or a frame action that finds no control |
+| Real render + WCAG | `node shot.mjs preview.html preview.png && node shot.mjs preview-light.html preview-light.png` | The only gate that paints and measures pixels (Electron/Chromium), run once per colour mode: overflow, clipped text, a warning cut by a scroll box, native controls, kit traces, the declared layer heights read back from the screen, and every painted text node's contrast ratio (4.5:1 / 3:1) |
+| Contrast negative control | `PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png`, then again without it | That the measured gate can fail: three violations (a low-contrast read, a tone token worn as text, a warning below a scroll fold) injected into the already-drawn page must turn the gate red and name all three; the unmodified page must go green again |
 | Backend selftest | `PYTHONPATH="$HERMES_AGENT_DIR" "$CORE_PYTHON" ../dashboard/plugin_api.py --selftest` | The whole approve → history → undo loop against a throwaway `HERMES_HOME`: partial skill approval, the conflict path, force-undo, memory arithmetic, the patch precheck against the real target file, and the dead-approve block |
 
 ```bash
 cd tests
 npm ci                     # jsdom + React for the two jsdom gates
 python audit_static.py && python canary_audit.py
-node render_check.mjs && node preview.mjs && node shot.mjs preview.html preview.png
-PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png   # the contrast gate must go red
+node render_check.mjs && node preview.mjs
+node shot.mjs preview.html preview.png && node shot.mjs preview-light.html preview-light.png
+PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png   # the measured gate must go red
 ```
 
 ## Portability

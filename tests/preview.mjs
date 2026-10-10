@@ -189,24 +189,33 @@ async function frame(actions) {
   return hostEl.innerHTML
 }
 
-const click = async (el, wait = 60) => {
-  if (!el) return
+// A frame action that finds no control is a FAILURE, not a no-op: frame 1 once asked for
+// /Details and Changes/ while the button read "Details and changes", so the details never opened
+// and the WCAG gate measured a frame without the op bodies it claimed to cover.
+const problems = []
+const click = async (el, what, wait = 60) => {
+  if (!el) {
+    problems.push(`a frame action found no control: ${what}`)
+    return
+  }
   await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
-const byText = (hostEl, text) => [...hostEl.querySelectorAll('button')].find(b => text.test(b.textContent || ''))
+const byText = (hostEl, text) => [...(hostEl?.querySelectorAll('button') || [])].find(b => text.test(b.textContent || ''))
 const tab = (hostEl, text) => [...hostEl.querySelectorAll('.pa-tab')].find(b => text.test(b.textContent || ''))
+const openDetails = async hostEl => {
+  for (const key of ['skills:def67890', 'memory:abc12345']) {
+    const card = hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+    await click(byText(card, /^Details and changes$/i), `Details and changes on ${key}`)
+    if (!byText(card, /^Hide details$/i)) problems.push(`the details of ${key} did not open`)
+  }
+}
 
 const frames = []
 
 frames.push({
   label: 'Pending — the blocked record and the record with the long op bodies, details open (kit Meta / PanelBlock / LogView / Tip)',
-  html: await frame(async hostEl => {
-    const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
-    await click(byText(card, /Details and Changes/))
-    const memoryCard = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
-    await click(byText(memoryCard, /Details and Changes/))
-  })
+  html: await frame(openDetails)
 })
 
 frames.push({
@@ -217,20 +226,25 @@ frames.push({
 frames.push({
   label: 'Applied — history cards, the raw summary in a LogView, two-step Force undo',
   html: await frame(async hostEl => {
-    await click(tab(hostEl, /^Applied/))
-    await click(byText(hostEl, /^Undo$/))
+    await click(tab(hostEl, /^Applied/), 'the Applied tab')
+    await click(byText(hostEl, /^Undo$/), 'Undo')
   })
 })
 
 frames.push({
   label: 'Memory — the note cards, the delete armed (two-step)',
   html: await frame(async hostEl => {
-    await click(tab(hostEl, /^Memory/))
-    await click(byText(hostEl, /^Delete$/))
+    await click(tab(hostEl, /^Memory/), 'the Memory tab')
+    await click(byText(hostEl, /^Delete$/), 'Delete')
   })
 })
 
-const problems = []
+frames.push({
+  label: 'Pending — a narrow 420 px pane: the KPI row, the card grid and the comparisons answer the pane width',
+  narrow: true,
+  html: await frame(openDetails)
+})
+
 for (const f of frames) {
   const text = f.html.replace(/<style[\s\S]*?<\/style>/g, ' ')
   if (/<[^>]*\btitle="/.test(f.html)) problems.push(`${f.label}: a native title= is drawn`)
@@ -313,18 +327,21 @@ const DARK_SEEDS = darkBlock
   : ''
 
 const theme = readFileSync(THEME, 'utf8')
-const body = frames.map(f => `<section class="pa-frame-wrap">
+const body = frames.map(f => `<section class="${f.narrow ? 'pa-frame-wrap pa-narrow' : 'pa-frame-wrap'}">
   <p class="pa-frame-label">${f.label}</p>
   <div class="pa-frame">${f.html}</div>
 </section>`).join('\n')
 
-const page = `<!doctype html>
-<html class="dark" lang="en">
-<head><meta charset="utf-8"><title>Approvals panel — preview</title>
+// TWO PAGES, one per colour mode: the dark page carries the app's `:root.dark` block and the seeds
+// `applyTheme()` hands in; the light page is the theme file's own `:root` (its light values) over
+// the same compiled stylesheet. Each page declares its frame count so the measured gate can refuse a
+// page that lost a frame.
+const pageFor = dark => `<!doctype html>
+<html${dark ? ' class="dark"' : ''} lang="en">
+<head><meta charset="utf-8"><title>Approvals panel — preview (${dark ? 'dark' : 'light'})</title>
 <style>${appCss}</style>
 <style>${theme}</style>
-<style>${darkBlock}</style>
-<style>${DARK_SEEDS}</style>
+${dark ? `<style>${darkBlock}</style>\n<style>${DARK_SEEDS}</style>` : ''}
 <style>
 html,body{margin:0;background:var(--ui-bg-sidebar);color:var(--ui-text-primary);font-family:system-ui,'Segoe UI',sans-serif}
 /* The app runs on Tailwind's preflight: every box is border-box. Without it the panel's fixed layer
@@ -332,25 +349,29 @@ html,body{margin:0;background:var(--ui-bg-sidebar);color:var(--ui-text-primary);
 *,*::before,*::after{box-sizing:border-box}
 body{padding:16px 18px 28px}
 .pa-frame-wrap{margin:0 auto 22px;max-width:900px}
+.pa-frame-wrap.pa-narrow{max-width:420px}
 .pa-frame-label{font-size:11px;color:var(--ui-text-quaternary);margin:0 0 6px}
 .pa-frame{border:1px solid var(--ui-stroke-primary);border-radius:10px;overflow:hidden;display:flex;min-height:320px}
 .pa-frame>div{flex:1;min-width:0}
 </style>
 </head>
-<body>
-<p class="pa-frame-label">The panel's REAL React output, four states, in the application's own theme block (_theme_preview.css) over the app's COMPILED stylesheet. No hand-drawn mock.</p>
+<body data-frames="${frames.length}">
+<p class="pa-frame-label">The panel's REAL React output, ${frames.length} states, ${dark ? 'dark' : 'light'} mode, in the application's own theme block (_theme_preview.css) over the app's COMPILED stylesheet. No hand-drawn mock.</p>
 ${body}
 </body>
 </html>
 `
+const page = pageFor(true)
+const lightPage = pageFor(false)
 writeFileSync(`${HERE}preview.html`, page)
+writeFileSync(`${HERE}preview-light.html`, lightPage)
 
 if (problems.length) {
   console.error('PREVIEW: problems found')
   for (const p of problems) console.error('  -', p)
   process.exit(1)
 }
-console.log(`preview.html written: ${HERE}preview.html (${page.length} bytes)`)
-console.log(`  style: ${kitStyles} + theme + dark seeds`)
-console.log(`  frames: ${frames.length} · kit marks: button/badge/meta/section-label/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
+console.log(`preview.html written: ${HERE}preview.html (${page.length} bytes) · preview-light.html (${lightPage.length} bytes)`)
+console.log(`  style: ${kitStyles} + theme + dark seeds (dark page) / theme light values (light page)`)
+console.log(`  frames: ${frames.length} (one narrow) · kit marks: button/badge/meta/section-label/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
 process.exit(0)

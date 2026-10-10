@@ -9,6 +9,7 @@ tests/plugin-preview.mjs
 # Preview page and measurement dumps — regenerated on every run. The PNGs ARE committed: they are the
 # gate's own evidence (and the README's screenshots).
 tests/preview.html
+tests/preview-light.html
 tests/*.measure.json
 tests/*.scroll.json
 tests/*.stress.json
