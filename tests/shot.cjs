@@ -39,11 +39,12 @@
  *   compare        every `.pa-cmp` (the cursor `comparison-card` layout) is really 2 columns and its
  *                  cells share one row height
  *
- * NEGATIVE CONTROL (`PA_CONTRAST_CANARY=1`): injects into the drawn page exactly the two things the
- * contrast pair exists to catch — a small body-token on a low-contrast fill, and a tone token worn as
- * reading text. The gate must then exit 1 and NAME both nodes. Run it to prove the gate can fail:
+ * NEGATIVE CONTROL (`PA_CONTRAST_CANARY=1`): injects into the drawn page exactly the three things the
+ * measurement exists to catch — a small body-token on a low-contrast fill, a tone token worn as
+ * reading text, and a warning parked below the fold of a scroll box. The gate must then exit 1 and
+ * NAME all three nodes. Run it to prove the gate can fail:
  *
- *   PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png   # exit 1, both nodes named
+ *   PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png   # exit 1, all three nodes named
  *   node shot.mjs preview.html preview.png                       # exit 0 again
  *
  * Usage (paths RELATIVE — an MSYS absolute path like /c/Users/... arrives at Electron as C:\c\Users\...
@@ -259,6 +260,34 @@ const MEASURE = `(() => {
     cols: getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length,
     cells: [...el.children].map(c => Math.round(box(c).height))
   }))
+  // --- a warning is never below a fold ------------------------------------------------------------
+  // A designed scroll box is not a clip for ordinary text (see clip above), but it IS one for a
+  // warning: the Force-undo conflict line once sat inside the 38 px file box, cut mid-sentence right
+  // before the irreversible click, and every other key stayed green. Each warning surface must lie
+  // wholly inside every ancestor that scrolls or clips.
+  const pathOf = el => {
+    const p = []
+    let n = el
+    while (n && n !== document.body && p.length < 5) {
+      p.unshift(n.tagName.toLowerCase() + (typeof n.className === 'string' && n.className ? '.' + n.className.split(' ')[0] : ''))
+      n = n.parentElement
+    }
+    return p.join('>')
+  }
+  const hiddenWarnings = qa('.pa-frame .pa-alert, .pa-frame .pa-bad, .pa-frame [role="alert"]').map(el => {
+    const r = box(el)
+    if (r.width < 1 || r.height < 1) return null
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const s = getComputedStyle(n)
+      if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
+      const p = box(n)
+      if (r.top < p.top - 1 || r.bottom > p.bottom + 1 || r.left < p.left - 1 || r.right > p.right + 1) {
+        return { text: txt(el).slice(0, 60), where: pathOf(el), height: Math.round(r.height),
+          window: Math.round(p.height), clippedBy: pathOf(n) }
+      }
+    }
+    return null
+  }).filter(Boolean)
   return {
     appStylesheet: {
       sheets: document.styleSheets.length,
@@ -278,7 +307,9 @@ const MEASURE = `(() => {
     bodyScrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     frames,
     frameCount: frames.length,
+    declaredFrames: Number(document.body.getAttribute('data-frames')) || null,
     overflowPx: frames.map(f => f.overflowPx),
+    hiddenWarnings,
     clipped: qa('.pa-frame-wrap *').map(clip).filter(Boolean),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
@@ -348,6 +379,15 @@ const CANARY = `(() => {
   toned.textContent = 'canary: tone worn as text'
   host.appendChild(low)
   host.appendChild(toned)
+  const fold = document.createElement('div')
+  fold.setAttribute('data-canary', 'warning-below-fold')
+  fold.style.cssText = 'height:20px;overflow-y:auto;font-size:12px;line-height:16px;color:var(--ui-text-primary)'
+  fold.appendChild(document.createTextNode('canary: the first line of a scroll box'))
+  const warn = document.createElement('div')
+  warn.className = 'pa-bad'
+  warn.textContent = 'canary: a warning below the fold'
+  fold.appendChild(warn)
+  host.appendChild(fold)
   return true
 })()`
 
@@ -388,7 +428,14 @@ app.whenReady().then(async () => {
     if (m.languagePickers + m.languageButtons > 0) bad.push(`languagePickers=${m.languagePickers} languageButtons=${m.languageButtons}`)
     if (m.rawKeys.length) bad.push(`rawKeys=${m.rawKeys.join(',')}`)
     if (m.layerMismatch > 0) bad.push(`layerMismatch=${m.layerMismatch}`)
-    if (m.frameCount !== 4) bad.push(`frames=${m.frameCount}`)
+    if (!m.declaredFrames || m.frameCount !== m.declaredFrames) {
+      bad.push(`frames=${m.frameCount} but the page declares ${m.declaredFrames}`)
+    }
+    if (m.hiddenWarnings.length) {
+      const named = m.hiddenWarnings.map(w =>
+        `"${w.text}" (${w.height}px) cut by a ${w.window}px window at ${w.clippedBy}`)
+      bad.push(`hiddenWarnings=${m.hiddenWarnings.length}: ${named.join(' · ')}`)
+    }
     if (m.tabs < 3) bad.push(`tabs=${m.tabs}`)
     if (m.cells < 3) bad.push(`cells=${m.cells}`)
     if (m.kit.buttons === 0) bad.push('kit.buttons=0 (the kit is not drawn)')
@@ -420,7 +467,7 @@ app.whenReady().then(async () => {
     const hostNote = `host kit: ${m.contrast.host.failures} below AA`
       + (m.contrast.host.failures ? ` (${m.contrast.host.nodes.slice(0, 3).map(n => `${n.owner.replace('kit:', '')} "${n.text}" ${n.ratio}:1`).join(' · ')})` : '')
       + ` · ${m.toneText.host.count} tone-as-text (the panel must not restyle kit internals)`
-    console.log('gate OK: frames 4 · overflow 0 · clipped 0 · layers ' + m.layers.length + '/' + m.layers.length
+    console.log(`gate OK: frames ${m.frameCount} · overflow 0 · clipped 0 · hidden warnings 0 · layers ` + m.layers.length + '/' + m.layers.length
       + ' at declared px · nativeTitles 0 · nativeSelects 0 · languagePickers 0 · rawKeys 0 · '
       + `kit buttons ${m.kit.buttons} (destructive ${m.kit.destructive}) · cards ${m.cards} · tabs ${m.tabs}`
       + ` · panel contrast ${m.contrast.panelNodes} nodes measured, lowest ${m.contrast.lowest}:1 `

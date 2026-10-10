@@ -5,6 +5,36 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.7.3
+
+### Fixed
+
+* **The Force-undo conflict is readable in full.** It sat inside the 38 px affected-files box and was
+  cut mid-sentence ("â€¦changed after this record. Forcing undo") right before the irreversible click.
+  It is now its own alert (`role="alert"`) between the files and the button.
+* **A failed outside-change check no longer hides the pending list.** When `/scan` threw, the whole
+  poll failed and every pending record vanished behind an error state. The list now stays and the
+  failure is reported once as a notice.
+* **Light mode:** the bulk-selection note measured 3.46:1 and is raised to the secondary text token.
+
+### Changed
+
+* Prose fields (why it arrived, what will change, if you approve, the suggestion, the description fix,
+  memory notes) read in the app's text font; diffs, file names and raw summaries stay monospace.
+* The agent's suggestion keeps its natural height; equal card heights are kept, the spare height now
+  sits above it instead of inside it.
+* The "Applied" KPI marks failures with its border only, like the other KPIs, not a red fill.
+* The description fix's "As written / Shortened" headings are plain labels, not pill-shaped boxes.
+
+### Tests
+
+* The preview draws five frames (a 420 px pane added) in dark AND light mode; the measured gate runs
+  on both pages and checks the frame count each page declares.
+* A preview action that finds no control now fails: frame 1 had asked for a button label that no
+  longer existed, so its details never opened.
+* New measured key `hiddenWarnings` with its negative control (a warning below a scroll fold); the
+  render check locks the conflict alert and the `/scan` failure (thrown and refused).
+
 ## 1.7.2
 
 ### Fixed

@@ -83,6 +83,6 @@ jobs:
         working-directory: tests
         run: node render_check.mjs
 
-      - name: Static preview (4 frames, app stylesheet)
+      - name: Static preview (5 frames, dark + light, app stylesheet)
         working-directory: tests
         run: node preview.mjs

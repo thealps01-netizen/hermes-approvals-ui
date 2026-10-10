@@ -161,6 +161,8 @@ const BUNDLES = {
         loading: 'Reading memory…',
         historyError: 'The history could not be read.',
         memoryError: 'Memory could not be read.',
+        scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
+          + 'The pending list is current; an outside change may be missing from “Applied” until a check succeeds.',
       },
       memory: {
         warnTitle: 'Memory is nearly full',
@@ -323,7 +325,7 @@ const STYLE = `
 .pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
-.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
+.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
 .pa-pick:disabled{cursor:not-allowed;opacity:.4}
 .pa-root{container-type:inline-size;
@@ -345,8 +347,7 @@ const STYLE = `
 .pa-kpi-val{margin-top:10px;font-size:${FS.kpi}px;font-weight:650;letter-spacing:-.02em;line-height:1.15;
   color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-kpi[data-tone="warn"]{border-color:color-mix(in srgb,var(--ui-orange) 42%,transparent)}
-.pa-kpi[data-tone="bad"]{border-color:color-mix(in srgb,var(--ui-red) 50%,transparent);
-  background:color-mix(in srgb,var(--ui-red) 6%,var(--hx-card))}
+.pa-kpi[data-tone="bad"]{border-color:color-mix(in srgb,var(--ui-red) 50%,transparent)}
 .pa-kpi-sub{margin-top:6px;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pa-head{display:flex;align-items:center;gap:12px;min-width:0}
@@ -377,9 +378,10 @@ const STYLE = `
 .pa-cmp-side{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};padding:${G.sm}px;display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-cmp-wide{grid-column:1/-1}
+.pa-cmp-col{display:flex;flex-direction:column;min-width:0}
+.pa-prose{font-family:inherit;font-size:${FS.body}px}
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
-.pa-advice{flex:1 1 auto;min-height:0}
-.pa-advice-reason{flex:1 1 auto;min-height:0}
+.pa-advice{flex:none}
 .pa-advice-foot{display:flex;align-items:center;gap:${G.sm}px;padding-top:${G.xxs}px}
 .pa-advice-foot>div{flex:1;min-width:0}
 .pa-advice-foot>button{flex-shrink:0}
@@ -452,8 +454,18 @@ function usePolling(load, ms) {
 
 function usePending({ scan = true } = {}) {
   const load = async () => {
-    if (scan) await api.scan()
-    return api.pending()
+    let scanFailed = null
+    if (scan) {
+      try {
+        const res = await api.scan()
+        if (res?.ok === false) scanFailed = res.error || ''
+      } catch (e) {
+        scanFailed = errText(e)
+      }
+    }
+    const d = await api.pending()
+    if (scanFailed === null) return d
+    return { ...d, issues: [...(d?.issues || []), say('pa.empty.scanFailed', scanFailed)] }
   }
   const { data, error, at, refresh } = usePolling(load, 15000)
   return { data, error, at, refresh, n: total(data?.counts) }
@@ -478,7 +490,7 @@ function Boxed({ children, height }) {
     'data-more': fade.more,
     onScroll: fade.sync,
     style: fieldBox(height),
-    children: jsx(PanelBlock, { className: 'pa-lines', children }, 'block')
+    children: jsx(PanelBlock, { className: 'pa-lines pa-prose', children }, 'block')
   }, 'box')
 }
 
@@ -884,7 +896,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
           ...(plain.notes || []).map((n, i) =>
             jsx(Field, {
-              label: n.label, children: jsx(PanelBlock, { className: 'pa-free', children: n.text }, 'note')
+              label: n.label, children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: n.text }, 'note')
             }, i)),
 
           jsx(Field, {
@@ -983,17 +995,19 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                   className: 'pa-cmp',
                   children: [
                     jsx('div', {
-                      className: 'pa-cmp-side',
+                      className: 'pa-cmp-col',
                       children: jsx(Field, {
                         label: t('pa.field.fixCurrent', fix.before),
-                        children: jsx(PanelBlock, { className: 'pa-free', children: fix.text || '' }, 'before')
+                        children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: fix.text || '' }, 'before')
                       }, 'as-written')
                     }, 'written'),
                     jsx('div', {
-                      className: 'pa-cmp-side',
+                      className: 'pa-cmp-col',
                       children: jsx(Field, {
                         label: t('pa.field.fixSuggested', fix.after),
-                        children: jsx(PanelBlock, { className: 'pa-free', children: `“${fix.description}”` }, 'after')
+                        children: jsx(PanelBlock, {
+                          className: 'pa-free pa-prose', children: `“${fix.description}”`
+                        }, 'after')
                       }, 'suggested')
                     }, 'shortened')
                   ]
@@ -1034,7 +1048,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
               variant: adviceVariant,
               children: rec.verdict
             }, 'verdict'),
-            jsx(PanelBlock, { className: 'pa-advice-reason', children: rec.reason }, 'reason'),
+            jsx(PanelBlock, { className: 'pa-prose', children: rec.reason }, 'reason'),
             jsxs('div', {
               className: 'pa-advice-foot',
               children: [
@@ -1149,33 +1163,29 @@ function HistoryCard({ entry, onChanged }) {
           jsx(Raw, {
             className: 'pa-files',
             height: H.histFiles,
-            children: files.length
-              ? jsxs('span', {
-                  children: [
-                    files.map(f => f.path).join(', '),
-                    conflict
-                      ? jsx('span', { className: 'pa-bad', children: `⚠ ${t('pa.hist.conflict', conflict.join(', '))}` }, 'conflict')
-                      : null
-                  ]
-                }, 'list')
-              : t('pa.hist.noFiles')
+            children: files.length ? files.map(f => f.path).join(', ') : t('pa.hist.noFiles')
           }, 'files')
         ]
       }, 'affected'),
 
+      conflict
+        ? jsx('div', {
+            className: 'pa-alert pa-alert-danger',
+            role: 'alert',
+            children: t('pa.hist.conflict', conflict.join(', '))
+          }, 'conflict')
+        : null,
+
       jsx('div', {
         style: { marginTop: 'auto', minHeight: H.histAction, display: 'flex', alignItems: 'stretch' },
         children: entry.undoable
-          ? jsx(Tip, {
-              label: conflict ? t('pa.hist.conflict', conflict.join(', ')) : '',
-              children: jsx(Button, {
-                variant: conflict ? 'destructive' : 'outline',
-                size: 'sm',
-                loading: busy,
-                onClick: () => void undo(Boolean(conflict)),
-                children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
-              }, 'undo')
-            }, 'undo-tip')
+          ? jsx(Button, {
+              variant: conflict ? 'destructive' : 'outline',
+              size: 'sm',
+              loading: busy,
+              onClick: () => void undo(Boolean(conflict)),
+              children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
+            }, 'undo')
           : jsx('div', {
               style: { ...value, display: 'flex', alignItems: 'center', color: 'var(--ui-text-secondary)' },
               children: entry.undone ? t('pa.hist.undone') : t('pa.hist.notUndoable')
@@ -1552,7 +1562,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
           style: { display: 'flex', flexDirection: 'column', gap: G.xs, padding: G.sm },
           children: [
             jsx(PanelSectionLabel, { children: t('pa.memory.note', i + 1, entry.length) }, 'label'),
-            jsx(PanelBlock, { children: entry }, 'text'),
+            jsx(PanelBlock, { className: 'pa-prose', children: entry }, 'text'),
             armed(i, entry)
               ? jsxs('div', {
                   style: { display: 'flex', flexDirection: 'column', gap: G.xs, borderTop: HAIRLINE, paddingTop: G.xs },

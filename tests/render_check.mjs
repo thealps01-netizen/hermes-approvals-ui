@@ -452,7 +452,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal' }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok' }
 const STORE = new Map()
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 let version = 0
@@ -483,6 +483,8 @@ async function mount(appLocale) {
         if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
+        if (path === '/scan' && REST.scan === 'throw') throw new Error('500: {"ok": false, "error": "Could not read: scan exploded"}')
+        if (path === '/scan' && REST.scan === 'refused') return { ok: false, error: 'Could not read: scan refused' }
         if (path === '/scan') return { ok: true }
         throw new Error(`unexpected POST: ${path}`)
       }
@@ -986,6 +988,12 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const force = buttons(en.hostEl, /^Force undo$/)
   if (!force.length) fail('a reported conflict does not turn the button into “Force undo”')
   const forced = force[0]
+  const forcedCard = forced?.closest('.pa-card')
+  const line = forcedCard?.querySelector('[role="alert"]')
+  if (!line || !line.textContent.includes('memories/MEMORY.md')) {
+    fail('the conflict that arms “Force undo” is not stated as an alert on the card')
+  }
+  if (line?.closest('.pa-scroll')) fail('the conflict alert sits inside a scroll box, where it can fall below the fold')
   if (forced.getAttribute('data-variant') !== 'destructive') fail('the forced undo is not a kit destructive Button')
   await click(forced, 60)
   const after = stub.calls.posts.filter(p => p.path === '/undo')
@@ -1009,7 +1017,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!after || !buttons(after, /^Undo$/).length) {
     fail('an undo failure with no conflict turned the button into “Force undo”')
   }
-  if (after?.querySelector('.pa-bad')) fail('an undo failure with no conflict drew the conflict line')
+  if (after?.querySelector('[role="alert"], .pa-bad')) fail('an undo failure with no conflict drew the conflict line')
   const notified = stub.calls.notify.map(n => n.message || '').join(' | ')
   if (!notified.includes('no undo copy')) fail(`the refused undo was not reported: ${notified}`)
 }
@@ -1305,6 +1313,20 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   broken.hostEl.remove()
   REST.mode = 'normal'
 }
+
+// --- 18) A failed /scan never hides the pending list ----------------------------------------------
+// The outside-change check is a side job. When it threw, the whole poll failed and every pending
+// record vanished behind an error state; the list must stay and the failure must be said once.
+for (const how of ['throw', 'refused']) {
+  REST.scan = how
+  const scanned = await mount('en')
+  const why = how === 'throw' ? 'scan exploded' : 'scan refused'
+  if (scanned.hostEl.querySelector('[data-slot="error-state"]')) fail(`a ${how} /scan replaced the pending list with an error state`)
+  if (scanned.hostEl.querySelectorAll('.pa-cell').length !== 3) fail(`a ${how} /scan hid the pending records`)
+  if (!scanned.hostEl.textContent.includes(why)) fail(`a ${how} /scan is not reported: “${why}” is missing`)
+  scanned.hostEl.remove()
+}
+REST.scan = 'ok'
 
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
