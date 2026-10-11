@@ -311,6 +311,9 @@ const MEASURE = `(() => {
     overflowPx: frames.map(f => f.overflowPx),
     hiddenWarnings,
     clipped: qa('.pa-frame-wrap *').map(clip).filter(Boolean),
+    // A card wider than its grid cell draws over its neighbour (one long unbreakable path did it).
+    cardSpill: qa('.pa-cell').filter(c => c.firstElementChild &&
+      box(c.firstElementChild).width > box(c).width + 1).map(c => c.getAttribute('data-key')),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
     nativeTitles: qa('[title]').length,
@@ -422,6 +425,7 @@ app.whenReady().then(async () => {
 
     const bad = []
     if (m.frames.some(f => Number(f.overflowPx) > 0)) bad.push(`overflowPx=${JSON.stringify(m.overflowPx)}`)
+    if (m.cardSpill.length) bad.push(`cardSpill=${m.cardSpill.join(',')} (a card is wider than its cell)`)
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
     if (m.nativeSelects > 0) bad.push(`nativeSelects=${m.nativeSelects}`)
