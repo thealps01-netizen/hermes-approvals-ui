@@ -20,6 +20,8 @@ look has no version at all.
   every card, no longer behind Details. Minor notes stay under Details.
 * A non-English rule-check finding asks the reviewer for an English translation as its edit.
 * A duplicated line at the very end of a write can now be cut by the rule check's own edit.
+* The duplicate-line rule ignores a line that only links to a file: a link the skill already uses
+  is a reference, not repeated knowledge (it flagged, and offered to cut, a reworded paragraph's link).
 
 ### Removed
 

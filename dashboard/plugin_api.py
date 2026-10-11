@@ -1053,6 +1053,7 @@ _REVIEW_TIMEOUT = 300
 _REVIEW_PART_LIMIT = 40000
 _TURKISH = re.compile(r"[çğıöşüÇĞİÖŞÜ]")
 _DUP_MIN = 60
+_MD_LINK = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 _SEVERITY = ("block", "fix", "note")
 _KINDS = ("duplicate", "contradiction", "wrong", "evidence", "rule")
 _REVIEW_SYSTEM = (
@@ -1242,7 +1243,7 @@ def _skill_hard(record: dict) -> list[dict]:
         old = {_norm_line(l) for l in str(op.get("old_string") or "").splitlines()}
         for line in text.splitlines():
             key = _norm_line(line)
-            if len(key) >= _DUP_MIN and key in known and key not in old:
+            if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN and key in known and key not in old:
                 cut = next((c for c in (line + "\n", "\n" + line) if c in text), None)
                 drop = {"find": cut, "replace": "", "label": _tx("amend_drop_line")} if cut else None
                 out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip())), drop))
@@ -2109,6 +2110,15 @@ def _review_selftest(tmp: Path) -> None:
     assert any("already in the skill" in h["text"] for h in dup), dup
     assert any((h.get("edit") or {}).get("find") == "\n" + known_line.lstrip("- ") for h in dup), \
         "the last line of a write is cut together with the line break before it"
+    link_line = "[references/a-long-reference-file-name.md](references/a-long-reference-file-name.md)."
+    (own / "notes.md").write_text(f"See {link_line}\n{link_line}\n", encoding="utf-8")
+    stage("skills", "5e1f0006", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
+                                 "new_string": "description: Use when testing, details in:\n" + link_line})
+    link = item("skills", "5e1f0006")["review"]["hard"]
+    assert not any("already in the skill" in h["text"] for h in link), \
+        f"a line that only links to a file is a reference, not a duplicate: {link}"
+    (own / "notes.md").unlink()
+    (pend / "skills" / "5e1f0006.json").unlink()
 
     stage("skills", "5e1f0005", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
                                  "new_string": "description: Use when testing. Ölçüm şart."})
