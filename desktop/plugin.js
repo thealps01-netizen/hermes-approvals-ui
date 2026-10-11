@@ -406,7 +406,7 @@ const STYLE = `
 .pa-two>:last-child:nth-child(odd){grid-column:1/-1}
 @container (max-width:640px){.pa-two{grid-template-columns:minmax(0,1fr)}}
 .pa-card{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
-  box-shadow:${LIT_EDGE};
+  box-shadow:${LIT_EDGE};flex:1 1 0;min-width:0;overflow-wrap:anywhere;
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
 .pa-card:hover{border-color:var(--ui-stroke-primary,var(--ui-stroke-secondary))}
 .pa-leaving{opacity:0;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}

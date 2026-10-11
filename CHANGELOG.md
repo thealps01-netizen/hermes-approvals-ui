@@ -5,6 +5,13 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.9.1
+
+* Fix: a card no longer spills into its neighbour. A card could not shrink below its widest
+  unbreakable text (a long path, for example), so in the two-column layout it ran over the card
+  beside it. The card is now held to its grid cell and long words wrap inside it. The screenshot
+  gate fails when any card is wider than its cell, and the preview carries such a path.
+
 ## 1.9.0
 
 (1.8.0 was used by a withdrawn build and is skipped so no install mistakes the two.)

@@ -108,7 +108,7 @@ const PENDING = {
       kind_label: 'Skill file', target: 'hermes-agent', headline: 'references/panels.md in hermes-agent',
       why: LONG,
       notes: [{ label: 'What it does', text: FIX_RAW }],
-      what: ['Writes references/panels.md'], effect: 'The description is shortened and the skill is created.',
+      what: ['Writes references/panels.md', 'Reads references/an-unbreakable-path-that-is-much-wider-than-one-card-column-and-has-no-space-to-wrap-at.md'], effect: 'The description is shortened and the skill is created.',
       stale: [], groups: [{ kind: 'update', name: 'hermes-agent', ops: [{ action: 'write_file' }] }],
       last_error: 'The record was applied once before and Hermes refused: the description is 172 characters, the cap is 60.',
       fix: {
