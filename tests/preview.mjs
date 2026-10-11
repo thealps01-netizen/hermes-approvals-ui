@@ -74,6 +74,10 @@ const PENDING = {
   counts: { memory: 1, skills: 2 },
   memory: [{
     id: 'abc12345', subsystem: 'memory', origin: 'background_review', staged_at: NOW - 7200,
+    review: {
+      status: 'done', verdict: 'approve', summary: 'Both notes are new and fit your rules.', findings: [], hard: [],
+      model: 'gpt-5.5', usage: { input: 4120, output: 210, cost_usd: 0, cost_status: 'included' }
+    },
     ops: [
       { action: 'add', new: 'Hermes keeps the write-approval gate on by default.' },
       { action: 'replace', old: 'MEMORY.md said the calendar tool runs weekly.', new: 'MEMORY.md says the calendar tool runs hourly.',
@@ -91,6 +95,10 @@ const PENDING = {
   }],
   skills: [{
     id: 'def67890', subsystem: 'skills', origin: 'background_review', staged_at: NOW - 300,
+    review: {
+      status: 'running', provider: 'openai-codex', model: 'gpt-5.5',
+      hard: [{ name: 'hermes-agent', text: 'hermes-agent: this skill is not yours to edit — it ships with Hermes. Change it upstream or make your own copy.' }]
+    },
     ops: [{
       action: 'write_file', name: 'hermes-agent', file: 'references/panels.md', old: '',
       new: '# Panels\n\nThe panel skeleton\n'
@@ -107,10 +115,17 @@ const PENDING = {
         name: 'hermes-agent', before: 172, after: 53, limit: 60, text: FIX_RAW, description: FIX_SUGGESTED,
         content: `---\nname: hermes-agent\ndescription: "${FIX_SUGGESTED}"\n---\n`
       },
-      recommendation: { verdict: 'Shorten description and create', reason: 'The description is over the 60-character budget; the fix stages the shortened content.' }
+      recommendation: { verdict: 'Shorten the description first', reason: 'The description is over the 60-character budget; the fix stages the shortened content.' }
     }
   }, {
     id: 'aaa11111', subsystem: 'skills', origin: 'assistant_tool', staged_at: NOW - 120,
+    review: {
+      status: 'done', verdict: 'reject', summary: 'The new rule repeats one the skill already has.', hard: [],
+      findings: [{ severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar in both themes.',
+                   other: 'Measure the tab bar height in both themes before shipping.', explain: 'The same rule is already in the skill.' },
+                 { severity: 'note', kind: 'evidence', quote: 'Prefer opaque fills.', other: '', explain: 'The write states no measurement or failure behind this rule.' }],
+      model: 'gpt-5.5', usage: { input: 9822, output: 512, cost_usd: 0, cost_status: 'included' }
+    },
     ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
     diff: '---\nname: new-skill\ndescription: "..."\n---\n',
     plain: {

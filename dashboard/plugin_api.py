@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import datetime
 import hashlib
 import difflib
@@ -508,8 +509,8 @@ _TEXT = {
     'op_new_file': 'New file · {lines} lines',
     'op_change': 'File updated · +{added} / −{removed} lines',
     'op_current_file': 'Currently in the file: {text}',
-    'rec_fix': 'Shorten description and create',
-    'rec_fix_blocked': 'This record cannot be applied as it stands: "{name}"\'s description is {before} chars and new skills are capped at {limit}. The card\'s "Shorten and create" button trims it to {after} chars and creates it.',
+    'rec_fix': 'Shorten the description first',
+    'rec_fix_blocked': 'This record cannot be applied as it stands: "{name}"\'s description is {before} chars and new skills are capped at {limit}. The card\'s "Shorten description" button trims it to {after} chars; the pre-review then reads it again.',
     'rec_fix_reason': 'The description is {before} chars; Hermes caps new skills at {limit} chars, so this write would be refused as-is. Shortened: "{description}" ({after} chars).',
     'fix_bad_request': 'Shortening only applies to skill records.',
     'fix_gone': 'Record not found (it may have been decided elsewhere).',
@@ -530,6 +531,23 @@ _TEXT = {
     'fix_nothing': 'Nothing to shorten: the validator already accepts this content.',
     'fix_restored': '{error} The record was left exactly as it was staged; nothing was written.',
     'issue_history': '{file} has unreadable lines ({n}); they were skipped and are not shown.',
+    'owner_hub': 'it was installed from a skills hub',
+    'owner_bundled': 'it ships with Hermes',
+    'owner_author': 'its author is {who}',
+    'hard_nobody': 'none',
+    'hard_author': '{name}: a new skill must carry "author: {want}" in its header (found: {got}).',
+    'hard_owner': '{name}: this skill is not yours to edit — {owner}. Change it upstream or make your own copy.',
+    'hard_language': '{name}: the text must be English; this line is not: {quote}',
+    'hard_duplicate': '{name}: this line is already in the skill: {quote}',
+    'hard_memory_duplicate': '{name}: this note is already saved: {quote}',
+    'hard_unchecked': 'The rule checks could not run ({error}); approving is locked until they do.',
+    'gate_hard': 'A rule check failed, so Approve stays locked: {reasons}',
+    'gate_running': 'The pre-review is still running; Approve unlocks when it finishes.',
+    'gate_failed': 'The pre-review failed. Run it again, or use "Approve without review".',
+    'gate_unassigned': 'No pre-review model is set (Settings → Models → Approvals review). '
+                       'Pick one, or use "Approve without review".',
+    'summary_unreviewed': '{summary} — approved without pre-review',
+    'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
 }
 
 
@@ -856,6 +874,7 @@ def _pending(scan: int) -> dict:
     if scan:
         _scan_external()
     out: dict = {}
+    live: set = set()
     for subsystem in (wa.MEMORY, wa.SKILLS):
         items = []
         for record in wa.list_pending(subsystem):
@@ -893,9 +912,12 @@ def _pending(scan: int) -> dict:
                     if i < len(item["ops"]):
                         item["ops"][i].update(_op_change_stat(wa, op))
                 item["has_change"] = any(o.get("has_change") for o in item["ops"])
+            item["review"] = _review_public(_review_state(subsystem, record))
+            live.add(f"{subsystem}-{record.get('id')}")
             items.append(item)
         out[subsystem] = items
     out["counts"] = {wa.MEMORY: len(out[wa.MEMORY]), wa.SKILLS: len(out[wa.SKILLS])}
+    _review_prune(live)
     out["issues"] = _issues()
     return out
 
@@ -987,6 +1009,450 @@ def _skill_description_fix(record: dict) -> list[dict]:
             "content": new_content,
         })
     return fixes
+
+
+_REVIEW_TASK = "approvals_review"
+_REVIEW_SLOTS = threading.BoundedSemaphore(2)
+_REVIEW_RUNNING: set = set()
+_REVIEW_GATE = True
+_REVIEW_TIMEOUT = 300
+_REVIEW_PART_LIMIT = 40000
+_TURKISH = re.compile(r"[çğıöşüÇĞİÖŞÜ]")
+_DUP_MIN = 60
+_SEVERITY = ("block", "fix", "note")
+_KINDS = ("duplicate", "contradiction", "wrong", "evidence", "rule")
+_REVIEW_SYSTEM = (
+    "You review ONE pending write to an AI assistant's long-term {what} before its owner decides on it. "
+    "You advise; the owner decides. You never approve or reject anything yourself.\n\n"
+    "The owner's standing rules are under OWNER RULES and ASSISTANT NOTES. They are the yardstick: judge the "
+    "write against them and against the CURRENT TARGET text.\n\n"
+    "Report only problems you can quote from the material:\n"
+    "1. duplicate: the same lesson or instruction already exists in the current target, or twice in the write. "
+    "Quote both places.\n"
+    "2. contradiction: the write conflicts with the current target, with itself, or with an owner rule. "
+    "Quote both sides.\n"
+    "3. wrong: a factual claim the material shows to be false. Check every list of allowed values, field "
+    "names, numbers and file names in the write against every file of the CURRENT TARGET: a value one "
+    "file lists and another file states differently is a finding. Do not guess beyond the material.\n"
+    "4. evidence: the owner accepts an addition only when a measurement or a real failure shows it helps. "
+    "When the write states no such measurement or failure, report it ONCE with severity note, phrased "
+    "'the write states no measurement or failure' (the session behind it is not part of the material, "
+    "so this cannot be checked further).\n"
+    "5. rule: any other breach of an owner rule (scope, a skill rule written into memory or the reverse, "
+    "instruction phrasing in memory, machine-specific paths, project-specific names in a general skill, "
+    "editing a third-party skill, language).\n"
+    "Do not repeat the HARD CHECK findings; the owner already sees them. A '[... N more characters cut ...]' "
+    "marker is where this review's input was shortened, not a defect of the write.\n"
+    "Write summary and explain in plain English, whatever language the material uses.\n"
+    "Severity: block = applying it breaks an owner rule or adds a wrong or contradicting statement; "
+    "fix = worth applying only after an edit; note = minor.\n"
+    "Answer with ONE JSON object and nothing else:\n"
+    '{{"summary": "one plain sentence", "findings": [{{"severity": "block|fix|note", '
+    '"kind": "duplicate|contradiction|wrong|evidence|rule", "quote": "exact text from the write", '
+    '"other": "the exact duplicate or conflicting text, or the rule; empty when none", '
+    '"explain": "one plain sentence a non-programmer understands"}}]}}\n'
+    "An empty findings list means you found nothing to report."
+)
+
+
+def _config() -> dict:
+    from hermes_cli.config import read_raw_config_readonly
+
+    try:
+        return read_raw_config_readonly() or {}
+    except Exception as exc:
+        _log(f"config.yaml could not be read for the pre-review: {exc!r}")
+        return {}
+
+
+def _review_model() -> dict:
+    block = (_config().get("auxiliary") or {}).get(_REVIEW_TASK) or {}
+    provider = str(block.get("provider") or "").strip()
+    if not provider or provider.lower() == "auto":
+        return {}
+    return {"provider": provider, "model": str(block.get("model") or "").strip()}
+
+
+def _expected_author() -> str:
+    entries = (_config().get("plugins") or {}).get("entries") or {}
+    return str((entries.get("pending-approvals") or {}).get("skill_author") or "").strip()
+
+
+def _skill_author(content: str) -> str:
+    return _frontmatter(content).get("author", "")
+
+
+def _norm_line(line: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"^[\s>*\-\d.)#]+", "", line)).strip().lower()
+
+
+def _quote_at(text: str, at: int) -> str:
+    start = max(0, text.rfind("\n", 0, at) + 1)
+    end = text.find("\n", at)
+    return _preview(text[start:end if end >= 0 else len(text)])
+
+
+def _op_text(op: dict) -> str:
+    return "\n".join(str(op.get(k) or "") for k in ("content", "file_content", "new_string"))
+
+
+def _skill_dir(name: str) -> Path | None:
+    from tools import write_approval as wa
+
+    try:
+        found = wa._find_skill_path(name)
+    except Exception as exc:
+        _log(f"skill {name} could not be located for the pre-review: {exc!r}")
+        return None
+    return Path(found) if found else None
+
+
+def _bare_skill(name: str) -> str:
+    return str(name or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def _skill_owner(name: str, author: str) -> str:
+    from tools import skill_usage
+
+    name = _bare_skill(name)
+    if skill_usage.is_hub_installed(name):
+        return _tx("owner_hub")
+    if skill_usage.is_bundled(name) or skill_usage.is_protected_builtin(name):
+        return _tx("owner_bundled")
+    folder = _skill_dir(name)
+    if author and folder and (folder / "SKILL.md").exists():
+        written_by = _skill_author((folder / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
+        if written_by and written_by != author:
+            return _tx("owner_author", who=written_by)
+    return ""
+
+
+def _skill_lines(name: str, skip: str) -> set:
+    folder = _skill_dir(name)
+    if not folder:
+        return set()
+    lines = set()
+    for path in folder.rglob("*.md"):
+        if path.relative_to(folder).as_posix() == skip:
+            continue
+        lines |= {_norm_line(l) for l in path.read_text(encoding="utf-8", errors="replace").splitlines()}
+    return lines
+
+
+def _hard(name: str, text: str) -> dict:
+    return {"name": name, "text": text}
+
+
+def _skill_hard(record: dict) -> list[dict]:
+    author = _expected_author()
+    out: list[dict] = []
+    owners_seen: set = set()
+    for op in _raw_ops(record):
+        name = str(op.get("name") or "")
+        action = str(op.get("action") or "")
+        if not name:
+            continue
+        text = _op_text(op)
+        if action == "create":
+            written_by = _skill_author(op.get("content") or "")
+            if author and written_by != author:
+                out.append(_hard(name, _tx("hard_author", name=name, got=written_by or _tx("hard_nobody"),
+                                           want=author)))
+        elif name not in owners_seen:
+            owners_seen.add(name)
+            if owner := _skill_owner(name, author):
+                out.append(_hard(name, _tx("hard_owner", name=name, owner=owner)))
+        if match := _TURKISH.search(text):
+            out.append(_hard(name, _tx("hard_language", name=name, quote=_quote_at(text, match.start()))))
+        if action in ("create", "delete"):
+            continue
+        skip = str(op.get("file_path") or "") if action == "write_file" else "SKILL.md" if action == "edit" else ""
+        known = _skill_lines(_bare_skill(name), skip)
+        old = {_norm_line(l) for l in str(op.get("old_string") or "").splitlines()}
+        for line in text.splitlines():
+            key = _norm_line(line)
+            if len(key) >= _DUP_MIN and key in known and key not in old:
+                out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip()))))
+                break
+    return out
+
+
+def _memory_hard(record: dict) -> list[dict]:
+    payload = record.get("payload") or {}
+    file_name = _MEM_FILE.get(str(payload.get("target") or "memory"), "MEMORY.md")
+    known = {_norm_line(e) for e in _entries_of(_home() / "memories" / file_name)}
+    out: list[dict] = []
+    for op in payload.get("operations") or [payload]:
+        content = str(op.get("content") or "")
+        if match := _TURKISH.search(content):
+            out.append(_hard(file_name, _tx("hard_language", name=file_name,
+                                                quote=_quote_at(content, match.start()))))
+        if op.get("action") == "add" and content.strip() and _norm_line(content) in known:
+            out.append(_hard(file_name, _tx("hard_memory_duplicate", name=file_name,
+                                                quote=_preview(content.strip()))))
+    return out
+
+
+def _hard_checks(subsystem: str, record: dict) -> list[dict]:
+    from tools import write_approval as wa
+
+    try:
+        return _skill_hard(record) if subsystem == wa.SKILLS else _memory_hard(record)
+    except Exception as exc:
+        _log(f"hard checks of {record.get('id')} could not run: {exc!r}")
+        return [_hard("", _tx("hard_unchecked", error=_short_error(str(exc) or repr(exc))))]
+
+
+def _review_targets(subsystem: str, record: dict) -> list[Path]:
+    from tools import write_approval as wa
+
+    if subsystem == wa.MEMORY:
+        target = str((record.get("payload") or {}).get("target") or "memory")
+        return [_home() / "memories" / _MEM_FILE.get(target, "MEMORY.md")]
+    out = []
+    for name in sorted({_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""}):
+        folder = _skill_dir(name)
+        out += sorted(folder.rglob("*.md")) if folder else []
+    return out
+
+
+def _review_key(subsystem: str, record: dict) -> str:
+    digest = hashlib.sha256(json.dumps(record.get("payload") or {}, sort_keys=True, ensure_ascii=False).encode())
+    for path in _review_targets(subsystem, record):
+        digest.update(path.as_posix().encode())
+        digest.update(_sha(path).encode() if path.exists() else b"-")
+    return digest.hexdigest()[:16]
+
+
+def _review_path(subsystem: str, record_id: str) -> Path:
+    return _state() / "reviews" / f"{subsystem}-{record_id}.json"
+
+
+def _review_read(subsystem: str, record_id: str) -> dict:
+    try:
+        return json.loads(_review_path(subsystem, record_id).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _review_state(subsystem: str, record: dict, start: bool = True) -> dict:
+    key = _review_key(subsystem, record)
+    hard = _hard_checks(subsystem, record)
+    stored = _review_read(subsystem, str(record.get("id")))
+    model = _review_model()
+    if stored.get("key") == key and stored.get("status") in ("done", "failed"):
+        state = dict(stored)
+    elif not model:
+        state = {"status": "unassigned"}
+    else:
+        state = {"status": "running", **model}
+        if start:
+            _review_start(subsystem, record, key, hard, model)
+    return {**state, "hard": hard, "key": key}
+
+
+def _review_start(subsystem: str, record: dict, key: str, hard: list, model: dict) -> None:
+    tag = f"{subsystem}-{record.get('id')}-{key}"
+    with _LOCK:
+        if tag in _REVIEW_RUNNING:
+            return
+        _REVIEW_RUNNING.add(tag)
+    target = _review_path(subsystem, str(record.get("id")))
+    job = contextvars.copy_context()
+    threading.Thread(target=job.run, daemon=True, name=f"pa-review-{record.get('id')}",
+                     args=(_review_job, subsystem, json.loads(json.dumps(record)), key, hard, model, tag,
+                           target)).start()
+
+
+def _review_job(subsystem: str, record: dict, key: str, hard: list, model: dict, tag: str, target: Path) -> None:
+    started = time.time()
+    try:
+        with _REVIEW_SLOTS:
+            state = {"status": "done", **_review_run(subsystem, record, hard, model)}
+    except Exception as exc:
+        _log(f"pre-review of {record.get('id')} failed: {exc!r}")
+        state = {"status": "failed", "error": _short_error(str(exc) or repr(exc)), **model}
+    state.update({"key": key, "started": started, "finished": time.time()})
+    try:
+        from tools import write_approval as wa
+
+        if wa.get_pending(subsystem, str(record.get("id"))):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(target, json.dumps(state, ensure_ascii=False))
+    except Exception as exc:
+        _log(f"pre-review of {record.get('id')} could not be saved: {exc!r}")
+    finally:
+        with _LOCK:
+            _REVIEW_RUNNING.discard(tag)
+
+
+def _cut(text: str, limit: int = _REVIEW_PART_LIMIT) -> str:
+    text = str(text or "")
+    return text if len(text) <= limit else text[:limit] + f"\n[... {len(text) - limit} more characters cut ...]"
+
+
+def _review_input(subsystem: str, record: dict, hard: list) -> str:
+    from tools import write_approval as wa
+
+    memories = _home() / "memories"
+    parts = []
+    for title, name in (("OWNER RULES (USER.md)", "USER.md"), ("ASSISTANT NOTES (MEMORY.md)", "MEMORY.md")):
+        path = memories / name
+        parts.append(f"## {title}\n" + (path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""))
+    parts.append("## HARD CHECK FINDINGS\n" + ("\n".join(f"- {h['text']}" for h in hard) or "none"))
+    head = f"origin: {record.get('origin') or '?'}\nsummary: {record.get('summary') or ''}\n"
+    if subsystem == wa.SKILLS:
+        body = _review_diff(wa, record) or json.dumps(_raw_ops(record), ensure_ascii=False, indent=1)
+        parts.append("## THE WRITE (skill change as a diff)\n" + head + _cut(body))
+        current = []
+        for path in _review_targets(subsystem, record):
+            rel = path.relative_to(_home()).as_posix() if path.is_relative_to(_home()) else path.name
+            current.append(f"### {rel}\n" + path.read_text(encoding="utf-8", errors="replace"))
+        parts.append("## CURRENT TARGET (the skill files as they are now)\n"
+                     + _cut("\n\n".join(current) or "the skill does not exist yet"))
+    else:
+        payload = record.get("payload") or {}
+        file_name = _MEM_FILE.get(str(payload.get("target") or "memory"), "MEMORY.md")
+        ops = "\n".join(f"- {op.get('action')}: old={op.get('old_text') or ''!r} new={op.get('content') or ''!r}"
+                        for op in payload.get("operations") or [payload])
+        parts.append(f"## THE WRITE (memory change to {file_name})\n" + head + _cut(ops))
+        parts.append(f"## CURRENT TARGET ({file_name} entries, separated by §)\n"
+                     + _cut((memories / file_name).read_text(encoding="utf-8", errors="replace")
+                            if (memories / file_name).exists() else ""))
+    return "\n\n".join(parts)
+
+
+def _review_diff(wa, record: dict) -> str:
+    out = []
+    for op in _raw_ops(record):
+        try:
+            text = str(wa.skill_pending_diff({"payload": dict(op)}) or "")
+        except Exception as exc:
+            _log(f"diff of {record.get('id')} for the pre-review failed: {exc!r}")
+            return ""
+        if not text.lstrip().startswith("("):
+            out.append(text)
+    return "\n".join(out)
+
+
+def _review_call(task: str, **kw):
+    from agent.auxiliary_client import call_llm
+
+    return call_llm(task, **kw)
+
+
+def _review_parse(text: str) -> dict:
+    match = re.search(r"\{.*\}", str(text or ""), re.S)
+    try:
+        data = json.loads(match.group(0)) if match else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        raise ValueError(_tx("review_bad_answer", text=_preview(str(text or ""))))
+    findings = []
+    for item in data.get("findings") or []:
+        if not isinstance(item, dict):
+            continue
+        found = {k: str(item.get(k) or "").strip()[:800] for k in ("severity", "kind", "quote", "other", "explain")}
+        found["severity"] = found["severity"].lower() if found["severity"].lower() in _SEVERITY else "note"
+        kind = found["kind"].lower()
+        found["kind"] = next((k for k in _KINDS if kind[:4] == k[:4]), "rule")
+        if found["kind"] == "evidence":
+            found["severity"] = "note"
+        findings.append(found)
+    findings.sort(key=lambda f: _SEVERITY.index(f["severity"]))
+    verdict = next((s for s in _SEVERITY[:2] if any(f["severity"] == s for f in findings)), "approve")
+    return {"verdict": {"block": "reject"}.get(verdict, verdict), "summary": str(data.get("summary") or "")[:600],
+            "findings": findings[:15]}
+
+
+def _review_usage(response, provider: str, model: str) -> dict:
+    try:
+        from agent.usage_pricing import estimate_usage_cost, normalize_usage
+
+        raw = getattr(response, "usage", None)
+        usage = normalize_usage(raw, provider=provider)
+        if not (usage.input_tokens or usage.output_tokens):
+            usage = normalize_usage(raw)
+        cost = estimate_usage_cost(model, usage, provider=provider)
+        amount = float(cost.amount_usd) if cost.amount_usd is not None else None
+        return {"input": usage.input_tokens, "output": usage.output_tokens, "cost_usd": amount,
+                "cost_status": str(getattr(cost.status, "value", cost.status))}
+    except Exception as exc:
+        _log(f"pre-review usage could not be read: {exc!r}")
+        return {}
+
+
+def _review_run(subsystem: str, record: dict, hard: list, model: dict) -> dict:
+    from agent.auxiliary_client import extract_content_or_reasoning
+    from tools import write_approval as wa
+
+    what = "skills" if subsystem == wa.SKILLS else "memory"
+    route: dict = {}
+    response = _review_call(_REVIEW_TASK, timeout=_REVIEW_TIMEOUT, max_tokens=6000, route_info=route,
+                            messages=[{"role": "system", "content": _REVIEW_SYSTEM.format(what=what)},
+                                      {"role": "user", "content": _review_input(subsystem, record, hard)}])
+    provider = route.get("provider") or model.get("provider") or ""
+    used = route.get("model") or model.get("model") or ""
+    return {**_review_parse(extract_content_or_reasoning(response)), "provider": provider, "model": used,
+            "usage": _review_usage(response, provider, used)}
+
+
+def _review_public(state: dict) -> dict:
+    keep = ("status", "hard", "verdict", "summary", "findings", "provider", "model", "usage", "error", "finished")
+    return {k: state[k] for k in keep if k in state}
+
+
+def _review_prune(live: set) -> None:
+    folder = _state() / "reviews"
+    if not folder.exists():
+        return
+    for path in folder.glob("*.json"):
+        if path.stem not in live:
+            with suppress(OSError):
+                path.unlink()
+
+
+def _review_gate(subsystem: str, record: dict, only: list, skip_review: bool) -> tuple[str, bool]:
+    if not _REVIEW_GATE:
+        return "", False
+    state = _review_state(subsystem, record)
+    hard = [h for h in state["hard"] if not only or h.get("name") in only or not h.get("name")]
+    if hard:
+        return _tx("gate_hard", reasons=" ".join(h["text"] for h in hard)), False
+    status = state["status"]
+    if status == "done":
+        return "", False
+    if status in ("failed", "unassigned") and skip_review:
+        _log(f"{subsystem} record {record.get('id')} approved without a pre-review ({status})")
+        return "", True
+    return {"running": _tx("gate_running"), "failed": _tx("gate_failed"),
+            "unassigned": _tx("gate_unassigned")}.get(status, _tx("gate_running")), False
+
+
+@router.post("/review")
+async def review_again(body: dict):
+    try:
+        with _LOCK:
+            return _review_again(body or {})
+    except Exception as exc:
+        return _route_failed("/review", exc)
+
+
+def _review_again(body: dict) -> dict:
+    from tools import write_approval as wa
+
+    subsystem = str(body.get("subsystem") or "")
+    record_id = _valid_id(body.get("id"))
+    if subsystem not in (wa.MEMORY, wa.SKILLS) or not record_id:
+        return {"ok": False, "error": _tx("err_bad_scope")}
+    record = wa.get_pending(subsystem, record_id)
+    if not record:
+        return {"ok": False, "error": _tx("fix_gone")}
+    with suppress(OSError):
+        _review_path(subsystem, record_id).unlink()
+    state = _review_state(subsystem, record)
+    return {"ok": True, "review": _review_public(state)}
 
 
 def _blocked_approve_reason(record: dict, only: list) -> str:
@@ -1173,10 +1639,20 @@ def _decide_locked(body: dict) -> dict:
             results.append({"id": pending_id, "ok": False, "error": _tx("fix_gone")})
             continue
 
+        unreviewed = False
+        if decision == "approve":
+            reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")))
+            if reason:
+                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                continue
+
         if decision == "approve" and subsystem == wa.SKILLS:
             if reason := _blocked_approve_reason(record, only):
                 results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                 continue
+
+        if unreviewed:
+            record["summary"] = _tx("summary_unreviewed", summary=record.get("summary", ""))
 
         if decision == "approve" and only and subsystem == wa.SKILLS:
             ok, message = _approve_subset(record, only)
@@ -1396,9 +1872,174 @@ def _write_undone_locked(entry_id: str) -> None:
     _atomic_write(path, "\n".join(out) + "\n")
 
 
+def _review_selftest(tmp: Path) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = True
+    author = "Selftest Owner"
+    settings = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}}}
+    saved_config, saved_call = _config, _review_call
+    globals()["_config"] = lambda: settings
+    skills_root = tmp / "skills" / "cat"
+    own = skills_root / "own-skill"
+    own.mkdir(parents=True, exist_ok=True)
+    known_line = "- Always measure the tab bar height in both themes before shipping a change to it."
+    (own / "SKILL.md").write_text(f"---\nname: own-skill\ndescription: Use when testing.\nauthor: {author}\n---\n\n"
+                                  f"{known_line}\n", encoding="utf-8")
+    other = skills_root / "other-skill"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "SKILL.md").write_text("---\nname: other-skill\ndescription: Use when testing.\nauthor: Someone Else\n"
+                                    "---\n\nbody\n", encoding="utf-8")
+    pend = tmp / "pending"
+    (pend / "skills").mkdir(parents=True, exist_ok=True)
+
+    def stage(subsystem: str, rid: str, payload: dict) -> None:
+        (pend / subsystem / f"{rid}.json").write_text(json.dumps({
+            "id": rid, "subsystem": subsystem, "summary": f"selftest {rid}", "origin": "background_review",
+            "created_at": time.time(), "payload": payload}, ensure_ascii=False), encoding="utf-8")
+
+    def item(subsystem: str, rid: str) -> dict:
+        return next(i for i in asyncio.run(pending(scan=0))[subsystem] if i["id"] == rid)
+
+    def approve(subsystem: str, rid: str, **extra) -> dict:
+        body = {"subsystem": subsystem, "ids": [rid], "decision": "approve", **extra}
+        return asyncio.run(decide(body))["results"][0]
+
+    def settle(subsystem: str, rid: str) -> dict:
+        for _ in range(100):
+            state = item(subsystem, rid)["review"]
+            if state["status"] != "running":
+                return state
+            time.sleep(0.05)
+        raise AssertionError(f"the pre-review of {rid} never finished")
+
+    def answer(text: str):
+        message = SimpleNamespace(content=text, reasoning=None, reasoning_content=None, reasoning_details=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+
+    good = f"---\nname: new-good\ndescription: Use when testing.\nauthor: {author}\n---\n\nbody\n"
+    stage("skills", "5e1f0001", {"action": "create", "name": "new-good", "category": "cat", "content": good})
+    clean = item("skills", "5e1f0001")["review"]
+    assert clean["status"] == "unassigned" and clean["hard"] == [], clean
+    refused = approve("skills", "5e1f0001")
+    assert not refused["ok"] and refused["blocked"] and "No pre-review model" in refused["error"], refused
+    assert (pend / "skills" / "5e1f0001.json").exists(), "a refused approve must leave the record queued"
+    waved = approve("skills", "5e1f0001", skip_review=True)
+    assert waved["ok"], waved
+    last = asyncio.run(history(limit=1))["entries"][0]
+    assert "approved without pre-review" in last["summary"], last
+
+    bad = "---\nname: new-bad\ndescription: Use when testing.\n---\n\nbody\n"
+    stage("skills", "5e1f0002", {"action": "create", "name": "new-bad", "category": "cat", "content": bad})
+    hard = item("skills", "5e1f0002")["review"]["hard"]
+    assert len(hard) == 1 and f'author: {author}' in hard[0]["text"], hard
+    locked = approve("skills", "5e1f0002", skip_review=True)
+    assert not locked["ok"] and "rule check failed" in locked["error"], "a failed rule check must not be waved through"
+
+    stage("skills", "5e1f0003", {"action": "patch", "name": "cat\other-skill", "old_string": "body",
+                                 "new_string": "body plus a lesson"})
+    owner = item("skills", "5e1f0003")["review"]["hard"]
+    assert any("Someone Else" in h["text"] for h in owner), owner
+
+    stage("skills", "5e1f0004", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
+                                 "new_string": "description: Use when testing.\n" + known_line.lstrip("- ")})
+    dup = item("skills", "5e1f0004")["review"]["hard"]
+    assert any("already in the skill" in h["text"] for h in dup), dup
+
+    stage("skills", "5e1f0005", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
+                                 "new_string": "description: Use when testing. Ölçüm şart."})
+    tr = item("skills", "5e1f0005")["review"]["hard"]
+    assert any("must be English" in h["text"] for h in tr), tr
+
+    (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
+    stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
+                                 "operations": [{"action": "add", "content": "selftest saved note"},
+                                                {"action": "add", "content": "Kullanıcı kısa yanıt ister"}]})
+    mem = item("memory", "5e1f0006")["review"]["hard"]
+    assert any("already saved" in h["text"] for h in mem) and any("must be English" in h["text"] for h in mem), mem
+
+    settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
+    seen: list = []
+    verdict = {"summary": "One duplicate.", "findings": [
+        {"severity": "block", "kind": "evididence", "quote": "q2", "other": "", "explain": "minor"},
+        {"severity": "block", "kind": "duplicate", "quote": "q1", "other": "o1", "explain": "said twice"}]}
+    hold = threading.Event()
+
+    def judge(task: str, **kw):
+        seen.append({"task": task, **kw})
+        hold.wait(10)
+        return answer("Here:\n" + json.dumps(verdict) + "\nok")
+
+    globals()["_review_call"] = judge
+    stage("skills", "5e1f0007", {"action": "patch", "name": "own-skill", "old_string": "body",
+                                 "new_string": "body updated"})
+    (own / "SKILL.md").write_text((own / "SKILL.md").read_text(encoding="utf-8") + "body\n", encoding="utf-8")
+    first = item("skills", "5e1f0007")["review"]
+    assert first["status"] == "running" and first["provider"] == "selftest", first
+    blocked_while = approve("skills", "5e1f0007")
+    assert not blocked_while["ok"] and "still running" in blocked_while["error"], blocked_while
+    hold.set()
+    done = settle("skills", "5e1f0007")
+    assert done["status"] == "done" and done["verdict"] == "reject", done
+    assert [f["severity"] for f in done["findings"]] == ["block", "note"], done["findings"]
+    assert done["findings"][1]["kind"] == "evidence", "a misspelled kind must still map to its kind"
+    assert done["model"] == "judge-1", done
+    sent = seen[-1]
+    assert sent["task"] == _REVIEW_TASK and sent["messages"][0]["role"] == "system", sent
+    prompt = sent["messages"][1]["content"]
+    assert "OWNER RULES (USER.md)" in prompt and known_line in prompt and "Selftest saved note" in prompt, prompt[:400]
+    calls = len(seen)
+    assert item("skills", "5e1f0007")["review"]["status"] == "done" and len(seen) == calls, "a done review re-ran"
+
+    (own / "SKILL.md").write_text((own / "SKILL.md").read_text(encoding="utf-8") + "later line\n", encoding="utf-8")
+    assert item("skills", "5e1f0007")["review"]["status"] == "running", "a changed target must be reviewed again"
+    settle("skills", "5e1f0007")
+    advisory = approve("skills", "5e1f0007")
+    assert advisory["ok"], f"the AI verdict is advice; a reviewed record must stay approvable: {advisory}"
+
+    globals()["_review_call"] = lambda task, **kw: (_ for _ in ()).throw(RuntimeError("provider down"))
+    stage("skills", "5e1f0008", {"action": "create", "name": "new-two", "category": "cat",
+                                 "content": good.replace("new-good", "new-two")})
+    broken = settle("skills", "5e1f0008")
+    assert broken["status"] == "failed" and "provider down" in broken["error"], broken
+    failed = approve("skills", "5e1f0008")
+    assert not failed["ok"] and "pre-review failed" in failed["error"], failed
+    globals()["_review_call"] = lambda task, **kw: answer('{"summary": "fine", "findings": []}')
+    again = asyncio.run(review_again({"subsystem": "skills", "id": "5e1f0008"}))
+    assert again["ok"] and again["review"]["status"] == "running", again
+    fine = settle("skills", "5e1f0008")
+    assert fine["status"] == "done" and fine["verdict"] == "approve" and fine["findings"] == [], fine
+
+    try:
+        _review_parse("no json at all")
+        raise AssertionError("an answer without JSON must fail the review, not pass it")
+    except ValueError as exc:
+        assert "expected JSON" in str(exc), exc
+
+    for rid in ("5e1f0002", "5e1f0003", "5e1f0004", "5e1f0005", "5e1f0007", "5e1f0008"):
+        asyncio.run(decide({"subsystem": "skills", "ids": [rid], "decision": "reject"}))
+    asyncio.run(decide({"subsystem": "memory", "ids": ["5e1f0006"], "decision": "reject"}))
+    for _ in range(200):
+        if not _REVIEW_RUNNING:
+            break
+        time.sleep(0.05)
+    asyncio.run(pending(scan=0))
+    left = {p.stem for p in (_state() / "reviews").glob("*.json")}
+    queued = {f"{p.parent.name}-{p.stem}" for p in pend.glob("*/*.json")}
+    assert left <= queued and not any(k.split("-")[1].startswith("5e1f") for k in left),         f"reviews of decided records must be pruned: {left - queued}"
+
+    globals()["_config"], globals()["_review_call"] = saved_config, saved_call
+    _REVIEW_GATE = False
+
+
 def _selftest() -> int:
     import asyncio
     import os
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = False
 
     tmp = Path(tempfile.mkdtemp(prefix="pending-approvals-"))
     (tmp / "memories").mkdir()
@@ -2094,6 +2735,7 @@ def _selftest() -> int:
     assert asyncio.run(pending(scan=0))["issues"], "the torn history line is not surfaced by /pending"
     _ISSUES.clear()
 
+    _review_selftest(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
@@ -2106,7 +2748,9 @@ def _selftest() -> int:
           "validator never recommends approval, a corrupt index is set aside and surfaced, an ambiguous memory "
           "match is a stated problem, a skill's files are its own directory only, the Applied count covers the "
           "whole history, /memory and /pending fail with a structured error, index writes are atomic and "
-          "history writes wait for the lock")
+          "history writes wait for the lock, the pre-review gate (rule checks lock Approve, "
+          "an unset or failed review needs an explicit skip, a running review locks, a done review is advice, a "
+          "changed target re-reviews, decided reviews are pruned)")
     return 0
 
 

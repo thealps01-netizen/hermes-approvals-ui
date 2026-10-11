@@ -67,7 +67,7 @@ const BUNDLES = {
         whyNone: 'No reason text was recorded with this write; only its source (above) shows why it appeared.',
         whatNone: 'No operation detail was recorded for this write — open “Details and changes”.',
         effect: 'If you approve',
-        advice: 'Agent\'s suggestion',
+        advice: 'Applicability check',
         blocked: 'Why it can\'t be applied',
         failedBefore: 'Approving was attempted',
         affected: 'Affected files',
@@ -98,7 +98,36 @@ const BUNDLES = {
       },
       advice: {
         note: 'Your call — the buttons apply it immediately.',
-        fix: 'It cannot be applied as staged — the “Shorten and create” button writes it.',
+        fix: 'It cannot be applied as staged — “Shorten description” rewrites it, then the pre-review reads it again.',
+      },
+      review: {
+        title: 'Pre-review',
+        running: model => `Reading this write against your rules${model ? ` · ${model}` : ''}…`,
+        unassigned: 'No pre-review model is set. Pick one in Settings → Models → “Approvals review”.',
+        failed: why => `The pre-review failed: ${why}`,
+        hardTitle: 'Rule check — Approve stays locked',
+        approve: 'No problem found',
+        fix: 'Needs an edit first',
+        reject: 'Rejecting is advised',
+        empty: 'The reviewer found nothing to report.',
+        severity: {
+          block: 'Breaks a rule',
+          fix: 'Needs an edit',
+          note: 'Minor',
+        },
+        kind: {
+          duplicate: 'Duplicate',
+          contradiction: 'Contradiction',
+          wrong: 'Wrong',
+          evidence: 'Evidence',
+          rule: 'Rule',
+        },
+        other: 'Against',
+        tokens: (i, o) => `${i} in / ${o} out tokens`,
+        cost: (usd, status) => (status === 'included' ? 'included' : `$${usd.toFixed(4)} ${status}`),
+        locked: 'Approve unlocks when the pre-review has finished and no rule check failed.',
+        skipWarn: 'This write was not checked against your rules. Apply it anyway?',
+        advice: 'The review is advice; the decision stays yours.',
       },
       bulk: {
         select: 'Select this record',
@@ -113,7 +142,7 @@ const BUNDLES = {
         cancel: 'Cancel',
         done: (ok, all) => `${ok} of ${all} done`,
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
-        skipped: 'Records that cannot be applied as staged are left out of the selection.',
+        skipped: 'Records that cannot be applied as staged, or are not pre-reviewed yet, are left out of the selection.',
       },
       btn: {
         reject: 'Reject',
@@ -121,10 +150,14 @@ const BUNDLES = {
         undo: 'Undo',
         forceUndo: 'Force undo',
         details: 'Details and changes',
-        fix: 'Shorten and create',
+        fix: 'Shorten description',
         detailsHide: 'Hide details',
         onlyCreate: 'Create only this',
         onlyApply: 'Apply only this',
+        reReview: 'Review again',
+        skipReview: 'Approve without review',
+        skipConfirm: 'Apply unreviewed',
+        skipCancel: 'Cancel',
       },
       op: {
         current: 'current:',
@@ -254,8 +287,12 @@ const api = {
   clearHistory: keepUndoable =>
     ctxRef.rest('/history/clear', { method: 'POST', body: { keep_undoable: Boolean(keepUndoable) } }),
   fix: (id, approve) => ctxRef.rest('/fix', { method: 'POST', body: { subsystem: 'skills', id, approve: Boolean(approve) } }),
-  decide: (subsystem, ids, decision, only) =>
-    ctxRef.rest('/decide', { method: 'POST', body: { subsystem, ids, decision, only: only || [] } }),
+  decide: (subsystem, ids, decision, only, skipReview) =>
+    ctxRef.rest('/decide', {
+      method: 'POST',
+      body: { subsystem, ids, decision, only: only || [], skip_review: Boolean(skipReview) }
+    }),
+  review: (subsystem, id) => ctxRef.rest('/review', { method: 'POST', body: { subsystem, id } }),
   undo: (id, force) => ctxRef.rest('/undo', { method: 'POST', body: { id, force: Boolean(force) } })
 }
 
@@ -382,6 +419,8 @@ const STYLE = `
 .pa-prose{font-family:inherit;font-size:${FS.body}px}
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
 .pa-advice{flex:none}
+.pa-review{flex:none}
+.pa-finding{display:flex;flex-direction:column;gap:${G.xxs}px;padding-top:${G.xs}px;border-top:${HAIRLINE}}
 .pa-advice-foot{display:flex;align-items:center;gap:${G.sm}px;padding-top:${G.xxs}px}
 .pa-advice-foot>div{flex:1;min-width:0}
 .pa-advice-foot>button{flex-shrink:0}
@@ -467,7 +506,12 @@ function usePending({ scan = true } = {}) {
     if (scanFailed === null) return d
     return { ...d, issues: [...(d?.issues || []), say('pa.empty.scanFailed', scanFailed)] }
   }
-  const { data, error, at, refresh } = usePolling(load, 15000)
+  const [fast, setFast] = useState(false)
+  const { data, error, at, refresh } = usePolling(load, fast ? 4000 : 15000)
+  useEffect(() => {
+    const all = [...(data?.memory || []), ...(data?.skills || [])]
+    setFast(all.some(i => (i.review || {}).status === 'running'))
+  }, [data])
   return { data, error, at, refresh, n: total(data?.counts) }
 }
 
@@ -756,9 +800,148 @@ function Tabs({ label: name, items, value, onSelect, idBase }) {
   }, 'tabs')
 }
 
+const reviewed = item => {
+  const review = item.review || {}
+  return review.status === 'done' && !(review.hard || []).length
+}
+
 const pickable = item => {
   const plain = item.plain || {}
+  if (!reviewed(item)) return false
   return !(plain.stale || []).length && !plain.fix
+}
+
+const VERDICT = {
+  approve: ['pa.review.approve', 'success'],
+  fix: ['pa.review.fix', 'warn'],
+  reject: ['pa.review.reject', 'destructive']
+}
+const SEVERITY = {
+  block: ['pa.review.severity.block', 'destructive'],
+  fix: ['pa.review.severity.fix', 'warn'],
+  note: ['pa.review.severity.note', 'muted']
+}
+const FINDING_KIND = {
+  duplicate: 'pa.review.kind.duplicate',
+  contradiction: 'pa.review.kind.contradiction',
+  wrong: 'pa.review.kind.wrong',
+  evidence: 'pa.review.kind.evidence',
+  rule: 'pa.review.kind.rule'
+}
+
+function Finding({ finding }) {
+  const t = usePluginI18n(ID)
+  const [label, variant] = SEVERITY[finding.severity] || SEVERITY.note
+  return jsxs('div', {
+    className: 'pa-finding',
+    children: [
+      jsxs('div', {
+        style: { display: 'flex', alignItems: 'center', gap: G.xs, flexWrap: 'wrap' },
+        children: [
+          jsx(Badge, { className: 'pa-tag', style: TAG, variant, children: t(label) }, 'severity'),
+          jsx('span', { className: 'pa-pill', children: t(FINDING_KIND[finding.kind] || FINDING_KIND.rule) }, 'kind')
+        ]
+      }, 'head'),
+      finding.explain ? jsx(PanelBlock, { className: 'pa-free pa-prose', children: finding.explain }, 'explain') : null,
+      finding.quote ? jsx(Raw, { children: `“${finding.quote}”` }, 'quote') : null,
+      finding.other ? jsx(Raw, { children: `${t('pa.review.other')}: “${finding.other}”` }, 'other') : null
+    ]
+  })
+}
+
+function ReviewBox({ review, busy, onAgain, onSkip }) {
+  const t = usePluginI18n(ID)
+  const [skipArmed, setSkipArmed] = useState(false)
+  const hard = review.hard || []
+  const status = review.status || 'running'
+  const findings = review.findings || []
+  const usage = review.usage || {}
+  const [verdictKey, verdictVariant] = VERDICT[review.verdict] || VERDICT.approve
+  const red = hard.length > 0 || status === 'failed' || (status === 'done' && review.verdict === 'reject')
+  const tone = red ? 'var(--ui-red)' : status === 'done' && review.verdict === 'approve'
+    ? 'var(--ui-accent)'
+    : 'var(--ui-orange)'
+  const canSkip = !hard.length && (status === 'failed' || status === 'unassigned')
+  const meta = [
+    status === 'done' ? review.model : '',
+    typeof usage.input === 'number' ? t('pa.review.tokens', usage.input, usage.output || 0) : '',
+    typeof usage.cost_usd === 'number' ? t('pa.review.cost', usage.cost_usd, usage.cost_status || '') : ''
+  ].filter(Boolean).join(' · ')
+  const line = (key, text) => jsx(PanelBlock, { className: 'pa-free pa-prose', children: text }, key)
+  return jsxs('div', {
+    className: 'pa-review',
+    style: {
+      display: 'flex', flexDirection: 'column', gap: G.xs, borderRadius: R.box, padding: `${G.xs}px ${G.sm}px`,
+      background: tint(tone, 4),
+      borderLeft: `3px solid ${tone}`
+    },
+    children: [
+      jsx(PanelSectionLabel, { children: t('pa.review.title') }, 'label'),
+      hard.length > 0
+        ? jsxs('div', {
+            style: { display: 'flex', flexDirection: 'column', gap: G.xxs },
+            children: [
+              jsx(ToneLabel, { children: t('pa.review.hardTitle') }, 'label'),
+              jsx(Raw, { children: hard.map((h, i) => jsx('div', { children: h.text }, i)) }, 'raw')
+            ]
+          }, 'hard')
+        : null,
+      status === 'running' ? line('running', t('pa.review.running', review.model || review.provider || '')) : null,
+      status === 'unassigned' ? line('unassigned', t('pa.review.unassigned')) : null,
+      status === 'failed' ? line('failed', t('pa.review.failed', review.error || '')) : null,
+      status === 'done'
+        ? jsx(Badge, {
+            className: 'pa-tag',
+            style: { ...TAG, alignSelf: 'flex-start' },
+            variant: verdictVariant,
+            children: t(verdictKey)
+          }, 'verdict')
+        : null,
+      status === 'done' && review.summary ? line('summary', review.summary) : null,
+      status === 'done' && !findings.length ? line('empty', t('pa.review.empty')) : null,
+      ...(status === 'done' ? findings.map((f, i) => jsx(Finding, { finding: f }, `f${i}`)) : []),
+      skipArmed
+        ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'warn')
+        : null,
+      jsxs('div', {
+        className: 'pa-advice-foot',
+        children: [
+          jsx('div', {
+            style: { fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
+            children: meta || t('pa.review.advice')
+          }, 'meta'),
+          status === 'done' || status === 'failed'
+            ? jsx(Button, {
+                variant: 'outline',
+                size: 'xs',
+                disabled: Boolean(busy) && busy !== 'review',
+                loading: busy === 'review',
+                onClick: () => void onAgain(),
+                children: t('pa.btn.reReview')
+              }, 'again')
+            : null,
+          canSkip && skipArmed
+            ? jsx(Button, {
+                variant: 'text',
+                size: 'xs',
+                onClick: () => setSkipArmed(false),
+                children: t('pa.btn.skipCancel')
+              }, 'cancel')
+            : null,
+          canSkip
+            ? jsx(Button, {
+                variant: skipArmed ? 'destructive' : 'outline',
+                size: 'xs',
+                disabled: Boolean(busy) && busy !== 'skip',
+                loading: busy === 'skip',
+                onClick: skipArmed ? () => void onSkip() : () => setSkipArmed(true),
+                children: t(skipArmed ? 'pa.btn.skipConfirm' : 'pa.btn.skipReview')
+              }, 'skip')
+            : null
+        ]
+      }, 'foot')
+    ]
+  })
 }
 
 function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
@@ -776,10 +959,14 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const rec = plain.recommendation || {}
   const fix = plain.fix || null
   const refused = plain.refused || []
-  const approveBlocked = Boolean(fix) || refused.length > 0
-  const heldGroup = name => Boolean(fix && fix.name === name) || refused.includes(name)
+  const review = item.review || {}
+  const reviewLocked = !reviewed(item)
+  const heldByRule = Boolean(fix) || refused.length > 0
+  const approveBlocked = heldByRule || reviewLocked
+  const heldGroup = name => Boolean(fix && fix.name === name) || refused.includes(name) || reviewLocked
+  const heldWhy = reviewLocked ? t('pa.review.locked') : rec.reason
   const failedBefore = Boolean(plain.last_error)
-  const cannot = stale.length > 0 || approveBlocked
+  const cannot = stale.length > 0 || heldByRule
   const isNewSkill = groups.some(g => g.kind === 'new')
   const kind = subsystem === 'memory' ? t('pa.kind.memory') : t('pa.kind.skill')
   const stateVariant = cannot ? 'destructive' : failedBefore ? 'warn' : (isNewSkill ? 'default' : 'success')
@@ -794,11 +981,11 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const applyFix = async () => {
     setBusy('fix')
     try {
-      const res = await api.fix(item.id, true)
+      const res = await api.fix(item.id, false)
       host.notify(res?.ok
         ? { kind: 'success', message: res.message || t('pa.notify.saved') }
         : { kind: 'error', message: res?.error || t('pa.notify.failed') })
-      if (res?.ok) leave()
+      if (res?.ok) onChanged()
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.applyError'))
     } finally {
@@ -806,10 +993,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     }
   }
 
-  const decide = async (decision, only) => {
-    setBusy(only?.length ? `only:${only[0]}` : decision)
+  const decide = async (decision, only, skipReview) => {
+    setBusy(skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision)
     try {
-      const res = await api.decide(subsystem, [item.id], decision, only)
+      const res = await api.decide(subsystem, [item.id], decision, only, skipReview)
       const r = (res?.results || [])[0] || {}
       host.notify(r.ok
         ? { kind: 'success', message: r.message || t('pa.notify.saved') }
@@ -823,9 +1010,22 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     }
   }
 
-  const decideAndLeave = async (decision, only) => {
-    const res = await decide(decision, only)
+  const decideAndLeave = async (decision, only, skipReview) => {
+    const res = await decide(decision, only, skipReview)
     if (res?.ok) leave()
+  }
+
+  const reviewAgain = async () => {
+    setBusy('review')
+    try {
+      const res = await api.review(subsystem, item.id)
+      if (!res?.ok) host.notify({ kind: 'error', message: res?.error || t('pa.notify.failed') })
+      onChanged()
+    } catch (e) {
+      host.notifyError?.(e, t('pa.notify.applyError'))
+    } finally {
+      setBusy('')
+    }
   }
 
   const approve = jsx(Button, {
@@ -859,7 +1059,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                     type: 'checkbox',
                     className: 'pa-pick',
                     checked: Boolean(picked),
-                    disabled: cannot,
+                    disabled: !pickable(item),
                     'aria-label': `${t('pa.bulk.select')} #${item.id}`,
                     onChange: () => onPick()
                   }, 'pick')
@@ -964,7 +1164,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                           children: g.name
                         }, 'name'),
                         jsx(Tip, {
-                          label: heldGroup(g.name) ? rec.reason : '',
+                          label: heldGroup(g.name) ? heldWhy : '',
                           children: jsx(Button, {
                             className: heldGroup(g.name) ? 'pa-held' : undefined,
                             variant: 'outline',
@@ -1071,6 +1271,13 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
           ]
         }, 'advice'),
 
+      jsx(ReviewBox, {
+        review,
+        busy,
+        onAgain: reviewAgain,
+        onSkip: () => decideAndLeave('approve', [], true)
+      }, 'review'),
+
       jsxs('div', {
         className: 'pa-foot',
         style: { marginTop: rec.verdict ? 0 : 'auto' },
@@ -1092,7 +1299,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                 onClick: () => void decideAndLeave('reject'),
                 children: t('pa.btn.reject')
               }, 'reject'),
-              jsx(Tip, { label: approveBlocked ? rec.reason : '', children: approve }, 'approve-tip')
+              jsx(Tip, { label: approveBlocked ? heldWhy : '', children: approve }, 'approve-tip')
             ]
           }, 'actions')
         ]

@@ -86,6 +86,25 @@ CONTRACT: dict[str, dict[str, Any]] = {
         "names": (),
         "calls": {"handle_pending_subcommand": (2, ("memory_store",))},
     },
+    "hermes_cli/config.py": {
+        "names": (),
+        "calls": {"read_raw_config_readonly": (0, ())},
+    },
+    "tools/skill_usage.py": {
+        "names": (),
+        "calls": {"is_hub_installed": (1, ()), "is_bundled": (1, ()), "is_protected_builtin": (1, ())},
+    },
+    "agent/auxiliary_client.py": {
+        "names": (),
+        "calls": {
+            "call_llm": (1, ("timeout", "max_tokens", "route_info", "messages")),
+            "extract_content_or_reasoning": (1, ()),
+        },
+    },
+    "agent/usage_pricing.py": {
+        "names": (),
+        "calls": {"normalize_usage": (1, ("provider",)), "estimate_usage_cost": (2, ("provider",))},
+    },
 }
 
 problems: list[str] = []
