@@ -5,6 +5,29 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.9.3
+
+### Changed
+
+* **The reviewer's fix is approved with the write.** The pre-review proposes its edits in the same
+  call that reviews the write; each edit is drawn under its finding. "Approve with the fix" applies
+  the shown edits, runs the rule checks and the applicability check again on the edited text, and
+  writes it only when they pass; otherwise nothing is written and the card says what is left. The
+  applied entry reads "approved with N suggested edit(s)" and can be undone like any other.
+  "Approve as written" stays beside it. When an edit covers only some findings the card says so.
+* **The pre-review section and the KPI cards are back** (as in 1.9.1): the verdict summary, the
+  findings that need action with their quotes, the model · tokens · cost line and "Review again" on
+  every card, no longer behind Details. Minor notes stay under Details.
+* A non-English rule-check finding asks the reviewer for an English translation as its edit.
+* A duplicated line at the very end of a write can now be cut by the rule check's own edit.
+
+### Removed
+
+* "Apply the suggested edit" (`POST /amend`) and "Ask the assistant to fix" (the unsent chat draft).
+  A pending card no longer writes into the chat box; the fix happens in the panel.
+* A write Hermes cannot apply as staged, or one into a third-party skill, still offers only Reject;
+  the card says why.
+
 ## 1.9.2
 
 ### Added

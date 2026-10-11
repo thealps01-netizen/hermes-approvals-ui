@@ -97,7 +97,7 @@ why they are drawn whole with their size in the label (§6).
   session that produced it (the record does not carry it); since 1.9.2 the prompt no longer asks for an
   evidence finding and the card drops one if a model still returns it — it appeared on 10 of 10
   records and told the user nothing.
-* **Suggested edits and `/amend` (1.9.2).** A block/fix finding may carry `edit: {find, replace}`;
+* **Suggested edits (1.9.2; `/amend` replaced in 1.9.3, see below).** A block/fix finding may carry `edit: {find, replace}`;
   `find` must be copied from the NEW text of the write, because an edit applies to the pending record,
   never to a file. `_edit_slots()` lists the editable fields (`content`, `file_content`,
   `new_string`; never `old_string`, which must keep matching the target). `_mark_edits()` sets
@@ -586,6 +586,26 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **The card grows.** The 1.6 rule "cards do not grow with content" is replaced: one column, and a
   card opens to its content. It was the source of nested scroll boxes and of side cards stretched to
   their neighbour's height.
+
+## 1.9.3 — the fix is approved with the write
+
+* **Why `/amend` and the chat draft went.** The user's report on 1.9.2: the fix wrote into the open
+  chat instead of the background reviewer, "Review again" was hidden behind Details, and the card
+  lost 1.9.1's look. A separate amend step cost a second review per fix and an extra decision; the
+  draft moved the work into the foreground session. The pattern kept is the code-scanning autofix
+  one: the suggested change sits beside the finding and is accepted or left as is.
+* **`/decide` with `with_edits`.** `_stage_fixed()` takes the open edits of the finished review
+  (`_review_edits()` → `_edit_open()`: `find` occurs exactly once in the editable fields), applies them
+  to a copy (`_with_edits()`), and refuses when nothing applied or `_fix_left()` still reports a rule
+  check or a stale op on the copy. Only then does it write the edited record over the pending file,
+  keeping the staged payload as `amended_from`; every refusal or failed apply after that restores the
+  original bytes. The model review is not re-run: the user decided on the edit they saw, and the key
+  of the edited payload would start a paid review.
+* **`fix_left` on the card.** `_mark_edits()` runs the same `_fix_left()` on the edited copy for
+  every `/pending`, so the button is held with the reason before any click.
+* **What still offers only Reject:** a stale write (its `old_string` no longer matches) and a write
+  into a third-party skill. The card says why; the render sweep exempts exactly these and a review
+  that is still running.
 
 ## Version
 

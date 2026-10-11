@@ -567,11 +567,13 @@ def check_two_step_actions() -> None:
                         ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
                         ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",
                          "a record that can no longer be applied keeps Approve open"),
-                        ("const flagged = hard.length > 0 || stale.length > 0 || major.length > 0 || failedBefore",
-                         "a flagged card no longer offers a way forward besides Reject"),
-                        ("children: t('pa.btn.askAssistant')", "a flagged card lost \"Ask the assistant to fix\""),
-                        ("const res = await api.amend(subsystem, item.id)", "a suggested edit cannot be applied"),
-                        ("f.edit?.ok ? jsx(EditView", "a suggested edit is applied without being shown"),
+                        ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)",
+                         "a suggested fix can be approved before the review finished or while it leaves a problem"),
+                        ("approveBtn('fixed', t('pa.btn.approveFixed')",
+                         "a card with a suggested edit lost \"Approve with the fix\""),
+                        ("with_edits: Boolean(withEdits)", "the suggested edits do not reach the backend"),
+                        ("edit?.ok ? jsx(EditView, { edit, t }, 'edit') : null",
+                         "a suggested edit is applied without being shown"),
                         ("filter(f => f.kind !== 'evidence')", "the evidence note is back on every card")):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — {why}")

@@ -453,6 +453,7 @@ const REVIEWED = withReview({
     model: 'gpt-5.5', usage: { input: 5210, output: 388, cost_usd: 0.0123, cost_status: 'estimated' }
   }
 })
+const FIX_LEFT = 'MEMORY.md: memory text must be English.'
 const AMEND_EDIT = { find: 'name: new-skill', replace: 'name: new-skill-x', ok: true }
 const RULE_EDIT = { find: 'name: x', replace: 'name: x\nauthor: Selftest Owner',
   label: 'adds "author: Selftest Owner" to the header', ok: true }
@@ -462,9 +463,19 @@ const REMEDY = withReview({
   aaa11111: {
     status: 'done', verdict: 'fix', summary: 'One edit.', hard: [], edits: 1,
     findings: [{ severity: 'fix', kind: 'contradiction', quote: 'old line', other: 'other line',
-                 explain: 'The write says two different things.', edit: AMEND_EDIT }]
+                 explain: 'The write says two different things.', edit: AMEND_EDIT },
+               { severity: 'fix', kind: 'rule', quote: 'project name', other: 'scope rule',
+                 explain: 'A project name in a general skill.' }]
+  },
+  abc12345: {
+    status: 'done', verdict: 'fix', summary: 'Language.', hard: [], edits: 1, fix_left: [FIX_LEFT],
+    findings: [{ severity: 'fix', kind: 'rule', quote: 'x', other: '', explain: 'Translate it.',
+                 edit: { find: 'x', replace: 'y', ok: true } }]
   }
 })
+// The rule-edit card carries no description fix here: "Shorten first" would hold its fix on its own.
+REMEDY.skills = REMEDY.skills.map(s => s.id !== 'def67890' ? s
+  : { ...s, plain: { ...s.plain, fix: null, recommendation: {} } })
 const REFUSED_LINE = 'writes the file new-skill/agents/x.yaml → cannot be applied: Hermes refuses this file path'
 const REFUSED = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s : {
   ...s, plain: { ...s.plain, stale: [REFUSED_LINE], refused: ['new-skill'],
@@ -518,10 +529,6 @@ async function mount(appLocale) {
         if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened — long-description: 172 → 53 characters' }
         if (path === '/review') return { ok: true, review: { status: 'running', hard: [] } }
-        if (path === '/amend') {
-          return { ok: true, message: '1 edit(s) applied to the pending record; it is being reviewed again.',
-                   review: { status: 'running', hard: [] } }
-        }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
         if (path === '/scan' && REST.scan === 'throw') throw new Error('500: {"ok": false, "error": "Could not read: scan exploded"}')
@@ -781,7 +788,7 @@ for (const mounted of [en, other]) {
   }
   if (!(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-card-title')?.textContent || '')
     .startsWith('New skill: new-skill')) fail('a new skill does not say so in its title')
-  if (buttons(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /Ask the assistant to fix/).length) {
+  if (buttons(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /Approve with the fix/).length) {
     fail('a clean record offers a fix it does not need')
   }
 }
@@ -812,10 +819,7 @@ for (const mounted of [en, other]) {
   const badgeSizes = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')].map(b => b.getAttribute('data-size'))
   if (new Set(badgeSizes).size !== 1) fail(`the card badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
   const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
-  const cols = (en.hostEl.innerHTML.match(/\.pa-actions\{display:grid;grid-template-columns:minmax\(0,(\d+)fr\) minmax\(0,(\d+)fr\)/) || [])
-  if (!actions || !cols.length || !(Number(cols[2]) > Number(cols[1]))) {
-    fail('Reject and Approve carry equal weight again (the primary action must be the wider one)')
-  }
+  if (!actions) fail('a card lost its action row')
   const variants = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.getAttribute('data-variant'))
   if (JSON.stringify(variants) !== JSON.stringify(['destructive', 'default'])) {
     fail(`the action pair is not the kit destructive/default pair: ${JSON.stringify(variants)}`)
@@ -965,29 +969,33 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
 }
 
-// --- 12) The summary strip, the refresh ICON, and the status-bar chip ------------------------------
+// --- 12) KPI cards, the refresh ICON, and the status-bar chip ----------------------------------
 {
-  const strip = [...(en.hostEl.querySelector('.pa-strip')?.children || [])]
-  const kpi = strip.map(c => c.textContent || '')
-  if (kpi.length !== 4) fail(`expected 4 summary entries, found ${kpi.length}: ${JSON.stringify(kpi)}`)
-  must(kpi.join(' | '), ['MEMORY.md', 'USER.md', '84%', 'Nearly full'], 'summary strip')
-  const tones = strip.map(k => k.querySelector('[data-tone]')?.getAttribute('data-tone') || k.getAttribute('data-tone'))
+  const kpi = [...(en.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
+  if (kpi.length !== 4) fail(`expected 4 KPI cards, found ${kpi.length}: ${JSON.stringify(kpi)}`)
+  must(kpi.join(' | '), ['MEMORY.md', '99%', 'USER.md', '84%', 'Nearly full'], 'KPI cards')
+  const figs = [...en.hostEl.querySelectorAll('.pa-kpis')[0].querySelectorAll('.pa-kpi-val')].map(v => v.textContent)
+  if (figs.some(f => /^%/.test(f || ''))) fail(`a percent sign leads its number: ${JSON.stringify(figs)}`)
+  const kbox = [...en.hostEl.querySelectorAll('.pa-kpis')[0].children]
+  const tones = kbox.map(k => k.querySelector('.pa-kpi-pill')?.getAttribute('data-tone'))
   if (JSON.stringify(tones) !== JSON.stringify(['warn', 'warn', 'ok', 'bad'])) {
-    fail(`summary tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
+    fail(`KPI tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
   }
-  if (!strip.every(k => k.querySelector('.pa-strip-dot'))) fail('a summary tone is not carried by its dot')
-  const sheet = en.hostEl.querySelector('style')?.textContent || ''
-  if (/\.pa-strip[^{]*\bb\{[^}]*color:var\(--ui-(orange|red|green)\)/.test(sheet)) {
-    fail('a summary figure wears a tone as text — tone colours fail contrast as text; the dot carries it')
+  if (kbox[1].getAttribute('data-tone') !== 'warn') fail('a file with room left is marked full (2189 of 2200 is not full)')
+  if (!kbox[1].querySelector('.pa-kpi-label')?.classList.contains('pa-kpi-file')) {
+    fail('a file name is set in caps (MEMORY.MD): file labels keep their own case')
   }
-  if (!/57/.test(kpi[3] || '')) fail(`the Applied entry must use the backend's full count (got ${JSON.stringify(kpi[3])})`)
-  if (strip[0]?.closest('[data-tip]')?.getAttribute('data-tip') !== 'Memory: 1 · Skills: 2') {
-    fail('the pending split is not in the themed Tip of its summary entry')
+  if (kbox.some(k => k.querySelector('.pa-kpi-val')?.hasAttribute('data-tone'))) {
+    fail('a KPI figure wears a tone as text — the tone belongs on the card surface')
   }
   if (!/Updated \d\d:\d\d/.test(en.hostEl.querySelector('.pa-updated')?.textContent || '')) {
     fail('the header carries no “Updated HH:MM” stamp')
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
+  const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
+  if (appliedFigure !== '57') {
+    fail(`the Applied card must use the backend's full count, not the last 50 rows (figured ${JSON.stringify(appliedFigure)})`)
+  }
   const icon = en.hostEl.querySelector('.pa-refresh')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
     fail('the refresh control is gone (kit Button + svg + aria-label expected)')
@@ -1299,9 +1307,9 @@ REST.scan = 'ok'
   const done = await mount('en')
   const card = cell(done.hostEl, 'skills:aaa11111')
   must(card?.textContent, ['Reject advised', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
-  await click(buttons(card, /^Details and changes$/)[0])
-  must(card?.textContent, ['Duplicate', `“${FINDING.quote}”`, `Against: “${FINDING.other}”`,
-    'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated'], 'finished review details')
+  must(card?.querySelector('.pa-review')?.textContent, ['Pre-review', `In the write: “${FINDING.quote}”`,
+    `Against: “${FINDING.other}”`, 'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated', 'Review again'],
+  'the pre-review section')
   if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') {
     fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
   }
@@ -1313,42 +1321,49 @@ REST.scan = 'ok'
 }
 
 // --- 20) Every flagged card offers a way forward besides Reject -------------------------------------
-// A review or rule check that only says "this is wrong" leaves Reject as the one move. Each flagged
-// state must offer a usable remedy: the suggested edit (POST /amend, shown before it is applied), the
-// assistant (an unsent chat draft), "Shorten description", or the two-step skip of an unrun review.
+// A review or rule check that only says "this is wrong" leaves Reject as the one move. The reviewer's
+// suggested edit (and a rule check's own edit) is drawn under its finding and approved together with
+// the write: "Approve with the fix" sends ONE /decide with with_edits, and nothing goes to the chat box.
+// A fix that would leave a problem is held with the reason. Only a card whose review is still running
+// (it waits) and a write Hermes cannot apply as staged (it says why) may lack a non-Reject move.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const live = b => b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled
+  const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const drafts = stub.calls.composer.length
   REST.mode = 'remedy'
   const fixHost = await mount('en')
-  const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
-  must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x'], 'suggested edit shown')
-  const amendBtn = buttons(flagged, /^Apply the suggested edit$/)[0]
-  if (!amendBtn) fail('a finding with a suggested edit offers no “Apply the suggested edit”')
-  const decided = stub.calls.posts.filter(p => p.path === '/decide').length
-  if (amendBtn) await click(amendBtn, 60)
-  const amended = stub.calls.posts.filter(p => p.path === '/amend').pop()
-  if (amended?.body.subsystem !== 'skills' || amended?.body.id !== 'aaa11111') fail(`the amend request is wrong: ${JSON.stringify(amended)}`)
-  if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('applying a suggested edit decided the record')
   const rule = cell(fixHost.hostEl, 'skills:def67890')
-  must(rule?.textContent, ['Fixable here: adds "author: Selftest Owner" to the header'], 'rule edit label')
-  if (!buttons(rule, /^Apply the suggested edit$/).length) fail('a rule check with a fixing edit offers no way to apply it')
-
-  const ask = buttons(flagged, /^Ask the assistant to fix$/)[0]
-  if (!ask) fail('a flagged card offers no “Ask the assistant to fix”')
-  if (ask) await click(ask, 40)
-  const put = stub.calls.composer[stub.calls.composer.length - 1]
-  if (!put || put.sessionId !== null || put.opts?.mode !== 'block') fail(`the fix request did not go to the chat box: ${JSON.stringify(put)}`)
-  must(put?.text, ['skills/aaa11111', 'The write says two different things.', 'In the write: "old line"',
-    'stage the corrected write', 'Do not approve, reject or apply anything yourself'], 'fix request text')
-  if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('asking the assistant decided the record')
-  stub.state.composerLive = false
-  if (ask) await click(ask, 40)
-  const told = stub.calls.notify[stub.calls.notify.length - 1]
-  if (told?.kind !== 'warning' || !/No chat box is open/.test(told?.message || '')) fail(`no chat box went unreported: ${JSON.stringify(told)}`)
-  stub.state.composerLive = true
+  must(rule?.textContent, ['Suggested edit — adds "author: Selftest Owner" to the header', 'author: Selftest Owner'],
+    'rule edit shown')
+  if (!live(buttons(rule, /^Approve with the fix$/)[0])) fail('a rule check with a fixing edit offers no way to approve the fixed write')
+  if (live(buttons(rule, /^Approve as written$/)[0])) fail('a failed rule check lets the write through as written')
+  const left = cell(fixHost.hostEl, 'memory:abc12345')
+  must(left?.textContent, [`The suggested edits do not clear every problem: ${FIX_LEFT}`], 'a fix that leaves a problem')
+  const held = buttons(left, /^Approve with the fix$/)[0]
+  if (live(held)) fail('a fix that leaves a problem is still clickable')
+  if (!String(held?.closest('[data-tip]')?.getAttribute('data-tip')).includes(FIX_LEFT)) fail('a held fix does not say why')
+  const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
+  must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x',
+    'The fix covers 1 of 2 problems'], 'suggested edit shown')
+  if (!live(buttons(flagged, /^Approve as written$/)[0])) fail('a reviewed card lost "Approve as written"')
+  const fixBtn = buttons(flagged, /^Approve with the fix$/)[0]
+  if (!live(fixBtn)) fail('a finding with a suggested edit offers no “Approve with the fix”')
+  if (!String(fixBtn?.closest('[data-tip]')?.getAttribute('data-tip')).includes('suggested edits shown above')) {
+    fail('“Approve with the fix” does not say what it writes')
+  }
+  const before = decides().length
+  if (fixBtn) await click(fixBtn, 80)
+  const sent = decides().slice(before)
+  if (sent.length !== 1 || sent[0].body.with_edits !== true || sent[0].body.decision !== 'approve'
+      || sent[0].body.ids.join() !== 'aaa11111' || sent[0].body.skip_review) {
+    fail(`“Approve with the fix” is not one approve with with_edits: ${JSON.stringify(sent.map(p => p.body))}`)
+  }
+  if (stub.calls.posts.some(p => p.path === '/amend')) fail('the removed /amend route is still called')
+  if (stub.calls.composer.length !== drafts) fail('a pending card wrote into the chat box')
   fixHost.hostEl.remove()
 
-  const REMEDIES = /^(Apply the suggested edit|Apply \d+ suggested edits|Ask the assistant to fix|Shorten description|Approve without review|Review again)$/
+  const WAYS = /^(Approve with the fix|Approve as written|Approve|Shorten description|Approve without review|Create only this|Apply only this)$/
   const gaps = []
   for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
     REST.mode = mode
@@ -1357,8 +1372,10 @@ REST.scan = 'ok'
       const badge = c.querySelector('.pa-card-head [data-slot="badge"]')
       const variant = badge?.getAttribute('data-variant')
       if (variant !== 'warn' && variant !== 'destructive') continue
-      const ways = [...c.querySelectorAll('button')].filter(b => REMEDIES.test((b.textContent || '').trim())
-        && b.getAttribute('aria-disabled') !== 'true' && !b.disabled)
+      const text = c.textContent || ''
+      if (text.includes('Reading this write against your rules')) continue
+      if (text.includes('Hermes cannot apply this write as staged')) continue
+      const ways = [...c.querySelectorAll('button')].filter(b => WAYS.test((b.textContent || '').trim()) && live(b))
       if (!ways.length) gaps.push(`${mode} ${c.getAttribute('data-key')} “${badge?.textContent}”`)
     }
     host.hostEl.remove()
@@ -1375,14 +1392,14 @@ console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
 console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
 console.log('  pre-review: running review and failed rule check lock Approve · two-step skip_review · findings shown · Review again')
-console.log('  remedies: suggested edit shown then POST /amend · rule edit · unsent assistant draft · no flagged card is a dead end')
+console.log('  remedies: suggested edit and rule edit shown, then one /decide with_edits · a fix that leaves a problem is held · no chat draft · no flagged card is a dead end')
 console.log('  bulk: only applicable records selectable · arm → Confirm → one /decide per subsystem · Cancel sends nothing')
 console.log('  palette: "Open Approvals" (3 waiting → /approvals) · "Approval alerts" on/muted; muted = no toast, no OS alert, chip still counts')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')
 console.log('  blocked record: Approve held (aria-disabled, still focusable) with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
 console.log(`  language: ${JSON.stringify(stub.calls.registered[0].locales)} bundle registered, no picker in the DOM, English under the app locale "en" AND "tr", no raw pa.* key`)
 console.log('  two-step: delete “A note” and clear the history ask first; the conflicting undo turns into "Force undo" and only then sends force:true')
-console.log(`  chip: "${en.chipText}" · summary entries: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)
+console.log(`  chip: "${en.chipText}" · KPI cards: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)
 
 const dumpPath = process.env.PREVIEW_OUT
 if (dumpPath) {

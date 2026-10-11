@@ -575,8 +575,8 @@ _TEXT = {
     'summary_unreviewed': '{summary} — approved without pre-review',
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
     'amend_nothing': 'There is no suggested edit that still matches this record.',
-    'amend_done': '{n} edit(s) applied to the pending record; it is being reviewed again. Nothing was written to your files.',
-    'amend_skipped': '{n} suggestion(s) no longer matched the text and were left out.',
+    'fix_left': 'The suggested edits do not clear every problem, so nothing was written: {reasons}',
+    'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
     'amend_author': 'adds "author: {want}" to the header',
     'amend_drop_line': 'removes the line that is already in the skill',
 }
@@ -946,7 +946,7 @@ def _pending(scan: int) -> dict:
                         item["ops"][i].update(own)
                 item["has_change"] = any(o.get("has_change") for o in item["ops"])
             item["review"] = _review_public(_review_state(subsystem, record))
-            _mark_edits(item["review"], record)
+            _mark_edits(item["review"], record, subsystem)
             live.add(f"{subsystem}-{record.get('id')}")
             items.append(item)
         out[subsystem] = items
@@ -1071,7 +1071,9 @@ _REVIEW_SYSTEM = (
     "4. rule: any other breach of an owner rule (scope, a skill rule written into memory or the reverse, "
     "instruction phrasing in memory, machine-specific paths, project-specific names in a general skill, "
     "editing a third-party skill, language).\n"
-    "Do not repeat the HARD CHECK findings; the owner already sees them. A '[... N more characters cut ...]' "
+    "Do not repeat the HARD CHECK findings; the owner already sees them. Only exception: when a HARD CHECK "
+    "finding says text must be English, add one rule finding whose edit replaces that text with its English "
+    "translation. A '[... N more characters cut ...]' "
     "marker is where this review's input was shortened, not a defect of the write.\n"
     "Write summary and explain in plain English, whatever language the material uses.\n"
     "For every block or fix finding whose problem lies inside the write itself, add an \"edit\" that resolves "
@@ -1196,8 +1198,7 @@ def _edit_hits(record: dict, find: str) -> int:
 
 
 def _edit_open(record: dict, edit: dict) -> bool:
-    done = [(e.get("find"), e.get("replace")) for e in record.get("amended_edits") or []]
-    return (edit.get("find"), edit.get("replace") or "") not in done and _edit_hits(record, edit.get("find") or "") == 1
+    return _edit_hits(record, edit.get("find") or "") == 1
 
 
 def _author_edit(content: str, want: str) -> dict | None:
@@ -1242,8 +1243,8 @@ def _skill_hard(record: dict) -> list[dict]:
         for line in text.splitlines():
             key = _norm_line(line)
             if len(key) >= _DUP_MIN and key in known and key not in old:
-                drop = {"find": line + "\n", "replace": "", "label": _tx("amend_drop_line")} \
-                    if (line + "\n") in text else None
+                cut = next((c for c in (line + "\n", "\n" + line) if c in text), None)
+                drop = {"find": cut, "replace": "", "label": _tx("amend_drop_line")} if cut else None
                 out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip())), drop))
                 break
     return out
@@ -1568,64 +1569,61 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
                      names=", ".join(f"{f['name']}: {f['before']} → {f['after']}" for f in fixes.values()))
 
 
-def _mark_edits(review: dict, record: dict) -> None:
-    for entry in [*(review.get("hard") or []), *(review.get("findings") or [])]:
-        edit = entry.get("edit")
-        if isinstance(edit, dict):
-            edit["ok"] = _edit_open(record, edit)
-    review["edits"] = sum(1 for e in [*(review.get("hard") or []), *(review.get("findings") or [])]
-                          if (e.get("edit") or {}).get("ok"))
-
-
-def _amend_edits(subsystem: str, record: dict) -> list[dict]:
-    state = _review_state(subsystem, record, start=False)
+def _review_edits(state: dict) -> list[dict]:
     found = state.get("findings") if state.get("status") == "done" else []
-    return [dict(e["edit"]) for e in [*(state.get("hard") or []), *(found or [])]
-            if isinstance(e.get("edit"), dict) and e["edit"].get("find")]
+    return [e for e in [*(state.get("hard") or []), *(found or [])] if isinstance(e.get("edit"), dict)]
 
 
-@router.post("/amend")
-async def amend(body: dict):
-    try:
-        with _LOCK:
-            return _amend_locked(body or {})
-    except Exception as exc:
-        return _route_failed("/amend", exc)
+def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
+    fixed = json.loads(json.dumps(record))
+    applied = 0
+    for edit in edits:
+        find, replace = str(edit.get("find") or ""), str(edit.get("replace") or "")
+        for op, field in _edit_slots(fixed):
+            if find and op[field].count(find) == 1:
+                op[field] = op[field].replace(find, replace, 1)
+                applied += 1
+                break
+    return fixed, applied
 
 
-def _amend_locked(body: dict) -> dict:
+def _fix_left(subsystem: str, fixed: dict, only: list | tuple = ()) -> list[str]:
+    hard = [h["text"] for h in _hard_checks(subsystem, fixed)
+            if not only or h.get("name") in only or not h.get("name")]
+    return hard + [str(s) for s in _explain(subsystem, fixed).get("stale") or []]
+
+
+def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
+    entries = _review_edits(review)
+    for entry in entries:
+        entry["edit"]["ok"] = _edit_open(record, entry["edit"])
+    open_edits = [e["edit"] for e in entries if e["edit"]["ok"]]
+    review["edits"] = len(open_edits)
+    if open_edits:
+        fixed, _ = _with_edits(record, open_edits)
+        review["fix_left"] = _fix_left(subsystem, fixed)
+
+
+def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool) -> tuple[dict | None, bytes, str]:
     from tools import write_approval as wa
 
-    subsystem = str(body.get("subsystem") or "")
-    record_id = _valid_id(body.get("id"))
-    if subsystem not in (wa.MEMORY, wa.SKILLS) or not record_id:
-        return {"ok": False, "error": _tx("err_bad_scope")}
-    record = wa.get_pending(subsystem, record_id)
-    if not record:
-        return {"ok": False, "error": _tx("fix_gone")}
-    original = json.loads(json.dumps(record.get("payload") or {}))
-    applied = skipped = 0
-    for edit in _amend_edits(subsystem, record):
-        find, replace = edit["find"], edit.get("replace") or ""
-        if not _edit_open(record, edit):
-            skipped += 1
-            continue
-        for op, field in _edit_slots(record):
-            if find in op[field]:
-                op[field] = op[field].replace(find, replace, 1)
-                break
-        record.setdefault("amended_edits", []).append({"find": find, "replace": replace})
-        applied += 1
+    state = _review_state(subsystem, record, start=False)
+    status = state["status"]
+    if status != "done" and not (skip_review and status in ("failed", "unassigned")):
+        return None, b"", {"running": _tx("gate_running"), "failed": _tx("gate_failed"),
+                           "unassigned": _tx("gate_unassigned")}.get(status, _tx("gate_running"))
+    edits = [e["edit"] for e in _review_edits(state) if _edit_open(record, e["edit"])]
+    fixed, applied = _with_edits(record, edits)
     if not applied:
-        return {"ok": False, "error": _tx("amend_nothing")}
-    record.setdefault("amended_from", original)
-    path = wa._pending_path(subsystem, record_id)
-    _atomic_write(path, json.dumps(record, ensure_ascii=False))
-    with suppress(OSError):
-        _review_path(subsystem, record_id).unlink()
-    state = _review_state(subsystem, record)
-    message = _tx("amend_done", n=applied) + (" " + _tx("amend_skipped", n=skipped) if skipped else "")
-    return {"ok": True, "message": message, "review": _review_public(state)}
+        return None, b"", _tx("amend_nothing")
+    if left := _fix_left(subsystem, fixed, only):
+        return None, b"", _tx("fix_left", reasons=" ".join(left))
+    fixed["amended_from"] = record.get("payload")
+    fixed["summary"] = _tx("summary_fixed", summary=record.get("summary", ""), n=applied)
+    path = wa._pending_path(subsystem, str(record.get("id")))
+    original = path.read_bytes()
+    _atomic_write(path, json.dumps(fixed, ensure_ascii=False))
+    return fixed, original, ""
 
 
 @router.post("/fix")
@@ -1776,15 +1774,24 @@ def _decide_locked(body: dict) -> dict:
             results.append({"id": pending_id, "ok": False, "error": _tx("fix_gone")})
             continue
 
-        unreviewed = False
-        if decision == "approve":
+        unreviewed, original = False, b""
+        if decision == "approve" and body.get("with_edits"):
+            fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")))
+            if reason:
+                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                continue
+            record = fixed
+        elif decision == "approve":
             reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")))
             if reason:
                 results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                 continue
 
+        restore = (lambda: _restore_record(wa._pending_path(subsystem, pending_id), original)) if original \
+            else (lambda: None)
         if decision == "approve" and subsystem == wa.SKILLS:
             if reason := _blocked_approve_reason(record, only):
+                restore()
                 results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                 continue
 
@@ -1793,6 +1800,8 @@ def _decide_locked(body: dict) -> dict:
 
         if decision == "approve" and only and subsystem == wa.SKILLS:
             ok, message = _approve_subset(record, only)
+            if not ok:
+                restore()
             results.append({"id": pending_id, "ok": ok, "message": message, "error": "" if ok else message})
             continue
 
@@ -1807,6 +1816,7 @@ def _decide_locked(body: dict) -> dict:
                                        "before_sha": _sha(path), "sha_after": None})
         ok, message = _apply(subsystem, pending_id, decision)
         if not ok:
+            restore()
             if entry:
                 shutil.rmtree(_state() / "snapshots" / entry["id"], ignore_errors=True)
             _append({"id": _new_id(), "ts": time.time(), "kind": "failed", "subsystem": subsystem,
@@ -2074,24 +2084,31 @@ def _review_selftest(tmp: Path) -> None:
     assert len(hard) == 1 and f'author: {author}' in hard[0]["text"], hard
     locked = approve("skills", "5e1f0002", skip_review=True)
     assert not locked["ok"] and "rule check failed" in locked["error"], "a failed rule check must not be waved through"
-    assert hard[0]["edit"]["ok"] and item("skills", "5e1f0002")["review"]["edits"] == 1, hard
-    fixed = asyncio.run(amend({"subsystem": "skills", "id": "5e1f0002"}))
-    assert fixed["ok"] and "1 edit" in fixed["message"], fixed
-    staged = json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))
-    assert f"author: {author}" in staged["payload"]["content"] and staged["amended_from"]["content"] == bad, staged
-    assert item("skills", "5e1f0002")["review"]["hard"] == [], "the amended record must pass the rule check"
-    assert not asyncio.run(amend({"subsystem": "skills", "id": "5e1f0002"}))["ok"], "nothing left to amend"
+    marked = item("skills", "5e1f0002")["review"]
+    assert hard[0]["edit"]["ok"] and marked["edits"] == 1 and marked["fix_left"] == [], marked
+    not_yet = approve("skills", "5e1f0002", with_edits=True)
+    assert not not_yet["ok"] and "No pre-review model" in not_yet["error"], not_yet
+    assert json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))["payload"]["content"] == bad
+    fixed = approve("skills", "5e1f0002", with_edits=True, skip_review=True)
+    assert fixed["ok"], fixed
+    written = (_skill_dir("new-bad") / "SKILL.md").read_text(encoding="utf-8")
+    assert f"author: {author}" in written, written
+    last = asyncio.run(history(limit=1))["entries"][0]
+    assert "1 suggested edit" in last["summary"], last
 
-    stage("skills", "5e1f0003", {"action": "patch", "name": "cat\other-skill", "old_string": "body",
+    stage("skills", "5e1f0003", {"action": "patch", "name": "cat\\other-skill", "old_string": "body",
                                  "new_string": "body plus a lesson"})
     owner = item("skills", "5e1f0003")["review"]["hard"]
     assert any("Someone Else" in h["text"] for h in owner), owner
+    nothing = approve("skills", "5e1f0003", with_edits=True, skip_review=True)
+    assert not nothing["ok"] and "no suggested edit" in nothing["error"], nothing
 
     stage("skills", "5e1f0004", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
                                  "new_string": "description: Use when testing.\n" + known_line.lstrip("- ")})
     dup = item("skills", "5e1f0004")["review"]["hard"]
     assert any("already in the skill" in h["text"] for h in dup), dup
-    assert not any((h.get("edit") or {}).get("ok") for h in dup), "a line without its own newline cannot be cut"
+    assert any((h.get("edit") or {}).get("find") == "\n" + known_line.lstrip("- ") for h in dup), \
+        "the last line of a write is cut together with the line break before it"
 
     stage("skills", "5e1f0005", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
                                  "new_string": "description: Use when testing. Ölçüm şart."})
@@ -2145,15 +2162,21 @@ def _review_selftest(tmp: Path) -> None:
     (own / "SKILL.md").write_text((own / "SKILL.md").read_text(encoding="utf-8") + "later line\n", encoding="utf-8")
     assert item("skills", "5e1f0007")["review"]["status"] == "running", "a changed target must be reviewed again"
     settle("skills", "5e1f0007")
-    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(verdict))
-    amended = asyncio.run(amend({"subsystem": "skills", "id": "5e1f0007"}))
-    assert amended["ok"] and amended["review"]["status"] == "running", amended
-    staged = json.loads((pend / "skills" / "5e1f0007.json").read_text(encoding="utf-8"))
-    assert staged["payload"]["new_string"] == "body updated once" and staged["payload"]["old_string"] == "body", staged
-    after = settle("skills", "5e1f0007")
-    assert after["edits"] == 0, "an edit whose text is gone must not be offered again"
     advisory = approve("skills", "5e1f0007")
     assert advisory["ok"], f"the AI verdict is advice; a reviewed record must stay approvable: {advisory}"
+
+    edit_verdict = {"summary": "Wording.", "findings": [
+        {"severity": "fix", "kind": "rule", "quote": "second lesson", "other": "", "explain": "shorter",
+         "edit": {"find": "second lesson", "replace": "2nd lesson"}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(edit_verdict))
+    stage("skills", "5e1f0009", {"action": "patch", "name": "own-skill", "old_string": "later line",
+                                 "new_string": "later line\nsecond lesson"})
+    offered = settle("skills", "5e1f0009")
+    assert offered["edits"] == 1 and offered["fix_left"] == [], offered
+    with_fix = approve("skills", "5e1f0009", with_edits=True)
+    assert with_fix["ok"], with_fix
+    text = (own / "SKILL.md").read_text(encoding="utf-8")
+    assert "later line\n2nd lesson" in text and "second lesson" not in text, text
 
     globals()["_review_call"] = lambda task, **kw: (_ for _ in ()).throw(RuntimeError("provider down"))
     stage("skills", "5e1f0008", {"action": "create", "name": "new-two", "category": "cat",
@@ -2174,7 +2197,7 @@ def _review_selftest(tmp: Path) -> None:
     except ValueError as exc:
         assert "expected JSON" in str(exc), exc
 
-    for rid in ("5e1f0002", "5e1f0003", "5e1f0004", "5e1f0005", "5e1f0007", "5e1f0008"):
+    for rid in ("5e1f0003", "5e1f0004", "5e1f0005", "5e1f0007", "5e1f0008"):
         asyncio.run(decide({"subsystem": "skills", "ids": [rid], "decision": "reject"}))
     asyncio.run(decide({"subsystem": "memory", "ids": ["5e1f0006"], "decision": "reject"}))
     for _ in range(200):
