@@ -69,6 +69,19 @@ cp "$HERMES_HOME/plugins/pending-approvals/desktop/plugin.js" \
    "$HERMES_HOME/desktop-plugins/pending-approvals/plugin.js"
 ```
 
+Set the owner name the author rule expects, and assign the review model:
+
+```yaml
+plugins:
+  entries:
+    pending-approvals:
+      skill_author: Your Name      # unset = the author rule is off
+auxiliary:
+  approvals_review:                # or pick it in Settings → Models → Approvals review
+    provider: anthropic          # measured: see Docs/pending-approvals-notes.md §5
+    model: claude-sonnet-5
+```
+
 Then enable `Approvals` in **Settings → Plugins** if it shows as disabled, and restart the desktop app
 (nav items and routes are registered at load). The sidebar entry, the `Open Approvals` command and the
 status-bar chip appear with it. Every edit to `desktop/plugin.js` needs the copy step repeated — the
@@ -145,9 +158,24 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   description over the prompt budget, a patch that no longer matches its target, a memory note that
   would overflow the file) lists the reason under **Why It Can't Be Applied** and recommends Reject;
   where a repair exists — the description fix — Approve stays disabled with the reason in its themed
-  tooltip and the card offers **Shorten and create** instead. Approving a blocked record anyway is
+  tooltip and the card offers **Shorten description**, after which the pre-review reads it again. Approving a blocked record anyway is
   possible and harmless: the write path refuses it, nothing is written, and the refusal is recorded
   on the card as **Approve Failed Before**.
+* **Every pending write is pre-reviewed before Approve unlocks.** Two layers read it first:
+  * **Rule checks** (no model, always on) lock Approve outright: a new skill without the owner's
+    `author:` line (the name comes from `plugins.entries.pending-approvals.skill_author`), an edit to a
+    skill that is hub-installed, bundled or written by someone else, non-English text, and a line or
+    memory note that is already saved. A failed rule check cannot be skipped.
+  * **An AI review** reads the write next to the current skill or memory file and the owner's
+    `USER.md` / `MEMORY.md`, and reports duplicates, contradictions, wrong facts, a missing
+    measurement and other rule breaches — each with the quoted text. It runs once per content; a
+    change to the record or its target runs it again. The model is the one you assign to
+    **Approvals review** in **Settings → Models**; nothing is picked for you. Its verdict is advice:
+    once it has finished, Approve is yours whatever it says.
+  * Approve stays locked while the review runs. When no model is set or the review failed, a
+    two-step **Approve without review** applies it anyway and marks the history entry
+    "approved without pre-review". Bulk selection only takes reviewed, clean records.
+  * The reviewer has no write access; the panel logs its tokens and cost, never the text.
 * **No silent truncation.** An operation body is drawn whole in its own scrolling box with its size in
   the label; the backend caps a body at 20 000 characters and still reports the full length.
 * **Outbound content is inspection only.** The panel reads memory and skill state; it never uploads

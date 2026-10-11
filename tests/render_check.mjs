@@ -385,6 +385,7 @@ const PENDING = {
   counts: { memory: 1, skills: 2 },
   memory: [{
     id: 'abc12345', subsystem: 'memory', origin: 'background_review', staged_at: Date.now() / 1000 - 7200,
+    review: { status: 'done', verdict: 'approve', summary: 'Nothing to report.', findings: [], hard: [] },
     ops: [{ action: 'add', new: 'A note to add' },
            { action: 'replace', old: LONG_OP, new: LONG_OP,
              old_len: LONG_OP.length, new_len: LONG_OP.length }],
@@ -398,6 +399,7 @@ const PENDING = {
   }],
   skills: [{
     id: 'def67890', subsystem: 'skills', origin: 'background_review', staged_at: Date.now() / 1000 - 300,
+    review: { status: 'done', verdict: 'approve', summary: 'Nothing to report.', findings: [], hard: [] },
     ops: [{
       action: 'write_file', name: 'hermes-agent', file: 'references/new.md', old: '',
       new: '# New file\n\nThe text\n'
@@ -417,6 +419,7 @@ const PENDING = {
     }
   }, {
     id: 'aaa11111', subsystem: 'skills', origin: 'assistant_tool', staged_at: Date.now() / 1000 - 120,
+    review: { status: 'done', verdict: 'approve', summary: 'Nothing to report.', findings: [], hard: [] },
     ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
     diff: '---\nname: new-skill\ndescription: "..."\n---\n',
     plain: {
@@ -429,6 +432,27 @@ const PENDING = {
     }
   }]
 }
+const REVIEW_HARD = 'new-skill: a new skill must carry "author: Selftest Owner" in its header (found: none).'
+const FINDING = {
+  severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar in both themes.',
+  other: 'Measure the tab bar height in both themes before shipping.', explain: 'The same rule is already in the skill.'
+}
+const withReview = reviews => ({
+  ...PENDING,
+  memory: PENDING.memory.map(m => ({ ...m, review: reviews[m.id] || m.review })),
+  skills: PENDING.skills.map(m => ({ ...m, review: reviews[m.id] || m.review }))
+})
+const REVIEWING = withReview({
+  abc12345: { status: 'running', provider: 'openai-codex', model: 'gpt-5.5', hard: [] },
+  def67890: { status: 'done', verdict: 'approve', findings: [], hard: [{ name: 'hermes-agent', text: REVIEW_HARD }] },
+  aaa11111: { status: 'unassigned', hard: [] }
+})
+const REVIEWED = withReview({
+  aaa11111: {
+    status: 'done', verdict: 'reject', summary: 'One duplicate rule.', findings: [FINDING], hard: [],
+    model: 'gpt-5.5', usage: { input: 5210, output: 388, cost_usd: 0.0123, cost_status: 'estimated' }
+  }
+})
 const REFUSED_LINE = 'writes the file new-skill/agents/x.yaml → cannot be applied: Hermes refuses this file path'
 const REFUSED = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s : {
   ...s, plain: { ...s.plain, stale: [REFUSED_LINE], refused: ['new-skill'],
@@ -480,7 +504,8 @@ async function mount(appLocale) {
           return { ok: true, results: opts.body.ids.map(id => ({ id, ok: false, error: 'Hermes refused it' })) }
         }
         if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
-        if (path === '/fix') return { ok: true, message: 'Description shortened and created — long-description → 53 chars' }
+        if (path === '/fix') return { ok: true, message: 'Description shortened — long-description: 172 → 53 characters' }
+        if (path === '/review') return { ok: true, review: { status: 'running', hard: [] } }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
         if (path === '/scan' && REST.scan === 'throw') throw new Error('500: {"ok": false, "error": "Could not read: scan exploded"}')
@@ -494,6 +519,8 @@ async function mount(appLocale) {
       const table = {
         '/pending': REST.mode === 'refused' ? REFUSED
           : REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
+          : REST.mode === 'reviewing' ? REVIEWING
+          : REST.mode === 'reviewed' ? REVIEWED
           : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
           : PENDING,
         '/pending?scan=0': REST.mode === 'refused' ? REFUSED : PENDING,
@@ -561,7 +588,7 @@ const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', "Agent's suggestion", 'Reject',
+must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', 'Applicability check', 'Pre-review', 'Reject',
   'Approve', 'Not applicable', 'New skill', '#abc12345', '#def67890',
   'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
 noRawKeys(en.text, 'en')
@@ -769,7 +796,7 @@ for (const mounted of [en, other]) {
   if (fixable[1]?.getAttribute('data-variant') !== 'warn') {
     fail(`a fixable record's suggestion is not the warn variant: ${fixable[1]?.getAttribute('data-variant')}`)
   }
-  must(en.hostEl.textContent, ['the “Shorten and create” button writes it'], 'the fixable advice note')
+  must(en.hostEl.textContent, ['“Shorten description” rewrites it'], 'the fixable advice note')
   const clean = badgesOf('skills:aaa11111')
   if (clean[0]?.textContent !== 'New skill' || clean[1]?.getAttribute('data-variant') !== 'success') {
     fail(`a clean new-skill record is not drawn as approvable: ${JSON.stringify(clean.map(b => b.textContent))}`)
@@ -904,11 +931,11 @@ for (const mounted of [en, other]) {
     fail('the advice note no longer absorbs the free height above the buttons')
   }
   must(en.hostEl.textContent, ['As written (172 characters)', FIX_SUGGESTED], 'the fix surfaces')
-  const fixBtn = buttons(en.hostEl, /Shorten and create/)[0]
-  if (!fixBtn) fail('the "Shorten and create" button is missing')
+  const fixBtn = buttons(en.hostEl, /Shorten description/)[0]
+  if (!fixBtn) fail('the "Shorten description" button is missing')
   await click(fixBtn, 60)
   const post = stub.calls.posts.find(p => p.path === '/fix')
-  if (!post || post.body.subsystem !== 'skills' || post.body.approve !== true) {
+  if (!post || post.body.subsystem !== 'skills' || post.body.approve !== false) {
     fail(`the fix request is wrong: ${JSON.stringify(post)}`)
   }
 }
@@ -1237,7 +1264,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
   const fresh = await mount('en')
   REST.post = 'fixfail'
-  const fixBtn = buttons(fresh.hostEl, /Shorten and create/)[0]
+  const fixBtn = buttons(fresh.hostEl, /Shorten description/)[0]
   if (fixBtn) await click(fixBtn, 60)
   const fixCell = fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"] .pa-card')
   if (!fixCell || fixCell.classList.contains('pa-leaving')) fail('a failed /fix removed the card')
@@ -1328,6 +1355,63 @@ for (const how of ['throw', 'refused']) {
 }
 REST.scan = 'ok'
 
+// --- 19) The pre-review gates Approve -------------------------------------------------------------
+// Approve unlocks only after the review has finished and no rule check failed. A running review and
+// a failed rule check lock it; an unset or failed review offers a TWO-STEP "Approve without review"
+// whose confirmed click is the only request that carries skip_review. A finished review is advice:
+// its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.mode = 'reviewing'
+  const gate = await mount('en')
+  const approveIn = key => buttons(cell(gate.hostEl, key), /^Approve$/)[0]
+  for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
+    if (approveIn(key)?.getAttribute('aria-disabled') !== 'true') fail(`${key}: Approve is not locked before the review`)
+    if (!cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record is selectable`)
+  }
+  if (gate.hostEl.querySelector('.pa-bulk')) fail('the bulk bar offers records that are not pre-reviewed')
+  must(cell(gate.hostEl, 'memory:abc12345')?.textContent, ['Pre-review', 'Reading this write against your rules · gpt-5.5'],
+    'running review')
+  must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check — Approve stays locked', REVIEW_HARD], 'rule check')
+  if (buttons(cell(gate.hostEl, 'skills:def67890'), /Approve without review/).length) {
+    fail('a failed rule check offers "Approve without review"')
+  }
+  const open = cell(gate.hostEl, 'skills:aaa11111')
+  must(open?.textContent, ['No pre-review model is set', 'Approvals review'], 'unassigned review')
+  const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const before = decides().length
+  await click(approveIn('skills:aaa11111'))
+  if (decides().length !== before) fail('a locked Approve still sent /decide')
+  await click(buttons(open, /^Approve without review$/)[0])
+  if (decides().length !== before) fail('"Approve without review" fired on the first click')
+  must(cell(gate.hostEl, 'skills:aaa11111')?.textContent, ['was not checked against your rules'], 'skip arming')
+  await click(buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Apply unreviewed$/)[0], 80)
+  const skip = decides().slice(before)
+  if (skip.length !== 1 || skip[0].body.skip_review !== true || skip[0].body.decision !== 'approve'
+      || skip[0].body.ids.join() !== 'aaa11111') {
+    fail(`the confirmed skip is not one approve with skip_review: ${JSON.stringify(skip.map(p => p.body))}`)
+  }
+  if (stub.calls.posts.filter(p => p.path === '/decide').some(p => p.body.skip_review && p !== skip[0])) {
+    fail('skip_review reached a request other than the confirmed skip')
+  }
+  gate.hostEl.remove()
+
+  REST.mode = 'reviewed'
+  const done = await mount('en')
+  const card = cell(done.hostEl, 'skills:aaa11111')
+  must(card?.textContent, ['Rejecting is advised', 'One duplicate rule.', 'Breaks a rule', 'Duplicate', FINDING.explain,
+    `“${FINDING.quote}”`, `Against: “${FINDING.other}”`, 'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated'],
+  'finished review')
+  if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') {
+    fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
+  }
+  await click(buttons(card, /^Review again$/)[0], 60)
+  const again = stub.calls.posts.filter(p => p.path === '/review').pop()
+  if (again?.body.subsystem !== 'skills' || again?.body.id !== 'aaa11111') fail(`Review again sent ${JSON.stringify(again)}`)
+  REST.mode = 'normal'
+  done.hostEl.remove()
+}
+
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
   process.exit(1)
@@ -1335,6 +1419,7 @@ if (problems.length) {
 console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons, fixed text boxes, status chip')
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
 console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
+console.log('  pre-review: running review and failed rule check lock Approve · two-step skip_review · findings shown · Review again')
 console.log('  bulk: only applicable records selectable · arm → Confirm → one /decide per subsystem · Cancel sends nothing')
 console.log('  palette: "Open Approvals" (3 waiting → /approvals) · "Approval alerts" on/muted; muted = no toast, no OS alert, chip still counts')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')

@@ -532,6 +532,9 @@ def check_colors() -> None:
 def check_two_step_actions() -> None:
     """The destructive actions stay TWO-STEP: the first click only arms, the write follows.
 
+    Approving a record WITHOUT its pre-review (unset model or failed review) is also two-step: the
+    rules were never checked, so the skip needs its own visible confirmation.
+
     Why: clearing the history drops the undo copies and deleting a note is irreversible from this
     pane, so each of them needs its own visible confirmation state. Undo of a record whose file
     changed since needs a THIRD step (`force`) — the conflict must be shown before it is used.
@@ -557,7 +560,13 @@ def check_two_step_actions() -> None:
                         ("onClick: () => setArming('reject')", "bulk reject does not arm first"),
                         ("onClick: () => void run(arming)", "the confirmed bulk click does not decide"),
                         ("return !(plain.stale || []).length && !plain.fix",
-                         "a record that cannot be applied as staged is selectable in bulk")):
+                         "a record that cannot be applied as staged is selectable in bulk"),
+                        ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is selectable in bulk"),
+                        ("const [skipArmed, setSkipArmed] = useState(false)",
+                         "approving without a pre-review has no confirmation state"),
+                        ("onClick: skipArmed ? () => void onSkip() : () => setSkipArmed(true)",
+                         "the first \"Approve without review\" click does not arm"),
+                        ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend")):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — {why}")
 

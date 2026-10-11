@@ -85,6 +85,30 @@ why they are drawn whole with their size in the label (§6).
 
 ## 5. Backend behaviour notes
 
+* **Pre-review (1.9.0).** `_review_state()` is the one place that decides a record's review state;
+  the listing and the `/decide` gate both call it, so the card can never show "unlocked" while the
+  backend refuses. Results live in `state/pending-approvals/reviews/<subsystem>-<id>.json`, keyed by a
+  hash of the payload plus the sha of every target file — any change to either re-runs the review.
+  A finished result is only saved while its record is still pending, and the listing prunes results
+  whose record is gone. Rule checks run on every read (they are cheap and must see the live files).
+  The model call goes through the core `call_llm(task="approvals_review")`; with no provider assigned
+  the state is `unassigned` and nothing falls back to the main model, because a model judging its own
+  writes is the bias the review exists to avoid. The write's evidence cannot be checked against the
+  session that produced it (the record does not carry it), so the review reports "the write states no
+  measurement or failure" rather than "there is no evidence".
+* **Acceptance measurement (2026-10-11).** Input: the 13 skill records approved and then undone that
+  day, the 2 still pending and the 1 memory record, each replayed against the files as they were when
+  it was staged. Rule checks locked exactly the two known breaches (a new skill without the author
+  line; an edit to a hub-installed skill) and none of the other 14. `anthropic/claude-sonnet-5`, 3
+  runs: each of the 5 seeded content problems (two duplicated lessons, the included-vs-subscription
+  contradiction, `none` listed as a cost status, a project name in a general skill) found 3/3; per
+  review 12.8k input / 4.2k output tokens on average, 48 s average latency, 0 failures. The verdict
+  itself varies between runs on borderline records (fix vs reject vs approve), which is why it is
+  advice and the quoted findings are what the card leads with. A duplicate across two DIFFERENT
+  skills is out of reach: the review reads only the target skill's files. An earlier run on
+  `openai-codex` exhausted that account's 30-day free quota after ~30 reviews — check a provider's
+  plan before assigning it.
+
 * **Watching is the same resolver as applying.** `_watched()` and `_touched()` come from the same
   source; when watching looked only at `SKILL.md` and applying counted every `.md`, undoing a record
   that wrote `scripts/*.py` left that file behind. Deleted files drop out of the index and their

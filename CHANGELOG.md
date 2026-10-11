@@ -5,6 +5,47 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.9.0
+
+(1.8.0 was used by a withdrawn build and is skipped so no install mistakes the two.)
+
+### Added
+
+* **Pre-review before Approve.** Every pending memory and skill write is read before it can be applied:
+  * **Rule checks** lock Approve and cannot be skipped: a new skill without
+    `author: <plugins.entries.pending-approvals.skill_author>`; an edit to a hub-installed, bundled or
+    other-author skill; non-English text; a line already in the skill or a memory note already saved.
+  * **An AI review** (task `approvals_review`, model chosen in **Settings → Models → Approvals review**)
+    compares the write with the current target and the owner's `USER.md` / `MEMORY.md` and returns
+    quoted findings — duplicate, contradiction, wrong, evidence, rule — with severity and a verdict.
+    It runs once per content hash, again when the record or its target changes, and on **Review again**.
+    It is advice: a finished review never locks Approve.
+  * While the review runs Approve is locked. With no model set or a failed review, a two-step
+    **Approve without review** applies it and the history entry says "approved without pre-review".
+  * Bulk selection only takes records that are reviewed and pass the rule checks.
+  * The reviewer has no write path. Tokens and cost are stored with the result; text is not logged.
+  * The reviewer reads the WHOLE change. The card's diff is capped at 4000 characters for display;
+    feeding that cap to the model made it report cut text as "ends mid-sentence" and hid later lines.
+  * An evidence finding is always a note: the record does not carry the session that produced it,
+    so "the write states no measurement or failure" cannot be checked further and must not turn
+    every verdict into "reject". A misspelled finding kind maps to its kind instead of escaping that cap.
+
+### Changed
+
+* "Shorten and create" is now **Shorten description**: it rewrites the record and leaves it queued,
+  because the rewritten content has to be pre-reviewed before it can be applied.
+* The agent's applicability note is labelled **Applicability check** so it is not mistaken for the
+  pre-review.
+
+### Tests
+
+* The backend selftest drives every gate state (unset, running, failed, done, rule-locked, skip,
+  re-review on a changed target, pruning of decided reviews) with a stubbed model.
+* The render check locks the panel side: locked Approve, no bulk pick, two-step skip that alone sends
+  `skip_review`, findings and usage drawn, **Review again** posting `/review`.
+* The core contract now pins `call_llm`, `extract_content_or_reasoning`, the usage pricing helpers,
+  `read_raw_config_readonly` and the three skill-provenance helpers the rule checks rely on.
+
 ## 1.7.3
 
 ### Fixed
