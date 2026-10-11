@@ -209,9 +209,7 @@ def check_card_surface_from_table() -> None:
     same constants the JS `cardBase` uses (the card ground, the hairline stroke, `${R.card}px` and
     `${LIT_EDGE}`): a literal `12px` in the sheet is how the class and the constant drift apart."""
     js = JS.read_text(encoding="utf-8")
-    if "boxShadow: LIT_EDGE" not in js or "borderRadius: R.card" not in js:
-        _report("plugin.js: cardBase no longer reads LIT_EDGE / R.card")
-    for rule in (".pa-card{", ".pa-cmp-side{", ".pa-kpi{"):
+    for rule in (".pa-card{",):
         if rule not in js:
             _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the card surface lost its class")
             continue
@@ -564,9 +562,17 @@ def check_two_step_actions() -> None:
                         ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is selectable in bulk"),
                         ("const [skipArmed, setSkipArmed] = useState(false)",
                          "approving without a pre-review has no confirmation state"),
-                        ("onClick: skipArmed ? () => void onSkip() : () => setSkipArmed(true)",
+                        ("onClick: skipArmed ? () => void decideAndLeave('approve', [], true) : () => setSkipArmed(true)",
                          "the first \"Approve without review\" click does not arm"),
-                        ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend")):
+                        ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
+                        ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",
+                         "a record that can no longer be applied keeps Approve open"),
+                        ("const flagged = hard.length > 0 || stale.length > 0 || major.length > 0 || failedBefore",
+                         "a flagged card no longer offers a way forward besides Reject"),
+                        ("children: t('pa.btn.askAssistant')", "a flagged card lost \"Ask the assistant to fix\""),
+                        ("const res = await api.amend(subsystem, item.id)", "a suggested edit cannot be applied"),
+                        ("f.edit?.ok ? jsx(EditView", "a suggested edit is applied without being shown"),
+                        ("filter(f => f.kind !== 'evidence')", "the evidence note is back on every card")):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — {why}")
 
@@ -776,8 +782,8 @@ def check_visual_scale() -> None:
     for m in re.finditer(r"font-size:\d", src):
         line = src.count("\n", 0, m.start()) + 1
         _report(f"plugin.js:{line}: a literal font-size in the sheet — read it from ${{FS.*}}px")
-    if "container-type:inline-size" not in src or "@container (max-width:560px)" not in src:
-        _report("plugin.js: the pane lost its container query — the KPI row no longer answers the pane width")
+    if "container-type:inline-size" not in src or "@container (max-width:640px)" not in src:
+        _report("plugin.js: the pane lost its container query — the Memory grid no longer answers the pane width")
     if "`%${" in src:
         _report("plugin.js: a percent sign is written before its number — write `${n}%`")
 
@@ -788,8 +794,7 @@ def check_round3_surface() -> None:
     fades at the bottom instead of cutting, every kit Badge in the panel wears the one tag form, and
     a lone last card spans the row instead of sitting in half of it."""
     js = JS.read_text(encoding="utf-8")
-    if ("line-height:${LINE}px !important;padding:${inset(H.prose, 0)}px" not in js
-            or "paddingTop: pad, paddingBottom: pad" not in js or "const pad = height ? inset(height, 2)" not in js):
+    if ("paddingTop: pad, paddingBottom: pad" not in js or "const pad = height ? inset(height, 2)" not in js):
         _report("plugin.js: a fixed text box can cut a line — its line height/padding no longer come from LINE/inset")
     if ('.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(' not in js
             or "mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}" not in js):
@@ -799,7 +804,7 @@ def check_round3_surface() -> None:
         if "className: 'pa-tag'" not in head:
             line = js.count("\n", 0, m.start()) + 1
             _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
-    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 2:
+    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 1:
         _report("plugin.js: a lone last card sits in half the grid (the .pa-two lone-card rule is gone)")
 
 

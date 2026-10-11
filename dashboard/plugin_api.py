@@ -258,6 +258,31 @@ def _op_change_stat(wa, op: dict) -> dict:
             "stat": _tx("op_change", added=added, removed=removed), "has_change": True}
 
 
+_LINES_LIMIT = 2000
+
+
+def _op_lines(old: str, new: str) -> dict:
+    before, after = str(old or "").splitlines(), str(new or "").splitlines()
+    if not before:
+        rows = [["+", line] for line in after]
+    elif not after:
+        rows = [["-", line] for line in before]
+    else:
+        rows = []
+        matcher = difflib.SequenceMatcher(None, before, after, autojunk=False)
+        for group in matcher.get_grouped_opcodes(1):
+            if rows:
+                rows.append(["…", ""])
+            for tag, i1, i2, j1, j2 in group:
+                if tag == "equal":
+                    rows += [[" ", line] for line in before[i1:i2]]
+                    continue
+                rows += [["-", line] for line in before[i1:i2]]
+                rows += [["+", line] for line in after[j1:j2]]
+    return {"lines": rows[:_LINES_LIMIT], "lines_total": len(rows),
+            "added": sum(1 for r in rows if r[0] == "+"), "removed": sum(1 for r in rows if r[0] == "-")}
+
+
 def _ops(record: dict) -> list[dict]:
     payload = record.get("payload") or {}
     ops = _raw_ops(record)
@@ -282,6 +307,7 @@ def _ops(record: dict) -> list[dict]:
         }
         item["old_len"] = len(str(full["old"]))
         item["new_len"] = len(str(full["new"]))
+        item.update(_op_lines(full["old"], full["new"]))
         if action in ("replace", "remove") and item.get("old") and payload.get("target"):
             try:
                 entries = _entries_of(_home() / "memories" / _MEM_FILE.get(payload.get("target"), "MEMORY.md"))
@@ -548,6 +574,11 @@ _TEXT = {
                        'Pick one, or use "Approve without review".',
     'summary_unreviewed': '{summary} — approved without pre-review',
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
+    'amend_nothing': 'There is no suggested edit that still matches this record.',
+    'amend_done': '{n} edit(s) applied to the pending record; it is being reviewed again. Nothing was written to your files.',
+    'amend_skipped': '{n} suggestion(s) no longer matched the text and were left out.',
+    'amend_author': 'adds "author: {want}" to the header',
+    'amend_drop_line': 'removes the line that is already in the skill',
 }
 
 
@@ -910,9 +941,12 @@ def _pending(scan: int) -> dict:
                 item["diff"] = _skill_diff_text(wa, record)
                 for i, op in enumerate(_raw_ops(record)):
                     if i < len(item["ops"]):
+                        own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
                         item["ops"][i].update(_op_change_stat(wa, op))
+                        item["ops"][i].update(own)
                 item["has_change"] = any(o.get("has_change") for o in item["ops"])
             item["review"] = _review_public(_review_state(subsystem, record))
+            _mark_edits(item["review"], record)
             live.add(f"{subsystem}-{record.get('id')}")
             items.append(item)
         out[subsystem] = items
@@ -1034,23 +1068,25 @@ _REVIEW_SYSTEM = (
     "3. wrong: a factual claim the material shows to be false. Check every list of allowed values, field "
     "names, numbers and file names in the write against every file of the CURRENT TARGET: a value one "
     "file lists and another file states differently is a finding. Do not guess beyond the material.\n"
-    "4. evidence: the owner accepts an addition only when a measurement or a real failure shows it helps. "
-    "When the write states no such measurement or failure, report it ONCE with severity note, phrased "
-    "'the write states no measurement or failure' (the session behind it is not part of the material, "
-    "so this cannot be checked further).\n"
-    "5. rule: any other breach of an owner rule (scope, a skill rule written into memory or the reverse, "
+    "4. rule: any other breach of an owner rule (scope, a skill rule written into memory or the reverse, "
     "instruction phrasing in memory, machine-specific paths, project-specific names in a general skill, "
     "editing a third-party skill, language).\n"
     "Do not repeat the HARD CHECK findings; the owner already sees them. A '[... N more characters cut ...]' "
     "marker is where this review's input was shortened, not a defect of the write.\n"
     "Write summary and explain in plain English, whatever language the material uses.\n"
+    "For every block or fix finding whose problem lies inside the write itself, add an \"edit\" that resolves "
+    "it: \"find\" is text copied exactly from the NEW text of the write (no diff markers such as + or -, no "
+    "line numbers, at most a few lines, unique in the write) and \"replace\" is what it becomes (empty to "
+    "delete it). Keep the rest of the write unchanged and keep it English. Leave \"edit\" out when the fix "
+    "needs a change outside the write, such as to the existing target or to an owner rule.\n"
     "Severity: block = applying it breaks an owner rule or adds a wrong or contradicting statement; "
     "fix = worth applying only after an edit; note = minor.\n"
     "Answer with ONE JSON object and nothing else:\n"
     '{{"summary": "one plain sentence", "findings": [{{"severity": "block|fix|note", '
-    '"kind": "duplicate|contradiction|wrong|evidence|rule", "quote": "exact text from the write", '
+    '"kind": "duplicate|contradiction|wrong|rule", "quote": "exact text from the write", '
     '"other": "the exact duplicate or conflicting text, or the rule; empty when none", '
-    '"explain": "one plain sentence a non-programmer understands"}}]}}\n'
+    '"explain": "one plain sentence a non-programmer understands", '
+    '"edit": {{"find": "exact text from the new text of the write", "replace": "its corrected text"}}}}]}}\n'
     "An empty findings list means you found nothing to report."
 )
 
@@ -1139,8 +1175,42 @@ def _skill_lines(name: str, skip: str) -> set:
     return lines
 
 
-def _hard(name: str, text: str) -> dict:
-    return {"name": name, "text": text}
+def _hard(name: str, text: str, edit: dict | None = None) -> dict:
+    out = {"name": name, "text": text}
+    if edit:
+        out["edit"] = edit
+    return out
+
+
+_EDIT_FIELDS = ("content", "file_content", "new_string")
+
+
+def _edit_slots(record: dict) -> list[tuple[dict, str]]:
+    payload = record.get("payload") or {}
+    ops = payload.get("operations") or [payload]
+    return [(op, field) for op in ops for field in _EDIT_FIELDS if isinstance(op.get(field), str) and op.get(field)]
+
+
+def _edit_hits(record: dict, find: str) -> int:
+    return sum(op[field].count(find) for op, field in _edit_slots(record)) if find else 0
+
+
+def _edit_open(record: dict, edit: dict) -> bool:
+    done = [(e.get("find"), e.get("replace")) for e in record.get("amended_edits") or []]
+    return (edit.get("find"), edit.get("replace") or "") not in done and _edit_hits(record, edit.get("find") or "") == 1
+
+
+def _author_edit(content: str, want: str) -> dict | None:
+    head = str(content or "").split("---", 2)
+    if len(head) < 3 or not want:
+        return None
+    for line in head[1].splitlines():
+        if re.match(r"\s*author\s*:", line):
+            return {"find": line, "replace": f"author: {want}", "label": _tx("amend_author", want=want)}
+    for line in head[1].splitlines():
+        if re.match(r"\s*name\s*:", line):
+            return {"find": line, "replace": f"{line}\nauthor: {want}", "label": _tx("amend_author", want=want)}
+    return None
 
 
 def _skill_hard(record: dict) -> list[dict]:
@@ -1157,7 +1227,7 @@ def _skill_hard(record: dict) -> list[dict]:
             written_by = _skill_author(op.get("content") or "")
             if author and written_by != author:
                 out.append(_hard(name, _tx("hard_author", name=name, got=written_by or _tx("hard_nobody"),
-                                           want=author)))
+                                           want=author), _author_edit(op.get("content") or "", author)))
         elif name not in owners_seen:
             owners_seen.add(name)
             if owner := _skill_owner(name, author):
@@ -1172,7 +1242,9 @@ def _skill_hard(record: dict) -> list[dict]:
         for line in text.splitlines():
             key = _norm_line(line)
             if len(key) >= _DUP_MIN and key in known and key not in old:
-                out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip()))))
+                drop = {"find": line + "\n", "replace": "", "label": _tx("amend_drop_line")} \
+                    if (line + "\n") in text else None
+                out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip())), drop))
                 break
     return out
 
@@ -1354,11 +1426,16 @@ def _review_parse(text: str) -> dict:
         if not isinstance(item, dict):
             continue
         found = {k: str(item.get(k) or "").strip()[:800] for k in ("severity", "kind", "quote", "other", "explain")}
+        edit = item.get("edit")
+        if isinstance(edit, dict) and str(edit.get("find") or "").strip() and str(edit.get("find")) != str(edit.get("replace") or ""):
+            found["edit"] = {"find": str(edit["find"])[:4000], "replace": str(edit.get("replace") or "")[:4000]}
         found["severity"] = found["severity"].lower() if found["severity"].lower() in _SEVERITY else "note"
         kind = found["kind"].lower()
         found["kind"] = next((k for k in _KINDS if kind[:4] == k[:4]), "rule")
         if found["kind"] == "evidence":
             found["severity"] = "note"
+        if found["severity"] == "note":
+            found.pop("edit", None)
         findings.append(found)
     findings.sort(key=lambda f: _SEVERITY.index(f["severity"]))
     verdict = next((s for s in _SEVERITY[:2] if any(f["severity"] == s for f in findings)), "approve")
@@ -1489,6 +1566,66 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
         _atomic_write(path, json.dumps(record, ensure_ascii=False))
     return True, _tx("fix_chars",
                      names=", ".join(f"{f['name']}: {f['before']} → {f['after']}" for f in fixes.values()))
+
+
+def _mark_edits(review: dict, record: dict) -> None:
+    for entry in [*(review.get("hard") or []), *(review.get("findings") or [])]:
+        edit = entry.get("edit")
+        if isinstance(edit, dict):
+            edit["ok"] = _edit_open(record, edit)
+    review["edits"] = sum(1 for e in [*(review.get("hard") or []), *(review.get("findings") or [])]
+                          if (e.get("edit") or {}).get("ok"))
+
+
+def _amend_edits(subsystem: str, record: dict) -> list[dict]:
+    state = _review_state(subsystem, record, start=False)
+    found = state.get("findings") if state.get("status") == "done" else []
+    return [dict(e["edit"]) for e in [*(state.get("hard") or []), *(found or [])]
+            if isinstance(e.get("edit"), dict) and e["edit"].get("find")]
+
+
+@router.post("/amend")
+async def amend(body: dict):
+    try:
+        with _LOCK:
+            return _amend_locked(body or {})
+    except Exception as exc:
+        return _route_failed("/amend", exc)
+
+
+def _amend_locked(body: dict) -> dict:
+    from tools import write_approval as wa
+
+    subsystem = str(body.get("subsystem") or "")
+    record_id = _valid_id(body.get("id"))
+    if subsystem not in (wa.MEMORY, wa.SKILLS) or not record_id:
+        return {"ok": False, "error": _tx("err_bad_scope")}
+    record = wa.get_pending(subsystem, record_id)
+    if not record:
+        return {"ok": False, "error": _tx("fix_gone")}
+    original = json.loads(json.dumps(record.get("payload") or {}))
+    applied = skipped = 0
+    for edit in _amend_edits(subsystem, record):
+        find, replace = edit["find"], edit.get("replace") or ""
+        if not _edit_open(record, edit):
+            skipped += 1
+            continue
+        for op, field in _edit_slots(record):
+            if find in op[field]:
+                op[field] = op[field].replace(find, replace, 1)
+                break
+        record.setdefault("amended_edits", []).append({"find": find, "replace": replace})
+        applied += 1
+    if not applied:
+        return {"ok": False, "error": _tx("amend_nothing")}
+    record.setdefault("amended_from", original)
+    path = wa._pending_path(subsystem, record_id)
+    _atomic_write(path, json.dumps(record, ensure_ascii=False))
+    with suppress(OSError):
+        _review_path(subsystem, record_id).unlink()
+    state = _review_state(subsystem, record)
+    message = _tx("amend_done", n=applied) + (" " + _tx("amend_skipped", n=skipped) if skipped else "")
+    return {"ok": True, "message": message, "review": _review_public(state)}
 
 
 @router.post("/fix")
@@ -1937,6 +2074,13 @@ def _review_selftest(tmp: Path) -> None:
     assert len(hard) == 1 and f'author: {author}' in hard[0]["text"], hard
     locked = approve("skills", "5e1f0002", skip_review=True)
     assert not locked["ok"] and "rule check failed" in locked["error"], "a failed rule check must not be waved through"
+    assert hard[0]["edit"]["ok"] and item("skills", "5e1f0002")["review"]["edits"] == 1, hard
+    fixed = asyncio.run(amend({"subsystem": "skills", "id": "5e1f0002"}))
+    assert fixed["ok"] and "1 edit" in fixed["message"], fixed
+    staged = json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))
+    assert f"author: {author}" in staged["payload"]["content"] and staged["amended_from"]["content"] == bad, staged
+    assert item("skills", "5e1f0002")["review"]["hard"] == [], "the amended record must pass the rule check"
+    assert not asyncio.run(amend({"subsystem": "skills", "id": "5e1f0002"}))["ok"], "nothing left to amend"
 
     stage("skills", "5e1f0003", {"action": "patch", "name": "cat\other-skill", "old_string": "body",
                                  "new_string": "body plus a lesson"})
@@ -1947,6 +2091,7 @@ def _review_selftest(tmp: Path) -> None:
                                  "new_string": "description: Use when testing.\n" + known_line.lstrip("- ")})
     dup = item("skills", "5e1f0004")["review"]["hard"]
     assert any("already in the skill" in h["text"] for h in dup), dup
+    assert not any((h.get("edit") or {}).get("ok") for h in dup), "a line without its own newline cannot be cut"
 
     stage("skills", "5e1f0005", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
                                  "new_string": "description: Use when testing. Ölçüm şart."})
@@ -1963,8 +2108,10 @@ def _review_selftest(tmp: Path) -> None:
     settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
     seen: list = []
     verdict = {"summary": "One duplicate.", "findings": [
-        {"severity": "block", "kind": "evididence", "quote": "q2", "other": "", "explain": "minor"},
-        {"severity": "block", "kind": "duplicate", "quote": "q1", "other": "o1", "explain": "said twice"}]}
+        {"severity": "block", "kind": "evididence", "quote": "q2", "other": "", "explain": "minor",
+         "edit": {"find": "updated", "replace": "x"}},
+        {"severity": "block", "kind": "duplicate", "quote": "q1", "other": "o1", "explain": "said twice",
+         "edit": {"find": "body updated", "replace": "body updated once"}}]}
     hold = threading.Event()
 
     def judge(task: str, **kw):
@@ -1985,6 +2132,8 @@ def _review_selftest(tmp: Path) -> None:
     assert done["status"] == "done" and done["verdict"] == "reject", done
     assert [f["severity"] for f in done["findings"]] == ["block", "note"], done["findings"]
     assert done["findings"][1]["kind"] == "evidence", "a misspelled kind must still map to its kind"
+    assert "edit" not in done["findings"][1], "a note never carries an edit"
+    assert done["findings"][0]["edit"]["ok"] and done["edits"] == 1, done
     assert done["model"] == "judge-1", done
     sent = seen[-1]
     assert sent["task"] == _REVIEW_TASK and sent["messages"][0]["role"] == "system", sent
@@ -1996,6 +2145,13 @@ def _review_selftest(tmp: Path) -> None:
     (own / "SKILL.md").write_text((own / "SKILL.md").read_text(encoding="utf-8") + "later line\n", encoding="utf-8")
     assert item("skills", "5e1f0007")["review"]["status"] == "running", "a changed target must be reviewed again"
     settle("skills", "5e1f0007")
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(verdict))
+    amended = asyncio.run(amend({"subsystem": "skills", "id": "5e1f0007"}))
+    assert amended["ok"] and amended["review"]["status"] == "running", amended
+    staged = json.loads((pend / "skills" / "5e1f0007.json").read_text(encoding="utf-8"))
+    assert staged["payload"]["new_string"] == "body updated once" and staged["payload"]["old_string"] == "body", staged
+    after = settle("skills", "5e1f0007")
+    assert after["edits"] == 0, "an edit whose text is gone must not be offered again"
     advisory = approve("skills", "5e1f0007")
     assert advisory["ok"], f"the AI verdict is advice; a reviewed record must stay approvable: {advisory}"
 

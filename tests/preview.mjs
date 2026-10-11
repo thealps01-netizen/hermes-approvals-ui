@@ -122,8 +122,10 @@ const PENDING = {
     review: {
       status: 'done', verdict: 'reject', summary: 'The new rule repeats one the skill already has.', hard: [],
       findings: [{ severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar in both themes.',
-                   other: 'Measure the tab bar height in both themes before shipping.', explain: 'The same rule is already in the skill.' },
+                   other: 'Measure the tab bar height in both themes before shipping.', explain: 'The same rule is already in the skill.',
+                   edit: { find: 'Measure the tab bar in both themes.', replace: '', ok: true } },
                  { severity: 'note', kind: 'evidence', quote: 'Prefer opaque fills.', other: '', explain: 'The write states no measurement or failure behind this rule.' }],
+      edits: 1,
       model: 'gpt-5.5', usage: { input: 9822, output: 512, cost_usd: 0, cost_status: 'included' }
     },
     ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
@@ -268,7 +270,7 @@ for (const f of frames) {
   if (!/<[^>]*data-slot="button"/.test(f.html)) problems.push(`${f.label}: no kit Button is drawn`)
 }
 const all = frames.map(f => f.html).join('\n')
-for (const mark of ['panel-meta', 'panel-section-label', 'panel-block', 'badge', 'log-view']) {
+for (const mark of ['panel-section-label', 'panel-block', 'badge', 'log-view']) {
   if (!all.includes(`data-slot="${mark}"`)) problems.push(`the kit ${mark} is not drawn in any frame`)
 }
 const tips = (all.match(/data-tip=/g) || []).length
@@ -388,5 +390,5 @@ if (problems.length) {
 }
 console.log(`preview.html written: ${HERE}preview.html (${page.length} bytes) · preview-light.html (${lightPage.length} bytes)`)
 console.log(`  style: ${kitStyles} + theme + dark seeds (dark page) / theme light values (light page)`)
-console.log(`  frames: ${frames.length} (one narrow) · kit marks: button/badge/meta/section-label/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
+console.log(`  frames: ${frames.length} (one narrow) · kit marks: button/badge/section-label/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
 process.exit(0)

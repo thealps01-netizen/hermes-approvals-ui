@@ -387,8 +387,8 @@ const PENDING = {
     id: 'abc12345', subsystem: 'memory', origin: 'background_review', staged_at: Date.now() / 1000 - 7200,
     review: { status: 'done', verdict: 'approve', summary: 'Nothing to report.', findings: [], hard: [] },
     ops: [{ action: 'add', new: 'A note to add' },
-           { action: 'replace', old: LONG_OP, new: LONG_OP,
-             old_len: LONG_OP.length, new_len: LONG_OP.length }],
+           { action: 'replace', old: LONG_OP, new: LONG_OP + ' added',
+             old_len: LONG_OP.length, new_len: LONG_OP.length + 6 }],
     plain: {
       kind_label: 'Memory note → MEMORY.md', target: 'MEMORY.md', headline: 'MEMORY.md: updates 1 note',
       why: LONG, notes: [{ label: 'What the note means', text: 'A labelled note under the record text' }],
@@ -453,6 +453,18 @@ const REVIEWED = withReview({
     model: 'gpt-5.5', usage: { input: 5210, output: 388, cost_usd: 0.0123, cost_status: 'estimated' }
   }
 })
+const AMEND_EDIT = { find: 'name: new-skill', replace: 'name: new-skill-x', ok: true }
+const RULE_EDIT = { find: 'name: x', replace: 'name: x\nauthor: Selftest Owner',
+  label: 'adds "author: Selftest Owner" to the header', ok: true }
+const REMEDY = withReview({
+  def67890: { status: 'done', verdict: 'approve', findings: [], edits: 1,
+              hard: [{ name: 'hermes-agent', text: REVIEW_HARD, edit: RULE_EDIT }] },
+  aaa11111: {
+    status: 'done', verdict: 'fix', summary: 'One edit.', hard: [], edits: 1,
+    findings: [{ severity: 'fix', kind: 'contradiction', quote: 'old line', other: 'other line',
+                 explain: 'The write says two different things.', edit: AMEND_EDIT }]
+  }
+})
 const REFUSED_LINE = 'writes the file new-skill/agents/x.yaml → cannot be applied: Hermes refuses this file path'
 const REFUSED = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s : {
   ...s, plain: { ...s.plain, stale: [REFUSED_LINE], refused: ['new-skill'],
@@ -506,6 +518,10 @@ async function mount(appLocale) {
         if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened — long-description: 172 → 53 characters' }
         if (path === '/review') return { ok: true, review: { status: 'running', hard: [] } }
+        if (path === '/amend') {
+          return { ok: true, message: '1 edit(s) applied to the pending record; it is being reviewed again.',
+                   review: { status: 'running', hard: [] } }
+        }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
         if (path === '/scan' && REST.scan === 'throw') throw new Error('500: {"ok": false, "error": "Could not read: scan exploded"}')
@@ -521,6 +537,7 @@ async function mount(appLocale) {
           : REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
           : REST.mode === 'reviewing' ? REVIEWING
           : REST.mode === 'reviewed' ? REVIEWED
+          : REST.mode === 'remedy' ? REMEDY
           : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
           : PENDING,
         '/pending?scan=0': REST.mode === 'refused' ? REFUSED : PENDING,
@@ -588,9 +605,8 @@ const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', 'Applicability check', 'Pre-review', 'Reject',
-  'Approve', 'Not applicable', 'New skill', '#abc12345', '#def67890',
-  'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
+must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
+  'Looks fine', 'New skill', 'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
 noRawKeys(en.text, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
@@ -599,7 +615,7 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
-must(other.text, ['Approvals', 'Pending', 'Not applicable', 'New skill'], 'app locale tr')
+must(other.text, ['Approvals', 'Pending', 'Approve failed', 'New skill'], 'app locale tr')
 noRawKeys(other.text, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
@@ -654,18 +670,10 @@ for (const mounted of [en, other]) {
 {
   const cell = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
   if (!cell) fail('the memory record card is missing')
-  const meta = slot(cell, 'panel-meta')
-  if (!meta) fail('the record card carries no kit PanelMeta inspector')
-  must(meta?.textContent || '', ['Type', 'Source', 'Target', 'Operations'], 'kit meta rows')
-  const labels = cell.querySelectorAll('[data-slot="panel-section-label"]')
-  if (labels.length < 4) fail(`the record fields are not kit PanelSectionLabels (${labels.length})`)
   if (!slot(cell, 'badge')) fail('the record state pill is not a kit Badge')
   const buttonsInCard = [...cell.querySelectorAll('[data-slot="button"]')]
   if (buttonsInCard.length < 3) fail(`the card controls are not kit Buttons (${buttonsInCard.length})`)
-  if (!slot(cell, 'panel-block')) fail("the record's own text is not drawn in a kit PanelBlock")
-  const plainCell = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
-  if (slot(plainCell, 'log-view')) fail('a raw LogView is drawn outside the details on a plain record')
-  if (!slot(cell, 'log-view')) fail('the failed attempt is not drawn on the record whose approve was refused')
+  if (slot(cell, 'log-view')) fail('a closed card draws the change; it belongs under Details')
   const reject = buttonsInCard.find(b => /^Reject$/.test(b.textContent || ''))
   const approve = buttonsInCard.find(b => /^Approve$/.test(b.textContent || ''))
   if (reject?.getAttribute('data-variant') !== 'destructive') fail('Reject is not the kit destructive variant')
@@ -675,57 +683,35 @@ for (const mounted of [en, other]) {
   }
 }
 
-// --- 5) Cards: id chip, status badge, the agent's suggestion, fixed-height boxes -----------------
+// --- 5) Cards: one head line, the one message that decides it, no repeated boilerplate -------------
 {
   const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
   if (cells.length !== 3) fail(`expected 3 pending cards, found ${cells.length}`)
   if (!cells.every(c => c.getAttribute('data-key'))) fail('a card cell carries no data-key (FLIP)')
   const html = en.hostEl.innerHTML
   if (!html.includes('.pa-leaving{opacity:0')) fail('the leaving animation class is not defined')
-  // MOTION: one table behind every transition (productive curves, 120/240/200 ms), a lit top edge on
-  // the cards, themed scrollbars on the panel's own boxes, and one block that flattens it all.
   must(html, [
     'cubic-bezier(0.2, 0, 0.38, 0.9)', 'cubic-bezier(0, 0, 0.38, 0.9)', 'cubic-bezier(0.4, 0, 1, 1)',
     'transition:opacity 240ms', 'transition:opacity 200ms',
     'box-shadow:inset 0 1px 0',
-    '.pa-scroll{scrollbar-width:thin',
     '::-webkit-scrollbar-thumb',
     'transition:none !important;animation:none !important'
   ], 'the motion table, the lit card edge and the themed scrollbars')
   if (!en.hostEl.querySelector('.pa-pane')) fail('the pane root lost its pa-pane class')
-  const scrolly = [...en.hostEl.querySelectorAll('*')].filter(el => (el.style.overflowY || '') === 'auto')
-  if (scrolly.length < 4) fail(`expected the panel's own scroll boxes, found ${scrolly.length}`)
-  const untagged = scrolly.filter(el => !el.classList.contains('pa-scroll'))
-  if (untagged.length) {
-    fail(`${untagged.length} scroll box(es) carry no pa-scroll class: ${untagged.map(e => e.className).join(' · ')}`)
-  }
-  const cardHtml = en.hostEl.querySelector('.pa-card')
-  if (!cardHtml) fail('no .pa-card in the render — the class the motion rules target is gone')
-  const boxStyles = [...html.matchAll(/style="height: (\d+)px; overflow-y: auto[^"]*"/g)].map(m => Number(m[1]))
-  const prose = boxStyles.filter(h => h === 80)
-  const others = [...new Set(boxStyles.filter(h => h !== 80 && h !== 168 && h !== 340))]
-  if (prose.length < 4 || others.length) fail(`text boxes are not all 80px: ${JSON.stringify(boxStyles)}`)
+  if (!en.hostEl.querySelector('.pa-card')) fail('no .pa-card in the render — the class the motion rules target is gone')
   for (const card of en.hostEl.querySelectorAll('.pa-cell .pa-card')) {
-    const scrollers = [...card.querySelectorAll('*')].filter(el => el.style.overflowY === 'auto')
-    const nestedIn = scrollers.filter(el => scrollers.some(o => o !== el && o.contains(el)))
-    if (nestedIn.length) fail(`a scroll box sits inside another scroll box in a card (${nestedIn.length})`)
-    if ([...card.querySelectorAll('*')].some(el => el.style.height === '340px')) {
-      fail('a card is cut to a fixed 340px layer whatever its content')
+    if ([...card.querySelectorAll('*')].some(el => el.style.overflowY === 'auto')) {
+      fail('a pending card holds its own scroll box again — the pane scrolls, the card grows')
     }
-    const advice = card.querySelector('.pa-advice')
-    if (advice && scrollers.some(el => el.contains(advice))) fail('a scroll box swallows the advice/buttons')
+    if (card.querySelectorAll('.pa-card-head').length !== 1) fail('a card has no single head line')
   }
-  must(html, ['align-items:stretch'], 'equal card heights')
-  for (const cell of cells) {
-    const kindPill = [...cell.querySelectorAll('.pa-pill')].find(p => /^(Memory note|Skill file)/.test(p.textContent || ''))
-    if (kindPill) fail(`the kind pill repeats the Type row: ${kindPill.textContent}`)
+  for (const gone of ['Why it arrived', 'If you approve', 'What it does', 'Applicability check', 'Source',
+    'Operations', 'Agent suggestion']) {
+    if (en.hostEl.textContent.includes(gone)) fail(`the removed card section “${gone}” is back`)
   }
-  const split = (en.hostEl.textContent.match(/Memory: 1 · Skills: 2/g) || []).length
-  if (split !== 1) fail(`the pending split is printed ${split} times (the footer repeats the KPI card)`)
+  if (en.hostEl.querySelector('.pa-cols.pa-two')) fail('the pending list is a two-column grid again (cards stretch to their neighbour)')
   const footer = en.hostEl.querySelector('.pa-footer')
   if (!footer || footer.style.flexWrap !== 'wrap') fail('the footer row cannot wrap')
-  must(en.hostEl.textContent, ['No operation detail was recorded for this write'],
-    'a record with no operation detail must explain itself, not print a button label')
 }
 
 // --- 6) The blocked record keeps Approve disabled, an open record does not ----------------------
@@ -776,113 +762,55 @@ for (const mounted of [en, other]) {
   REST.mode = 'normal'
 }
 
-// --- 6b) The state badge and the agent's suggestion tell the same story -------------------------
+// --- 6b) One state badge per card, and it names what decides the card -----------------------------
 {
-  const badgesOf = key => [...(en.hostEl.querySelector('.pa-cell[data-key="' + key + '"]')
-    ?.querySelectorAll('[data-slot="badge"]') || [])]
-  const failed = badgesOf('memory:abc12345')
-  if ((failed[0]?.textContent || '') !== 'Approve failed before') {
-    fail(`a record whose approve was refused still claims a state: ${JSON.stringify(failed[0]?.textContent)}`)
+  const badgeOf = key => en.hostEl.querySelector('.pa-cell[data-key="' + key + '"] .pa-card-head [data-slot="badge"]')
+  const failed = badgeOf('memory:abc12345')
+  if (failed?.textContent !== 'Approve failed' || failed?.getAttribute('data-variant') !== 'destructive') {
+    fail(`a record whose approve was refused is not marked as such: ${failed?.textContent}`)
   }
-  if (failed[0]?.getAttribute('data-variant') !== 'warn') fail('the refused record is not marked as a warning')
-  if ((failed[1]?.textContent || '') !== 'Reject' || failed[1]?.getAttribute('data-variant') !== 'destructive') {
-    fail(`the advice of a refused record is not drawn as a stop: ${JSON.stringify(failed[1]?.textContent)} / ` +
-      failed[1]?.getAttribute('data-variant'))
+  must(en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')?.textContent,
+    ['Approving was attempted: Approving was already attempted and Hermes refused'], 'the refused attempt')
+  const fixable = badgeOf('skills:def67890')
+  if (fixable?.textContent !== 'Shorten first' || fixable?.getAttribute('data-variant') !== 'warn') {
+    fail(`a record with a description fix is not marked “Shorten first”: ${fixable?.textContent}`)
   }
-  const fixable = badgesOf('skills:def67890')
-  if (fixable[0]?.getAttribute('data-variant') !== 'destructive') {
-    fail('a record that cannot be applied as staged is not marked not-applicable')
+  const clean = badgeOf('skills:aaa11111')
+  if (clean?.textContent !== 'Looks fine' || clean?.getAttribute('data-variant') !== 'success') {
+    fail(`a clean record is not drawn as approvable: ${clean?.textContent}`)
   }
-  if (fixable[1]?.getAttribute('data-variant') !== 'warn') {
-    fail(`a fixable record's suggestion is not the warn variant: ${fixable[1]?.getAttribute('data-variant')}`)
-  }
-  must(en.hostEl.textContent, ['“Shorten description” rewrites it'], 'the fixable advice note')
-  const clean = badgesOf('skills:aaa11111')
-  if (clean[0]?.textContent !== 'New skill' || clean[1]?.getAttribute('data-variant') !== 'success') {
-    fail(`a clean new-skill record is not drawn as approvable: ${JSON.stringify(clean.map(b => b.textContent))}`)
+  if (!(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-card-title')?.textContent || '')
+    .startsWith('New skill: new-skill')) fail('a new skill does not say so in its title')
+  if (buttons(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /Ask the assistant to fix/).length) {
+    fail('a clean record offers a fix it does not need')
   }
 }
 
-// --- 7) Details: the real diff and the write_file content ---------------------------------------
+// --- 7) Details: one change view, only the changed lines, nothing cut by characters ---------------
 {
-  for (const b of buttons(en.hostEl, /Details and changes/)) await click(b)
-  const allRaws = [...en.hostEl.querySelectorAll('[data-slot="log-view"]')]
-  const diff = allRaws.map(d => d.textContent || '').find(t => t.includes('+++'))
-  if (!diff || !diff.includes('# New file')) fail(`no real diff in the details: ${allRaws.map(d => (d.textContent || '').slice(0, 40))}`)
+  for (const b of buttons(en.hostEl, /^Details and changes$/)) await click(b)
+  const logs = [...en.hostEl.querySelectorAll('.pa-details [data-slot="log-view"]')]
+  if (!logs.length || !logs.every(r => r.getAttribute('data-selectable-text') === 'true')) {
+    fail('the change is not drawn in the kit LogView')
+  }
+  must(en.hostEl.textContent, ['# New file', 'The text', 'A note to add'], 'the change lines')
+  if (!buttons(en.hostEl, /^Hide details$/).length) fail('the details toggle does not flip to “Hide details”')
+  const mem = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"] .pa-details')
+  const marks = [...(mem?.querySelectorAll('.pa-ln') || [])].map(l => l.getAttribute('data-k'))
+  if (!marks.includes('-') || !marks.includes('+')) fail(`a replaced note is not drawn as removed + added lines: ${marks}`)
+  if (!(mem?.textContent || '').includes(OP_TAIL)) fail('the replaced text is cut by characters — its tail is missing')
+  if ((en.hostEl.textContent.match(/# New file/g) || []).length !== 1) fail('the change is drawn more than once')
   if (en.hostEl.innerHTML.includes('(batch on')) fail('the meaningless "(batch on \'\')" text is back')
-  if (!allRaws.length || !allRaws.every(r => r.getAttribute('data-selectable-text') === 'true')) {
-    fail('the raw bodies are not the kit LogView')
-  }
-  must(en.hostEl.textContent, ['# New file', 'The text'], 'write_file content')
-  must(en.hostEl.textContent, ['current:', 'new:'], 'before/after box labels')
-  if (!buttons(en.hostEl, /Hide details/).length) fail('the details toggle does not flip to “Hide details”')
-  const sides = [...en.hostEl.querySelectorAll('.pa-cmp-side')]
-  const label = kind => `${kind}: ${LONG_OP.length} characters`
-  const oldSide = sides.find(s => (s.textContent || '').includes(label('current')))
-  const newSide = sides.find(s => (s.textContent || '').includes(label('new')))
-  if (!oldSide || !newSide) {
-    fail(`the replaced text does not state its size (${label('current')} / ${label('new')}): ` +
-      JSON.stringify(sides.map(s => (s.textContent || '').slice(0, 40))))
-  }
-  for (const [name, side] of [['replaced', oldSide], ['replacement', newSide]]) {
-    if (!(side?.textContent || '').includes(OP_TAIL)) {
-      fail(`the text to be ${name} is cut — ${JSON.stringify(OP_TAIL.slice(0, 24))} is missing from a ` +
-        `${(side?.textContent || '').length}-character box`)
-    }
-  }
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-change-file\{[^}]*text-transform:uppercase/.test(sheet)) fail('the file name is forced to uppercase (unreadable)')
 }
 
-// --- 8) Op tones: on the pill FILL (a surface), the text stays a theme text token -----------------
+// --- 8) The description fix: own text, shortened suggestion, POST /fix --------------------------
 {
-  const OP_TONE = {
-    create: 'var(--ui-green)', write_file: 'var(--ui-accent)', patch: 'var(--ui-orange)',
-    delete: 'var(--ui-red)', remove_file: 'var(--ui-red)', add: 'var(--ui-green)',
-    replace: 'var(--ui-orange)', remove: 'var(--ui-red)'
-  }
-  const pills = [...en.hostEl.querySelectorAll('.pa-pill')]
-  if (pills.length < 3) fail(`the panel's own chips are not the one pill language: ${pills.length} .pa-pill`)
-  const seen = new Map()
-  for (const pill of pills) {
-    const key = (pill.textContent || '').trim()
-    if (Object.prototype.hasOwnProperty.call(OP_TONE, key)) seen.set(key, pill.style.background)
-    if (pill.style.color) fail(`the pill "${key}" carries its own text colour (${pill.style.color}): the label ` +
-      'must come from a theme text token, the tone belongs on the fill')
-  }
-  if (seen.size < 3) fail(`op type pills not found: ${JSON.stringify([...seen])}`)
-  for (const [action, fill] of seen) {
-    if (!String(fill).includes(OP_TONE[action])) {
-      fail(`op tone wrong: ${action} → "${fill}" (expected a fill mixed from ${OP_TONE[action]})`)
-    }
-  }
-  if (new Set(seen.values()).size < 3) fail('op types are not toned by purpose')
-  if (![...en.hostEl.querySelectorAll('span')].some(s => /skill\.md$/i.test(s.textContent || '')
-      && s.style.textTransform === 'none')) {
-    fail('the file name is forced to uppercase (unreadable)')
-  }
-}
-
-// --- 9) The description fix: own text, shortened suggestion, POST /fix --------------------------
-{
-  const own = byText(en.hostEl, 'What it does')
-  if (!own) fail('the "What it does" note label is missing')
-  const noteBox = own?.nextElementSibling
-  if ((noteBox?.textContent || '').trim() !== FIX_RAW_DESC) {
-    fail(`the "What it does" box does not show the record's own text: ${(noteBox?.textContent || '').slice(0, 80)}`)
-  }
-  const fixLabel = byText(en.hostEl, 'Shortened (53 characters)')
-  if (!fixLabel) fail('the "Shortened (N chars)" label is missing')
-  const fixBox = fixLabel?.nextElementSibling
-  // The fix sides and the labelled notes sit inside the fixed 340px layer: they draw at their
-  // natural height (no scroll box nested in the scroll layer) and their labels may wrap.
-  if (![noteBox, fixBox].every(b => b && b.getAttribute('data-slot') === 'panel-block' && !b.style.height)) {
-    fail('a fix side or a labelled note is a nested fixed-height scroll box again')
-  }
-  if (!fixLabel?.querySelector('.pa-wrap')) fail('the fix labels cannot wrap (no .pa-wrap span)')
+  must(en.hostEl.textContent, ['As written (172 characters)', 'Shortened (53 characters)', FIX_SUGGESTED, FIX_RAW_DESC],
+    'the fix surfaces')
   const badgeSizes = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')].map(b => b.getAttribute('data-size'))
   if (new Set(badgeSizes).size !== 1) fail(`the card badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
-  // Round 3 (2026-09-23): the pair went from 1 : 2 to 2 : 3 so it reads as a pair of equals-in-kind
-  // (the judge flagged 1 : 2 as unbalanced) while Approve stays the primary, i.e. still the wider one.
-  // It sits on the card's foot row beside `Details and changes`, with calmer opaque fills.
   const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
   const cols = (en.hostEl.innerHTML.match(/\.pa-actions\{display:grid;grid-template-columns:minmax\(0,(\d+)fr\) minmax\(0,(\d+)fr\)/) || [])
   if (!actions || !cols.length || !(Number(cols[2]) > Number(cols[1]))) {
@@ -897,40 +825,15 @@ for (const mounted of [en, other]) {
     fail('the panel restyles the kit buttons (!important fills, --dt-*/--theme-* mixes or a brightness hover)')
   }
   if (/font-size:10\.5px/.test(sheet)) fail('10.5px text is back (FS.micro below 11px)')
-  // One tag family: every kit Badge in a card wears the TAG form (the .pa-pill height/radius/weight).
   const tags = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')]
   const odd = tags.filter(b => !b.classList.contains('pa-tag') || b.style.height !== '20px'
     || b.style.borderRadius !== '999px' || b.style.fontWeight !== '600')
   if (!tags.length || odd.length) {
     fail(`a status tag is not drawn in the one tag form: ${JSON.stringify(odd.map(b => b.textContent))}`)
   }
-  // A fixed text box shows WHOLE lines: its line height divides the height left after the padding,
-  // and an overflowing box carries the bottom fade (`data-more`), never a half-cut last line.
-  const LINE = 16
-  const boxes = [...en.hostEl.querySelectorAll('.pa-card .pa-fade')]
-  if (boxes.length < 4) fail(`the fixed text boxes carry no fade wrapper (${boxes.length})`)
-  for (const log of en.hostEl.querySelectorAll('.pa-card [data-slot="log-view"].pa-scroll')) {
-    const h = parseFloat(log.style.height)
-    const inner = h - 2 - parseFloat(log.style.paddingTop) - parseFloat(log.style.paddingBottom)
-    if (log.style.lineHeight !== LINE + 'px' || inner % LINE !== 0) {
-      fail(`a fixed box cuts a line: ${h}px box, ${inner}px text window, line ${log.style.lineHeight}`)
-    }
+  if (!en.hostEl.innerHTML.includes('.pa-two>:last-child:nth-child(odd){grid-column:1/-1}')) {
+    fail('a lone last memory card sits in half the grid again (the .pa-two lone-card rule is gone)')
   }
-  if (!en.hostEl.innerHTML.includes('.pa-lines{min-height:100%;max-height:none !important;overflow:visible !important;')
-    || !en.hostEl.innerHTML.includes('line-height:' + LINE + 'px !important;padding:8px 10px !important}')) {
-    fail('the 80px prose box no longer holds a whole number of lines (line-height/padding lock)')
-  }
-  if (!en.hostEl.innerHTML.includes('.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom')) {
-    fail('an overflowing fixed box has no bottom fade: it reads as clipped, not scrollable')
-  }
-  if (!en.hostEl.innerHTML.includes('.pa-two>:last-child:nth-child(odd){grid-column:1/-1}')
-    || !en.hostEl.querySelector('.pa-cols.pa-two')) {
-    fail('a lone last card sits in half the grid again (the .pa-two lone-card rule is gone)')
-  }
-  if (!en.hostEl.querySelector('.pa-cell .pa-advice .pa-advice-foot')) {
-    fail('the advice note no longer absorbs the free height above the buttons')
-  }
-  must(en.hostEl.textContent, ['As written (172 characters)', FIX_SUGGESTED], 'the fix surfaces')
   const fixBtn = buttons(en.hostEl, /Shorten description/)[0]
   if (!fixBtn) fail('the "Shorten description" button is missing')
   await click(fixBtn, 60)
@@ -1062,33 +965,29 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
 }
 
-// --- 12) KPI cards, the refresh ICON, and the status-bar chip ----------------------------------
+// --- 12) The summary strip, the refresh ICON, and the status-bar chip ------------------------------
 {
-  const kpi = [...(en.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
-  if (kpi.length !== 4) fail(`expected 4 KPI cards, found ${kpi.length}: ${JSON.stringify(kpi)}`)
-  must(kpi.join(' | '), ['MEMORY.md', '99%', 'USER.md', '84%', 'Nearly full'], 'KPI cards')
-  const figs = [...en.hostEl.querySelectorAll('.pa-kpis')[0].querySelectorAll('.pa-kpi-val')].map(v => v.textContent)
-  if (figs.some(f => /^%/.test(f || ''))) fail(`a percent sign leads its number: ${JSON.stringify(figs)}`)
-  const kbox = [...en.hostEl.querySelectorAll('.pa-kpis')[0].children]
-  const tones = kbox.map(k => k.querySelector('.pa-kpi-pill')?.getAttribute('data-tone'))
+  const strip = [...(en.hostEl.querySelector('.pa-strip')?.children || [])]
+  const kpi = strip.map(c => c.textContent || '')
+  if (kpi.length !== 4) fail(`expected 4 summary entries, found ${kpi.length}: ${JSON.stringify(kpi)}`)
+  must(kpi.join(' | '), ['MEMORY.md', 'USER.md', '84%', 'Nearly full'], 'summary strip')
+  const tones = strip.map(k => k.querySelector('[data-tone]')?.getAttribute('data-tone') || k.getAttribute('data-tone'))
   if (JSON.stringify(tones) !== JSON.stringify(['warn', 'warn', 'ok', 'bad'])) {
-    fail(`KPI tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
+    fail(`summary tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
   }
-  if (kbox[1].getAttribute('data-tone') !== 'warn') fail('a file with room left is marked full (2189 of 2200 is not full)')
-  if (!kbox[1].querySelector('.pa-kpi-label')?.classList.contains('pa-kpi-file')) {
-    fail('a file name is set in caps (MEMORY.MD): file labels keep their own case')
+  if (!strip.every(k => k.querySelector('.pa-strip-dot'))) fail('a summary tone is not carried by its dot')
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-strip[^{]*\bb\{[^}]*color:var\(--ui-(orange|red|green)\)/.test(sheet)) {
+    fail('a summary figure wears a tone as text — tone colours fail contrast as text; the dot carries it')
   }
-  if (kbox.some(k => k.querySelector('.pa-kpi-val')?.hasAttribute('data-tone'))) {
-    fail('a KPI figure wears a tone as text — the tone belongs on the card surface')
+  if (!/57/.test(kpi[3] || '')) fail(`the Applied entry must use the backend's full count (got ${JSON.stringify(kpi[3])})`)
+  if (strip[0]?.closest('[data-tip]')?.getAttribute('data-tip') !== 'Memory: 1 · Skills: 2') {
+    fail('the pending split is not in the themed Tip of its summary entry')
   }
   if (!/Updated \d\d:\d\d/.test(en.hostEl.querySelector('.pa-updated')?.textContent || '')) {
     fail('the header carries no “Updated HH:MM” stamp')
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
-  const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
-  if (appliedFigure !== '57') {
-    fail(`the Applied card must use the backend's full count, not the last 50 rows (figured ${JSON.stringify(appliedFigure)})`)
-  }
   const icon = en.hostEl.querySelector('.pa-refresh')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
     fail('the refresh control is gone (kit Button + svg + aria-label expected)')
@@ -1219,7 +1118,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     return cells
   }
   const styleLog = []
-  const grid = en.hostEl.querySelector('.pa-cols')
+  const grid = en.hostEl.querySelector('.pa-list')
   const observer = new dom.window.MutationObserver(records => {
     for (const r of records) {
       styleLog.push({ transition: r.target.style.transition || '', transform: r.target.style.transform || '' })
@@ -1306,7 +1205,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
 {
   REST.mode = 'hold'
   const held = await mount('en')
-  const kpis = [...(held.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
+  const kpis = [...(held.hostEl.querySelector('.pa-strip')?.children || [])].map(c => c.textContent || '')
   if (held.hostEl.textContent.includes('Nothing awaits approval')) fail('loading reads as “Nothing awaits approval”')
   if (!held.hostEl.querySelector('[data-slot="loader"]')) fail('no kit Loader while the pending list loads')
   if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
@@ -1370,9 +1269,9 @@ REST.scan = 'ok'
     if (!cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record is selectable`)
   }
   if (gate.hostEl.querySelector('.pa-bulk')) fail('the bulk bar offers records that are not pre-reviewed')
-  must(cell(gate.hostEl, 'memory:abc12345')?.textContent, ['Pre-review', 'Reading this write against your rules · gpt-5.5'],
-    'running review')
-  must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check — Approve stays locked', REVIEW_HARD], 'rule check')
+  if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
+    .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
+  must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
   if (buttons(cell(gate.hostEl, 'skills:def67890'), /Approve without review/).length) {
     fail('a failed rule check offers "Approve without review"')
   }
@@ -1399,9 +1298,10 @@ REST.scan = 'ok'
   REST.mode = 'reviewed'
   const done = await mount('en')
   const card = cell(done.hostEl, 'skills:aaa11111')
-  must(card?.textContent, ['Rejecting is advised', 'One duplicate rule.', 'Breaks a rule', 'Duplicate', FINDING.explain,
-    `“${FINDING.quote}”`, `Against: “${FINDING.other}”`, 'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated'],
-  'finished review')
+  must(card?.textContent, ['Reject advised', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
+  await click(buttons(card, /^Details and changes$/)[0])
+  must(card?.textContent, ['Duplicate', `“${FINDING.quote}”`, `Against: “${FINDING.other}”`,
+    'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated'], 'finished review details')
   if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') {
     fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
   }
@@ -1412,6 +1312,61 @@ REST.scan = 'ok'
   done.hostEl.remove()
 }
 
+// --- 20) Every flagged card offers a way forward besides Reject -------------------------------------
+// A review or rule check that only says "this is wrong" leaves Reject as the one move. Each flagged
+// state must offer a usable remedy: the suggested edit (POST /amend, shown before it is applied), the
+// assistant (an unsent chat draft), "Shorten description", or the two-step skip of an unrun review.
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.mode = 'remedy'
+  const fixHost = await mount('en')
+  const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
+  must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x'], 'suggested edit shown')
+  const amendBtn = buttons(flagged, /^Apply the suggested edit$/)[0]
+  if (!amendBtn) fail('a finding with a suggested edit offers no “Apply the suggested edit”')
+  const decided = stub.calls.posts.filter(p => p.path === '/decide').length
+  if (amendBtn) await click(amendBtn, 60)
+  const amended = stub.calls.posts.filter(p => p.path === '/amend').pop()
+  if (amended?.body.subsystem !== 'skills' || amended?.body.id !== 'aaa11111') fail(`the amend request is wrong: ${JSON.stringify(amended)}`)
+  if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('applying a suggested edit decided the record')
+  const rule = cell(fixHost.hostEl, 'skills:def67890')
+  must(rule?.textContent, ['Fixable here: adds "author: Selftest Owner" to the header'], 'rule edit label')
+  if (!buttons(rule, /^Apply the suggested edit$/).length) fail('a rule check with a fixing edit offers no way to apply it')
+
+  const ask = buttons(flagged, /^Ask the assistant to fix$/)[0]
+  if (!ask) fail('a flagged card offers no “Ask the assistant to fix”')
+  if (ask) await click(ask, 40)
+  const put = stub.calls.composer[stub.calls.composer.length - 1]
+  if (!put || put.sessionId !== null || put.opts?.mode !== 'block') fail(`the fix request did not go to the chat box: ${JSON.stringify(put)}`)
+  must(put?.text, ['skills/aaa11111', 'The write says two different things.', 'In the write: "old line"',
+    'stage the corrected write', 'Do not approve, reject or apply anything yourself'], 'fix request text')
+  if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('asking the assistant decided the record')
+  stub.state.composerLive = false
+  if (ask) await click(ask, 40)
+  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  if (told?.kind !== 'warning' || !/No chat box is open/.test(told?.message || '')) fail(`no chat box went unreported: ${JSON.stringify(told)}`)
+  stub.state.composerLive = true
+  fixHost.hostEl.remove()
+
+  const REMEDIES = /^(Apply the suggested edit|Apply \d+ suggested edits|Ask the assistant to fix|Shorten description|Approve without review|Review again)$/
+  const gaps = []
+  for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
+    REST.mode = mode
+    const host = await mount('en')
+    for (const c of host.hostEl.querySelectorAll('.pa-cell')) {
+      const badge = c.querySelector('.pa-card-head [data-slot="badge"]')
+      const variant = badge?.getAttribute('data-variant')
+      if (variant !== 'warn' && variant !== 'destructive') continue
+      const ways = [...c.querySelectorAll('button')].filter(b => REMEDIES.test((b.textContent || '').trim())
+        && b.getAttribute('aria-disabled') !== 'true' && !b.disabled)
+      if (!ways.length) gaps.push(`${mode} ${c.getAttribute('data-key')} “${badge?.textContent}”`)
+    }
+    host.hostEl.remove()
+  }
+  if (gaps.length) fail(`a flagged card leaves Reject as the only move: ${gaps.join(' · ')}`)
+  REST.mode = 'normal'
+}
+
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
   process.exit(1)
@@ -1420,13 +1375,14 @@ console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
 console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
 console.log('  pre-review: running review and failed rule check lock Approve · two-step skip_review · findings shown · Review again')
+console.log('  remedies: suggested edit shown then POST /amend · rule edit · unsent assistant draft · no flagged card is a dead end')
 console.log('  bulk: only applicable records selectable · arm → Confirm → one /decide per subsystem · Cancel sends nothing')
 console.log('  palette: "Open Approvals" (3 waiting → /approvals) · "Approval alerts" on/muted; muted = no toast, no OS alert, chip still counts')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')
 console.log('  blocked record: Approve held (aria-disabled, still focusable) with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
 console.log(`  language: ${JSON.stringify(stub.calls.registered[0].locales)} bundle registered, no picker in the DOM, English under the app locale "en" AND "tr", no raw pa.* key`)
 console.log('  two-step: delete “A note” and clear the history ask first; the conflicting undo turns into "Force undo" and only then sends force:true')
-console.log(`  chip: "${en.chipText}" · KPI cards: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)
+console.log(`  chip: "${en.chipText}" · summary entries: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)
 
 const dumpPath = process.env.PREVIEW_OUT
 if (dumpPath) {

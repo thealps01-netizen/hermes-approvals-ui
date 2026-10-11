@@ -5,6 +5,39 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.9.2
+
+### Added
+
+* **A way forward besides Reject on every flagged card.** Before, a review finding or a rule check
+  could only be approved over or rejected.
+  * **Apply the suggested edit.** The pre-review now proposes an exact edit (text to replace and its
+    replacement) for each finding whose problem lies inside the write. Two rule checks carry their own
+    edit without the model: a missing `author:` line is added, a line already in the skill is removed.
+    The edit is drawn under its finding before it can be applied. Applying it changes only the pending
+    record (`POST /amend`), keeps the staged original on the record (`amended_from`), and starts a new
+    review; nothing reaches your files until you approve. An edit is offered only while its text occurs
+    exactly once in the record, and never twice.
+  * **Ask the assistant to fix.** Writes what was flagged, quoted, into the chat box without sending
+    it. The corrected write arrives as a new record; the assistant is told not to approve, reject or
+    apply anything itself. This covers what an in-place edit cannot: a conflict with the existing
+    target, a third-party skill, non-English text, a write that can no longer be applied.
+* The render check fails when any flagged card in any fixture state leaves Reject as the only move.
+
+### Changed
+
+* **Compact cards.** A card shows its title, the +/− line count, its age, one state badge and the
+  one message that decides it (rule check, cannot-be-applied reason, failed attempt or the review
+  summary), the findings that need action, and the remedies. Details hold one change view: only the
+  added and removed lines with one line of context, the first 20 lines, then "Show N more lines". A
+  new file is shown whole. Removed: the old/new boxes and the second full diff, the applicability
+  box, "Why it arrived", "If you approve", "What it does", the Type/Source/Operations table, and the
+  evidence note (the record does not carry the session behind it, so the note appeared on every card).
+  Measured on three real records at 940 px: closed cards 1,568–1,741 px → 137–273 px.
+* One column for pending cards; a card grows when its details open instead of matching its neighbour.
+* The four summary cards are one line; each tone is a dot, the details sit in its tooltip.
+* A record that can no longer be applied as staged keeps Approve locked.
+
 ## 1.9.1
 
 * Fix: a card no longer spills into its neighbour. A card could not shrink below its widest
