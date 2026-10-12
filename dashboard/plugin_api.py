@@ -1269,14 +1269,19 @@ def _skill_target_op(record: dict, edit: dict) -> dict | None:
 
 def _memory_target_op(record: dict, edit: dict) -> dict | None:
     from tools.memory_tool import load_on_disk_store
+    from tools.memory_tool_store import _find_unique_match
 
     payload = record.get("payload") or {}
     target = str(payload.get("target") or "memory")
     if str(edit.get("file") or "").replace(BACKSLASH, "/").rsplit("/", 1)[-1] != _MEM_FILE.get(target, "MEMORY.md"):
         return None
     find, replace = str(edit.get("find") or ""), str(edit.get("replace") or "")
-    found = load_on_disk_store().resolve_entry(target, find, "replace") if find.strip() else {}
-    entry = str(found.get("matched_entry") or "") if found.get("success") else ""
+    if not find.strip():
+        return None
+    store = load_on_disk_store()
+    entries = list(store.user_entries if target == "user" else store.memory_entries)
+    idx, ambiguous = _find_unique_match(entries, find.strip())
+    entry = entries[idx] if idx is not None and not ambiguous else ""
     if not entry or entry.count(find) != 1:
         return None
     for op in payload.get("operations") or [payload]:
@@ -2281,7 +2286,7 @@ def _review_selftest(tmp: Path) -> None:
     assert "edit" not in done["findings"][1], "a note never carries an edit"
     assert done["findings"][0]["edit"]["ok"] and done["edits"] == 1, done
     assert done["model"] == "judge-1", done
-    sent = seen[-1]
+    sent = next(c for c in reversed(seen) if "selftest 5e1f0007" in c["messages"][1]["content"])
     assert sent["task"] == _REVIEW_TASK and sent["messages"][0]["role"] == "system", sent
     prompt = sent["messages"][1]["content"]
     assert "OWNER RULES (USER.md)" in prompt and known_line in prompt and "Selftest saved note" in prompt, prompt[:400]
