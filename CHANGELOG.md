@@ -5,6 +5,20 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.9.4
+
+### Changed
+
+* **The fix can change the existing text, not only the write.** When a write contradicts, repeats or
+  outdates a line already in the skill (or an entry already in memory), the pre-review now proposes
+  the edit to that older line instead of leaving the card with Reject as the only way out. The card
+  labels it "Suggested edit â€” SKILL.md, existing text". "Approve with the fix" adds it as one more
+  operation in front of the write's own, so both land in one batch and one Undo restores both.
+  It is offered only when the text occurs exactly once in that file, the write does not replace or
+  delete that file, and no patch of the write touches the same text; a memory entry the write itself
+  replaces or removes is never edited. Edits to owner rules, to another skill, or moves stay out.
+* Records reviewed before 1.9.4 need "Review again" to get these edits.
+
 ## 1.9.3
 
 ### Changed

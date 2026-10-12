@@ -579,6 +579,7 @@ _TEXT = {
     'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
     'amend_author': 'adds "author: {want}" to the header',
     'amend_drop_line': 'removes the line that is already in the skill',
+    'edit_target': '{file}, existing text',
 }
 
 
@@ -1077,11 +1078,14 @@ _REVIEW_SYSTEM = (
     "translation. A '[... N more characters cut ...]' "
     "marker is where this review's input was shortened, not a defect of the write.\n"
     "Write summary and explain in plain English, whatever language the material uses.\n"
-    "For every block or fix finding whose problem lies inside the write itself, add an \"edit\" that resolves "
-    "it: \"find\" is text copied exactly from the NEW text of the write (no diff markers such as + or -, no "
-    "line numbers, at most a few lines, unique in the write) and \"replace\" is what it becomes (empty to "
-    "delete it). Keep the rest of the write unchanged and keep it English. Leave \"edit\" out when the fix "
-    "needs a change outside the write, such as to the existing target or to an owner rule.\n"
+    "For every block or fix finding add an \"edit\" that resolves it. When the problem lies inside the write, "
+    "\"find\" is text copied exactly from the NEW text of the write (no diff markers such as + or -, no line "
+    "numbers, at most a few lines, unique in the write) and \"replace\" is what it becomes (empty to delete "
+    "it). When the fix belongs in the existing target instead (an older line the write contradicts, repeats or "
+    "makes outdated), add \"file\": the path exactly as in its ### heading under CURRENT TARGET (for memory, "
+    "the file name), and copy \"find\" exactly from that file's current text, unique in it; prefer this to "
+    "weakening a correct new line. Keep everything else unchanged and keep it English. Leave \"edit\" out only "
+    "when the fix needs a change to an owner rule, to another skill, or moving the text somewhere else.\n"
     "Severity: block = applying it breaks an owner rule or adds a wrong or contradicting statement; "
     "fix = worth applying only after an edit; note = minor.\n"
     "Answer with ONE JSON object and nothing else:\n"
@@ -1089,7 +1093,8 @@ _REVIEW_SYSTEM = (
     '"kind": "duplicate|contradiction|wrong|rule", "quote": "exact text from the write", '
     '"other": "the exact duplicate or conflicting text, or the rule; empty when none", '
     '"explain": "one plain sentence a non-programmer understands", '
-    '"edit": {{"find": "exact text from the new text of the write", "replace": "its corrected text"}}}}]}}\n'
+    '"edit": {{"find": "exact text from the new text of the write, or from the file", '
+    '"replace": "its corrected text", "file": "only for an edit to the existing target"}}}}]}}\n'
     "An empty findings list means you found nothing to report."
 )
 
@@ -1186,6 +1191,7 @@ def _hard(name: str, text: str, edit: dict | None = None) -> dict:
 
 
 _EDIT_FIELDS = ("content", "file_content", "new_string")
+BACKSLASH = chr(92)
 
 
 def _edit_slots(record: dict) -> list[tuple[dict, str]]:
@@ -1199,7 +1205,104 @@ def _edit_hits(record: dict, find: str) -> int:
 
 
 def _edit_open(record: dict, edit: dict) -> bool:
+    if edit.get("file"):
+        return _target_op(record, edit) is not None
     return _edit_hits(record, edit.get("find") or "") == 1
+
+
+def _record_subsystem(record: dict) -> str:
+    from tools import write_approval as wa
+
+    if record.get("subsystem") in (wa.SKILLS, wa.MEMORY):
+        return record["subsystem"]
+    return wa.SKILLS if any(op.get("name") for op in _raw_ops(record)) else wa.MEMORY
+
+
+def _target_file(record: dict, file: str) -> tuple[str, str, Path] | None:
+    want = str(file or "").replace(BACKSLASH, "/").strip().lstrip("./")
+    hits = []
+    for name in sorted({_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""}):
+        folder = _skill_dir(name)
+        for path in sorted(folder.rglob("*.md")) if folder else []:
+            rel = path.relative_to(folder).as_posix()
+            full = path.relative_to(_home()).as_posix() if path.is_relative_to(_home()) else rel
+            if want and (want in (full, rel) or full.endswith("/" + want)):
+                hits.append((name, rel, path))
+    return hits[0] if len(hits) == 1 else None
+
+
+def _spans(text: str, part: str) -> list[tuple[int, int]]:
+    out, at = [], text.find(part) if part else -1
+    while at >= 0:
+        out.append((at, at + len(part)))
+        at = text.find(part, at + 1)
+    return out
+
+
+def _skill_target_op(record: dict, edit: dict) -> dict | None:
+    found = _target_file(record, edit.get("file") or "")
+    if not found:
+        return None
+    name, rel, path = found
+    text = path.read_text(encoding="utf-8", errors="replace")
+    find, replace = str(edit.get("find") or ""), str(edit.get("replace") or "")
+    if "\r\n" in text and "\n" in find and "\r\n" not in find:
+        find, replace = find.replace("\n", "\r\n"), replace.replace("\n", "\r\n")
+    if not find or text.count(find) != 1:
+        return None
+    start, end = _spans(text, find)[0]
+    ops = [op for op in _raw_ops(record) if _bare_skill(op.get("name")) == name]
+    for op in ops:
+        action, file_path = str(op.get("action") or ""), str(op.get("file_path") or "SKILL.md")
+        if action == "delete" or (action in ("create", "edit") and rel == "SKILL.md"):
+            return None
+        if action in ("write_file", "remove_file") and file_path == rel:
+            return None
+        if action == "patch" and file_path == rel and any(
+                a < end and start < b for a, b in _spans(text, str(op.get("old_string") or ""))):
+            return None
+    out = {"action": "patch", "name": ops[0].get("name"), "old_string": find, "new_string": replace}
+    if rel != "SKILL.md":
+        out["file_path"] = rel
+    return out
+
+
+def _memory_target_op(record: dict, edit: dict) -> dict | None:
+    from tools.memory_tool import load_on_disk_store
+    from tools.memory_tool_store import _find_unique_match
+
+    payload = record.get("payload") or {}
+    target = str(payload.get("target") or "memory")
+    if str(edit.get("file") or "").replace(BACKSLASH, "/").rsplit("/", 1)[-1] != _MEM_FILE.get(target, "MEMORY.md"):
+        return None
+    find, replace = str(edit.get("find") or ""), str(edit.get("replace") or "")
+    if not find.strip():
+        return None
+    store = load_on_disk_store()
+    entries = list(store.user_entries if target == "user" else store.memory_entries)
+    idx, ambiguous = _find_unique_match(entries, find.strip())
+    entry = entries[idx] if idx is not None and not ambiguous else ""
+    if not entry or entry.count(find) != 1:
+        return None
+    for op in payload.get("operations") or [payload]:
+        if op.get("action") in ("replace", "remove") and (
+                op.get("matched_entry") == entry or (op.get("old_text") and op["old_text"] in entry)):
+            return None
+    new = entry.replace(find, replace, 1).strip()
+    return ({"action": "replace", "old_text": find, "content": new, "matched_entry": entry} if new
+            else {"action": "remove", "old_text": find, "matched_entry": entry})
+
+
+def _target_op(record: dict, edit: dict) -> dict | None:
+    from tools import write_approval as wa
+
+    try:
+        if _record_subsystem(record) == wa.SKILLS:
+            return _skill_target_op(record, edit)
+        return _memory_target_op(record, edit)
+    except Exception as exc:
+        _log(f"suggested edit to the existing text of {record.get('id')} could not be checked: {exc!r}")
+        return None
 
 
 def _author_edit(content: str, want: str) -> dict | None:
@@ -1431,6 +1534,8 @@ def _review_parse(text: str) -> dict:
         edit = item.get("edit")
         if isinstance(edit, dict) and str(edit.get("find") or "").strip() and str(edit.get("find")) != str(edit.get("replace") or ""):
             found["edit"] = {"find": str(edit["find"])[:4000], "replace": str(edit.get("replace") or "")[:4000]}
+            if str(edit.get("file") or "").strip():
+                found["edit"]["file"] = str(edit["file"]).strip()[:300]
         found["severity"] = found["severity"].lower() if found["severity"].lower() in _SEVERITY else "note"
         kind = found["kind"].lower()
         found["kind"] = next((k for k in _KINDS if kind[:4] == k[:4]), "rule")
@@ -1578,13 +1683,29 @@ def _review_edits(state: dict) -> list[dict]:
 def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
     fixed = json.loads(json.dumps(record))
     applied = 0
+    first: list[dict] = []
     for edit in edits:
+        if edit.get("file"):
+            op = _target_op(record, edit)
+            if op and op not in first:
+                first.append(op)
+                applied += 1
+            continue
         find, replace = str(edit.get("find") or ""), str(edit.get("replace") or "")
         for op, field in _edit_slots(fixed):
             if find and op[field].count(find) == 1:
                 op[field] = op[field].replace(find, replace, 1)
                 applied += 1
                 break
+    if first:
+        payload = fixed.get("payload") or {}
+        if isinstance(payload.get("operations"), list):
+            payload["operations"] = first + payload["operations"]
+        else:
+            single = {k: v for k, v in payload.items() if k != "target"}
+            payload = {"action": "batch", "operations": first + [single],
+                       **({"target": payload["target"]} if "target" in payload else {})}
+        fixed["payload"], fixed["action"] = payload, "batch"
     return fixed, applied
 
 
@@ -1598,6 +1719,9 @@ def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
     entries = _review_edits(review)
     for entry in entries:
         entry["edit"]["ok"] = _edit_open(record, entry["edit"])
+        if entry["edit"]["ok"] and entry["edit"].get("file"):
+            shown = _target_file(record, entry["edit"]["file"]) if subsystem != "memory" else None
+            entry["edit"]["label"] = _tx("edit_target", file=shown[1] if shown else entry["edit"]["file"])
     open_edits = [e["edit"] for e in entries if e["edit"]["ok"]]
     review["edits"] = len(open_edits)
     if open_edits:
@@ -2162,7 +2286,7 @@ def _review_selftest(tmp: Path) -> None:
     assert "edit" not in done["findings"][1], "a note never carries an edit"
     assert done["findings"][0]["edit"]["ok"] and done["edits"] == 1, done
     assert done["model"] == "judge-1", done
-    sent = seen[-1]
+    sent = next(c for c in reversed(seen) if "selftest 5e1f0007" in c["messages"][1]["content"])
     assert sent["task"] == _REVIEW_TASK and sent["messages"][0]["role"] == "system", sent
     prompt = sent["messages"][1]["content"]
     assert "OWNER RULES (USER.md)" in prompt and known_line in prompt and "Selftest saved note" in prompt, prompt[:400]
@@ -2187,6 +2311,49 @@ def _review_selftest(tmp: Path) -> None:
     assert with_fix["ok"], with_fix
     text = (own / "SKILL.md").read_text(encoding="utf-8")
     assert "later line\n2nd lesson" in text and "second lesson" not in text, text
+
+    old_rule = "Always measure the tab bar height"
+    target_verdict = {"summary": "Conflicts with an older line.", "findings": [
+        {"severity": "fix", "kind": "contradiction", "quote": "third lesson", "other": old_rule,
+         "explain": "the older line says the opposite",
+         "edit": {"find": old_rule, "replace": "Measure the tab bar height once", "file": "skills/cat/own-skill/SKILL.md"}},
+        {"severity": "fix", "kind": "wrong", "quote": "third lesson", "other": "", "explain": "not in the file",
+         "edit": {"find": "no such text anywhere", "replace": "x", "file": "SKILL.md"}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(target_verdict))
+    stage("skills", "5e1f000b", {"action": "batch", "operations": [
+        {"action": "patch", "name": "own-skill", "old_string": "2nd lesson",
+         "new_string": "2nd lesson\nthird lesson: " + old_rule + " after a change"}]})
+    target = settle("skills", "5e1f000b")
+    assert target["edits"] == 1 and target["fix_left"] == [], target
+    assert target["findings"][0]["edit"]["label"] == "SKILL.md, existing text", target["findings"][0]
+    assert not target["findings"][1]["edit"]["ok"], "an edit whose text is not in the file must not be offered"
+    overlap = {"subsystem": "skills", "payload": {"action": "patch", "name": "own-skill",
+                                                   "old_string": "Always measure the tab", "new_string": "x"}}
+    assert _target_op(overlap, {"find": "measure the tab bar height", "replace": "y", "file": "SKILL.md"}) is None, \
+        "an edit to existing text the write itself patches must not be offered"
+    before_fix = (own / "SKILL.md").read_bytes()
+    with_target = approve("skills", "5e1f000b", with_edits=True)
+    assert with_target["ok"], with_target
+    text = (own / "SKILL.md").read_text(encoding="utf-8")
+    assert "Measure the tab bar height once" in text and text.count(old_rule) == 1 and "third lesson" in text, \
+        f"the edit to the existing text applies before the write, which repeats its old wording: {text}"
+    entry = asyncio.run(history(limit=1))["entries"][0]
+    assert "approved with 1 suggested edit(s)" in entry["summary"], entry
+    assert asyncio.run(undo({"id": entry["id"]}))["ok"], "the fix of the existing text must undo with the write"
+    assert (own / "SKILL.md").read_bytes() == before_fix, "undo must restore the existing text too"
+
+    (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
+    memory_verdict = {"summary": "Outdates an entry.", "findings": [
+        {"severity": "fix", "kind": "contradiction", "quote": "tabs", "other": "Another note", "explain": "older entry",
+         "edit": {"find": "Another note", "replace": "Another note, updated", "file": "MEMORY.md"}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(memory_verdict))
+    stage("memory", "5e1f000c", {"action": "add", "target": "memory", "content": "A new lesson about tabs"})
+    mem_target = settle("memory", "5e1f000c")
+    assert mem_target["edits"] == 1 and mem_target["findings"][0]["edit"]["label"] == "MEMORY.md, existing text", mem_target
+    mem_fixed = approve("memory", "5e1f000c", with_edits=True)
+    assert mem_fixed["ok"], mem_fixed
+    saved = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+    assert "Another note, updated" in saved and "A new lesson about tabs" in saved, saved
 
     globals()["_review_call"] = lambda task, **kw: (_ for _ in ()).throw(RuntimeError("provider down"))
     stage("skills", "5e1f0008", {"action": "create", "name": "new-two", "category": "cat",

@@ -607,6 +607,26 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   into a third-party skill. The card says why; the render sweep exempts exactly these and a review
   that is still running.
 
+## 1.9.4 — edits to the existing target
+
+* **Why.** On the live queue about half of the fix/block findings were contradictions with a line
+  already in the skill; the 1.9.3 prompt told the reviewer to leave `edit` out for those, so the card
+  offered no fix and the user could only reject or approve as written.
+* **Shape.** A finding's `edit` may carry `file`: the CURRENT TARGET heading path (memory: the file
+  name). `_target_op()` turns it into an operation: skills → `patch` with `old_string`/`new_string`
+  (and `file_path` for a supporting file; CRLF files get the edit in CRLF); memory → `replace` (or
+  `remove` when the entry becomes empty) pinned to the full `matched_entry` the store resolves now.
+* **Guards in `_skill_target_op`/`_memory_target_op`:** the text occurs exactly once in that file; the
+  write does not create/edit/delete/write_file/remove_file that file; no patch of the write overlaps
+  the span; for memory, the entry is not one the write replaces or removes; USER.md cannot be edited
+  from a MEMORY.md write (the file must match the record's target).
+* **Order.** `_with_edits()` puts the target ops FIRST: they are checked against the current file, and
+  a write that repeats the old wording would make the old text ambiguous if it ran first (selftest
+  fails with "Found 2 matches" when the order is reversed). Rule checks and the applicability check run
+  on the whole edited record, as for 1.9.3 edits.
+* **Card.** No panel change: `_mark_edits()` sets `label` to "<file>, existing text" and the existing
+  EditView draws it.
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.
