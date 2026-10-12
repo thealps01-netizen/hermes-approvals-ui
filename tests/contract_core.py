@@ -71,7 +71,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
         "calls": {"load_on_disk_store": (0, ())},
     },
     "tools/memory_tool_store.py": {
-        "names": ("ENTRY_DELIMITER",),
+        "names": ("ENTRY_DELIMITER", "MemoryStore"),
         "calls": {"_find_unique_match": (2, ())},
     },
     "agent/skill_utils.py": {
