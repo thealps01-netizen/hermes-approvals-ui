@@ -5,6 +5,52 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.10.0
+
+### Fixed
+
+* **Approving one write no longer voids the review of the others.** Writes waiting for the same
+  memory file or skill are now reviewed together, and a review stays valid when its file changed
+  only through approvals of writes it already saw (the card names them). A bulk approve of several
+  reviewed writes to one file applies them all instead of one; approving N of them one by one pays
+  N reviews instead of N(N+1)/2.
+* **Reading the list never spends anything.** `GET /pending` no longer starts reviews; the panel and
+  the status-bar chip start missing ones with `POST /reviews`, and the chip polls the new, cheap
+  `GET /count` instead of the whole listing.
+* A record has at most one review running; a late result can no longer overwrite a newer one, and a
+  queued review of a record that was rejected meanwhile never calls the model.
+* A full `SKILL.md` rewrite (`patch` with `content`) is no longer read as "every kept line is a
+  duplicate", and "Approve with the fix" applies the reviewer's fix inside the new content instead of
+  dropping a kept line.
+* The language rule flags any non-English letter in a new line (not only Turkish ones) and ignores
+  lines already in the file; accented Latin letters such as `Ã©` pass.
+
+### Changed
+
+* **Approve is bound to the card you saw.** Every card carries a version; if the write, a rule check
+  or the review changed before the click, nothing is written and the card is redrawn.
+* **Reject can be undone.** A rejected record and its review are kept with the history row;
+  **Restore** puts it back in the queue (under a new id).
+* **Bulk selection takes every card.** Reject N acts on all ticked records; Approve N unlocks only
+  while every ticked record is reviewed and clean, and says how many need a decision of their own.
+* The reviewer's input is fenced as data, a finding whose quote is not in the write is marked
+  unverified and does not count toward the verdict, input cut for length is named on the card, and a
+  review made by another model, an older prompt or before `USER.md` changed is marked (never re-run
+  without a click).
+* The backend routes run in FastAPI's thread pool (plain `def`) instead of on the event loop.
+* The backend selftest moved to `tests/backend_selftest.py` and runs with the review gate on.
+
+### Removed
+
+* `POST /fix` no longer takes `approve` (it was refused whenever a model was assigned, and the panel
+  never sent it); approving stays a separate, gated `/decide`.
+* `GET /pending` no longer takes `scan`; `POST /scan` records outside changes.
+
+### Known gap
+
+* `/memory approve` and `/skills approve` in chat still bypass the rule checks and the pre-review;
+  the core has no hook for it. `Docs/upstream-approval-hook-proposal.md` proposes one.
+
 ## 1.9.4
 
 ### Changed

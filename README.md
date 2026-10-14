@@ -14,13 +14,16 @@ chat tells you a write is waiting; this panel is where you inspect it and decide
 * **Pending** — one card per waiting record: type, source, target, operations, why it arrived, what
   will change, what approving does, the agent's own suggestion, and (for a skill description over the
   budget) the shortened alternative with a "Shorten and create" action.
-* **Applied** — every approve, reject, outside change and failed attempt, with per-record **Undo**.
+* **Applied** — every approve, reject, outside change and failed attempt, with per-record **Undo**;
+  a rejected record can be **Restored** to the queue.
 * **Memory** — the live `MEMORY.md` / `USER.md` entries with the budget they consume, and a two-step
   delete (adding a note stays a chat action — the panel does not invent a second write path). Past 90%
   the warning can **draft a merge request** into the chat box; you read and send it, and the result
   comes back to Pending like any other write.
 
-Several pending records can be ticked and decided together (two-step, one request per subsystem).
+Several pending records can be ticked and decided together (two-step, one request per subsystem). Any
+card can be ticked: **Reject N** takes all of them, **Approve N** unlocks only while every ticked record
+is reviewed and clean.
 Ctrl+K offers **Open Approvals** and **Approval alerts** (mute the alerts; the chip keeps counting).
 
 Approve and reject call the same function the `/memory approve` command uses, success is read from the
@@ -100,7 +103,7 @@ what every rule and every measurement asserts — is in [`tests/README.md`](test
 | Static preview | `node preview.mjs` | The five frames (one at a 420 px pane width) rendered into `preview.html` (dark) and `preview-light.html` (light) inside the app's own theme and compiled stylesheet; fails on a raw `pa.*` key, a native `title=`, or a frame action that finds no control |
 | Real render + WCAG | `node shot.mjs preview.html preview.png && node shot.mjs preview-light.html preview-light.png` | The only gate that paints and measures pixels (Electron/Chromium), run once per colour mode: overflow, clipped text, a warning cut by a scroll box, native controls, kit traces, the declared layer heights read back from the screen, and every painted text node's contrast ratio (4.5:1 / 3:1) |
 | Contrast negative control | `PA_CONTRAST_CANARY=1 node shot.mjs preview.html canary.png`, then again without it | That the measured gate can fail: three violations (a low-contrast read, a tone token worn as text, a warning below a scroll fold) injected into the already-drawn page must turn the gate red and name all three; the unmodified page must go green again |
-| Backend selftest | `PYTHONPATH="$HERMES_AGENT_DIR" "$CORE_PYTHON" ../dashboard/plugin_api.py --selftest` | The whole approve → history → undo loop against a throwaway `HERMES_HOME`: partial skill approval, the conflict path, force-undo, memory arithmetic, the patch precheck against the real target file, and the dead-approve block |
+| Backend selftest | `PYTHONPATH="$HERMES_AGENT_DIR" "$CORE_PYTHON" ../dashboard/plugin_api.py --selftest` | The whole approve → history → undo loop against a throwaway `HERMES_HOME`, with the review gate on (`tests/backend_selftest.py`): partial skill approval, the conflict path, force-undo, memory arithmetic, the patch precheck against the real target file, the dead-approve block, and review integrity — bulk and one-by-one approvals of writes to one file pay one review each, `GET /pending` starts nothing, a late review cannot overwrite a newer one, a rejected record is never reviewed, a full SKILL.md rewrite keeps its lines, approve is bound to the shown version, reject is restorable |
 
 ```bash
 cd tests
@@ -137,8 +140,8 @@ instead of skipping itself.
 The backend selftest also runs in CI: it imports the core's own modules (`tools.write_approval`,
 `hermes_cli.write_approval_commands`, `tools.memory_tool_store`, `agent.skill_utils`) straight from the
 pinned sparse checkout, with only `fastapi pyyaml requests httpx` installed — no Hermes wheel needed
-(Hermes refuses to build one). It covers the end-to-end `/fix` with `approve: true`: the shortened
-skill is created, and a refused apply leaves the pending record byte-identical.
+(Hermes refuses to build one). It runs with the review gate on and a stubbed reviewer, so every
+approve in it goes through the same rule checks, version check and review state the panel relies on.
 
 One gate stays local: the measured render and its contrast gate need the app's own Electron (a desktop
 Chromium session) plus its compiled stylesheet. Run it before releasing — it sees what jsdom cannot.
@@ -166,16 +169,36 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
     `author:` line (the name comes from `plugins.entries.pending-approvals.skill_author`), an edit to a
     skill that is hub-installed, bundled or written by someone else, non-English text, and a line or
     memory note that is already saved. A failed rule check cannot be skipped.
-  * **An AI review** reads the write next to the current skill or memory file and the owner's
-    `USER.md` / `MEMORY.md`, and reports duplicates, contradictions, wrong facts, a missing
-    measurement and other rule breaches — each with the quoted text. It runs once per content; a
-    change to the record or its target runs it again. The model is the one you assign to
-    **Approvals review** in **Settings → Models**; nothing is picked for you. Its verdict is advice:
-    once it has finished, Approve is yours whatever it says.
-  * Approve stays locked while the review runs. When no model is set or the review failed, a
-    two-step **Approve without review** applies it anyway and marks the history entry
-    "approved without pre-review". Bulk selection only takes reviewed, clean records.
+  * **An AI review** reads the write next to the current skill or memory file, the other writes
+    waiting for the same file, and the owner's `USER.md` / `MEMORY.md`, and reports duplicates,
+    contradictions, wrong facts, a missing measurement and other rule breaches — each with the quoted
+    text. The model is the one you assign to **Approvals review** in **Settings → Models**; nothing is
+    picked for you. Its verdict is advice: once it has finished, Approve is yours whatever it says.
+  * **One review per version of a write.** Because writes waiting for the same file are reviewed
+    together, approving one of them does not void the others' reviews: when the file changed only
+    through approvals of writes the review already saw, the review stands and the card names them.
+    Any other change to the write or its target queues a new review. Reviews are started by a POST
+    (the chip when it sees new records, the panel when it finds one missing) — reading the list never
+    spends anything — and one record never has two reviews running. A review made by another model,
+    with an older prompt or before `USER.md` changed is marked on the card; it is never re-run
+    without your click.
+  * **The reviewer's input is data.** The material reaches the model in blocks bounded by a random
+    marker the prompt declares as data, so a write cannot pose as a rule check or an instruction. A
+    finding whose quote cannot be found in the write is shown as unverified and does not count toward
+    the verdict. Input cut for length is named on the card.
+  * **Approve is bound to what you saw.** Each card carries a version of the write, its rule checks
+    and its review; an approve sends it back, and when anything changed in between nothing is written
+    and the card is redrawn.
+  * Approve stays locked while the review is queued or running. When no model is set or the review
+    failed, a two-step **Approve without review** applies it anyway and marks the history entry
+    "approved without pre-review".
   * The reviewer has no write access; the panel logs its tokens and cost, never the text.
+* **Reject can be taken back.** The rejected record and its review are kept with the history row;
+  **Restore** puts it back in the queue (under a new id) until the history is cleared.
+* **The gate covers this panel, not the chat commands.** `/memory approve` and `/skills approve` in a
+  chat apply a write without the rule checks or the pre-review; the core offers no hook a plugin
+  could use to stop them. [`Docs/upstream-approval-hook-proposal.md`](Docs/upstream-approval-hook-proposal.md)
+  describes the core change that would close it.
 * **No silent truncation.** An operation body is drawn whole in its own scrolling box with its size in
   the label; the backend caps a body at 20 000 characters and still reports the full length.
 * **Outbound content is inspection only.** The panel reads memory and skill state; it never uploads
@@ -193,7 +216,7 @@ contradict the app. The backend keeps one English message table behind `_tx(...)
 ```
 plugin.yaml                  identity, version, license, homepage
 dashboard/manifest.json      Dashboard manifest (same version)
-dashboard/plugin_api.py      FastAPI router: pending list, decide, fix, undo, memory, history
+dashboard/plugin_api.py      FastAPI router: pending list, count, reviews, decide, fix, undo, restore, memory, history
 desktop/plugin.js            the Desktop panel (ESM disk plugin, no build step)
 Docs/pending-approvals-notes.md   why every rule and every pixel decision exists
 tests/                       the seven gates + their fixtures, stubs and committed evidence PNGs

@@ -72,7 +72,7 @@ jobs:
       - name: Core contract canary (every way it can fail must fire)
         run: python tests/contract_core.py --selftest
 
-      - name: Backend selftest (against the pinned core, end-to-end /fix approve included)
+      - name: Backend selftest (against the pinned core, review gate on; tests/backend_selftest.py)
         run: |
           set -euo pipefail
           python -m pip install -q fastapi pyyaml requests httpx

@@ -554,12 +554,12 @@ def check_two_step_actions() -> None:
                          "the undo button does not pass the resolved conflict"),
                         ("force: Boolean(force)", "the force flag does not reach the backend"),
                         ("'pa.btn.forceUndo'", "the forced undo carries no label"),
-                        ("onClick: () => setArming('approve')", "bulk approve does not arm first"),
+                        ("() => setArming('approve')", "bulk approve does not arm first"),
                         ("onClick: () => setArming('reject')", "bulk reject does not arm first"),
                         ("onClick: () => void run(arming)", "the confirmed bulk click does not decide"),
                         ("return !(plain.stale || []).length && !plain.fix",
-                         "a record that cannot be applied as staged is selectable in bulk"),
-                        ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is selectable in bulk"),
+                         "a record that cannot be applied as staged is bulk-approvable"),
+                        ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is bulk-approvable"),
                         ("const [skipArmed, setSkipArmed] = useState(false)",
                          "approving without a pre-review has no confirmation state"),
                         ("onClick: skipArmed ? () => void decideAndLeave('approve', [], true) : () => setSkipArmed(true)",
@@ -577,6 +577,48 @@ def check_two_step_actions() -> None:
                         ("filter(f => f.kind !== 'evidence')", "the evidence note is back on every card")):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — {why}")
+
+
+def _function_body(src: str, name: str) -> str:
+    """The text of the top-level `function <name>(` up to its closing brace at column 0."""
+    head = re.search(rf"^function {re.escape(name)}\(", src, re.M)
+    if not head:
+        return ""
+    end = src.find("\n}\n", head.start())
+    return src[head.start():end if end >= 0 else len(src)]
+
+
+def check_review_integrity_panel() -> None:
+    """The 1.10.0 panel promises (Docs/review-integrity-contract.md, "Panel behaviour").
+
+    * The status-bar chip reads the cheap `/count`, never the heavy `/pending` listing: before
+      1.10.0 the chip polled `/pending` every 15 s with the panel closed, and that read also started
+      paid reviews.
+    * Every `/decide` carries the `version` of each record it acts on, so a card the user read before
+      the record (or its review) changed cannot be approved — the backend refuses it as stale.
+    * Bulk Approve is locked unless EVERY selected record is approvable on its own (`pickable`), while
+      every card keeps its checkbox, so a flagged record can still be rejected in bulk.
+    """
+    src = JS.read_text(encoding="utf-8")
+    chip = _function_body(src, "Chip")
+    if "count: () => ctxRef.rest('/count')" not in src:
+        _report("plugin.js: api.count no longer reads /count — the status chip has no cheap count to poll")
+    if "usePolling(api.count, 15000)" not in chip or "usePending(" in chip or "api.pending" in chip:
+        _report("plugin.js: the status chip does not poll the cheap /count every 15 s — it would read the "
+                "heavy /pending listing (which starts reviews) even with the panel closed")
+    if "versions: Object.fromEntries(items.map(item => [item.id, item.version]))" not in src:
+        _report("plugin.js: api.decide does not send the version of every record it acts on — a card "
+                "read before its record changed could be approved")
+    for needle in ("const held = chosen.filter(({ item }) => !pickable(item)).length",
+                   "'aria-disabled': held > 0 || undefined",
+                   "onClick: held ? undefined : () => setArming('approve')",
+                   "if (decision === 'approve' && held) {"):
+        if needle not in src:
+            _report(f"plugin.js: {needle!r} is missing — bulk Approve is not locked while a selected "
+                    "record needs a decision of its own")
+    if re.search(r"disabled:\s*!pickable\(", src):
+        _report("plugin.js: a card checkbox is disabled by `pickable` — a flagged record cannot be ticked "
+                "for bulk Reject")
 
 
 def check_jsx_runtime_import() -> None:
@@ -731,7 +773,8 @@ def check_backend_routes() -> None:
     for route in ('@router.get("/pending")', '@router.post("/scan")', '@router.post("/decide")',
                   '@router.get("/history")',
                   '@router.post("/undo")', '@router.get("/memory")', '@router.post("/memory/delete")',
-                  '@router.post("/history/clear")', '@router.post("/fix")'):
+                  '@router.post("/history/clear")', '@router.post("/fix")',
+                  '@router.get("/count")', '@router.post("/reviews")', '@router.post("/restore")'):
         if route not in src:
             _report(f"plugin_api.py: the route {route!r} is missing — the panel calls it")
     if "--selftest" not in src:
@@ -872,6 +915,7 @@ def main() -> int:
     check_no_native_title()
     check_colors()
     check_two_step_actions()
+    check_review_integrity_panel()
     check_jsx_runtime_import()
     check_undefined_names(API)
     messages = text_table()
@@ -897,7 +941,9 @@ def main() -> int:
           "indent, single-quoted strings, loader imports allowed, jsx third argument is a key, no "
           "native `title` on a button (the themed Tip / aria-label owns hover text), theme "
           "colors only, CSS variables defined, type sizes from one FS table, a container-query KPI row, "
-          "number-first percentages, the two-step clear/delete/force-undo unchanged, no "
+          "number-first percentages, the two-step clear/delete/force-undo unchanged, a record that "
+          "cannot be applied never bulk-approvable (bulk Approve locked, every card still tickable for "
+          "bulk Reject), the status chip on /count, every /decide carrying its versions, no "
           "undefined name, the restatement glossary stays gone, one version across plugin.yaml, the "
           "Dashboard manifest and the changelog, the installed desktop copy byte-identical to "
           "desktop/plugin.js, and the backend keeps ONE English "

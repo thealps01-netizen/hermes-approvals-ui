@@ -432,6 +432,7 @@ const PENDING = {
     }
   }]
 }
+for (const item of [...PENDING.memory, ...PENDING.skills]) item.version = `v-${item.id}`
 const REVIEW_HARD = 'new-skill: a new skill must carry "author: Selftest Owner" in its header (found: none).'
 const FINDING = {
   severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar in both themes.',
@@ -481,12 +482,35 @@ const REFUSED = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111
   ...s, plain: { ...s.plain, stale: [REFUSED_LINE], refused: ['new-skill'],
                  groups: [...s.plain.groups, { kind: 'update', name: 'other-skill', ops: [{ action: 'patch' }] }],
                  recommendation: { verdict: 'Reject', reason: 'refused path reason' } } }) }
+const QUEUED = withReview({ abc12345: { status: 'queued', hard: [] } })
+const STARTED = withReview({ abc12345: { status: 'running', hard: [] } })
+const UNVERIFIED = { severity: 'block', kind: 'wrong', quote: 'a line the write never had',
+  other: '', explain: 'UNVERIFIED-EXPLAIN-7f2', unverified: true, edit: { find: 'zzz', replace: 'yyy', ok: true } }
+const INTEGRITY = withReview({
+  aaa11111: {
+    status: 'done', verdict: 'approve', summary: 'Nothing that stands.', hard: [], edits: 0,
+    findings: [UNVERIFIED, { ...UNVERIFIED, severity: 'note', explain: 'UNVERIFIED-NOTE-3c1' }],
+    cut: [{ part: 'target', chars: 12400 }, { part: 'siblings', chars: 1 }],
+    carried: ['bbb22222'], siblings: 2, outdated: 'rules'
+  }
+})
+const STALE_ERR = 'This record or its review changed since the panel showed it — read it again before approving.'
+const RESTORE_ID = 'ee55ff66'
+const RESTORED_AS = '9a8b7c6d'
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: Date.now() / 1000 - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
   { id: 'bb22cc33', ts: Date.now() / 1000 - 3600, kind: 'rejected', subsystem: 'skills', summary: 'batch(12 ops: ' + 'patch, '.repeat(28) + 'on hermes-desktop-plugin-dev — ' + HIST_TAIL, files: [], undoable: false },
   { id: 'cc33dd44', ts: Date.now() / 1000 - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: ' + 'long description '.repeat(30), files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
   { id: 'dd44ee55', ts: Date.now() / 1000 - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused', files: [], undoable: false }
 ], counts: { applied: 57, failed: 1, undoable: 2 } }
+const HISTORY_RESTORE = { entries: [
+  { id: RESTORE_ID, ts: Date.now() / 1000 - 300, kind: 'rejected', subsystem: 'skills', summary: 'new-skill rejected',
+    files: [], undoable: false, restorable: true },
+  { id: 'ff66aa77', ts: Date.now() / 1000 - 900, kind: 'rejected', subsystem: 'memory', summary: 'MEMORY.md rejected',
+    files: [], undoable: false, restored: 'abc12345' },
+  { id: '0a1b2c3d', ts: Date.now() / 1000 - 1900, kind: 'rejected', subsystem: 'memory', summary: 'an old rejection',
+    files: [], undoable: false }
+], counts: { applied: 57, failed: 1, undoable: 0 } }
 const MEMORY = {
   memory: { file: 'MEMORY.md', chars: 2189, limit: 2200, percent: 100, entries: ['A note', 'A note'],
             updated: Date.now() / 1000 - 600 },
@@ -500,10 +524,30 @@ const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
 const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok' }
+const GETS = []
 const STORE = new Map()
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
+const pendingFor = mode => (mode === 'refused' ? REFUSED
+  : mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
+  : mode === 'reviewing' ? REVIEWING
+  : mode === 'reviewed' ? REVIEWED
+  : mode === 'remedy' ? REMEDY
+  : mode === 'queued' || mode === 'queuedstuck' ? QUEUED
+  : mode === 'started' ? STARTED
+  : mode === 'integrity' ? INTEGRITY
+  : mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory,
+    { ...PENDING.memory[0], id: 'abc99999', version: 'v-abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
+  : PENDING)
+const decided = body => body.ids.map(id => {
+  if (REST.post === 'bulkfail' && body.subsystem === 'skills') return { id, ok: false, error: 'Hermes refused it' }
+  if (REST.post === 'stale' && body.decision === 'approve' && id === 'aaa11111') {
+    return { id, ok: false, stale: true, error: STALE_ERR }
+  }
+  if (body.decision === 'reject') return { id, ok: true, message: 'Rejected.', history_id: `h-${id}` }
+  return { id, ok: true, message: '1 operation(s) applied.' }
+})
 let version = 0
-async function mount(appLocale) {
+async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
   const registrations = []
   const ctx = {
@@ -519,14 +563,19 @@ async function mount(appLocale) {
           return { ok: false, conflicts: ['memories/MEMORY.md'],
                    error: 'The file changed after this record; send force to undo anyway.' }
         }
+        if (path === '/reviews') {
+          if (REST.mode === 'queued') REST.mode = 'started'
+          return { ok: true, started: 1 }
+        }
         if (REST.post === 'hold') return new Promise(() => {})
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
-        if (path === '/decide' && REST.post === 'bulkfail' && opts.body.subsystem === 'skills') {
-          return { ok: true, results: opts.body.ids.map(id => ({ id, ok: false, error: 'Hermes refused it' })) }
+        if (path === '/decide') return { ok: true, results: decided(opts.body), counts: { memory: 0, skills: 0 } }
+        if (path === '/restore') {
+          return opts.body.id === RESTORE_ID ? { ok: true, id: RESTORED_AS }
+            : { ok: false, error: 'This record was already restored.' }
         }
-        if (path === '/decide') return { ok: true, results: [{ ok: true, message: '1 operation(s) applied.' }], counts: { memory: 0, skills: 0 } }
         if (path === '/fix') return { ok: true, message: 'Description shortened — long-description: 172 → 53 characters' }
         if (path === '/review') return { ok: true, review: { status: 'running', hard: [] } }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
@@ -537,18 +586,13 @@ async function mount(appLocale) {
         throw new Error(`unexpected POST: ${path}`)
       }
       REST.gets += 1
+      GETS.push(path)
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       const table = {
-        '/pending': REST.mode === 'refused' ? REFUSED
-          : REST.mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
-          : REST.mode === 'reviewing' ? REVIEWING
-          : REST.mode === 'reviewed' ? REVIEWED
-          : REST.mode === 'remedy' ? REMEDY
-          : REST.mode === 'twomem' ? { ...PENDING, memory: [...PENDING.memory, { ...PENDING.memory[0], id: 'abc99999' }], counts: { ...PENDING.counts, memory: 2 } }
-          : PENDING,
-        '/pending?scan=0': REST.mode === 'refused' ? REFUSED : PENDING,
-        '/history?limit=50': HISTORY,
+        '/pending': pendingFor(REST.mode),
+        '/count': { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 } : pendingFor(REST.mode).counts) },
+        '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE : HISTORY,
         '/memory': MEMORY
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
@@ -581,21 +625,25 @@ async function mount(appLocale) {
   const hostEl = document.createElement('div')
   document.body.appendChild(hostEl)
   const root = createRoot(hostEl)
-  await act(async () => { root.render(React.createElement(pageReg.render)) })
-  await act(async () => { await new Promise(r => setTimeout(r, 60)) })
+  if (parts !== 'chip') {
+    await act(async () => { root.render(React.createElement(pageReg.render)) })
+    await act(async () => { await new Promise(r => setTimeout(r, 60)) })
+  }
 
   const chipEl = document.createElement('div')
   document.body.appendChild(chipEl)
   const chipRoot = createRoot(chipEl)
-  await act(async () => { chipRoot.render(React.createElement(chipReg.render)) })
-  await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+  if (parts !== 'page') {
+    await act(async () => { chipRoot.render(React.createElement(chipReg.render)) })
+    await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+  }
 
   const text = hostEl.innerHTML
     .replace(/<style[\s\S]*?<\/style>/g, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return { hostEl, root, chipEl, text, chipText: chipEl.textContent.trim(), registrations, title }
+  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title }
 }
 
 // The register-time label path is exercised for real: `ctx.i18n.t` resolves through the SAME
@@ -842,8 +890,8 @@ for (const mounted of [en, other]) {
   if (!fixBtn) fail('the "Shorten description" button is missing')
   await click(fixBtn, 60)
   const post = stub.calls.posts.find(p => p.path === '/fix')
-  if (!post || post.body.subsystem !== 'skills' || post.body.approve !== false) {
-    fail(`the fix request is wrong: ${JSON.stringify(post)}`)
+  if (!post || post.body.subsystem !== 'skills' || post.body.id !== 'def67890' || 'approve' in post.body) {
+    fail(`the fix request is not {subsystem: 'skills', id} alone: ${JSON.stringify(post)}`)
   }
 }
 
@@ -1044,66 +1092,153 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 
 // --- 12c) Bulk decisions ------------------------------------------------------------------------
+// Every card carries its checkbox, so a flagged record can be rejected in bulk. "Approve N" opens
+// only while EVERY selected record is approvable on its own; otherwise it is aria-disabled (still
+// focusable) with a themed Tip counting the records that need their own decision, and a click sends
+// nothing. Both bulk actions arm first and send on Confirm; every /decide carries its versions.
 {
   const bulk = await mount('en')
-  const bar = bulk.hostEl.querySelector('.pa-bulk')
+  const barOf = h => h.hostEl.querySelector('.pa-bulk')
+  const bar = barOf(bulk)
   if (!bar) fail('no bulk bar over three pending records')
   const picks = [...bulk.hostEl.querySelectorAll('input.pa-pick')]
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
-  const fixCard = [...bulk.hostEl.querySelectorAll('.pa-cell')].find(c => c.getAttribute('data-key') === 'skills:def67890')
-  if (!fixCard?.querySelector('input.pa-pick')?.disabled) fail('a record that needs a fix is selectable')
+  if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
   if (picks.some(p => !/^Select this record #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
-  must(bar?.textContent, ['0 of 2 selected', 'Select all', 'cannot be applied as staged'], 'bulk bar idle')
+  must(bar?.textContent, ['0 of 3 selected', 'Select all'], 'bulk bar idle')
+  if (/cannot be applied as staged/.test(bar?.textContent || '')) fail('the old "left out of the selection" note is back')
   if (buttons(bar, /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = posts().length
   await click(buttons(bar, /^Select all$/)[0])
-  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['2 of 2 selected', 'Clear selection'], 'bulk all')
-  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Approve 2$/)[0])
-  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['Apply 2 records now?'], 'bulk arming')
+  must(barOf(bulk)?.textContent, ['3 of 3 selected', 'Clear selection'], 'bulk all')
+  const lockedApprove = buttons(barOf(bulk), /^Approve 3$/)[0]
+  if (lockedApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a flagged record selected')
+  if (lockedApprove?.disabled) fail('the locked bulk Approve is a disabled button: its Tip can never be reached')
+  const heldTip = lockedApprove?.closest('[data-tip]')?.getAttribute('data-tip') || ''
+  if (!/^1 selected record needs a decision of its own/.test(heldTip)) {
+    fail(`the locked bulk Approve does not say how many records need their own decision: ${JSON.stringify(heldTip)}`)
+  }
+  if (lockedApprove) await click(lockedApprove)
+  if (/Apply 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
+  if (posts().length !== before) fail('the locked bulk Approve sent a decision')
+  await click(pickOf(bulk, 'skills:def67890'))
+  must(barOf(bulk)?.textContent, ['2 of 3 selected'], 'bulk flagged unticked')
+  const openApprove = buttons(barOf(bulk), /^Approve 2$/)[0]
+  if (!openApprove || openApprove.getAttribute('aria-disabled') === 'true') fail('bulk Approve stays locked once every selected record is approvable')
+  if (openApprove?.closest('[data-tip]')) fail('an open bulk Approve still carries the "needs a decision" Tip')
+  await click(openApprove)
+  must(barOf(bulk)?.textContent, ['Apply 2 records now?'], 'bulk arming')
   if (posts().length !== before) fail('bulk approve fired before Confirm')
-  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Cancel$/)[0])
+  await click(buttons(barOf(bulk), /^Cancel$/)[0])
   if (posts().length !== before) fail('Cancel still sent a decision')
-  const memPick = [...bulk.hostEl.querySelectorAll('.pa-cell')]
-    .find(c => c.getAttribute('data-key') === 'memory:abc12345')?.querySelector('input.pa-pick')
-  await click(memPick)
-  must(bulk.hostEl.querySelector('.pa-bulk')?.textContent, ['1 of 2 selected'], 'bulk one unticked')
-  await click(memPick)
-  await click(buttons(bulk.hostEl.querySelector('.pa-bulk'), /^Reject 2$/)[0])
+  await click(pickOf(bulk, 'skills:def67890'))
+  must(barOf(bulk)?.textContent, ['3 of 3 selected'], 'bulk flagged ticked again')
+  await click(buttons(barOf(bulk), /^Reject 3$/)[0])
   const arm = bulk.hostEl.querySelector('.pa-bulk .pa-alert-danger')
-  if (!arm || !/Reject 2 records\?/.test(arm.textContent)) fail('bulk reject does not arm with its own warning')
+  if (!arm || !/Reject 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
+    fail('bulk reject does not arm with its own warning (and the way back through Restore)')
+  }
+  if (posts().length !== before) fail('bulk reject fired before Confirm')
   await click(bulk.hostEl.querySelector('.pa-bulk-go'), 80)
   const sent = posts().slice(before)
   const shape = sent.map(p => `${p.body.subsystem}:${p.body.decision}:${p.body.ids.join('+')}`).join(' ')
-  if (shape !== 'memory:reject:abc12345 skills:reject:aaa11111') fail(`bulk requests wrong: ${shape}`)
+  if (shape !== 'memory:reject:abc12345 skills:reject:def67890+aaa11111') {
+    fail(`bulk Reject does not act on every selected record, the flagged one included: ${shape}`)
+  }
   const said = stub.calls.notify[stub.calls.notify.length - 1]
-  if (said?.kind !== 'success' || said?.message !== '2 of 2 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
+  if (said?.kind !== 'success' || said?.message !== '3 of 3 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
 
   REST.post = 'bulkfail'
   const partial = await mount('en')
-  await click(buttons(partial.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
-  await click(buttons(partial.hostEl.querySelector('.pa-bulk'), /^Approve 2$/)[0])
+  const from0 = posts().length
+  await click(buttons(barOf(partial), /^Select all$/)[0])
+  await click(pickOf(partial, 'skills:def67890'))
+  await click(buttons(barOf(partial), /^Approve 2$/)[0])
   await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
   const told = stub.calls.notify[stub.calls.notify.length - 1]
   if (told?.kind !== 'error' || told?.message !== '1 of 2 done · 1 record failed: Hermes refused it') {
     fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
   }
+  const versions = posts().slice(from0).map(p => JSON.stringify(p.body.versions)).join(' ')
+  if (versions !== '{"abc12345":"v-abc12345"} {"aaa11111":"v-aaa11111"}') {
+    fail(`bulk Approve does not send the version of every record it acts on: ${versions}`)
+  }
   REST.post = 'normal'
   partial.hostEl.remove()
+
+  REST.post = 'stale'
+  const stale = await mount('en')
+  await click(buttons(barOf(stale), /^Select all$/)[0])
+  await click(pickOf(stale, 'skills:def67890'))
+  await click(buttons(barOf(stale), /^Approve 2$/)[0])
+  await click(stale.hostEl.querySelector('.pa-bulk-go'), 80)
+  const staleSaid = stub.calls.notify[stub.calls.notify.length - 1]
+  if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 done · 1 record failed: ${STALE_ERR}`) {
+    fail(`a stale record in a bulk approve is not counted as a failure with its reason: ${JSON.stringify(staleSaid)}`)
+  }
+  REST.post = 'normal'
+  stale.hostEl.remove()
 
   REST.mode = 'twomem'
   const batch = await mount('en')
   const from = posts().length
-  await click(buttons(batch.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
-  await click(buttons(batch.hostEl.querySelector('.pa-bulk'), /^Approve 3$/)[0])
+  await click(buttons(barOf(batch), /^Select all$/)[0])
+  if (buttons(barOf(batch), /^Approve 4$/)[0]?.getAttribute('aria-disabled') !== 'true') {
+    fail('bulk Approve over four records with one flagged is not locked')
+  }
+  await click(pickOf(batch, 'skills:def67890'))
+  await click(buttons(barOf(batch), /^Approve 3$/)[0])
   await click(batch.hostEl.querySelector('.pa-bulk-go'), 80)
   const out = posts().slice(from).map(p => `${p.body.subsystem}:${p.body.ids.join('+')}`).join(' ')
   if (out !== 'memory:abc12345+abc99999 skills:aaa11111') fail(`one /decide per subsystem expected: ${out}`)
   REST.mode = 'normal'
   batch.hostEl.remove()
+}
+
+// --- 12d) A single decision carries its version; a stale result warns and re-reads; Reject says Restore
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const one = await mount('en')
+  const from = posts().length
+  await click(buttons(cellOf(one, 'skills:aaa11111'), /^Approve$/)[0], 80)
+  const sent = posts().slice(from)
+  if (sent.length !== 1 || JSON.stringify(sent[0].body.versions) !== '{"aaa11111":"v-aaa11111"}') {
+    fail(`a single Approve does not send its version: ${JSON.stringify(sent.map(p => p.body))}`)
+  }
+  one.hostEl.remove()
+
+  REST.post = 'stale'
+  const stale = await mount('en')
+  const reads = GETS.filter(p => p === '/pending').length
+  await click(buttons(cellOf(stale, 'skills:aaa11111'), /^Approve$/)[0], 120)
+  const warned = stub.calls.notify[stub.calls.notify.length - 1]
+  if (warned?.kind !== 'warning' || warned?.message !== STALE_ERR) {
+    fail(`a stale single Approve is not a warning toast with its error: ${JSON.stringify(warned)}`)
+  }
+  if (GETS.filter(p => p === '/pending').length <= reads) fail('a stale single Approve does not refresh the list')
+  if (!cellOf(stale, 'skills:aaa11111')) fail('a stale card left the list as if it had been approved')
+  REST.post = 'normal'
+  stale.hostEl.remove()
+
+  const rej = await mount('en')
+  const cell = cellOf(rej, 'skills:aaa11111')
+  const before = posts().length
+  await click(buttons(cell, /^Reject$/)[0], 80)
+  const rejected = posts().slice(before)
+  if (rejected.length !== 1 || rejected[0].body.decision !== 'reject' || rejected[0].body.ids.join() !== 'aaa11111') {
+    fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
+  }
+  const toast = stub.calls.notify[stub.calls.notify.length - 1]
+  if (toast?.kind !== 'success' || !/restore it from the “Applied” tab/.test(toast?.message || '')) {
+    fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
+  }
+  rej.hostEl.remove()
 }
 
 // --- 13) FLIP: unchanged positions animate nothing, changed ones animate then settle ------------
@@ -1274,9 +1409,17 @@ REST.scan = 'ok'
   const approveIn = key => buttons(cell(gate.hostEl, key), /^Approve$/)[0]
   for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
     if (approveIn(key)?.getAttribute('aria-disabled') !== 'true') fail(`${key}: Approve is not locked before the review`)
-    if (!cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record is selectable`)
+    if (cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
   }
-  if (gate.hostEl.querySelector('.pa-bulk')) fail('the bulk bar offers records that are not pre-reviewed')
+  const gateBar = gate.hostEl.querySelector('.pa-bulk')
+  if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
+  if (gateBar) await click(buttons(gateBar, /^Select all$/)[0])
+  const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Approve 3$/)[0]
+  if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
+  if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
+    fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
+  }
+  if (gateBar) await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
     .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
@@ -1384,6 +1527,137 @@ REST.scan = 'ok'
   REST.mode = 'normal'
 }
 
+// --- 21) Review integrity (1.10.0): queued reviews, the chip on /count, restore, muted findings ------
+// A `queued` review is drawn exactly like a running one and the load that saw it starts the reviews
+// with ONE POST /reviews; a load without one starts nothing. The status chip reads only GET /count,
+// never /pending, and asks for POST /reviews once whenever its total changes (its first poll
+// included, when above 0). An unverified finding is muted and never offers its edit; the cut,
+// carried, siblings and outdated facts are one line each, Approve stays open and "Review again"
+// stays on the card. A rejected history row with `restorable` offers a one-click Restore that posts
+// /restore and re-reads both lists; a `restored` row reads "Restored" without a button.
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const reviewsPosts = () => stub.calls.posts.filter(p => p.path === '/reviews').length
+
+  const calm = reviewsPosts()
+  const plain = await mount('en', 'page')
+  if (reviewsPosts() !== calm) fail('a /pending load without a queued review still posted /reviews')
+  plain.root.unmount()
+  plain.hostEl.remove()
+
+  REST.mode = 'queued'
+  const before = reviewsPosts()
+  const reads = GETS.filter(p => p === '/pending').length
+  const queuedLoad = await mount('en', 'page')
+  if (reviewsPosts() - before !== 1) fail(`a load with a queued review posted /reviews ${reviewsPosts() - before} times, not once`)
+  if (GETS.filter(p => p === '/pending').length - reads < 2) fail('the panel did not re-read the list after starting the reviews')
+  queuedLoad.root.unmount()
+  queuedLoad.hostEl.remove()
+  REST.mode = 'queuedstuck'
+  const queued = await mount('en', 'page')
+  const qCard = cell(queued.hostEl, 'memory:abc12345')
+  must(qCard?.textContent, ['Reading this write against your rules'], 'a queued review is drawn like a running one')
+  const qBadge = qCard?.querySelector('.pa-card-head [data-slot="badge"]')
+  REST.mode = 'reviewing'
+  const running = await mount('en', 'page')
+  const rBadge = cell(running.hostEl, 'memory:abc12345')?.querySelector('.pa-card-head [data-slot="badge"]')
+  if (!qBadge || qBadge.textContent !== rBadge?.textContent || qBadge.getAttribute('data-variant') !== rBadge?.getAttribute('data-variant')) {
+    fail(`a queued card wears another badge than a running one: ${qBadge?.textContent} vs ${rBadge?.textContent}`)
+  }
+  if (buttons(qCard, /^Approve$/)[0]?.getAttribute('aria-disabled') !== 'true') fail('a queued review leaves Approve open')
+  for (const h of [queued, running]) { h.root.unmount(); h.hostEl.remove() }
+  REST.mode = 'normal'
+
+  const getsFrom = GETS.length
+  const chipPosts = reviewsPosts()
+  const chip = await mount('en', 'chip')
+  const chipGets = GETS.slice(getsFrom)
+  if (!chipGets.length || chipGets.some(p => p !== '/count')) fail(`the status chip read ${JSON.stringify(chipGets)} — only /count is allowed`)
+  if (!/3 awaiting approval/.test(chip.chipText)) fail(`the chip does not count from /count: ${JSON.stringify(chip.chipText)}`)
+  if (reviewsPosts() - chipPosts !== 1) fail(`the chip's first poll with 3 pending posted /reviews ${reviewsPosts() - chipPosts} times, not once`)
+  chip.chipRoot.unmount()
+  REST.mode = 'chipzero'
+  const zeroPosts = reviewsPosts()
+  const zero = await mount('en', 'chip')
+  if (reviewsPosts() !== zeroPosts) fail('the chip posted /reviews on a first poll with nothing pending')
+  zero.chipRoot.unmount()
+  REST.mode = 'normal'
+  if (stub.calls.posts.some(p => p.path === '/pending')) fail('/pending was POSTed')
+
+  REST.mode = 'integrity'
+  const integ = await mount('en', 'page')
+  const card = cell(integ.hostEl, 'skills:aaa11111')
+  const review = card?.querySelector('.pa-review')
+  const doubt = [...(review?.querySelectorAll('[data-unverified="true"]') || [])]
+  if (doubt.length !== 1 || !doubt[0].classList.contains('pa-muted')) fail('an unverified finding is not drawn muted')
+  if (doubt[0]?.querySelector('[data-slot="badge"]')?.textContent !== 'Unverified quote'
+      || doubt[0]?.querySelector('[data-slot="badge"]')?.getAttribute('data-variant') !== 'muted') {
+    fail('an unverified finding does not carry the muted "Unverified quote" tag')
+  }
+  if ((review?.textContent || '').includes('yyy') || buttons(card, /^Approve with the fix$/).length) {
+    fail('an unverified finding offers its edit')
+  }
+  if (/Breaks a rule/.test(card?.querySelector('.pa-card-head')?.textContent || '')) fail('an unverified finding still flags the card')
+  const lines = Object.fromEntries([...(review?.querySelectorAll('[data-aside]') || [])]
+    .map(el => [el.getAttribute('data-aside'), el.textContent]))
+  const want = {
+    cut: 'The reviewer saw a shortened input; it left out 12,400 characters of the current target, '
+      + '1 character of the other pending writes to this file.',
+    carried: 'Approved since this review: #bbb22222.',
+    siblings: 'Reviewed together with 2 other pending writes to this file.',
+    outdated: 'Your rules in USER.md changed after this review'
+  }
+  for (const [key, text] of Object.entries(want)) {
+    if (!String(lines[key] || '').startsWith(text)) fail(`the ${key} line is missing or wrong: ${JSON.stringify(lines[key])}`)
+  }
+  if (!buttons(card, /^Review again$/).length) fail('an outdated review lost its "Review again" button')
+  if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') fail('an outdated review locks Approve')
+  must(card?.textContent, ['UNVERIFIED-EXPLAIN-7f2'], 'an unverified finding still shows')
+  const details = buttons(card, /^Details and changes$/)[0]
+  if (!details) fail('the integrity card lost its Details control')
+  if (details) await click(details)
+  must(cell(integ.hostEl, 'skills:aaa11111')?.textContent, ['UNVERIFIED-NOTE-3c1', 'Unverified quote'],
+    'an unverified note in Details')
+  if ((cell(integ.hostEl, 'skills:aaa11111')?.textContent || '').includes('yyy')) fail('an unverified note offers its edit')
+  noRawKeys(card?.textContent || '', 'integrity card')
+  integ.root.unmount()
+  integ.hostEl.remove()
+
+  REST.mode = 'restore'
+  const hist = await mount('en', 'page')
+  await click(tab(hist.hostEl, /Applied/), 60)
+  const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
+  const rowOf = text => rows.find(c => c.textContent.includes(text))
+  const restorable = rowOf('new-skill rejected')
+  const restoreBtn = buttons(restorable || hist.hostEl, /^Restore$/)[0]
+  if (!restoreBtn || restoreBtn.getAttribute('data-slot') !== 'button' || restoreBtn.getAttribute('data-variant') === 'destructive') {
+    fail('a restorable rejected row offers no plain kit "Restore" button')
+  }
+  const restoredRow = rowOf('MEMORY.md rejected')
+  if (!restoredRow?.textContent.includes('Restored') || buttons(restoredRow, /^Restore$/).length) {
+    fail('a restored row does not read "Restored" or still offers the button')
+  }
+  if (buttons(rowOf('an old rejection') || hist.hostEl, /^Restore$/).length) fail('a pre-1.10.0 rejected row offers Restore')
+  const layers = rows.map(c => [...c.querySelectorAll('div')].map(d => `${d.style.height || ''}|${d.style.minHeight || ''}`)
+    .filter(v => v !== '|').join(' '))
+  if (new Set(layers).size !== 1) fail(`a history card with Restore has other layers: ${JSON.stringify([...new Set(layers)])}`)
+  const pendingReads = GETS.filter(p => p === '/pending').length
+  const historyReads = GETS.filter(p => p === '/history?limit=50').length
+  if (restoreBtn) await click(restoreBtn, 80)
+  const restorePost = stub.calls.posts.filter(p => p.path === '/restore')
+  if (restorePost.length !== 1 || restorePost[0].body.id !== RESTORE_ID) {
+    fail(`Restore did not post /restore once with the row id: ${JSON.stringify(restorePost.map(p => p.body))}`)
+  }
+  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  if (said?.kind !== 'success' || !said.message.includes(`#${RESTORED_AS}`)) fail(`Restore did not toast success: ${JSON.stringify(said)}`)
+  if (GETS.filter(p => p === '/pending').length <= pendingReads) fail('Restore does not re-read the pending list')
+  if (GETS.filter(p => p === '/history?limit=50').length <= historyReads) fail('Restore does not re-read the history')
+  noRawKeys(hist.hostEl.textContent, 'history with Restore')
+  hist.root.unmount()
+  hist.hostEl.remove()
+  REST.mode = 'normal'
+}
+
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
   process.exit(1)
@@ -1393,7 +1667,8 @@ console.log('  registration: page /approvals · sidebar label resolved to "Appro
 console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
 console.log('  pre-review: running review and failed rule check lock Approve · two-step skip_review · findings shown · Review again')
 console.log('  remedies: suggested edit and rule edit shown, then one /decide with_edits · a fix that leaves a problem is held · no chat draft · no flagged card is a dead end')
-console.log('  bulk: only applicable records selectable · arm → Confirm → one /decide per subsystem · Cancel sends nothing')
+console.log('  bulk: every card tickable · Reject N acts on all · Approve N locked (aria-disabled + Tip, sends nothing) unless all approvable · arm → Confirm → one /decide per subsystem with versions · Cancel sends nothing')
+console.log('  integrity: versions on single and bulk /decide · stale → warning + re-read · /fix without approve · queued drawn as running + one POST /reviews · chip reads only /count and starts reviews on a changed total · Restore → /restore + both lists re-read · unverified finding muted without edit · cut/carried/siblings/outdated lines')
 console.log('  palette: "Open Approvals" (3 waiting → /approvals) · "Approval alerts" on/muted; muted = no toast, no OS alert, chip still counts')
 console.log('  kit skeleton: PanelMeta inspector · PanelSectionLabel rows · Badge status · PanelBlock text · LogView diff · Button controls · no native title=')
 console.log('  blocked record: Approve held (aria-disabled, still focusable) with the reason in a themed Tip · a record needing no fix keeps it enabled and untipped')
