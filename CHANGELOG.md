@@ -5,6 +5,26 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.11.0
+
+### Changed
+
+* **One card, one review and one decision per skill.** Hermes stages every skill write as its own
+  record, so a single conversation could leave three or more cards for the same skill, each with its
+  own paid review. Pending writes to the same skill now form one card (a write that touches two
+  skills joins both skills' writes): the combined result per file, the changes in order (`#1`, `#2`,
+  …), one review of the whole set and **Approve N changes**, which applies all of them or none.
+  Memory cards and a skill with a single waiting write look exactly as before.
+* **A conflict between two waiting writes shows before you approve.** The card plays the changes in
+  order without writing anything; a change that no longer applies after the ones before it is named
+  (`#3 · … cannot be applied`) and locks Approve. The rule checks run on the combined result, so a
+  line two changes both add is caught.
+* **One change can still be dropped.** Each change has its own **Reject #n** (restorable); the rest
+  form a new set and get one new review. Approving a single change of a set is not offered.
+* The Applied tab shows a set as one row with its changes listed under it; one **Undo** takes the
+  whole set back and one **Restore** puts every rejected change back in the queue, in order.
+* The status-bar chip counts decisions instead of records.
+
 ## 1.10.0
 
 ### Fixed

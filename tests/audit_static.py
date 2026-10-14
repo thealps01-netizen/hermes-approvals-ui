@@ -621,6 +621,41 @@ def check_review_integrity_panel() -> None:
                 "for bulk Reject")
 
 
+def check_skill_groups_panel() -> None:
+    """The 1.11.0 panel promises (Docs/skill-groups-contract.md, "Panel behaviour").
+
+    * A skill group is ONE card: `units` folds the members into their group (once, at the first
+      member) and the list draws the group card for that unit, so no member gets a card of its own.
+    * The group's Approve is held by the group gate, the same `pickable` rule bulk uses, fed with
+      the group's review, its `stale` list and any member's description fix.
+    * `/decide` sends a group under `groups` (with its version) and only lone records under `ids`.
+    * The chip starts the reviews when `records` move as well as `counts`: a record joining a group
+      changes `records` only, and the group then needs a new review.
+    """
+    src = JS.read_text(encoding="utf-8")
+    units = _function_body(src, "units")
+    listing = _function_body(src, "PendingList")
+    group = _function_body(src, "GroupCard")
+    chip = _function_body(src, "Chip")
+    for needle in ("if (drawn.has(group.id)) continue", "parts, plain: { stale: group.stale || [], fix }"):
+        if needle not in units:
+            _report(f"plugin.js: units() lost {needle!r} — a skill group is not folded into one card")
+    if "const items = units(data)" not in listing or "jsx(item.parts ? GroupCard : PendingCard, {" not in listing:
+        _report("plugin.js: the pending list does not draw ONE group card per skill group — its members "
+                "would be cards of their own")
+    if "const groupBlocked = !pickable(item)" not in group or "groupBlocked, heldWhy, () => decideGroup('approve'))" \
+            not in group:
+        _report("plugin.js: the group's Approve is not held by the group gate — a group with a stale change, "
+                "a rule check or an unfinished review could be approved")
+    if "groups: items.filter(item => item.parts).map(item => item.id)," not in src \
+            or "ids: items.filter(item => !item.parts).map(item => item.id)," not in src:
+        _report("plugin.js: api.decide does not send groups under `groups` — a group decision would reach "
+                "the backend as member ids")
+    if "data.records?.memory, data.records?.skills" not in chip:
+        _report("plugin.js: the chip ignores `records` — a record joining a group would never start the "
+                "group's new review")
+
+
 def check_jsx_runtime_import() -> None:
     """The panel builds elements with the runtime jsx helpers, not with a JSX transform."""
     if "react/jsx-runtime" not in JS.read_text(encoding="utf-8"):
@@ -916,6 +951,7 @@ def main() -> int:
     check_colors()
     check_two_step_actions()
     check_review_integrity_panel()
+    check_skill_groups_panel()
     check_jsx_runtime_import()
     check_undefined_names(API)
     messages = text_table()
@@ -943,7 +979,8 @@ def main() -> int:
           "colors only, CSS variables defined, type sizes from one FS table, a container-query KPI row, "
           "number-first percentages, the two-step clear/delete/force-undo unchanged, a record that "
           "cannot be applied never bulk-approvable (bulk Approve locked, every card still tickable for "
-          "bulk Reject), the status chip on /count, every /decide carrying its versions, no "
+          "bulk Reject), the status chip on /count, every /decide carrying its versions, one card and one "
+          "gated decision per skill group (`groups` on /decide, the chip watching `records`), no "
           "undefined name, the restatement glossary stays gone, one version across plugin.yaml, the "
           "Dashboard manifest and the changelog, the installed desktop copy byte-identical to "
           "desktop/plugin.js, and the backend keeps ONE English "

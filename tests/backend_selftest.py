@@ -32,8 +32,11 @@ def _as_panel(body: dict) -> dict:
     if body.get("decision") == "approve" and _PANEL_SKIPS_REVIEW[0]:
         body = {"skip_review": True, **body}
     if body.get("decision") == "approve" and "versions" not in body:
-        shown = {i["id"]: i["version"] for s in ("memory", "skills") for i in pending().get(s, [])}
-        body = {**body, "versions": {i: shown.get(i, "") for i in body.get("ids") or []}}
+        listed = pending()
+        shown = {i["id"]: i.get("version", "") for s in ("memory", "skills") for i in listed.get(s, [])}
+        shown.update({g["id"]: g["version"] for g in listed.get("groups", {}).get("skills", [])})
+        asked = (body.get("ids") or []) + (body.get("groups") or [])
+        body = {**body, "versions": {i: shown.get(i, "") for i in asked}}
     return decide(body)
 
 
@@ -129,6 +132,7 @@ def _review_selftest(tmp: Path) -> None:
     assert any("already in the skill" in h["text"] for h in dup), dup
     assert any((h.get("edit") or {}).get("find") == "\n" + known_line.lstrip("- ") for h in dup), \
         "the last line of a write is cut together with the line break before it"
+    (pend / "skills" / "5e1f0004.json").unlink()
     link_line = "[references/a-long-reference-file-name.md](references/a-long-reference-file-name.md)."
     (own / "notes.md").write_text(f"See {link_line}\n{link_line}\n", encoding="utf-8")
     stage("skills", "5e1f0006", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
@@ -143,6 +147,7 @@ def _review_selftest(tmp: Path) -> None:
                                  "new_string": "description: Use when testing. Ölçüm şart."})
     tr = item("skills", "5e1f0005")["review"]["hard"]
     assert any("must be English" in h["text"] for h in tr), tr
+    (pend / "skills" / "5e1f0005.json").unlink()
 
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
@@ -528,6 +533,226 @@ def _integrity_selftest(tmp: Path) -> None:
     _REVIEW_GATE = False
 
 
+def _groups_selftest(tmp: Path) -> None:
+    """One decision per skill (1.11.0): pending writes to one skill form one group.
+
+    Every model call is a stub; nothing is spent. Each check names the 1.10.0 behaviour it replaces,
+    so a regression reads as the old defect coming back.
+    """
+    from types import SimpleNamespace
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = True
+    _PANEL_SKIPS_REVIEW[0] = False
+    author = "Selftest Owner"
+    model = {"provider": "selftest", "model": "judge-1"}
+    settings = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}},
+                "auxiliary": {_REVIEW_TASK: dict(model)}}
+    saved_config, saved_call, saved_apply = _config, _review_call, _apply
+    globals()["_config"] = lambda: settings
+    pend = tmp / "pending"
+    calls: list[dict] = []
+    verdicts: dict = {}
+
+    def answer(text: str):
+        message = SimpleNamespace(content=text, reasoning=None, reasoning_content=None, reasoning_details=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+
+    def judge(task: str, **kw):
+        prompt = kw["messages"][1]["content"]
+        key = "group" if "THE CHANGES (" in prompt else re.search(r"summary: selftest (\w+)", prompt).group(1)
+        calls.append({"key": key, "system": kw["messages"][0]["content"], "prompt": prompt})
+        return answer(json.dumps(verdicts.get(key) or {"summary": "fine", "findings": []}))
+
+    globals()["_review_call"] = judge
+    clock = [time.time()]
+
+    def stage(rid: str, payload: dict) -> None:
+        clock[0] += 1
+        (pend / "skills").mkdir(parents=True, exist_ok=True)
+        (pend / "skills" / f"{rid}.json").write_text(json.dumps({
+            "id": rid, "subsystem": "skills", "summary": f"selftest {rid}", "origin": "background_review",
+            "created_at": clock[0], "payload": payload}, ensure_ascii=False), encoding="utf-8")
+
+    def settle() -> dict:
+        for _ in range(400):
+            listed = pending()
+            states = [i["review"]["status"] for i in listed["memory"] + listed["skills"] if "review" in i]
+            states += [g["review"]["status"] for g in listed["groups"]["skills"]]
+            if "queued" in states:
+                reviews_start({})
+            elif "running" not in states and not _REVIEW_RUNNING:
+                return listed
+            time.sleep(0.05)
+        raise AssertionError("the pre-reviews never settled")
+
+    def clear() -> None:
+        settle()
+        for path in pend.glob("*/*.json"):
+            path.unlink()
+        pending()
+
+    clear()
+    folder = tmp / "skills" / "cat" / "grp-skill"
+    (folder / "references").mkdir(parents=True, exist_ok=True)
+    head = f"---\nname: grp-skill\ndescription: Use when testing groups.\nauthor: {author}\n---\n\n"
+    base = head + "## Steps\n\n1. Inspect the worker output before merging it.\n2. Run the suites.\n"
+    (folder / "SKILL.md").write_text(base, encoding="utf-8")
+    (tmp / "skills" / "cat" / "lone-skill").mkdir(parents=True, exist_ok=True)
+    (tmp / "skills" / "cat" / "lone-skill" / "SKILL.md").write_text(
+        head.replace("grp-skill", "lone-skill") + "body\n", encoding="utf-8")
+    added = "3. Finish the items a truncated worker lists as not done before committing its branch."
+    stage("6a000001", {"action": "patch", "name": "grp-skill",
+                       "old_string": "1. Inspect the worker output before merging it.",
+                       "new_string": "1. Read the diff and the report before merging the worker output."})
+    stage("6a000002", {"action": "write_file", "name": "grp-skill", "file_path": "references/jobs.md",
+                       "file_content": "# Jobs\n\nA background job reports through the panel.\n"})
+    stage("6a000003", {"action": "batch", "operations": [
+        {"action": "patch", "name": "grp-skill", "old_string": "2. Run the suites.\n",
+         "new_string": "2. Run the suites.\n" + added + "\n"},
+        {"action": "patch", "name": "grp-skill", "old_string": "1. Inspect the worker output before merging it.",
+         "new_string": "1. Inspect the worker output before merging it, twice."}]})
+    stage("6a000004", {"action": "patch", "name": "lone-skill", "old_string": "body", "new_string": "body text"})
+
+    listed = pending()
+    assert not calls, "GET /pending must never start a paid review"
+    groups = listed["groups"]["skills"]
+    assert len(groups) == 1 and groups[0]["members"] == ["6a000001", "6a000002", "6a000003"], \
+        f"1.10.0: three writes to one skill were three cards: {groups}"
+    group = groups[0]
+    gid = group["id"]
+    members = {i["id"]: i for i in listed["skills"]}
+    assert [members[r]["change"] for r in group["members"]] == [1, 2, 3] and all(
+        members[r]["group"] == gid and "review" not in members[r] and "version" not in members[r]
+        for r in group["members"]), "a member item carries its place, never a review or a version of its own"
+    assert "review" in members["6a000004"] and "group" not in members["6a000004"], "a lone record stays a card"
+    assert listed["counts"]["skills"] == 2 and listed["records"]["skills"] == 4, (listed["counts"], listed["records"])
+    assert count() == {"counts": {"memory": 0, "skills": 2}, "records": {"memory": 0, "skills": 4}}, count()
+    assert [s["change"] for s in group["stale"]] == [3] and "cannot be applied" in group["stale"][0]["text"], \
+        f"1.10.0: a conflict between two writes only showed after the first was approved: {group['stale']}"
+    alone = _plain("skills", wa_get("skills", "6a000003"))
+    assert not alone["stale"], "on its own, #3 still applies to the file on disk"
+    files = {f["file"]: f for f in group["result"]}
+    assert files["grp-skill/references/jobs.md"]["status"] == "new", files
+    assert ["+", "1. Read the diff and the report before merging the worker output."] in \
+        files["grp-skill/SKILL.md"]["lines"], files["grp-skill/SKILL.md"]
+    assert group["added"] == sum(f["added"] for f in group["result"]) and group["review"]["siblings"] == 0
+
+    refused = _as_panel({"subsystem": "skills", "ids": ["6a000001"], "decision": "approve"})["results"][0]
+    assert not refused["ok"] and refused["group"] == gid, f"a member is never approved on its own: {refused}"
+
+    settle()
+    assert [c["key"] for c in calls] == ["group", "6a000004"] or [c["key"] for c in calls] == ["6a000004", "group"], \
+        f"1.10.0: every member paid its own review; now one per group: {[c['key'] for c in calls]}"
+    sent = next(c for c in calls if c["key"] == "group")
+    assert "GROUP of pending writes" in sent["system"] and "### change #3 (pending write 6a000003)" in sent["prompt"], \
+        sent["prompt"][:300]
+    assert "RESULT (" in sent["prompt"] and "- #3: " in sent["prompt"], \
+        "the reviewer sees the result and the known stale"
+    group = pending()["groups"]["skills"][0]
+    blocked = decide({"subsystem": "skills", "groups": [gid], "decision": "approve",
+                      "versions": {gid: group["version"]}})["results"][0]
+    assert not blocked["ok"] and blocked["blocked"] and "#3" in blocked["error"], blocked
+    wrong = decide({"subsystem": "skills", "groups": [gid], "decision": "approve",
+                    "versions": {gid: "0" * 16}})["results"][0]
+    assert wrong["stale"] and not wrong["ok"], "a group approve is bound to the version the panel showed"
+
+    one = decide({"subsystem": "skills", "ids": ["6a000003"], "decision": "reject"})["results"][0]
+    assert one["ok"] and one["history_id"], "one change of a group is rejected on its own, restorably"
+    listed = pending()
+    two = listed["groups"]["skills"][0]
+    assert two["members"] == ["6a000001", "6a000002"] and two["id"] != gid and two["review"]["status"] == "queued", \
+        "a group that loses a member is a new set and needs its own review"
+    calls.clear()
+    verdicts["group"] = {"summary": "One wording note.", "findings": [
+        {"severity": "fix", "kind": "rule", "quote": "A background job reports through the panel.", "change": 1,
+         "explain": "names a host", "edit": {"find": "through the panel", "replace": "through its status line"}}]}
+    listed = settle()
+    two = listed["groups"]["skills"][0]
+    finding = two["review"]["findings"][0]
+    assert len(calls) == 1 and finding["change"] == 2, f"a finding is placed on the change it quotes: {finding}"
+    assert finding["edit"]["ok"] and finding["edit"]["change"] == 2 and two["review"]["edits"] == 1 \
+        and two["review"]["fix_left"] == [], two["review"]
+
+    before = (folder / "SKILL.md").read_bytes()
+    globals()["_apply"] = lambda subsystem, pid, decision: (False, "disk full") if pid == "6a000002" \
+        else saved_apply(subsystem, pid, decision)
+    failed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve",
+                     "versions": {two["id"]: two["version"]}})["results"][0]
+    globals()["_apply"] = saved_apply
+    assert not failed["ok"] and "#2" in failed["error"] and "disk full" in failed["error"], failed
+    assert (folder / "SKILL.md").read_bytes() == before and not (folder / "references" / "jobs.md").exists(), \
+        "a group applies as a whole or not at all"
+    assert (pend / "skills" / "6a000001.json").exists() and (pend / "skills" / "6a000002.json").exists(), \
+        "a group that could not be applied stays queued"
+
+    two = pending()["groups"]["skills"][0]
+    fixed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve", "with_edits": True,
+                    "versions": {two["id"]: two["version"]}})["results"][0]
+    assert fixed["ok"] and fixed["members"] == ["6a000001", "6a000002"], fixed
+    assert "Read the diff" in (folder / "SKILL.md").read_text(encoding="utf-8")
+    assert "through its status line" in (folder / "references" / "jobs.md").read_text(encoding="utf-8"), \
+        "the reviewer's edit lands in the change it belongs to"
+    row = history(limit=1)["entries"][0]
+    assert row["group"] == ["6a000001", "6a000002"] and len(row["changes"]) == 2 and row["undoable"], row
+    assert "grp-skill · 2 changes" in row["summary"], row
+    assert undo({"id": row["id"]})["ok"] and (folder / "SKILL.md").read_bytes() == before \
+        and not (folder / "references" / "jobs.md").exists(), "one Undo takes the whole group back"
+    clear()
+
+    calls.clear()
+    verdicts.clear()
+    stage("6b000001", {"action": "patch", "name": "grp-skill", "old_string": "2. Run the suites.\n",
+                       "new_string": "2. Run the suites.\n" + added + "\n"})
+    stage("6b000002", {"action": "patch", "name": "grp-skill", "old_string": "## Steps\n",
+                       "new_string": "## Steps\n\n" + added + "\n"})
+    stage("6b000003", {"action": "patch", "name": "lone-skill", "old_string": "body", "new_string": "body text"})
+    group = pending()["groups"]["skills"][0]
+    assert group["members"] == ["6b000001", "6b000002"] and [h["change"] for h in group["review"]["hard"]] == [2] \
+        and "already in the skill" in group["review"]["hard"][0]["text"], \
+        f"the rule checks run on the combined result, so a line two changes both add is caught: {group['review']}"
+    stage("6b000004", {"action": "patch", "name": "grp-skill", "old_string": "x", "new_string": "y"})
+    joined = pending()["groups"]["skills"][0]
+    assert joined["members"][-1] == "6b000004" and joined["id"] != group["id"], "a new write joins the group"
+    (pend / "skills" / "6b000004.json").unlink()
+    (pend / "skills" / "6b000002.json").unlink()
+    stage("6b000002", {"action": "write_file", "name": "grp-skill", "file_path": "references/extra.md",
+                       "file_content": "# Extra\n"})
+    listed = settle()
+    group = listed["groups"]["skills"][0]
+    lone = next(i for i in listed["skills"] if i["id"] == "6b000003")
+    bulk = decide({"subsystem": "skills", "groups": [group["id"]], "ids": ["6b000003"], "decision": "approve",
+                   "versions": {group["id"]: group["version"], "6b000003": lone["version"]}})["results"]
+    assert [r["ok"] for r in bulk] == [True, True], f"a bulk approve mixes groups and lone records: {bulk}"
+    assert not list((pend / "skills").glob("*.json"))
+    clear()
+
+    calls.clear()
+    stage("6c000001", {"action": "patch", "name": "grp-skill", "old_string": "2. Run the suites.",
+                       "new_string": "2. Run every suite."})
+    stage("6c000002", {"action": "write_file", "name": "grp-skill", "file_path": "references/more.md",
+                       "file_content": "# More\n"})
+    group = settle()["groups"]["skills"][0]
+    gone = decide({"subsystem": "skills", "groups": [group["id"]], "decision": "reject"})["results"][0]
+    assert gone["ok"] and gone["members"] == ["6c000001", "6c000002"] and gone["history_id"], gone
+    row = next(e for e in history(limit=3)["entries"] if e["id"] == gone["history_id"])
+    assert row["kind"] == "rejected" and row["restorable"] and row["group"] == gone["members"], row
+    paid = len(calls)
+    back = restore({"id": gone["history_id"]})
+    assert back["ok"] and len(back["ids"]) == 2 and back["id"] == back["ids"][0], back
+    again = pending()["groups"]["skills"][0]
+    assert again["members"] == back["ids"] and again["review"]["status"] == "done" and len(calls) == paid, \
+        f"a restored group keeps its order and its review while still valid: {again}"
+    rerun = review_again({"subsystem": "skills", "id": again["id"]})
+    assert rerun["ok"] and rerun["group"] == again["id"], rerun
+    settle()
+    assert len(calls) == paid + 1, "Review again on a group runs one review"
+    clear()
+
+    globals()["_config"], globals()["_review_call"] = saved_config, saved_call
+    _REVIEW_GATE = False
+
+
 def wa_get(subsystem: str, rid: str) -> dict:
     from tools import write_approval as wa
 
@@ -715,6 +940,7 @@ def _selftest() -> int:
     undone = undo({"id": apply_entry["id"]})
     assert undone["ok"] and "skills/cat/brand-new-skill/SKILL.md" in undone["removed"], undone
     assert not new_file.exists() and not new_file.parent.exists(), "the created skill was not undone"
+    (tmp / "pending" / "skills" / f"{rest['skills'][0]['id']}.json").unlink()
 
     scripts_dir = tmp / "skills" / "cat" / "existing-skill" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -1230,6 +1456,7 @@ def _selftest() -> int:
 
     _review_selftest(tmp)
     _integrity_selftest(tmp)
+    _groups_selftest(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
@@ -1248,7 +1475,10 @@ def _selftest() -> int:
           "one-by-one approvals of writes to one file pay one review each, a late review cannot overwrite a newer "
           "one, a rejected record is never reviewed, a full SKILL.md rewrite keeps its lines and takes the "
           "reviewer's fix, approve is bound to the shown version, reject is restorable, /count, unverified quotes, "
-          "cut input, outdated reviews, the language rule)")
+          "cut input, outdated reviews, the language rule), and skill groups (1.11.0: writes to one skill are one "
+          "card with one review, a conflict between them shows before approving, the rule checks run on the "
+          "combined result, a member is never approved alone, a group applies whole or not at all, one Undo and "
+          "one Restore cover the group, a member is rejected on its own)")
     return 0
 
 
