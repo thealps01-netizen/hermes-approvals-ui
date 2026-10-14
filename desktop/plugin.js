@@ -118,6 +118,21 @@ const BUNDLES = {
         fixHint: 'Writes the change with the suggested edits shown above applied. The rule checks run again on the edited text first.',
         fixLeft: why => `The suggested edits do not clear every problem: ${why}`,
         fixCovers: (n, all) => `The fix covers ${n} of ${all} problems; the others have no edit and stay as advice.`,
+        unverified: 'Unverified quote',
+        cut: list => `The reviewer saw a shortened input; it left out ${list}.`,
+        cutPart: (chars, part) => `${plural(chars, 'character', 'characters')} of ${part}`,
+        part: {
+          write: 'the write',
+          target: 'the current target',
+          siblings: 'the other pending writes to this file',
+        },
+        carried: ids => `Approved since this review: ${ids}. They changed the same file and the review already saw them as pending writes, so it still stands.`,
+        siblings: n => `Reviewed together with ${plural(n, 'other pending write', 'other pending writes')} to this file.`,
+        outdated: {
+          model: 'This review was made by another model than the one now set in Settings → Models — “Review again” reads it with the current one.',
+          prompt: 'This review was made with an older review prompt — “Review again” reads it with the current one.',
+          rules: 'Your rules in USER.md changed after this review — “Review again” reads it against the current ones.',
+        },
       },
       bulk: {
         select: 'Select this record',
@@ -127,12 +142,14 @@ const BUNDLES = {
         approve: n => `Approve ${n}`,
         reject: n => `Reject ${n}`,
         confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Applied” and can be undone there.`,
-        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? Rejected records are dropped from the queue.`,
+        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Applied” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
         done: (ok, all) => `${ok} of ${all} done`,
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
-        skipped: 'Records that cannot be applied as staged, or are not pre-reviewed yet, are left out of the selection.',
+        held: n => (n === 1
+          ? '1 selected record needs a decision of its own: approve it on its card or untick it.'
+          : `${n} selected records need a decision of their own: approve them on their cards or untick them.`),
       },
       btn: {
         reject: 'Reject',
@@ -150,6 +167,7 @@ const BUNDLES = {
         skipReview: 'Approve without review',
         skipConfirm: 'Apply unreviewed',
         skipCancel: 'Cancel',
+        restore: 'Restore',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -173,6 +191,7 @@ const BUNDLES = {
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
         noFiles: 'No file changes',
         notUndoable: 'This record cannot be undone',
+        restored: 'Restored',
       },
       empty: {
         errorTitle: 'The pane could not read its data',
@@ -188,6 +207,9 @@ const BUNDLES = {
         memoryError: 'Memory could not be read.',
         scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
           + 'The pending list is current; an outside change may be missing from “Applied” until a check succeeds.',
+        reviewsFailed: why => (why
+          ? `The pre-reviews could not be started: ${why}. The next refresh tries again.`
+          : 'The pre-reviews could not be started. The next refresh tries again.'),
       },
       memory: {
         warnTitle: 'Memory is nearly full',
@@ -229,6 +251,10 @@ const BUNDLES = {
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
         noFiles: 'no changed files',
+        rejected: 'Rejected — you can restore it from the “Applied” tab',
+        stale: 'This record changed since it was shown — the list is read again.',
+        restored: id => (id ? `The record is back under Pending as #${id}.` : 'The record is back under Pending.'),
+        restoreFailed: 'Could not restore the record',
       },
       footer: {
         pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
@@ -272,19 +298,23 @@ function useAlertsMuted() {
 
 const api = {
   pending: () => ctxRef.rest('/pending'),
+  count: () => ctxRef.rest('/count'),
+  startReviews: () => ctxRef.rest('/reviews', { method: 'POST', body: {} }),
   scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
   history: () => ctxRef.rest('/history?limit=50'),
   memory: () => ctxRef.rest('/memory'),
   deleteEntry: (target, text) => ctxRef.rest('/memory/delete', { method: 'POST', body: { target, text } }),
   clearHistory: keepUndoable =>
     ctxRef.rest('/history/clear', { method: 'POST', body: { keep_undoable: Boolean(keepUndoable) } }),
-  fix: (id, approve) => ctxRef.rest('/fix', { method: 'POST', body: { subsystem: 'skills', id, approve: Boolean(approve) } }),
-  decide: (subsystem, ids, decision, only, skipReview, withEdits) =>
+  restore: id => ctxRef.rest('/restore', { method: 'POST', body: { id } }),
+  fix: id => ctxRef.rest('/fix', { method: 'POST', body: { subsystem: 'skills', id } }),
+  decide: (subsystem, items, decision, only, skipReview, withEdits) =>
     ctxRef.rest('/decide', {
       method: 'POST',
       body: {
         subsystem,
-        ids,
+        ids: items.map(item => item.id),
+        versions: Object.fromEntries(items.map(item => [item.id, item.version])),
         decision,
         only: only || [],
         skip_review: Boolean(skipReview),
@@ -301,6 +331,8 @@ const short = (s, n) => {
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
 const when = ts => (ts ? relativeTime(Number(ts) * 1000) : '')
+const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).status)
 
 const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
 const TAB_KEY = { pending: 'pa.tab.pending', history: 'pa.tab.history', memory: 'pa.tab.memory' }
@@ -345,9 +377,8 @@ const STYLE = `
 .pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
-.pa-bulk-note{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
-.pa-pick:disabled{cursor:not-allowed;opacity:.4}
+.pa-tipwrap{display:inline-flex}
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -423,6 +454,8 @@ const STYLE = `
 .pa-major-wrap{display:flex;flex-direction:column;gap:${G.xxs}px}
 .pa-major{display:flex;align-items:baseline;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
 .pa-major>span:last-child{min-width:0}
+.pa-muted{padding-left:${G.xs}px;border-left:2px dashed var(--ui-stroke-tertiary)}
+.pa-aside{font-size:${FS.micro}px;line-height:1.5;color:var(--ui-text-secondary)}
 .pa-groups,.pa-fix{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-details{display:flex;flex-direction:column;gap:${G.sm}px;padding-top:${G.sm}px;border-top:${HAIRLINE}}
 .pa-change{display:flex;flex-direction:column;gap:${G.xxs}px;min-width:0}
@@ -489,26 +522,31 @@ function usePolling(load, ms) {
   return { data, error, at, refresh: () => setTick(t => t + 1) }
 }
 
-function usePending({ scan = true } = {}) {
+function usePending() {
   const load = async () => {
-    let scanFailed = null
-    if (scan) {
-      try {
-        const res = await api.scan()
-        if (res?.ok === false) scanFailed = res.error || ''
-      } catch (e) {
-        scanFailed = errText(e)
-      }
+    const issues = []
+    try {
+      const res = await api.scan()
+      if (res?.ok === false) issues.push(say('pa.empty.scanFailed', res.error || ''))
+    } catch (e) {
+      issues.push(say('pa.empty.scanFailed', errText(e)))
     }
     const d = await api.pending()
-    if (scanFailed === null) return d
-    return { ...d, issues: [...(d?.issues || []), say('pa.empty.scanFailed', scanFailed)] }
+    if ([...(d?.memory || []), ...(d?.skills || [])].some(i => (i.review || {}).status === 'queued')) {
+      try {
+        const res = await api.startReviews()
+        if (res?.ok === false) issues.push(say('pa.empty.reviewsFailed', res.error || ''))
+      } catch (e) {
+        issues.push(say('pa.empty.reviewsFailed', errText(e)))
+      }
+    }
+    if (!issues.length) return d
+    return { ...d, issues: [...(d?.issues || []), ...issues] }
   }
   const [fast, setFast] = useState(false)
   const { data, error, at, refresh } = usePolling(load, fast ? 4000 : 15000)
   useEffect(() => {
-    const all = [...(data?.memory || []), ...(data?.skills || [])]
-    setFast(all.some(i => (i.review || {}).status === 'running'))
+    setFast([...(data?.memory || []), ...(data?.skills || [])].some(reviewWaits))
   }, [data])
   return { data, error, at, refresh, n: total(data?.counts) }
 }
@@ -708,12 +746,23 @@ const FINDING_KIND = {
   evidence: 'pa.review.kind.evidence',
   rule: 'pa.review.kind.rule'
 }
+const CUT_PART = {
+  write: 'pa.review.part.write',
+  target: 'pa.review.part.target',
+  siblings: 'pa.review.part.siblings'
+}
+const OUTDATED = {
+  model: 'pa.review.outdated.model',
+  prompt: 'pa.review.outdated.prompt',
+  rules: 'pa.review.outdated.rules'
+}
+const UNVERIFIED = ['pa.review.unverified', 'muted']
 
 function Finding({ finding }) {
   const t = usePluginI18n(ID)
-  const [label, variant] = SEVERITY[finding.severity] || SEVERITY.note
+  const [label, variant] = finding.unverified ? UNVERIFIED : SEVERITY[finding.severity] || SEVERITY.note
   return jsxs('div', {
-    className: 'pa-finding',
+    className: finding.unverified ? 'pa-finding pa-muted' : 'pa-finding',
     children: [
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.xs, flexWrap: 'wrap' },
@@ -829,9 +878,11 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const refused = plain.refused || []
   const review = item.review || {}
   const hard = review.hard || []
-  const status = review.status || 'running'
+  const status = review.status === 'queued' ? 'running' : review.status || 'running'
   const findings = (review.findings || []).filter(f => f.kind !== 'evidence')
-  const major = findings.filter(f => f.severity === 'block' || f.severity === 'fix')
+  const weighty = f => f.severity === 'block' || f.severity === 'fix'
+  const major = findings.filter(f => weighty(f) && !f.unverified)
+  const doubtful = findings.filter(f => weighty(f) && f.unverified)
   const notes = findings.filter(f => f.severity === 'note')
   const ops = item.ops || []
   const reviewLocked = !reviewed(item)
@@ -884,24 +935,29 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     }
   }
   const applyFix = () => run('fix', async () => {
-    const res = await api.fix(item.id, false)
+    const res = await api.fix(item.id)
     host.notify(res?.ok
       ? { kind: 'success', message: res.message || t('pa.notify.saved') }
       : { kind: 'error', message: res?.error || t('pa.notify.failed') })
     if (res?.ok) onChanged()
     return res
   })
+  const told = (decision, one) => {
+    if (one.ok && decision === 'reject' && one.history_id) return { kind: 'success', message: t('pa.notify.rejected') }
+    if (one.ok) return { kind: 'success', message: one.message || t('pa.notify.saved') }
+    if (one.stale) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
+    return { kind: 'error', message: one.error || t('pa.notify.failed') }
+  }
   const decideAndLeave = async (decision, only, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
     const r = await run(key, async () => {
-      const res = await api.decide(subsystem, [item.id], decision, only, skipReview, withEdits)
+      const res = await api.decide(subsystem, [item], decision, only, skipReview, withEdits)
       const one = (res?.results || [])[0] || {}
-      host.notify(one.ok
-        ? { kind: 'success', message: one.message || t('pa.notify.saved') }
-        : { kind: 'error', message: one.error || t('pa.notify.failed') })
+      host.notify(told(decision, one))
       return one
     })
     if (r?.ok) leave()
+    else if (r?.stale) onChanged()
   }
   const reviewAgain = () => run('review', async () => {
     const res = await api.review(subsystem, item.id)
@@ -928,6 +984,32 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
       edit?.ok ? jsx(EditView, { edit, t }, 'edit') : null
     ]
   }, key)
+  const unverifiedLine = (f, i) => jsxs('div', {
+    className: 'pa-major-wrap pa-muted',
+    'data-unverified': 'true',
+    children: [
+      jsxs('div', {
+        className: 'pa-major',
+        children: [
+          jsx(Badge, { className: 'pa-tag', style: TAG, variant: 'muted', children: t('pa.review.unverified') }, 'sev'),
+          jsx('span', { children: f.explain }, 'text')
+        ]
+      }, 'line'),
+      quote('q', t('pa.review.inWrite'), f.quote)
+    ]
+  }, `u${i}`)
+  const aside = (key, text) => jsx('div', { className: 'pa-aside', 'data-aside': key, children: text }, key)
+  const cut = (review.cut || []).filter(c => Number(c?.chars) > 0)
+  const cutList = cut.map(c => t('pa.review.cutPart', grouped(c.chars),
+    CUT_PART[c.part] ? t(CUT_PART[c.part]) : c.part))
+  const carried = (review.carried || []).map(id => `#${id}`)
+  const siblings = Number(review.siblings) || 0
+  const asides = status !== 'done' ? [] : [
+    cut.length ? aside('cut', t('pa.review.cut', cutList.join(', '))) : null,
+    carried.length ? aside('carried', t('pa.review.carried', carried.join(', '))) : null,
+    siblings > 0 ? aside('siblings', t('pa.review.siblings', siblings)) : null,
+    OUTDATED[review.outdated] ? aside('outdated', t(OUTDATED[review.outdated])) : null
+  ]
 
   const preReview = jsxs('div', {
     className: 'pa-review',
@@ -969,6 +1051,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
             ]
           }, 'majors')
         : null,
+      doubtful.length
+        ? jsx('div', { className: 'pa-majors', children: doubtful.map(unverifiedLine) }, 'doubtful')
+        : null,
+      ...asides,
       edits > 0 && fixLeft.length ? alert('left', t('pa.review.fixLeft', fixLeft.join(' ')), true) : null,
       edits > 0 && !fixLeft.length && unfixed > 0
         ? jsx('div', { className: 'pa-note', children: t('pa.review.fixCovers', edits, edits + unfixed) }, 'covers')
@@ -1008,7 +1094,6 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                 type: 'checkbox',
                 className: 'pa-pick',
                 checked: Boolean(picked),
-                disabled: !pickable(item),
                 'aria-label': `${t('pa.bulk.select')} #${item.id}`,
                 onChange: () => onPick()
               }, 'pick')
@@ -1158,12 +1243,13 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   })
 }
 
-function HistoryCard({ entry, onChanged }) {
+function HistoryCard({ entry, onChanged, onRestored }) {
   const t = usePluginI18n(ID)
   const [conflict, setConflict] = useState(null)
   const [busy, setBusy] = useState(false)
   const kindKey = HIST_KEY[entry.kind]
   const files = entry.files || []
+  const restorable = entry.kind === 'rejected' && entry.restorable === true && !entry.restored
 
   const undo = async force => {
     setBusy(true)
@@ -1171,7 +1257,7 @@ function HistoryCard({ entry, onChanged }) {
       const res = await api.undo(entry.id, force)
       if (!res?.ok) {
         setConflict(Array.isArray(res?.conflicts) && res.conflicts.length ? res.conflicts : null)
-        host.notify({ kind: 'warn', message: res?.error || t('pa.notify.undoFailed') })
+        host.notify({ kind: 'warning', message: res?.error || t('pa.notify.undoFailed') })
       } else {
         setConflict(null)
         host.notify({ kind: 'success', message: t('pa.notify.undoOk', (res.restored || []).join(', ') || t('pa.notify.noFiles')) })
@@ -1181,6 +1267,21 @@ function HistoryCard({ entry, onChanged }) {
     } finally {
       setBusy(false)
       onChanged()
+    }
+  }
+
+  const restore = async () => {
+    setBusy(true)
+    try {
+      const res = await api.restore(entry.id)
+      host.notify(res?.ok
+        ? { kind: 'success', message: res.message || t('pa.notify.restored', res.id || '') }
+        : { kind: 'error', message: res?.error || t('pa.notify.restoreFailed') })
+    } catch (e) {
+      host.notifyError?.(e, t('pa.notify.restoreFailed'))
+    } finally {
+      setBusy(false)
+      onRestored()
     }
   }
 
@@ -1243,10 +1344,20 @@ function HistoryCard({ entry, onChanged }) {
               onClick: () => void undo(Boolean(conflict)),
               children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
             }, 'undo')
-          : jsx('div', {
-              style: { ...value, display: 'flex', alignItems: 'center', color: 'var(--ui-text-secondary)' },
-              children: entry.undone ? t('pa.hist.undone') : t('pa.hist.notUndoable')
-            }, 'note')
+          : restorable
+            ? jsx(Button, {
+                className: 'pa-restore',
+                variant: 'outline',
+                size: 'sm',
+                loading: busy,
+                onClick: () => void restore(),
+                children: t('pa.btn.restore')
+              }, 'restore')
+            : jsx('div', {
+                style: { ...value, display: 'flex', alignItems: 'center', color: 'var(--ui-text-secondary)' },
+                children: entry.undone ? t('pa.hist.undone')
+                  : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
+              }, 'note')
       }, 'action')
     ]
   })
@@ -1256,24 +1367,29 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
   const t = usePluginI18n(ID)
   const [arming, setArming] = useState('')
   const [busy, setBusy] = useState(false)
-  const open = items.filter(({ item }) => pickable(item))
-  const chosen = open.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
+  const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
+  const held = chosen.filter(({ item }) => !pickable(item)).length
   const n = chosen.length
-  if (open.length < 2) return null
+  if (items.length < 2) return null
 
   const run = async decision => {
+    if (decision === 'approve' && held) {
+      setArming('')
+      return
+    }
     setBusy(true)
     let ok = 0
     const bad = []
     try {
       for (const subsystem of ['memory', 'skills']) {
-        const ids = chosen.filter(c => c.subsystem === subsystem).map(c => c.item.id)
-        if (!ids.length) continue
+        const group = chosen.filter(c => c.subsystem === subsystem).map(c => c.item)
+        if (!group.length) continue
         try {
-          const res = await api.decide(subsystem, ids, decision)
+          const res = await api.decide(subsystem, group, decision)
           const results = res?.results || []
           ok += results.filter(r => r.ok).length
-          bad.push(...results.filter(r => !r.ok).map(r => r.error || t('pa.notify.failed')))
+          bad.push(...results.filter(r => !r.ok)
+            .map(r => r.error || t(r.stale ? 'pa.notify.stale' : 'pa.notify.failed')))
           if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
         } catch (e) {
           bad.push(String(e?.message || e))
@@ -1290,11 +1406,10 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
     }
   }
 
-  const skipped = open.length < items.length
   return jsxs('div', {
     className: 'pa-bulk',
     role: 'group',
-    'aria-label': t('pa.bulk.selected', n, open.length),
+    'aria-label': t('pa.bulk.selected', n, items.length),
     children: [
       arming
         ? jsxs('div', {
@@ -1320,13 +1435,13 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
         : jsxs('div', {
             style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, width: '100%' },
             children: [
-              jsx('span', { className: 'pa-bulk-count', children: t('pa.bulk.selected', n, open.length) }, 'count'),
+              jsx('span', { className: 'pa-bulk-count', children: t('pa.bulk.selected', n, items.length) }, 'count'),
               jsx(Button, {
                 variant: 'text', size: 'sm',
-                onClick: () => setPicked(n === open.length
+                onClick: () => setPicked(n === items.length
                   ? new Set()
-                  : new Set(open.map(({ subsystem, item }) => `${subsystem}:${item.id}`))),
-                children: t(n === open.length ? 'pa.bulk.none' : 'pa.bulk.all')
+                  : new Set(items.map(({ subsystem, item }) => `${subsystem}:${item.id}`))),
+                children: t(n === items.length ? 'pa.bulk.none' : 'pa.bulk.all')
               }, 'all'),
               jsx('span', { style: { marginLeft: 'auto' } }, 'gap'),
               n
@@ -1336,14 +1451,22 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
                   }, 'reject')
                 : null,
               n
-                ? jsx(Button, {
-                    variant: 'default', size: 'sm',
-                    onClick: () => setArming('approve'), children: t('pa.bulk.approve', n)
+                ? jsx(Tip, {
+                    label: held ? t('pa.bulk.held', held) : '',
+                    children: jsx('span', {
+                      className: 'pa-tipwrap',
+                      children: jsx(Button, {
+                        className: held ? 'pa-held' : undefined,
+                        variant: 'default', size: 'sm',
+                        'aria-disabled': held > 0 || undefined,
+                        onClick: held ? undefined : () => setArming('approve'),
+                        children: t('pa.bulk.approve', n)
+                      }, 'btn')
+                    }, 'wrap')
                   }, 'approve')
                 : null
             ]
-          }, 'idle'),
-      skipped ? jsx('div', { className: 'pa-bulk-note', children: t('pa.bulk.skipped') }, 'skipped') : null
+          }, 'idle')
     ]
   })
 }
@@ -1432,7 +1555,7 @@ function PendingList({ data, error, refresh }) {
   return jsxs('div', { children: [notice, bar, body] }, 'list')
 }
 
-function HistoryList({ data, error, refresh }) {
+function HistoryList({ data, error, refresh, onRestored }) {
   const t = usePluginI18n(ID)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1506,7 +1629,7 @@ function HistoryList({ data, error, refresh }) {
       }, 'header'),
       jsx('div', {
         className: 'pa-cols pa-two',
-        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged: refresh }, e.id))
+        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged: refresh, onRestored }, e.id))
       }, 'grid')
     ]
   })
@@ -1772,7 +1895,10 @@ function Pane() {
             onChanged: () => { refresh(); hist.refresh() }
           }, 'memory')
           : view === 'history'
-            ? jsx(HistoryList, { data: hist.data, error: hist.error, refresh: hist.refresh }, 'history')
+            ? jsx(HistoryList, {
+              data: hist.data, error: hist.error, refresh: hist.refresh,
+              onRestored: () => { refresh(); hist.refresh() }
+            }, 'history')
             : jsx(PendingList, { data, error, refresh }, 'pending')
       }, 'body'),
 
@@ -1801,12 +1927,16 @@ function Pane() {
 
 function Chip() {
   const t = usePluginI18n(ID)
-  const { data, error, n } = usePending({ scan: false })
+  const { data, error } = usePolling(api.count, 15000)
+  const n = total(data?.counts)
   const seen = useRef(null)
+  const polled = useRef(0)
 
   useEffect(() => {
     if (data?.counts === undefined) return
     livePending = n
+    if (n !== polled.current) void api.startReviews().catch(() => null)
+    polled.current = n
     const last = seen.current ?? Number(ctxRef.storage?.get?.('lastCount', '-1') ?? -1)
     if (last >= 0 && n > last && !alertsMuted()) {
       host.notify({ kind: 'info', message: t('pa.notify.awaiting', n) })

@@ -124,8 +124,10 @@ const PENDING = {
       findings: [{ severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar in both themes.',
                    other: 'Measure the tab bar height in both themes before shipping.', explain: 'The same rule is already in the skill.',
                    edit: { find: 'Measure the tab bar in both themes.', replace: '', ok: true } },
+                 { severity: 'fix', kind: 'wrong', quote: 'Tabs are 28 px tall.', other: '', unverified: true,
+                   explain: 'The reviewer quoted a line the write does not contain.' },
                  { severity: 'note', kind: 'evidence', quote: 'Prefer opaque fills.', other: '', explain: 'The write states no measurement or failure behind this rule.' }],
-      edits: 1,
+      edits: 1, cut: [{ part: 'target', chars: 12400 }], siblings: 1,
       model: 'gpt-5.5', usage: { input: 9822, output: 512, cost_usd: 0, cost_status: 'included' }
     },
     ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
@@ -149,7 +151,8 @@ const PENDING = {
 
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated — 2 notes', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
-  { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', summary: "batch(3 ops) on hermes-desktop-plugin-dev", files: [], undoable: false },
+  { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', summary: "batch(3 ops) on hermes-desktop-plugin-dev", files: [], undoable: false, restorable: true },
+  { id: 'ee55ff66', ts: NOW - 5400, kind: 'rejected', subsystem: 'memory', summary: 'MEMORY.md: a note about the old calendar schedule', files: [], undoable: false, restored: '9a8b7c6d' },
   { id: 'cc33dd44', ts: NOW - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: the file was written by another bot while the record was waiting', files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
   { id: 'dd44ee55', ts: NOW - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused: the record left the pending directory', files: [], undoable: false }
 ] }
@@ -179,7 +182,7 @@ async function frame(actions) {
         }
         return { ok: true, removed: 3, restored: ['memories/MEMORY.md'], results: [{ ok: true }] }
       }
-      const table = { '/pending': PENDING, '/pending?scan=0': PENDING, '/history?limit=50': HISTORY, '/memory': MEMORY }
+      const table = { '/pending': PENDING, '/count': { counts: PENDING.counts }, '/history?limit=50': HISTORY, '/memory': MEMORY }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
       return table[path]
     },
@@ -241,7 +244,7 @@ frames.push({
 })
 
 frames.push({
-  label: 'Applied — history cards, the raw summary in a LogView, two-step Force undo',
+  label: 'Applied — history cards, the raw summary in a LogView, two-step Force undo, Restore on a rejected record',
   html: await frame(async hostEl => {
     await click(tab(hostEl, /^Applied/), 'the Applied tab')
     await click(byText(hostEl, /^Undo$/), 'Undo')

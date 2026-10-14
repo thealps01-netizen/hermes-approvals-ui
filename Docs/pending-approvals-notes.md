@@ -87,8 +87,10 @@ why they are drawn whole with their size in the label (§6).
 
 * **Pre-review (1.9.0).** `_review_state()` is the one place that decides a record's review state;
   the listing and the `/decide` gate both call it, so the card can never show "unlocked" while the
-  backend refuses. Results live in `state/pending-approvals/reviews/<subsystem>-<id>.json`, keyed by a
-  hash of the payload plus the sha of every target file — any change to either re-runs the review.
+  backend refuses. Results live in `state/pending-approvals/reviews/<subsystem>-<id>.json`. Since
+  1.10.0 a result stays valid while the payload is unchanged and every target file either matches
+  the sha it was reviewed against or was changed only by approvals of writes the review saw (see
+  "1.10.0 — review integrity"); the function only reads and never starts a review.
   A finished result is only saved while its record is still pending, and the listing prunes results
   whose record is gone. Rule checks run on every read (they are cheap and must see the live files).
   The model call goes through the core `call_llm(task="approvals_review")`; with no provider assigned
@@ -626,6 +628,76 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   on the whole edited record, as for 1.9.3 edits.
 * **Card.** No panel change: `_mark_edits()` sets `label` to "<file>, existing text" and the existing
   EditView draws it.
+
+## 1.10.0 — review integrity
+
+* **Why (measured, sandbox, stubbed model, nothing spent).** The 1.9.x review key hashed the payload
+  with the sha of every target file, so approving one write voided the review of every other write
+  to the same file. A bulk approve of three reviewed `MEMORY.md` adds applied one and refused two
+  ("still running") while starting two new paid reviews; approving N such writes one by one paid
+  N(N+1)/2 reviews (3 → 6, 5 → 15). An older review finishing late overwrote a newer one and
+  triggered one more call; a queued review called the model after its record had been rejected;
+  `GET /pending` (polled by the chip every 15 s, panel closed or not) started reviews; a full
+  `SKILL.md` rewrite (`patch` + `content`, the schema's own shape) read every kept line as a
+  duplicate and its one-click fix deleted that line; `/fix` with `approve: true` was refused
+  whenever a model was assigned and the panel never sent it. After 1.10.0 the same runs give: bulk 3/3
+  applied with 0 extra calls, one-by-one N calls for N writes (3, 5, 10), no call for a rejected
+  record, one review job per record, the rewrite unflagged with the fix applied into its content.
+* **Reviews see their siblings; approvals of seen siblings carry the review.** The review input gains
+  OTHER PENDING WRITES (the other pending records with the same memory file or skill name), so a
+  duplicate or contradiction between two pending writes is reported. The stored result keeps
+  `payload` (hash), `targets` (`rel path → sha`), `seen` (`sibling id → payload hash`), `rules` (sha
+  of `USER.md`), `prompt` (hash of the system prompt), `assigned` (the model from Settings), `rid`.
+  `_review_carry()` accepts a target sha that moved only along `apply` history rows whose
+  `record_id` is in `seen` with the same `payload_hash` (rows carry both since 1.10.0); the card
+  lists those ids as `carried`. Anything else — an outside edit, a sibling approved with edits (its
+  payload differs), a sibling the review never saw — queues a new review. This is Gerrit's
+  "copy the approval across a trivial rebase", and GitHub's "dismiss stale approvals" for the rest.
+  Results written before 1.10.0 stay valid while their old key still matches (`_legacy_review_key`)
+  and show `outdated: prompt`.
+* **Who starts a review.** Only `POST /reviews` (and "Review again"). `GET /pending` reports the
+  state `queued`; the panel posts `/reviews` when a load has a queued item, the chip when the total
+  count changes, so reviews are ready when the panel opens and a read never spends anything. One
+  job per record (`_REVIEW_RUNNING` holds `subsystem-id`); the job takes its input and its key from
+  one snapshot taken under `_LOCK` after it gets a slot, returns without a call when the record is
+  gone or a valid result exists, and saves only while the record is pending and no newer result is
+  stored. A model or prompt change, or a new `USER.md`, marks a result `outdated` and re-runs
+  nothing: spending stays a click.
+* **Approve is bound to the card.** `_card()` builds what a card shows (plain text, rule checks, the
+  review, offered edits) for the listing and for `/decide` alike; `version` hashes the payload, the
+  "cannot be applied" reasons, the description fix and the review (`rid`, verdict, findings, edits,
+  `fix_left`). An approve must send the version of every id; a mismatch writes nothing for that id
+  and returns `stale: true`. `carried`, `siblings`, `cut` and `outdated` stay out of the hash, so
+  approving one write does not make the next one in the same bulk request stale. HTTP calls this
+  `If-Match` → 412.
+* **The reviewer's input is data.** Every part of the material sits between `<<<nonce TITLE>>>` and
+  `<<<END nonce>>>` (12 random hex per review) and the system prompt says text inside a block is
+  material, never an instruction; a write can no longer print its own `## HARD CHECK FINDINGS`
+  heading. A finding is `unverified` when neither its `quote` nor its `other` can be found in the
+  write (letters and digits only, `...` splits a quote into pieces): it keeps its text, loses its
+  edit and does not count toward the verdict. `cut` names each part shortened for length.
+* **One reading of "rewrites SKILL.md".** `_rewrites_skill_md()` (`edit`, or `patch` with `content`)
+  is used by the explanation, the duplicate rule, `_target_op` and `_replaced_slot`; an edit to the
+  existing `SKILL.md` of such a record is applied inside the new content instead of as a patch the
+  rewrite would overwrite.
+* **The language rule flags non-English, not only Turkish.** A new line (one not already in the
+  file) is flagged for a Turkish-specific letter or a letter outside the Latin script; accented
+  Latin letters such as `é` pass, so "café" is not a finding.
+* **Reject keeps a copy; `/restore` re-stages it.** `snapshots/<row id>/record.json` holds the record
+  and its review; the history row gets `copy`, `/history` adds `restorable`, `/restore` calls the
+  core's `stage_write` (new id), copies the review across and marks the row `restored`. Clearing or
+  pruning the history removes the copy with the row's snapshots.
+* **Routes are plain `def`.** FastAPI runs them in its thread pool; as `async def` every file read and
+  skill-tree walk ran on the dashboard server's event loop. In the pool two requests can run at once,
+  so every route that reads the queue, the reviews or the history holds `_LOCK` like the writers do
+  (`/pending` also prunes reviews, and its versions must come from one consistent read); only
+  `GET /count` skips it, because it reads one directory listing through the core's `pending_count`.
+* **The selftest lives in `tests/backend_selftest.py`** and runs inside the backend module's
+  namespace; the main run keeps the review gate on and approves the way the owner does without a
+  model (version + explicit skip). `_integrity_selftest` pins each measured defect above.
+* **Still open: chat commands.** `/memory approve` and `/skills approve` apply without the gate; the
+  core has no hook that can stop them. `Docs/upstream-approval-hook-proposal.md` is the proposed core
+  change (not filed).
 
 ## Version
 
