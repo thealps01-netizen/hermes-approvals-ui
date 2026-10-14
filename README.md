@@ -13,7 +13,9 @@ chat tells you a write is waiting; this panel is where you inspect it and decide
 
 * **Pending** — one card per waiting record: type, source, target, operations, why it arrived, what
   will change, what approving does, the agent's own suggestion, and (for a skill description over the
-  budget) the shortened alternative with a "Shorten and create" action.
+  budget) the shortened alternative with a "Shorten and create" action. Several writes waiting for
+  the same skill are one card: the combined result, the changes in order, one review and one
+  **Approve N changes** (all or none); each change keeps its own **Reject #n**.
 * **Applied** — every approve, reject, outside change and failed attempt, with per-record **Undo**;
   a rejected record can be **Restored** to the queue.
 * **Memory** — the live `MEMORY.md` / `USER.md` entries with the budget they consume, and a two-step
@@ -21,8 +23,8 @@ chat tells you a write is waiting; this panel is where you inspect it and decide
   the warning can **draft a merge request** into the chat box; you read and send it, and the result
   comes back to Pending like any other write.
 
-Several pending records can be ticked and decided together (two-step, one request per subsystem). Any
-card can be ticked: **Reject N** takes all of them, **Approve N** unlocks only while every ticked record
+Several pending cards can be ticked and decided together (two-step, one request per subsystem). Any
+card can be ticked: **Reject N** takes all of them, **Approve N** unlocks only while every ticked card
 is reviewed and clean.
 Ctrl+K offers **Open Approvals** and **Approval alerts** (mute the alerts; the chip keeps counting).
 
@@ -36,9 +38,10 @@ gates enforce.
 
 ## Screenshots
 
-The five-frame preview (blocked record + long op bodies, the multi-skill group, the Applied tab after
-a conflict, the Memory tab with a delete armed, the same pending list in a 420 px pane), drawn from the
-panel's real React output — dark mode, then the same frames in light mode:
+The six-frame preview (blocked record + long op bodies, the multi-skill record, the Applied tab after
+a conflict, the Memory tab with a delete armed, a skill group of three changes with one of them
+blocked, the same pending list in a 420 px pane), drawn from the panel's real React output — dark
+mode, then the same frames in light mode:
 
 ![Approvals — preview frames](tests/preview.png)
 
@@ -189,6 +192,11 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   * **Approve is bound to what you saw.** Each card carries a version of the write, its rule checks
     and its review; an approve sends it back, and when anything changed in between nothing is written
     and the card is redrawn.
+  * **Writes to one skill are decided together.** The changes are played in order without writing
+    anything, so a change that no longer applies after an earlier one is named on the card and locks
+    Approve before anything is written; the rule checks run on the combined result. Approve applies
+    every change in order and puts every file and record back if one of them fails. A single change
+    of a set is never approved alone (the backend refuses it); it can be rejected alone.
   * Approve stays locked while the review is queued or running. When no model is set or the review
     failed, a two-step **Approve without review** applies it anyway and marks the history entry
     "approved without pre-review".

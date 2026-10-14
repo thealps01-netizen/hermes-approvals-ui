@@ -53,7 +53,6 @@ CONTRACT: dict[str, dict[str, Any]] = {
             "list_pending": (1, ()),
             "get_pending": (2, ()),
             "discard_pending": (2, ()),
-            "pending_count": (1, ()),
             "stage_write": (2, ("summary", "origin")),
             "skill_pending_diff": (1, ()),
             "_pending_path": (2, ()),

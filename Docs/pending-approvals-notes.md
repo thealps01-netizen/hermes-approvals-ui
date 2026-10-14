@@ -691,13 +691,59 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   skill-tree walk ran on the dashboard server's event loop. In the pool two requests can run at once,
   so every route that reads the queue, the reviews or the history holds `_LOCK` like the writers do
   (`/pending` also prunes reviews, and its versions must come from one consistent read); only
-  `GET /count` skips it, because it reads one directory listing through the core's `pending_count`.
+  `GET /count` skips it, because it reads the pending records only (see 1.11.0).
 * **The selftest lives in `tests/backend_selftest.py`** and runs inside the backend module's
   namespace; the main run keeps the review gate on and approves the way the owner does without a
   model (version + explicit skip). `_integrity_selftest` pins each measured defect above.
 * **Still open: chat commands.** `/memory approve` and `/skills approve` apply without the gate; the
   core has no hook that can stop them. `Docs/upstream-approval-hook-proposal.md` is the proposed core
   change (not filed).
+
+## 1.11.0 — one decision per skill
+
+* **Why (measured on the owner's history, read-only).** The core stages every `skill_manage` call as
+  its own record (`tools/skill_manager_tool.py`, the `stage_write` branch) and never looks for a
+  record already waiting on the same skill; the background review that writes most of them does not
+  see pending records either. Between two releases 21 of 41 bursts of same-skill decisions held 2 or
+  more records (up to 7). Each card paid its own review, and a real conflict — the fourth write to a
+  skill re-adding a step the first had already added — only showed once the first was approved,
+  because each card checked its patches against the file on disk. The fix stays in the plugin
+  (the core is not changed), so the chat `/skills` list still shows the records one by one.
+* **Grouping.** `_skill_groups()` joins records that name a common skill (union-find over
+  `_target_names`, so a write to skills X and Y joins X's and Y's writes); members are ordered by
+  `created_at`, then id. A set of one is not a group and keeps the 1.10.0 card. The group id hashes
+  the sorted member ids, so any change of membership is a new set with a new review.
+* **The simulated view.** `_view_*` keeps the files a set would leave (`files[(skill, rel)]`, `None`
+  for a removed file, `gone` for a deleted skill) and reads through to disk. `_view_apply()` runs one
+  operation the way the core would: the core's `fuzzy_find_and_replace` for patches and its
+  `_validate_frontmatter` for a new `SKILL.md`, the same calls the 1.9.x applicability check made
+  against disk. A record whose operation fails leaves the view unchanged (the core applies a batch
+  all or nothing) and is reported as `stale` on that member; the next member continues from the
+  view before it. `_explain()`/`_skill_hard()` accept the view, so every member's plain text and rule
+  checks are computed against the files as the earlier members leave them — a line that two members
+  both add is a duplicate on the second.
+* **The group card.** `_group_card()` holds `members`, `names`, `result` (one diff per file, disk →
+  view), `stale`, the review and a `version` that hashes member ids + payload hashes, stale, fixes and
+  the review fields of the 1.10.0 card hash. Member items in `skills[]` carry `group` and `change`
+  and no review or version of their own; `counts` counts decisions, `records` counts records.
+* **One review per set.** `_GROUP_SYSTEM` reuses the single prompt's material and rule paragraphs
+  (`_REVIEW_BLOCKS`, `_REVIEW_RULES`; `_REVIEW_SYSTEM` is the same text as 1.10.0, joined from the
+  parts, so 1.10.0 results are not marked outdated) and adds the group framing; the input gives
+  THE CHANGES in order and RESULT. Results live in `reviews/skills-group-<gid>.json`, use the 1.10.0
+  key/carry rules through `_settle()` (with the combined payload of the set), and run under the tag
+  `skills-group-<gid>`. `_attribute()` keeps a finding's `change` only when its quote is in that
+  member's write, else moves it to the first member that contains it. An offered edit is placed on
+  that member first, then on the first member where it is unambiguous.
+* **Approve is all or none.** `_group_apply()` stores the before-copy of every touched file, applies
+  the members through the core one by one, and on the first failure writes the copies back, removes
+  files the set created and re-queues the members already applied (their pending files were kept in
+  memory). One `apply` row holds `group` and `changes`, so one Undo restores the whole set. An approve
+  of a member id is refused; a reject of a member id works as before, and the set left behind is new.
+* **Reject and Restore.** A group reject keeps every member and every review in one
+  `record.json` (`records`, `reviews`, `group_review`); `/restore` re-stages them in order (raising
+  `created_at` when two land in the same tick) and copies the group review to the new group id.
+* **`GET /count`** now lists both queues (the core's `list_pending`) to fold groups, still without
+  `_LOCK`: it reads record payloads only, never the review files or the history.
 
 ## Version
 

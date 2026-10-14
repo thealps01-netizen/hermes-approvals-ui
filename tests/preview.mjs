@@ -3,7 +3,7 @@
  *
  * Run: cd tests && node preview.mjs   (writes preview.html, exit 0 = ok)
  *
- * It draws FOUR FRAMES in jsdom with the real React — the panel's REAL output, never a hand-drawn
+ * It draws SIX FRAMES in jsdom with the real React — the panel's REAL output, never a hand-drawn
  * mock — and embeds the application's own theme block (`_theme_preview.css`), so the colors are the
  * app's:
  *   1. Pending — the blocked record with its details OPEN: the kit PanelMeta inspector, the
@@ -13,6 +13,10 @@
  *   3. Applied — the history cards with the kit Badge kind, the raw summary LogView and the two-step
  *      `Force undo` (the conflict is reported first).
  *   4. Memory — the note cards and the TWO-STEP delete armed.
+ *   5. Pending — a skill GROUP (1.11.0): one card for three changes to one skill, the review lines
+ *      tagged #n, the stale change, the combined Result open, one member's own lines unfolded and
+ *      the held "Approve 3 changes" with its Tip.
+ *   6. Pending — the narrow 420 px pane.
  *
  * The text resolves exactly like the app does: ONE English bundle registered through
  * `ctx.i18n.register` and read through `usePluginI18n` / `ctx.i18n.t`; there is no picker. The SDK and
@@ -149,6 +153,46 @@ const PENDING = {
   }]
 }
 
+const GROUP_ID = 'c0ffee01'
+const groupMember = (id, change, what, lines, stale = []) => ({
+  id, subsystem: 'skills', origin: 'background_review', staged_at: NOW - 5400 + change * 600, group: GROUP_ID, change,
+  ops: [{ action: 'patch', name: 'plugin-notes', file: 'SKILL.md', lines, added: lines.filter(l => l[0] === '+').length,
+          removed: lines.filter(l => l[0] === '-').length }],
+  plain: { kind_label: 'Skill file', target: 'plugin-notes', headline: `updates: plugin-notes`, why: LONG, notes: [],
+           what: [what], effect: '', stale, groups: [{ kind: 'update', name: 'plugin-notes', ops: [{ action: 'patch' }] }] }
+})
+const GROUPED = {
+  counts: { memory: 0, skills: 1 },
+  records: { memory: 0, skills: 3 },
+  memory: [],
+  skills: [
+    groupMember('f1a2b3c4', 1, 'Adds a “Tables” section after the layout rules',
+      [[' ', '## Layout'], ['+', '## Tables'], ['+', 'Keep one header row; align numbers right.']]),
+    groupMember('f1a2b3c5', 2, 'Adds a line to the testing checklist',
+      [[' ', '## Testing'], ['+', '- Measure the tab bar height in both themes.']]),
+    groupMember('f1a2b3c6', 3, 'Renames the “Layout” heading',
+      [['-', '## Layout'], ['+', '## Layout and spacing']], ['The heading it renames is gone after #1.'])
+  ],
+  groups: { memory: [], skills: [{
+    id: GROUP_ID, members: ['f1a2b3c4', 'f1a2b3c5', 'f1a2b3c6'], names: ['plugin-notes'], version: 'a1b2c3d4e5f60718',
+    staged_at: NOW - 4800, added: 5, removed: 0,
+    review: {
+      status: 'done', verdict: 'fix', summary: 'Two of the three changes fit your rules; one repeats a rule the skill has.',
+      hard: [], siblings: 0, model: 'gpt-5.5', usage: { input: 11840, output: 402, cost_usd: 0, cost_status: 'included' },
+      findings: [{ severity: 'block', kind: 'duplicate', quote: 'Measure the tab bar height in both themes.', change: 2,
+                   other: 'Measure the tab bar in both themes before shipping.', explain: 'The checklist already has this rule.' }]
+    },
+    stale: [{ change: 3, text: 'no longer applies after #1 — the heading it renames was moved there' }],
+    result: [
+      { file: 'plugin-notes/SKILL.md', status: 'changed', lines_total: 5, added: 3, removed: 0,
+        lines: [[' ', '## Layout'], ['+', '## Tables'], ['+', 'Keep one header row; align numbers right.'], ['…', ''],
+                ['+', '- Measure the tab bar height in both themes.']] },
+      { file: 'plugin-notes/references/tables.md', status: 'new', lines_total: 2, added: 2, removed: 0,
+        lines: [['+', '# Tables'], ['+', 'Numbers align right; text aligns left.']] }
+    ]
+  }] }
+}
+
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated — 2 notes', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
   { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', summary: "batch(3 ops) on hermes-desktop-plugin-dev", files: [], undoable: false, restorable: true },
@@ -172,7 +216,7 @@ const MEMORY = {
 }
 
 let version = 0
-async function frame(actions) {
+async function frame(actions, pending = PENDING) {
   const registrations = []
   const ctx = {
     rest: async (path, opts) => {
@@ -182,7 +226,10 @@ async function frame(actions) {
         }
         return { ok: true, removed: 3, restored: ['memories/MEMORY.md'], results: [{ ok: true }] }
       }
-      const table = { '/pending': PENDING, '/count': { counts: PENDING.counts }, '/history?limit=50': HISTORY, '/memory': MEMORY }
+      const table = {
+        '/pending': pending, '/count': { counts: pending.counts, records: pending.records },
+        '/history?limit=50': HISTORY, '/memory': MEMORY
+      }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
       return table[path]
     },
@@ -257,6 +304,16 @@ frames.push({
     await click(tab(hostEl, /^Memory/), 'the Memory tab')
     await click(byText(hostEl, /^Delete$/), 'Delete')
   })
+})
+
+frames.push({
+  label: 'Pending — a skill group: one card, one review, one decision for three changes (Result open, #1 unfolded)',
+  html: await frame(async hostEl => {
+    const card = () => hostEl.querySelector(`.pa-cell[data-key="skills:${GROUP_ID}"]`)
+    await click(byText(card(), /^Details and changes$/i), 'Details and changes on the group')
+    await click(byText(card()?.querySelector('.pa-member'), /^Show lines$/), 'Show lines on #1')
+    if (!/Approve 3 changes/.test(card()?.textContent || '')) problems.push('the group card lost its Approve 3 changes')
+  }, GROUPED)
 })
 
 frames.push({
