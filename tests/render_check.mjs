@@ -581,6 +581,32 @@ const groupsWith = (cleanReview, staleReview, staleExtra = {}) => ({
   ] }
 })
 const GROUPS = groupsWith(CLEAN_REVIEW, STALE_REVIEW)
+// 1.11.1 fix effect: what a suggested fix keeps of the new text it edits (Docs/pending-approvals-notes.md).
+const LOSS_EDIT = { find: 'name: new-skill', replace: 'name: x', ok: true }
+const LOSS_FINDING = { severity: 'fix', kind: 'contradiction', quote: 'q', other: 'o', explain: 'LOSS-EXPLAIN', edit: LOSS_EDIT }
+const FIXLOSS = withReview({
+  aaa11111: { status: 'done', verdict: 'fix', summary: 'Heavy.', hard: [], edits: 1, findings: [LOSS_FINDING],
+              fix_effect: { added: 54, kept: 3 } },
+  abc12345: { status: 'done', verdict: 'fix', summary: 'Light.', hard: [], edits: 1,
+              findings: [{ ...LOSS_FINDING, explain: 'LIGHT-EXPLAIN' }], fix_effect: { added: 54, kept: 53 } }
+})
+const GROUPS_LOSS = groupsWith(
+  { ...CLEAN_REVIEW, verdict: 'fix', edits: 1, fix_effect: { added: 10, kept: 5 },
+    findings: [{ severity: 'fix', kind: 'rule', quote: 'a', other: '', explain: 'GROUP-LOSS', change: 1,
+                 edit: { find: 'a', replace: 'b', ok: true } }] },
+  STALE_REVIEW)
+const WRITTEN_TEXT = 'WRITTEN-' + 'kept words and the new rule '.repeat(3)
+const HISTORY_AMENDED = { entries: [
+  { id: 'a1b2c3d4', ts: Date.now() / 1000 - 300, kind: 'apply', subsystem: 'memory',
+    summary: 'patch in user profile — approved with 1 suggested edit(s); the fix removed 51 of the 54 new words in the text it edited',
+    files: [{ path: 'memories/USER.md' }], undoable: true,
+    amended: { added: 54, kept: 3, why: ['AMEND-WHY'], written: [WRITTEN_TEXT], applied: ['APPLIED-short'] } },
+  { id: 'b2c3d4e5', ts: Date.now() / 1000 - 900, kind: 'apply', subsystem: 'memory',
+    summary: 'an older fixed write', files: [{ path: 'memories/MEMORY.md' }], undoable: true,
+    amended: { added: 0, kept: 0, why: [] } },
+  { id: 'c3d4e5f6', ts: Date.now() / 1000 - 1900, kind: 'apply', subsystem: 'memory', summary: 'a plain write',
+    files: [{ path: 'memories/MEMORY.md' }], undoable: true }
+], counts: { applied: 3, failed: 0, undoable: 3 } }
 const GROUPS_FIX = groupsWith(
   { ...CLEAN_REVIEW, verdict: 'fix', edits: 1,
     findings: [{ severity: 'fix', kind: 'rule', quote: 'a', other: '', explain: 'FIX-FOR-ONE', change: 1,
@@ -606,6 +632,8 @@ const pendingFor = mode => (mode === 'refused' ? REFUSED
   : mode === 'reviewing' ? REVIEWING
   : mode === 'reviewed' ? REVIEWED
   : mode === 'remedy' ? REMEDY
+  : mode === 'fixloss' || mode === 'amendhist' ? FIXLOSS
+  : mode === 'groupsloss' ? GROUPS_LOSS
   : mode === 'queued' || mode === 'queuedstuck' ? QUEUED
   : mode === 'started' ? STARTED
   : mode === 'integrity' ? INTEGRITY
@@ -677,7 +705,8 @@ async function mount(appLocale, parts = 'both') {
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
           : pendingFor(REST.mode).counts), records: pendingFor(REST.mode).records },
         '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE
-          : REST.mode === 'grouphist' ? HISTORY_GROUP : HISTORY,
+          : REST.mode === 'grouphist' ? HISTORY_GROUP
+            : REST.mode === 'amendhist' ? HISTORY_AMENDED : HISTORY,
         '/memory': MEMORY
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
@@ -1915,6 +1944,79 @@ REST.scan = 'ok'
   chip.chipRoot.unmount()
   chip.chipEl.remove()
   REST.count = null
+}
+
+// --- 23) The fix effect (1.11.1): a fix that deletes most of the new text is never the primary button -
+// A suggested fix once deleted 51 of the 54 new words of an approved write and nothing on the card said
+// so. The card now states what the fix keeps; at half or more removed it is a destructive alert and
+// "Approve as written" becomes the primary button. The fix stays clickable either way (1.9.3: a flagged
+// card is never a dead end), and the history row of a fixed write keeps the as-written text to compare.
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const live = b => b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled
+  const variant = (c, re) => buttons(c, re)[0]?.getAttribute('data-variant')
+  REST.mode = 'fixloss'
+  const host = await mount('en')
+  const heavy = cell(host.hostEl, 'skills:aaa11111')
+  const light = cell(host.hostEl, 'memory:abc12345')
+  must(heavy?.textContent, ['The suggested fix deletes 51 of the 54 new words in the text it edits (94%).',
+    'Approve as written keeps the write.'], 'a heavy fix is stated with its number')
+  if (!heavy?.querySelector('.pa-alert-danger')) {
+    fail('a fix that removes most of the new text is not an alert')
+  }
+  if (variant(heavy, /^Approve as written$/) !== 'default' || variant(heavy, /^Approve with the fix$/) !== 'outline') {
+    fail(`a heavy fix is still the primary button: as written=${variant(heavy, /^Approve as written$/)}, `
+      + `fix=${variant(heavy, /^Approve with the fix$/)}`)
+  }
+  if (!live(buttons(heavy, /^Approve with the fix$/)[0])) fail('a heavy fix is no longer clickable (1.9.3 dead end)')
+  must(light?.textContent, ['With the fix, 53 of the 54 new words in the text it edits remain.'],
+    'a light fix states what it keeps')
+  if ((light?.textContent || '').includes('deletes')) fail('a light fix reads as an alert')
+  if (variant(light, /^Approve as written$/) !== 'outline' || variant(light, /^Approve with the fix$/) !== 'default') {
+    fail('a light fix lost its primary button')
+  }
+  host.hostEl.remove()
+
+  REST.mode = 'remedy'
+  const plain = await mount('en')
+  if (/new words in the text it edit/.test(cell(plain.hostEl, 'skills:aaa11111')?.textContent || '')) {
+    fail('a review without fix_effect shows an effect line')
+  }
+  if (variant(cell(plain.hostEl, 'skills:aaa11111'), /^Approve with the fix$/) !== 'default') {
+    fail('a fix with no measured effect lost its primary button')
+  }
+  plain.hostEl.remove()
+
+  REST.mode = 'groupsloss'
+  const g = await mount('en', 'page')
+  const gc = cell(g.hostEl, `skills:${CLEAN_GROUP}`)
+  must(gc?.textContent, ['The suggested fix deletes 5 of the 10 new words in the text it edits (50%).'],
+    'a group heavy fix at exactly half')
+  if (variant(gc, /^Approve 2 changes$/) !== 'default' || variant(gc, /^Approve with the fix$/) !== 'outline') {
+    fail('a group heavy fix is still the primary button')
+  }
+  g.hostEl.remove()
+
+  REST.mode = 'amendhist'
+  const hist = await mount('en', 'page')
+  await click(tab(hist.hostEl, /Applied/), 60)
+  const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
+  const rowOf = text => rows.find(c => c.textContent.includes(text))
+  const fixedRow = rowOf('patch in user profile')
+  must(fixedRow?.textContent, ['The suggested fix removed 51 of the 54 new words in the text it edited.'],
+    'a fixed history row states the effect')
+  const cmp = buttons(fixedRow || hist.hostEl, /^Compare with the write as staged$/)[0]
+  if (!cmp) fail('a fixed history row offers no comparison with the write as staged')
+  if ((fixedRow?.textContent || '').includes(WRITTEN_TEXT)) fail('the as-written text is shown before it is asked for')
+  if (cmp) await click(cmp, 40)
+  must(rowOf('patch in user profile')?.textContent, [`As written (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
+    'Applied (13 characters)', 'APPLIED-short', 'Reviewer: AMEND-WHY', 'Hide the comparison'], 'the comparison')
+  must(rowOf('an older fixed write')?.textContent, ['The as-written copy is no longer kept.'], 'a pruned copy')
+  if (/as staged|as-written|new words/.test(rowOf('a plain write')?.textContent || '')) {
+    fail('a write approved as written shows fix lines in its history row')
+  }
+  hist.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 if (problems.length) {

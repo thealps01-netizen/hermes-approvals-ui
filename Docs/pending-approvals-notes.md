@@ -745,6 +745,34 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **`GET /count`** now lists both queues (the core's `list_pending`) to fold groups, still without
   `_LOCK`: it reads record payloads only, never the review files or the history.
 
+## 1.11.1 — the effect of a suggested fix
+
+* **Why (measured on the owner's history, read-only).** A memory patch that added 54 words to the
+  user profile was approved with its suggested edit; the edit kept 3 of them (`the better one`),
+  and nothing on the card said so — **Approve with the fix** was the primary button and the review
+  report is pruned once the record is decided, so the loss was found only by reading the file. The
+  reviewer is advice and varies between runs (see above), so the guard is computed, not asked of it.
+* **The count.** `_fix_effect()` compares, per operation, the text the write puts in place (`content`,
+  `file_content`, `new_string`) with the same field after `_with_edits()`. The words new to the
+  target are the `insert`/`replace` side of a word-level `difflib.SequenceMatcher` between the text
+  it replaces and the written text: `old_text` for a memory patch, the pinned `matched_entry` for a
+  memory replace, `old_string` for a skill patch, and the simulated file (`_view_read`, the same view
+  the 1.11.0 group result uses) for a full rewrite or `write_file`. The kept words are those new words
+  that are still `equal` in the edited text. Operations the fix does not change, and edits only to the
+  existing target (prepended operations), count as keeping everything. A group sums its members over
+  one view played in order. The count is skipped (no line, no change of buttons) above 20,000 words
+  per side or on any error, which is logged.
+* **The card.** `review.fix_effect = {added, kept}`. Removed ≥ half of `added` → a `pa-alert-danger`
+  line with the count and percentage, and `Approve as written` / `Approve N changes` takes the
+  `default` variant while `Approve with the fix` drops to `outline`; below half → a plain note and the
+  1.9.3 order. The fix is never held by this count: 1.9.3 added it so a flagged card has a way forward
+  besides Reject.
+* **The history.** A fixed apply row carries `amended: {added, kept, why}` and its summary the count;
+  the as-written payload and the applied payload go to `snapshots/<entry>/amended.json`, so they are
+  pruned with the entry's undo copies. `/history` adds the differing texts (`written`, `applied`, each
+  capped like the other op texts); a row whose copy is gone gets neither and reads that it is no
+  longer kept.
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.

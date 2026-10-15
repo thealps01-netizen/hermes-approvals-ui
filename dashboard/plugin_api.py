@@ -598,6 +598,7 @@ _TEXT = {
     'amend_nothing': 'There is no suggested edit that still matches this record.',
     'fix_left': 'The suggested edits do not clear every problem, so nothing was written: {reasons}',
     'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
+    'summary_fix_effect': '{summary}; the fix removed {removed} of the {added} new words in the text it edited',
     'amend_author': 'adds "author: {want}" to the header',
     'amend_drop_line': 'removes the line that is already in the skill',
     'edit_target': '{file}, existing text',
@@ -1099,12 +1100,17 @@ def _view_md(view: dict, name: str) -> dict:
     return out
 
 
+def _op_rel(op: dict) -> str:
+    if _rewrites_skill_md(op):
+        return "SKILL.md"
+    return str(op.get("file_path") or "SKILL.md").replace(BACKSLASH, "/").strip().lstrip("/") or "SKILL.md"
+
+
 def _view_apply(view: dict, op: dict) -> str:
     action = str(op.get("action") or "")
     name = _bare_skill(op.get("name"))
     rewrite = _rewrites_skill_md(op)
-    rel = "SKILL.md" if rewrite else (
-        str(op.get("file_path") or "SKILL.md").replace(BACKSLASH, "/").strip().lstrip("/") or "SKILL.md")
+    rel = _op_rel(op)
     if action == "create":
         if _view_exists(view, name):
             return _tx("sim_exists", name=name)
@@ -1250,7 +1256,10 @@ def _group_mark_edits(review: dict, members: list[dict]) -> None:
     open_edits = [(e["edit"], e.get("change")) for e in entries if e["edit"]["ok"]]
     review["edits"] = len(open_edits)
     if open_edits:
-        review["fix_left"] = _group_left(_group_with_edits(members, open_edits)[0])
+        fixed = _group_with_edits(members, open_edits)[0]
+        review["fix_left"] = _group_left(fixed)
+        if effect := _group_effect(members, fixed):
+            review["fix_effect"] = effect
 
 
 def _group_card(gid: str, members: list[dict], steps: list) -> dict:
@@ -1408,6 +1417,7 @@ def _group_apply(gid: str, members: list[dict], suffix: str = "") -> tuple[bool,
                  "files": [], "undone": False})
         return False, reason
     _finalize_entry(entry, wa.SKILLS, ops, before)
+    _keep_amended(entry, members)
     _append(entry)
     return True, _tx("group_applied", n=len(members))
 
@@ -1492,8 +1502,12 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
         if left := _group_left(fixed):
             return {"id": gid, "group": True, "ok": False, "blocked": True,
                     "error": _tx("fix_left", reasons=" ".join(left))}
+        effect = _group_effect(members, fixed)
+        why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
+        suffix = _fixed_summary("", applied, effect)
         for i in sorted(changed):
             fixed[i]["amended_from"] = members[i].get("payload")
+            fixed[i]["amended_effect"], fixed[i]["amended_why"] = effect, why
             fixed[i]["summary"] = _tx("summary_fixed", summary=members[i].get("summary", ""), n=applied)
             path = wa._pending_path(wa.SKILLS, str(fixed[i].get("id")))
             queued[path] = path.read_bytes()
@@ -2631,6 +2645,79 @@ def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
     return fixed, applied
 
 
+_EFFECT_WORDS = 20000
+
+
+def _words(text: object) -> list[str]:
+    return re.findall(r"\S+", str(text or ""))
+
+
+def _op_after(op: dict) -> str:
+    return next((str(op[f]) for f in (*_EDIT_FIELDS, "new_text") if isinstance(op.get(f), str)), "")
+
+
+def _op_before(subsystem: str, op: dict, view: dict) -> str:
+    action = str(op.get("action") or "")
+    if action in ("add", "create"):
+        return ""
+    if subsystem == "memory":
+        pinned = "" if action == "patch" else op.get("matched_entry")
+        return str(pinned or op.get("old_text") or "")
+    if action == "patch" and not op.get("content"):
+        return str(op.get("old_string") or "")
+    return _view_read(view, _bare_skill(op.get("name")), _op_rel(op)) or ""
+
+
+def _fix_effect(subsystem: str, record: dict, fixed: dict, view: dict | None = None) -> dict | None:
+    own, now = _raw_ops(record), _raw_ops(fixed)
+    if not own or len(now) < len(own):
+        return None
+    trial = _view_copy(view or _view_new())
+    added = kept = 0
+    try:
+        for op, after in zip(own, now[len(now) - len(own):]):
+            written, applied = _words(_op_after(op)), _words(_op_after(after))
+            before = _words(_op_before(subsystem, op, trial))
+            if subsystem != "memory":
+                _view_apply(trial, op)
+            if written == applied:
+                continue
+            if max(len(written), len(before), len(applied)) > _EFFECT_WORDS:
+                return None
+            new = {j for tag, _a, _b, j1, j2 in difflib.SequenceMatcher(None, before, written, autojunk=False)
+                   .get_opcodes() if tag in ("insert", "replace") for j in range(j1, j2)}
+            same = {i for tag, i1, i2, _c, _d in difflib.SequenceMatcher(None, written, applied, autojunk=False)
+                    .get_opcodes() if tag == "equal" for i in range(i1, i2)}
+            added, kept = added + len(new), kept + len(new & same)
+    except Exception as exc:
+        _log(f"the effect of the suggested fix on {record.get('id')} could not be measured: {exc!r}")
+        return None
+    return {"added": added, "kept": kept} if added else None
+
+
+def _group_effect(members: list[dict], fixed: list[dict]) -> dict | None:
+    from tools import write_approval as wa
+
+    view, added, kept = _view_new(), 0, 0
+    for record, after in zip(members, fixed):
+        effect = _fix_effect(wa.SKILLS, record, after, view) or {}
+        added, kept = added + effect.get("added", 0), kept + effect.get("kept", 0)
+        view, _problems = _view_record(view, record)
+    return {"added": added, "kept": kept} if added else None
+
+
+def _fixed_summary(summary: str, n: int, effect: dict | None) -> str:
+    text = _tx("summary_fixed", summary=summary, n=n)
+    if not effect:
+        return text
+    return _tx("summary_fix_effect", summary=text, removed=effect["added"] - effect["kept"], added=effect["added"])
+
+
+def _fix_why(state: dict, record: dict) -> list[str]:
+    return [str(e.get("explain") or e.get("text") or "") for e in _review_edits(state)
+            if _edit_open(record, e["edit"])]
+
+
 def _fix_left(subsystem: str, fixed: dict, only: list | tuple = ()) -> list[str]:
     hard = [h["text"] for h in _hard_checks(subsystem, fixed)
             if not only or h.get("name") in only or not h.get("name")]
@@ -2649,6 +2736,8 @@ def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
     if open_edits:
         fixed, _ = _with_edits(record, open_edits)
         review["fix_left"] = _fix_left(subsystem, fixed)
+        if effect := _fix_effect(subsystem, record, fixed):
+            review["fix_effect"] = effect
 
 
 def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
@@ -2666,7 +2755,9 @@ def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
     if left := _fix_left(subsystem, fixed, only):
         return None, b"", _tx("fix_left", reasons=" ".join(left))
     fixed["amended_from"] = record.get("payload")
-    fixed["summary"] = _tx("summary_fixed", summary=record.get("summary", ""), n=applied)
+    effect = _fix_effect(subsystem, record, fixed)
+    fixed["amended_effect"], fixed["amended_why"] = effect, _fix_why(state, record)
+    fixed["summary"] = _fixed_summary(record.get("summary", ""), applied, effect)
     path = wa._pending_path(subsystem, str(record.get("id")))
     original = path.read_bytes()
     _atomic_write(path, json.dumps(fixed, ensure_ascii=False))
@@ -2783,6 +2874,41 @@ def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list,
                                "sha_after": _sha(path), "created": True})
 
 
+def _keep_amended(entry: dict, records: list[dict]) -> None:
+    changed = [r for r in records if r.get("amended_from") is not None]
+    if not changed:
+        return
+    effect = changed[0].get("amended_effect") or {}
+    entry["amended"] = {"added": int(effect.get("added") or 0), "kept": int(effect.get("kept") or 0),
+                        "why": [str(w) for w in changed[0].get("amended_why") or []]}
+    try:
+        folder = _state() / "snapshots" / entry["id"]
+        folder.mkdir(parents=True, exist_ok=True)
+        pairs = [{"written": r["amended_from"], "applied": r.get("payload")} for r in changed]
+        _atomic_write(folder / "amended.json", json.dumps(pairs, ensure_ascii=False))
+    except Exception as exc:
+        _log(f"the as-written copy of {entry.get('record_id')} could not be kept: {exc!r}")
+
+
+def _amended_texts(entry_id: str) -> dict:
+    try:
+        pairs = json.loads((_state() / "snapshots" / entry_id / "amended.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        _log(f"the as-written copy of history entry {entry_id} is unreadable: {exc!r}")
+        return {}
+    written, applied = [], []
+    for pair in pairs if isinstance(pairs, list) else []:
+        old = _raw_ops({"payload": pair.get("written") or {}})
+        new = _raw_ops({"payload": pair.get("applied") or {}})
+        for op, after in zip(old, new[len(new) - len(old):]):
+            if _op_after(op) != _op_after(after):
+                written.append(_op_after(op)[:_OP_TEXT_LIMIT])
+                applied.append(_op_after(after)[:_OP_TEXT_LIMIT])
+    return {"written": written, "applied": applied}
+
+
 @router.post("/decide")
 def decide(body: dict):
     try:
@@ -2886,6 +3012,7 @@ def _decide_locked(body: dict) -> dict:
             continue
         if entry:
             _finalize_entry(entry, subsystem, ops, before, payload)
+            _keep_amended(entry, [record])
             _append(entry)
         else:
             kept = kept or _new_id()
@@ -3071,7 +3198,10 @@ def history(limit: int = 50):
 def _history(limit: int) -> dict:
     entries = []
     for e in _entries(max(1, min(int(limit), MAX_ENTRIES))):
-        entries.append({**e, "undoable": _undoable(e), **({"restorable": True} if _restorable(e) else {})})
+        row = {**e, "undoable": _undoable(e), **({"restorable": True} if _restorable(e) else {})}
+        if isinstance(e.get("amended"), dict) and (entry_id := _valid_id(e.get("id"))):
+            row["amended"] = {**e["amended"], **_amended_texts(entry_id)}
+        entries.append(row)
     every = _entries(MAX_ENTRIES)
     counts = {"applied": sum(1 for e in every if e.get("kind") in UNDOABLE),
               "failed": sum(1 for e in every if e.get("kind") == "failed"),

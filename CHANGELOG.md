@@ -5,6 +5,26 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.11.1
+
+### Fixed
+
+* **A suggested fix can no longer delete most of a write without the card saying so.** A reviewer's
+  edit once removed 51 of the 54 words an approved memory write added, and the card only offered
+  **Approve with the fix** as its primary button. The card now states what the fix keeps of the new
+  text it edits (`With the fix, 53 of the 54 new words in the text it edits remain.`). When the fix
+  removes half or more of those words, the line becomes a red alert with the count and percentage,
+  and **Approve as written** becomes the primary button. **Approve with the fix** stays available
+  either way (a flagged card still has a way forward besides Reject, as in 1.9.3). The count is
+  computed locally from the write and the edited write — no model call, no cost. Edits only to text
+  already in the file count as keeping every new word. Groups show one count for the whole set.
+* **A write approved with its fix keeps an audit trail.** The history summary adds the count (`… —
+  approved with 1 suggested edit(s); the fix removed 51 of the 54 new words in the text it edited`),
+  the entry records the count and the reviewer's reasons, and the Applied row offers **Compare with
+  the write as staged**, which shows the text as written beside the text that was applied. The
+  as-written copy lives with the entry's undo copies, so clearing the history removes it; the row
+  then says the copy is no longer kept. Entries written before 1.11.1 show nothing new.
+
 ## 1.11.0
 
 ### Changed

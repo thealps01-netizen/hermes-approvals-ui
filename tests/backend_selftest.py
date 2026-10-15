@@ -268,6 +268,57 @@ def _review_selftest(tmp: Path) -> None:
     assert mem_fixed["ok"], mem_fixed
     saved = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
     assert "Another note, updated" in saved and "A new lesson about tabs" in saved, saved
+    kept_all = history(limit=1)["entries"][0]
+    assert kept_all["amended"]["added"] == 0 and kept_all["amended"]["written"] == [], \
+        "an edit only to the existing text removes none of the write's new words and reports no loss"
+
+    # 1.11.1: the approved profile write whose suggested fix deleted 51 of the 54 words it added.
+    old_profile = ("When an outside tool or method overlaps his own setup, he wants whichever is actually better, "
+                   "decided by a measured head-to-head on a real task, not by README claims; the winner replaces the "
+                   "loser — never both kept side by side.")
+    proposed = ('When he asks whether an outside tool or method suits him, an unmeasured assessment is labelled as '
+                'unmeasured (README-based) and carries no fit verdict such as "useless" or "not for you"; the answer '
+                'ends with a concrete measured-test proposal on one of his real tasks, with a cost estimate, run only '
+                'after his approval. When the tool overlaps his own setup, the better one is decided by a measured '
+                'head-to-head on a real task, not by README claims; the winner replaces the loser — never both kept '
+                'side by side.')
+    shortened = proposed.split(" When the tool overlaps")[0] + " When the tool overlaps"
+    left_over = proposed.replace(shortened, "When an outside tool or method overlaps")
+    (tmp / "memories" / "USER.md").write_text(old_profile + "\n", encoding="utf-8")
+    loss_verdict = {"summary": "Repeats a rule.", "findings": [
+        {"severity": "fix", "kind": "rule", "quote": "the better one is decided by a measured head-to-head",
+         "other": "", "explain": "LOSS-WHY", "edit": {"find": shortened, "replace": "When an outside tool or method overlaps"}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(loss_verdict))
+    stage("memory", "5e1f000d", {"action": "patch", "target": "user", "old_text": old_profile, "content": proposed,
+                                 "matched_entry": old_profile})
+    loss = settle("memory", "5e1f000d")
+    assert loss["edits"] == 1 and loss["fix_effect"] == {"added": 54, "kept": 3}, loss
+    lossy = approve("memory", "5e1f000d", with_edits=True)
+    assert lossy["ok"], lossy
+    assert (tmp / "memories" / "USER.md").read_text(encoding="utf-8").strip() == left_over
+    row = history(limit=1)["entries"][0]
+    assert "the fix removed 51 of the 54 new words in the text it edited" in row["summary"], row
+    assert {k: row["amended"][k] for k in ("added", "kept", "why")} == {"added": 54, "kept": 3, "why": ["LOSS-WHY"]}, row
+    assert row["amended"]["written"] == [proposed] and row["amended"]["applied"] == [left_over], row["amended"]
+    assert undo({"id": row["id"]})["ok"], "a write approved with its fix must still undo"
+    assert (tmp / "memories" / "USER.md").read_text(encoding="utf-8").strip() == old_profile
+
+    light = {"id": "5e1f00aa", "payload": {"action": "patch", "target": "user", "old_text": old_profile,
+                                           "content": proposed}}
+    light_fixed, _ = _with_edits(light, [{"find": "measured-test proposal", "replace": "measured test proposal"}])
+    assert _fix_effect("memory", light, light_fixed) == {"added": 54, "kept": 53}, "a one-word fix keeps the rest"
+    patch_rec = {"id": "5e1f00ab", "payload": {"action": "patch", "name": "own-skill", "old_string": "body",
+                                               "new_string": "body plus a lesson about tabs"}}
+    patch_fixed, _ = _with_edits(patch_rec, [{"find": "plus a lesson about tabs", "replace": "plus notes"}])
+    assert _fix_effect("skills", patch_rec, patch_fixed) == {"added": 5, "kept": 1}, \
+        "the words already in old_string are not new words"
+    current = (own / "SKILL.md").read_text(encoding="utf-8")
+    rewrite = {"id": "5e1f00ac", "payload": {"action": "edit", "name": "own-skill",
+                                             "content": current + "- A brand new rule about tab bars.\n"}}
+    rewrite_fixed, _ = _with_edits(rewrite, [{"find": "- A brand new rule about tab bars.", "replace": "- A rule."}])
+    assert _fix_effect("skills", rewrite, rewrite_fixed) == {"added": 8, "kept": 2}, \
+        "a full rewrite counts only what it adds to the file on disk"
+    assert _fix_effect("skills", rewrite, rewrite) is None, "an unchanged write has no fix effect"
 
     globals()["_review_call"] = lambda task, **kw: (_ for _ in ()).throw(RuntimeError("provider down"))
     stage("skills", "5e1f0008", {"action": "create", "name": "new-two", "category": "cat",
@@ -696,6 +747,9 @@ def _groups_selftest(tmp: Path) -> None:
     row = history(limit=1)["entries"][0]
     assert row["group"] == ["6a000001", "6a000002"] and len(row["changes"]) == 2 and row["undoable"], row
     assert "grp-skill · 2 changes" in row["summary"], row
+    assert "the fix removed 2 of the 9 new words in the text it edited" in row["summary"], row
+    assert {k: row["amended"][k] for k in ("added", "kept", "why")} == {"added": 9, "kept": 7, "why": ["names a host"]}, row
+    assert row["amended"]["written"] == ["# Jobs\n\nA background job reports through the panel.\n"], row["amended"]
     assert undo({"id": row["id"]})["ok"] and (folder / "SKILL.md").read_bytes() == before \
         and not (folder / "references" / "jobs.md").exists(), "one Undo takes the whole group back"
     clear()
@@ -1478,7 +1532,8 @@ def _selftest() -> int:
           "cut input, outdated reviews, the language rule), and skill groups (1.11.0: writes to one skill are one "
           "card with one review, a conflict between them shows before approving, the rule checks run on the "
           "combined result, a member is never approved alone, a group applies whole or not at all, one Undo and "
-          "one Restore cover the group, a member is rejected on its own)")
+          "one Restore cover the group, a member is rejected on its own), and the fix effect (1.11.1: the count of "
+          "new words a suggested fix keeps, on the card, in the history summary and with the as-written copy)")
     return 0
 
 
