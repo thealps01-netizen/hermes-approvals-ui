@@ -794,6 +794,14 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **Rewrite diffs.** `_core_diff()` sends a `patch` that carries `content` (`_rewrites_skill_md`) to the
   core as `edit`, which is what Hermes applies; the core's own patch preview refuses an empty
   `old_string`. Reported upstream separately; the plugin does not edit the core.
+* **Duplicates on the result.** `hard_duplicate` used to test a written line against the skill's
+  lines BEFORE the write, so a move inside one record (write the reference, cut SKILL.md; or two
+  hunks of one file) read as a duplicate and its edit would have dropped the moved line.
+  `_kept_counts()` plays the record on the view and counts each line over the skill's markdown as the
+  write leaves it; a written line is a duplicate when it appears there more often than its own copy
+  (minus one when the target is markdown). `_dup_key()` keeps a heading apart from a list entry with
+  the same words, so a contents list is not a duplicate of its headings. A record the view cannot
+  play falls back to the old comparison. Measured on the owner's batch 2 proposals: 6 false locks → 0.
 * **Rule checks on the result.** `_skill_result_hard()` plays the record on the view and compares
   SKILL.md before and after: a skill that carried the owner's `author` must keep it (edit: put the
   line back into the rewrite), and a description that changed must fit `SKILL_PROMPT_DESC_LIMIT`

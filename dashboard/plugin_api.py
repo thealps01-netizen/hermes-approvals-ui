@@ -13,6 +13,7 @@ import threading
 import time
 import unicodedata
 import uuid
+from collections import Counter
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
@@ -2101,6 +2102,7 @@ def _skill_hard(record: dict, view: dict | None = None) -> list[dict]:
     author = _expected_author()
     out: list[dict] = []
     owners_seen: set = set()
+    kept = _kept_counts(record, view)
     for op in _raw_ops(record):
         name = str(op.get("name") or "")
         action = str(op.get("action") or "")
@@ -2124,15 +2126,33 @@ def _skill_hard(record: dict, view: dict | None = None) -> list[dict]:
         rewrite = _rewrites_skill_md(op)
         skip = str(op.get("file_path") or "") if action == "write_file" else "SKILL.md" if rewrite else ""
         known = existing if not skip else _skill_lines(_bare_skill(name), skip, view)
+        counts = kept.get(_bare_skill(name)) if kept is not None else None
+        target = "SKILL.md" if rewrite else str(op.get("file_path") or "SKILL.md")
+        mine = 1 if target.endswith(".md") else 0
         old = {_norm_line(l) for l in str(op.get("old_string") or "").splitlines()}
         for line in text.splitlines():
             key = _norm_line(line)
-            if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN and key in known and key not in old:
+            twice = counts[_dup_key(line)] > mine if counts is not None else key in known
+            if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN and twice and key not in old:
                 cut = next((c for c in (line + "\n", "\n" + line) if c in text), None)
                 drop = {"find": cut, "replace": "", "label": _tx("amend_drop_line")} if cut else None
                 out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip())), drop))
                 break
     return out + _skill_result_hard(record, view, author)
+
+
+def _kept_counts(record: dict, view: dict | None) -> dict | None:
+    base = view if view is not None else _view_new()
+    after, problems = _view_record(base, record)
+    if problems:
+        return None
+    names = {_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""}
+    return {n: Counter(_dup_key(l) for text in _view_md(after, n).values() for l in text.splitlines())
+            for n in names}
+
+
+def _dup_key(line: str) -> str:
+    return ("#" if line.lstrip().startswith("#") else "") + _norm_line(line)
 
 
 def _description_of(content: str | None) -> str | None:
@@ -2224,9 +2244,9 @@ def _elsewhere(record: dict) -> list[dict]:
         if not name or name in done or op.get("action") == "delete":
             continue
         home = _same_path(_skill_dir(name))
-        old = {_norm_line(l) for l in str(op.get("old_string") or "").splitlines()}
+        old = {_dup_key(l) for l in str(op.get("old_string") or "").splitlines()}
         for line in _op_text(op).splitlines():
-            key = _norm_line(line)
+            key = _dup_key(line)
             if len(_norm_line(_MD_LINK.sub("", line))) < _DUP_MIN or key in old:
                 continue
             others = sorted(d for d in index.get(key, ()) if d != home)
@@ -2271,7 +2291,7 @@ def _skill_line_index_now() -> dict:
             with suppress(OSError):
                 for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
                     if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN:
-                        lines.setdefault(_norm_line(line), set()).add(home)
+                        lines.setdefault(_dup_key(line), set()).add(home)
         _LINE_INDEX.update(sig=sig, lines=lines)
     return _LINE_INDEX["lines"]
 

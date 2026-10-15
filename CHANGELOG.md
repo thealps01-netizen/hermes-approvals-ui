@@ -21,6 +21,12 @@ look has no version at all.
   `patch` with `content` and no `old_string`; its own preview then fails (`patch would fail:
   old_string is empty`) and the card and the reviewer saw no change at all. Those rewrites are now
   diffed as the rewrite they are.
+* **Moving text inside a skill is no longer a "duplicate".** The duplicate rule compared a written
+  line with the skill as it was, so a write that moves a line (out of SKILL.md into a reference, or
+  to another place in the same file) locked Approve, and its suggested edit would have deleted the
+  moved line. It now counts the line in the skill as the write leaves it. A contents entry that
+  names its own heading is not a duplicate either. On the owner's batch 2 proposals this removes 6
+  false locks (abap-dev 4, agent-plugin-vetting 2).
 
 ### Added
 

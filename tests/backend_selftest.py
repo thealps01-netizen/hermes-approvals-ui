@@ -188,6 +188,24 @@ def _review_selftest(tmp: Path) -> None:
     assert calls.count("own-skill") == 1, f"one /pending must look a skill folder up once, not per check: {calls}"
     (pend / "skills" / "5e1f0009.json").unlink()
 
+    stage("skills", "5e1f000a", {"operations": [
+        {"action": "write_file", "name": "own-skill", "file_path": "references/moved.md",
+         "file_content": f"# Moved\n\n{known_line}\n"},
+        {"action": "patch", "name": "own-skill", "old_string": f"{known_line}\n",
+         "new_string": "Details: references/moved.md.\n"}]})
+    moved = item("skills", "5e1f000a")["review"]["hard"]
+    assert not any("already in the skill" in h["text"] for h in moved), \
+        f"a line the same write moves out of SKILL.md into a reference is not a duplicate: {moved}"
+    (pend / "skills" / "5e1f000a.json").unlink()
+
+    title = "Rules that hold only outside a repository whose gate forbids them"
+    stage("skills", "5e1f000b", {"action": "patch", "name": "own-skill", "old_string": f"{known_line}\n",
+                                 "new_string": f"{known_line}\n\n## Contents\n\n- {title}\n\n## {title}\n\nText.\n"})
+    toc = item("skills", "5e1f000b")["review"]["hard"]
+    assert not any("already in the skill" in h["text"] for h in toc), \
+        f"a contents entry that names its heading is not a duplicate of the heading: {toc}"
+    (pend / "skills" / "5e1f000b.json").unlink()
+
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
                                  "operations": [{"action": "add", "content": "selftest saved note"},
