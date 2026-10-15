@@ -149,6 +149,45 @@ def _review_selftest(tmp: Path) -> None:
     assert any("must be English" in h["text"] for h in tr), tr
     (pend / "skills" / "5e1f0005.json").unlink()
 
+    own_md = (own / "SKILL.md").read_text(encoding="utf-8")
+    dropped = own_md.replace(f"author: {author}\n", "") + "one more line\n"
+    stage("skills", "5e1f0007", {"action": "patch", "name": "own-skill", "content": dropped})
+    card = item("skills", "5e1f0007")
+    kept = card["review"]["hard"]
+    assert any(f'keep "author: {author}"' in h["text"] and (h.get("edit") or {}).get("ok") for h in kept), kept
+    shown = _write_shown(__import__("tools.write_approval", fromlist=["x"]), "skills", wa_get("skills", "5e1f0007"))
+    assert "+one more line" in shown and "old_string is empty" not in shown, \
+        f"a whole-file rewrite staged as patch+content must reach the reviewer as a diff: {shown[:300]}"
+    (pend / "skills" / "5e1f0007.json").unlink()
+
+    long_desc = "Use when testing the description length check of the approvals panel on an edit. Long."
+    stage("skills", "5e1f0008", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
+                                 "new_string": f"description: {long_desc}"})
+    desc = item("skills", "5e1f0008")["review"]["hard"]
+    cut = next((h for h in desc if "characters; the skill list shows only" in h["text"]), None)
+    assert cut and cut["edit"]["ok"] and len(cut["edit"]["replace"].strip('"')) <= 60, desc
+    (pend / "skills" / "5e1f0008.json").unlink()
+
+    other_line = "- Ship the panel only after the screenshot in both themes matches the approved sample."
+    (other / "SKILL.md").write_text((other / "SKILL.md").read_text(encoding="utf-8") + other_line + "\n", encoding="utf-8")
+    big = own_md + other_line + "\n" + "".join(f"- filler line {i}\n" for i in range(520))
+    stage("skills", "5e1f0009", {"action": "edit", "name": "own-skill", "content": big})
+    card = item("skills", "5e1f0009")["review"]
+    advice = [a["text"] for a in card.get("advice") or []]
+    assert any("grows to" in a and "references/" in a for a in advice), advice
+    assert any("already in the skill other-skill" in a for a in advice), advice
+    assert not any("grows to" in h["text"] or "other-skill" in h["text"] for h in card["hard"]), \
+        "size and cross-skill findings advise; they never lock Approve"
+    calls = []
+    real_dir = globals()["_skill_dir_now"]
+    globals()["_skill_dir_now"] = lambda name: (calls.append(name), real_dir(name))[1]
+    try:
+        pending()
+    finally:
+        globals()["_skill_dir_now"] = real_dir
+    assert calls.count("own-skill") == 1, f"one /pending must look a skill folder up once, not per check: {calls}"
+    (pend / "skills" / "5e1f0009.json").unlink()
+
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
                                  "operations": [{"action": "add", "content": "selftest saved note"},

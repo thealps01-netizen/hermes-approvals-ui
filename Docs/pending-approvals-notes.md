@@ -773,6 +773,41 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   capped like the other op texts); a row whose copy is gone gets neither and reads that it is no
   longer kept.
 
+## 1.12.0 — the panel freeze, rewrite diffs, more checks
+
+* **Why (measured, read-only).** On 2026-10-16 the app froze for 13 minutes with 5 skill records
+  (33 operations) waiting. Two py-spy dumps of the backend showed 17 waiting `GET /pending`, 18
+  `_scan_external` and 3 `/history` calls behind `_LOCK`: `usePolling` used `setInterval`, so a
+  4 s poll fired again while the last request was still open, and one `/pending` looked the same skill
+  folder up once per operation and check (148 lookups, ~2 s). The waiting requests held the app's
+  worker threads (40), so unrelated routes timed out at 30 s while chat kept working.
+* **Polls never overlap.** `usePolling` schedules the next `setTimeout` only after `load()` settles;
+  unmounting clears it. `render_check` holds every request open and fails if any 4 s / 15 s timer
+  (interval or timeout) is scheduled meanwhile.
+* **One lookup per request.** `_memo()` opens a per-request store (a `ContextVar`, so threads never
+  share it) around `/pending`, `POST /reviews` and the input step of each review job. Inside it
+  `_skill_dir`, `_skill_file`, the skill's markdown files, normalised line sets, the frontmatter
+  validator and the core diff are computed once per key. Outside it every call reads fresh. The core
+  diff gets the base file through `skill_pending_diff(record, staged)`, so the core does not search the
+  skill folder again. Bench (scratch home, owner's 8 proposals, 271 operations): 37.3 s → 1.16 s per
+  `/pending`; skill-folder searches 1064 → 8.
+* **Rewrite diffs.** `_core_diff()` sends a `patch` that carries `content` (`_rewrites_skill_md`) to the
+  core as `edit`, which is what Hermes applies; the core's own patch preview refuses an empty
+  `old_string`. Reported upstream separately; the plugin does not edit the core.
+* **Rule checks on the result.** `_skill_result_hard()` plays the record on the view and compares
+  SKILL.md before and after: a skill that carried the owner's `author` must keep it (edit: put the
+  line back into the rewrite), and a description that changed must fit `SKILL_PROMPT_DESC_LIMIT`
+  (edit: the first sentence shortened, only when the description line is in the write). Creates are
+  untouched: `hard_author` and the description fix already cover them.
+* **Advice.** `_advice_checks()` → `review.advice`, drawn as muted `Check` rows under the findings
+  and passed to the reviewer as "advice, does not lock Approve". Size: SKILL.md grows past 500 lines
+  or ~5,000 tokens (chars/4). Form: the owner's changed description against
+  `Use when <trigger>. <what it does>.` Elsewhere: a written line (≥ 60 chars without links, not part
+  of `old_string`) found in another skill's markdown; the line index is rebuilt only when a file's
+  mtime or size changes. A planned machine-path check was dropped (the owner's provenance guard
+  already refuses them at write time), and so was a referenced-file check (31 references in the owner's
+  skills, 0 real misses, every "miss" pointed into another skill or tool).
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.

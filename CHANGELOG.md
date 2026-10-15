@@ -5,6 +5,34 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.0
+
+### Fixed
+
+* **The panel no longer freezes the app when many changes are waiting.** The panel asked for the
+  list every 4 seconds while a review was running and did not wait for the last answer. The backend
+  answers one request at a time; with 5 records and 33 changes each answer took about 2 seconds, so
+  the requests piled up (38 waiting at once), filled the app's shared worker pool and froze the chat
+  list, projects and profiles for 13 minutes. Every poll (list, chip, history, memory) now asks again
+  only after its last answer arrived, and one request looks each skill up once instead of once per
+  check. Measured on the owner's real batch 2–4 proposals (8 records, 271 changes, a scratch copy of
+  the skills): one list request took 37.3 s, now 1.16 s; one record (abap-dev) 1.27 s → 0.22 s.
+* **A whole-file rewrite staged as a patch is shown as a diff.** Hermes stages some rewrites as
+  `patch` with `content` and no `old_string`; its own preview then fails (`patch would fail:
+  old_string is empty`) and the card and the reviewer saw no change at all. Those rewrites are now
+  diffed as the rewrite they are.
+
+### Added
+
+* **Two more rule checks (they lock Approve, each with a suggested edit).** A change to one of your
+  skills must keep `author: <you>` in the header, and a changed description must fit the skill list
+  (60 characters; the list cuts the rest, so the trigger can be lost). New skills were already held
+  to both.
+* **Advice checks (shown on the card, never lock Approve).** SKILL.md growing past 500 lines or about
+  5,000 tokens, a changed description of your own skill that does not read `Use when <trigger>.
+  <what it does>.`, and a line that already sits in another skill. They are computed locally — no
+  model call, no cost — and the reviewer sees them too.
+
 ## 1.11.1
 
 ### Fixed

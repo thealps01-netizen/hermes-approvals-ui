@@ -131,6 +131,7 @@ const BUNDLES = {
         skipWarn: 'This write was not checked against your rules. Apply it anyway?',
         title: 'Pre-review',
         rule: 'Rule check',
+        check: 'Check',
         edit: 'Suggested edit',
         inWrite: 'In the write',
         notes: n => `${plural(n, 'minor note', 'minor notes')} under Details`,
@@ -540,7 +541,9 @@ function usePolling(load, ms) {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let alive = true
+    let h = 0
     const run = async () => {
+      if (!alive) return
       try {
         const d = await load()
         if (alive) {
@@ -551,12 +554,13 @@ function usePolling(load, ms) {
       } catch (e) {
         if (alive) setError(e)
       }
+      clearTimeout(h)
+      if (alive) h = setTimeout(run, ms)
     }
     void run()
-    const h = setInterval(run, ms)
     return () => {
       alive = false
-      clearInterval(h)
+      clearTimeout(h)
     }
   }, [ms, tick])
   return { data, error, at, refresh: () => setTick(t => t + 1) }
@@ -809,6 +813,7 @@ const reviewFacts = review => {
     major,
     doubtful: findings.filter(f => weighty(f) && f.unverified),
     notes: findings.filter(f => f.severity === 'note'),
+    advice: review.advice || [],
     edits: review.edits || 0,
     fixLeft: review.fix_left || [],
     effect: review.fix_effect && Number(review.fix_effect.added) > 0 ? review.fix_effect : null,
@@ -1034,7 +1039,7 @@ function Change({ op, where, t, badge }) {
 
 function ReviewSection({ review, facts, tone, busy, onAgain }) {
   const t = usePluginI18n(ID)
-  const { status, hard, major, doubtful, notes, edits, fixLeft, unfixed, effect } = facts
+  const { status, hard, major, doubtful, notes, edits, fixLeft, unfixed, effect, advice } = facts
   const usage = review.usage || {}
   const meta = [
     review.model,
@@ -1109,7 +1114,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       status === 'unassigned' ? gist('unassigned', t('pa.review.unassigned')) : null,
       status === 'failed' ? gist('failed', t('pa.review.failed', review.error || '')) : null,
       status === 'done' ? gist('summary', review.summary || t('pa.review.empty')) : null,
-      hard.length || major.length
+      hard.length || major.length || advice.length
         ? jsx('div', {
             className: 'pa-majors',
             children: [
@@ -1121,7 +1126,8 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
                   quote('q', t('pa.review.inWrite'), f.quote),
                   quote('o', t('pa.review.other'), f.other)
                 ])
-              })
+              }),
+              ...advice.map((a, i) => problem(`a${i}`, t('pa.review.check'), 'muted', `${tagOf(a)}${a.text}`))
             ]
           }, 'majors')
         : null,

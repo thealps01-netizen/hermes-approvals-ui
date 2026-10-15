@@ -448,9 +448,11 @@ const REVIEWING = withReview({
   def67890: { status: 'done', verdict: 'approve', findings: [], hard: [{ name: 'hermes-agent', text: REVIEW_HARD }] },
   aaa11111: { status: 'unassigned', hard: [] }
 })
+const ADVICE_TEXT = 'own-skill: SKILL.md grows to 612 lines (about 7400 tokens); the budget is 500 lines.'
 const REVIEWED = withReview({
   aaa11111: {
     status: 'done', verdict: 'reject', summary: 'One duplicate rule.', findings: [FINDING], hard: [],
+    advice: [{ name: 'own-skill', text: ADVICE_TEXT }],
     model: 'gpt-5.5', usage: { input: 5210, output: 388, cost_usd: 0.0123, cost_status: 'estimated' }
   }
 })
@@ -1570,6 +1572,8 @@ REST.scan = 'ok'
   if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') {
     fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
   }
+  must(card?.querySelector('.pa-review')?.textContent, ['Check', ADVICE_TEXT], 'an advice check row')
+  if (/Rule check failed/.test(card?.textContent || '')) fail('an advice check turned the card into a failed rule check')
   await click(buttons(card, /^Review again$/)[0], 60)
   const again = stub.calls.posts.filter(p => p.path === '/review').pop()
   if (again?.body.subsystem !== 'skills' || again?.body.id !== 'aaa11111') fail(`Review again sent ${JSON.stringify(again)}`)
@@ -1924,16 +1928,17 @@ REST.scan = 'ok'
   REST.mode = 'normal'
 
   const ticks = []
-  const realInterval = globalThis.setInterval
-  globalThis.setInterval = (fn, ms, ...rest) => {
+  const realTimeout = globalThis.setTimeout
+  globalThis.setTimeout = (fn, ms, ...rest) => {
     ticks.push({ fn, ms })
-    return realInterval(fn, ms, ...rest)
+    return realTimeout(fn, ms, ...rest)
   }
   REST.count = CHIP_RECORDS(2)
   const c0 = postsTo('/reviews').length
   const chip = await mount('en', 'chip')
-  globalThis.setInterval = realInterval
+  globalThis.setTimeout = realTimeout
   const poll = ticks.filter(x => x.ms === 15000).at(-1)
+  if (!poll) fail('the chip scheduled no next /count poll after its first answer')
   if (postsTo('/reviews').length - c0 !== 1) fail('the chip\'s first poll with records did not post /reviews once')
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
   if (postsTo('/reviews').length - c0 !== 1) fail('an unchanged /count posted /reviews again')
@@ -1944,6 +1949,31 @@ REST.scan = 'ok'
   chip.chipRoot.unmount()
   chip.chipEl.remove()
   REST.count = null
+
+  // 1.12.0: a poll whose request is still open schedules nothing. With setInterval the panel sent a new
+  // /pending every 4 s while the last one was unanswered; the backend serves them one at a time, the queue
+  // outgrew it and filled the app's worker pool, so chats, projects and profiles froze with it.
+  const scheduled = []
+  const realInterval = globalThis.setInterval
+  REST.mode = 'hold'
+  globalThis.setTimeout = (fn, ms, ...rest) => {
+    if (ms === 4000 || ms === 15000) scheduled.push(ms)
+    return realTimeout(fn, ms, ...rest)
+  }
+  globalThis.setInterval = (fn, ms, ...rest) => {
+    if (ms === 4000 || ms === 15000) scheduled.push(`every ${ms}`)
+    return realInterval(fn, ms, ...rest)
+  }
+  const stuck = await mount('en', 'chip')
+  const stuckPanel = await mount('en', 'page')
+  globalThis.setTimeout = realTimeout
+  globalThis.setInterval = realInterval
+  if (scheduled.length) fail(`a poll was scheduled while its request was still open: ${scheduled.join(', ')} ms`)
+  stuck.chipRoot.unmount()
+  stuck.chipEl.remove()
+  stuckPanel.root.unmount()
+  stuckPanel.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 // --- 23) The fix effect (1.11.1): a fix that deletes most of the new text is never the primary button -
