@@ -51,29 +51,27 @@ The contrast gate's negative control (a low-contrast read and a tone token worn 
 
 ![Approvals — contrast canary](tests/canary.png)
 
+## Requirements
+
+Hermes **0.22.0 or newer**. `plugin.yaml` declares it (`requires_hermes: ">=0.22.0"`), so an older
+Hermes skips the plugin and names the reason (`requires hermes >=0.22.0, running …`) instead of
+loading a panel whose approvals would fail. CI runs every gate against 0.22.0, the oldest supported
+release; newer releases are checked locally before each release (last: 0.22.2).
+
 ## Install
 
-`HERMES_HOME` is the install root: `%LOCALAPPDATA%\hermes` on Windows, `~/.hermes` otherwise
-(`hermes -p <profile>` uses a profile root instead).
+In the Hermes desktop app: **Settings → Plugins → Install from Git**, paste
+`https://github.com/thealps01-netizen/hermes-approvals-ui`, **Review repository**, then install. The
+package holds both halves — the agent plugin (backend) and the Desktop UI — and the app installs both.
+
+From the command line instead:
 
 ```bash
-hermes plugins install thealps01-netizen/hermes-approvals-ui --enable   # from GitHub
+hermes plugins install thealps01-netizen/hermes-approvals-ui --enable
 ```
 
-From a local clone instead:
-
-```bash
-git clone https://github.com/thealps01-netizen/hermes-approvals-ui "$HERMES_HOME/plugins/pending-approvals"
-hermes plugins enable pending-approvals
-```
-
-The **Desktop** page loads a *copy* of the panel, not the file in `plugins/`:
-
-```bash
-mkdir -p "$HERMES_HOME/desktop-plugins/pending-approvals"
-cp "$HERMES_HOME/plugins/pending-approvals/desktop/plugin.js" \
-   "$HERMES_HOME/desktop-plugins/pending-approvals/plugin.js"
-```
+The app copies the Desktop UI half (`desktop/plugin.js`) into its desktop plugins folder by itself;
+there is no manual copy step.
 
 Set the owner name the author rule expects, and assign the review model:
 
@@ -90,8 +88,9 @@ auxiliary:
 
 Then enable `Approvals` in **Settings → Plugins** if it shows as disabled, and restart the desktop app
 (nav items and routes are registered at load). The sidebar entry, the `Open Approvals` command and the
-status-bar chip appear with it. Every edit to `desktop/plugin.js` needs the copy step repeated — the
-`installed copy` rule in the static audit fails when the two drift apart.
+status-bar chip appear with it. After an edit to `desktop/plugin.js` in the installed package, the app
+re-copies the newer file on its next plugin scan; the `installed copy` rule in the static audit fails
+while the two differ.
 
 ## Gates
 
@@ -136,14 +135,14 @@ FOUND`) instead of pretending the check passed.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on Ubuntu and Windows: the static audit, the canary suite, the jsdom
-render check and the static preview. It also checks out the core **sparsely and pinned** (`apps/desktop/src`
-at `CORE_SHA`) and exports it as `HERMES_AGENT_DIR`, so the audit's CSS-token rule really runs in CI
-instead of skipping itself.
+render check and the static preview. It also checks out the core **sparsely and pinned** at `CORE_SHA`
+— the oldest supported release, v0.22.0, the same floor `requires_hermes` declares — and exports it as
+`HERMES_AGENT_DIR`, so the audit's CSS-token rule really runs in CI instead of skipping itself.
 
 The backend selftest also runs in CI: it imports the core's own modules (`tools.write_approval`,
 `hermes_cli.write_approval_commands`, `tools.memory_tool_store`, `agent.skill_utils`) straight from the
-pinned sparse checkout, with only `fastapi pyyaml requests httpx` installed — no Hermes wheel needed
-(Hermes refuses to build one). It runs with the review gate on and a stubbed reviewer, so every
+pinned sparse checkout, with only `fastapi pyyaml ruamel.yaml requests httpx` installed — no Hermes
+wheel needed (Hermes refuses to build one). It runs with the review gate on and a stubbed reviewer, so every
 approve in it goes through the same rule checks, version check and review state the panel relies on.
 
 One gate stays local: the measured render and its contrast gate need the app's own Electron (a desktop

@@ -1,7 +1,8 @@
 # The gates that need no Hermes install run on both runners; the checks that need the application's
 # own sources get a SPARSE, pinned checkout of the core so they RUN instead of quietly skipping
-# themselves (`tools/`, `agent/` and `hermes_cli/` are read by the core-contract gate and imported by
-# the backend selftest, which runs against that checkout with fastapi/pyyaml/requests/httpx). Only the
+# themselves (`tools/`, `agent/` and `hermes_cli/` are read by the core-contract gate; those plus `pm/`,
+# `providers/` and `hermes_platform/` are imported by the backend selftest, which runs against that
+# checkout with fastapi/pyyaml/ruamel.yaml/requests/httpx). Only the
 # measured Electron render with its contrast gate stays local; see README § "Continuous integration".
 name: CI
 
@@ -14,10 +15,11 @@ permissions:
 
 env:
   PYTHONUTF8: "1"   # Windows runners print cp1252 otherwise; audit messages carry non-ASCII
-  # The core revision whose tokens and stylesheet this panel is verified against. Bump deliberately:
-  # it is what makes "the app defines every var(--ui-*) the panel uses" a real check in CI.
+  # The core revision this panel is verified against: the OLDEST supported release, the floor that
+  # `requires_hermes` in plugin.yaml declares (v0.22.0). Move both together: an older core lacks the
+  # memory `patch` action and the two-argument `skill_pending_diff` the backend relies on.
   CORE_REPO: https://github.com/NousResearch/hermes-agent.git
-  CORE_SHA: 54718306e348dbf62ab18a256cb8299615cc0493
+  CORE_SHA: e06df9c2eae6901f4c88f464e0ae6e753c0428b8 # v0.22.0
 
 jobs:
   gates:
@@ -53,7 +55,7 @@ jobs:
           git init -q "$core"
           git -C "$core" remote add origin "$CORE_REPO"
           git -C "$core" sparse-checkout init --cone
-          git -C "$core" sparse-checkout set apps/desktop/src tools agent hermes_cli
+          git -C "$core" sparse-checkout set apps/desktop/src tools agent hermes_cli pm providers hermes_platform
           for i in 1 2 3; do git -C "$core" fetch -q --depth 1 origin "$CORE_SHA" && break; sleep $((i*20)); done
           git -C "$core" checkout -q FETCH_HEAD
           test -d "$core/apps/desktop/src" || { echo "core sources missing"; exit 1; }
@@ -75,7 +77,7 @@ jobs:
       - name: Backend selftest (against the pinned core, review gate on; tests/backend_selftest.py)
         run: |
           set -euo pipefail
-          python -m pip install -q fastapi pyyaml requests httpx
+          python -m pip install -q fastapi pyyaml ruamel.yaml requests httpx
           unset HERMES_HOME
           PYTHONPATH="$HERMES_AGENT_DIR" python dashboard/plugin_api.py --selftest
 

@@ -5,6 +5,22 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.4
+
+### Changed
+
+* **The plugin now states the Hermes version it needs: 0.22.0 or newer.** `plugin.yaml` carries
+  `requires_hermes: ">=0.22.0"`, so an older Hermes skips the plugin with "requires hermes >=0.22.0,
+  running …" instead of loading a panel whose approvals fail. Measured: the full gate suite passes on
+  Hermes 0.22.0 and 0.22.2; on 0.21.7 approving a memory `patch` write fails ("Unknown staged
+  action 'patch'"), and before 0.21.6 the skill diff call has the wrong signature.
+* **CI tests the oldest supported Hermes.** The pinned core moved from a September revision that 1.11.1
+  and later no longer ran on to the v0.22.0 release; the sparse checkout gained `pm/`, `providers/` and
+  `hermes_platform/`, and the backend selftest installs `ruamel.yaml`, all of which that core imports.
+* **Install is one step.** The README points to **Settings → Plugins → Install from Git** in the
+  desktop app (or `hermes plugins install`); the app copies the Desktop UI half itself, so the manual
+  copy step is gone.
+
 ## 1.12.3
 
 ### Fixed
