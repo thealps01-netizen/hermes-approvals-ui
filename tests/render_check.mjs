@@ -735,9 +735,12 @@ async function mount(appLocale, parts = 'both') {
       // older failed attempt — there was no baseline before the click to tell old rows from new ones.
       if (path === '/history?limit=50' && REST.post === 'latecold') {
         if (!REST.lateDecided) throw new Error('Request timed out after 30000ms')
-        return { entries: [{ id: 'f0f0f0f0', ts: Date.now() / 1000 - 600, kind: 'failed', subsystem: 'skills',
-          record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }, ...HISTORY.entries],
-        counts: HISTORY.counts }
+        const row = REST.coldApplied
+          ? { id: 'a0a0a0a0', ts: Date.now() / 1000, kind: 'apply', subsystem: 'skills', record_id: 'aaa11111',
+            summary: 'landed', files: [], undoable: true }
+          : { id: 'f0f0f0f0', ts: Date.now() / 1000 - 600, kind: 'failed', subsystem: 'skills',
+            record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }
+        return { entries: [row, ...HISTORY.entries], counts: HISTORY.counts }
       }
       if (path === '/history?limit=50' && REST.post === 'lateold') {
         return { entries: [{ id: 'f0f0f0f0', ts: Date.now() / 1000 - 60, kind: 'failed', subsystem: 'skills',
@@ -2503,18 +2506,23 @@ REST.scan = 'ok'
     groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
   REST.pending = null
 
-  REST.post = 'latecold'
-  const cold = await mount('en', 'page')
-  const coldReads = cold.flight.total.get('GET /pending') || 0
-  await click(buttons(cellOf(cold, 'skills:aaa11111'), /^Approve$/)[0], 200)
-  const coldSaid = stub.calls.notify.at(-1)
-  if (coldSaid?.kind !== 'error' || coldSaid?.message !== 'The panel stopped waiting and no change was recorded. The list is read again.') {
-    fail(`a late /decide with no history read before the click took an older row as its answer: ${JSON.stringify(coldSaid)}`)
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.'
+  for (const applied of [false, true]) {
+    REST.post = 'latecold'
+    REST.coldApplied = applied
+    const cold = await mount('en', 'page')
+    const coldReads = cold.flight.total.get('GET /pending') || 0
+    await click(buttons(cellOf(cold, 'skills:aaa11111'), /^Approve$/)[0], 200)
+    const coldSaid = stub.calls.notify.at(-1)
+    if (coldSaid?.kind !== 'error' || coldSaid?.message !== UNKNOWN) {
+      fail(`a late /decide with no history read before the click (history then shows ${applied ? 'an apply' : 'an older failed'} row) claimed an outcome it cannot know: ${JSON.stringify(coldSaid)}`)
+    }
+    if ((cold.flight.total.get('GET /pending') || 0) <= coldReads) fail('a late /decide with no history baseline did not read the list again')
+    REST.post = 'normal'
+    REST.coldApplied = false
+    cold.root.unmount()
+    cold.hostEl.remove()
   }
-  if ((cold.flight.total.get('GET /pending') || 0) <= coldReads) fail('a late /decide with no history baseline did not read the list again')
-  REST.post = 'normal'
-  cold.root.unmount()
-  cold.hostEl.remove()
 
   REST.history = { entries: [], counts: { total: 0, undoable: 0, applied: 0, failed: 0 } }
   const empty = await mount('en', 'page')

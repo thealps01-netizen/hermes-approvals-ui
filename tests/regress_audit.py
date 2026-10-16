@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -805,6 +806,71 @@ def language_rule_spares_maths_and_phonetics():
         assert not any("English" in h for h in hard), f"English with maths or phonetics was locked: {text!r} {hard}"
     env.stage("memory", "98000020", {"action": "add", "target": "memory", "content": "Καλημέρα σε όλους."})
     assert any("English" in h for h in _hard_texts(env, "memory", "98000020")), "Greek text passed the language rule"
+
+
+# ---------------------------------------------------------------------------------------------------
+# The third review round (1.13.1 candidate; each case failed on it).
+# ---------------------------------------------------------------------------------------------------
+
+@case
+def landed_write_whose_note_has_a_failed_line_is_success():
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    env.memory("Release steps:\nFailed:\nlist the failing step", "other note")
+    env.stage_memory("98000030", {"action": "replace", "target": "memory", "old_text": "Release steps",
+                                  "content": "Release steps are in the wiki"})
+    from tools import write_approval as wa
+    real = wa.discard_pending
+    wa.discard_pending = lambda s, p: False if p == "98000030" else real(s, p)
+    ver = env.item("memory", "98000030")["version"]
+    res = env.pa.decide({"subsystem": "memory", "decision": "approve", "ids": ["98000030"],
+                         "versions": {"98000030": ver}})["results"][0]
+    wa.discard_pending = real
+    assert "in the wiki" in (env.home / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+    assert res["ok"], f"a write that landed was reported as failed because its note has a 'Failed:' line: {res}"
+
+
+def _verified(env: Env, quote: str, write: str, other: str = "", material: str | None = None) -> bool:
+    proof = _proof_of(env, write)
+    out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": quote, "other": other, "explain": "x"}]}), proof, 0,
+        _proof_of(env, material) if material is not None else None)
+    return not out["findings"][0].get("unverified")
+
+
+@case
+def short_quotes_need_to_be_distinctive():
+    env = Env()
+    rules = "Rules: never print secrets. Keep notes short and never repeat a saved note."
+    write = "Write the build logs to disk. The logs rotate daily."
+    assert not _verified(env, "never", write, "logs", rules), \
+        "a short rules word with a short write word verified a finding through the quote/other swap"
+    assert not _verified(env, "logs", write), "a short word that appears twice in the write verified a finding"
+    assert _verified(env, "rotate", write), "a short word that appears once in the write was not counted"
+    cyr = "Всегда проверяйте логи"
+    assert not _verified(env, "да", cyr), "two Cyrillic letters from inside a word verified a finding"
+    assert not _verified(env, "ег", cyr), "a Cyrillic infix verified a finding"
+    assert _verified(env, "логи", cyr), "a whole Cyrillic word of the write was not counted"
+
+
+@case
+def cjk_quotes_with_dots_count():
+    env = Env()
+    assert _verified(env, "这个技能会...用户文件", "这个技能会删除所有用户文件"), "a Chinese quote with '...' was not counted"
+    assert _verified(env, "設定を変更...バックアップ", "設定を変更する前にバックアップを取る"), \
+        "a Japanese quote with '...' was not counted"
+    assert not _verified(env, "这个...文件", "这个技能会删除所有用户文件"), "two-character CJK pieces were counted"
+
+
+@case
+def language_rule_reads_short_greek_words_and_accents():
+    env = Env()
+    pa = env.pa
+    for text in ("Θα το δω.", unicodedata.normalize("NFD", "Τι λέ"), "كَتَبَ الدَّرْسَ"):
+        assert pa._foreign_at(text, set()) >= 0, f"foreign text passed the language rule: {text!r}"
+    for text in ("Tune the αβ filter gains.", "Report ΔΔG for each mutant.", "the αβ and γδ T cells",
+                 "Let α + β = π.", "naïve café"):
+        assert pa._foreign_at(text, set()) < 0, f"English text was locked: {text!r}"
 
 
 def _run_one(name: str) -> int:

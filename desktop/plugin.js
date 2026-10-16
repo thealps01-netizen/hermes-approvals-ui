@@ -285,6 +285,7 @@ const BUNDLES = {
         lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
+        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
@@ -931,7 +932,7 @@ const settled = async (t, items, known) => {
   }
   return items.map(item => {
     if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
-    if (!known) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
+    if (!known) return { id: item.id, ok: false, error: t('pa.notify.lateUnknown') }
     const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
     const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
     const e = entries.find(x => !known.has(x.id) && ours(x))

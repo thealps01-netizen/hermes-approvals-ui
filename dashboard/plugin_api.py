@@ -2206,15 +2206,24 @@ def _foreign_at(text: str, known: set) -> int:
     at = 0
     for line in str(text or "").splitlines(keepends=True):
         if _norm_line(line) not in known:
-            run, last = 0, ""
+            run, last, start, words = 0, "", 0, 0
             for i, ch in enumerate(line):
+                if unicodedata.category(ch).startswith("M"):
+                    continue
                 kind = _script_letter(ch)
                 if kind == "ideograph":
                     return at + i
-                run = run + 1 if kind and kind == last else (1 if kind else 0)
+                if kind and kind == last:
+                    run += 1
+                else:
+                    if last == "greek" and run >= 2:
+                        words += 1
+                    run, start = (1, i) if kind else (0, i)
+                if ch.isalpha() and not kind:
+                    words = 0
                 last = kind
-                if kind and run >= _RUN[kind]:
-                    return at + i - run + 1
+                if kind and run >= _RUN[kind] or kind == "greek" and run >= 2 and words:
+                    return at + start
         at += len(line)
     return -1
 
@@ -2924,13 +2933,17 @@ def _proof(text: str) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(text or "")).lower())
 
 
-def _quoted(quote: str, proof: str) -> bool:
+def _weight(piece: str) -> int:
+    return sum(3 if _script_letter(ch) == "ideograph" else 1 for ch in piece)
+
+
+def _quoted(quote: str, proof: str, short: bool = True) -> bool:
     flat = _squash(proof)
     pieces = [_squash(p) for p in re.split(r"\.\.\.|…", str(quote or ""))]
     pieces = [p for p in pieces if p]
     if not pieces:
         return False
-    if max(map(len, pieces)) >= min(_QUOTE_MIN, len(flat)):
+    if max(map(_weight, pieces)) >= min(_QUOTE_MIN, _weight(flat)):
         at = 0
         for piece in pieces:
             at = flat.find(piece, at)
@@ -2938,13 +2951,14 @@ def _quoted(quote: str, proof: str) -> bool:
                 return False
             at += len(piece)
         return True
-    if len(pieces) > 1:
+    if not short or len(pieces) > 1:
         return False
-    short = _proof(quote).strip()
-    if any(_script_letter(ch) for ch in short):
-        return len(pieces[0]) >= (1 if any(_script_letter(ch) == "ideograph" for ch in short) else 2) \
-            and short in proof
-    return len(pieces[0]) >= _WORD_MIN and re.search(r"(?<!\w)" + re.escape(short) + r"(?!\w)", proof) is not None
+    word = _proof(quote).strip()
+    if any(_script_letter(ch) == "ideograph" for ch in word):
+        return len(pieces[0]) >= 2 and proof.count(word) == 1
+    least = 2 if any(_script_letter(ch) for ch in word) else _WORD_MIN
+    hits = re.findall(r"(?<!\w)" + re.escape(word) + r"(?!\w)", proof)
+    return len(pieces[0]) >= least and len(hits) == 1
 
 
 def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonce: str, cuts: list) -> str:
@@ -3060,7 +3074,8 @@ def _review_parse(text: str, proof: str | None = None, changes: int = 0, materia
             found.pop("edit", None)
         if proof is not None and not (
                 _quoted(found["quote"], proof)
-                or (material is not None and _quoted(found["other"], proof) and _quoted(found["quote"], material))):
+                or (material is not None and _quoted(found["other"], proof, False)
+                    and _quoted(found["quote"], material, False))):
             found["unverified"] = True
             found.pop("edit", None)
         findings.append(found)
@@ -3478,7 +3493,7 @@ def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
     text = (handle_pending_subcommand(subsystem, [decision, pending_id], memory_store=store) or "").strip()
     if _get_pending(wa, subsystem, pending_id) is None:
         return True, text
-    landed = decision == "approve" and bool(re.match(r"Approved [1-9]", text)) and "Failed:" not in text.splitlines()
+    landed = decision == "approve" and bool(re.match(r"Approved [1-9]", text))
     if landed:
         for _ in range(10):
             time.sleep(0.1)
