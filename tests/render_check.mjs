@@ -525,7 +525,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0 }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -663,7 +663,7 @@ async function mount(appLocale, parts = 'both') {
   REST.lateDecided = false
   const registrations = []
   // Requests in flight per route for THIS mount (1.13: a poll never has two requests open at once).
-  const flight = { live: new Map(), peak: new Map() }
+  const flight = { live: new Map(), peak: new Map(), total: new Map() }
   const answer = async (path, opts) => {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
@@ -693,7 +693,12 @@ async function mount(appLocale, parts = 'both') {
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
-        if (path === '/decide') return { ok: true, results: decided(opts.body), counts: { memory: 0, skills: 0 } }
+        if (path === '/decide') {
+          const results = decided(opts.body)
+          // `REST.gone`: a decided record leaves /pending, as the backend's does.
+          for (const r of results) if (r.ok) REST.gone?.add(r.id)
+          return { ok: true, results, counts: { memory: 0, skills: 0 } }
+        }
         if (path === '/restore') {
           if (opts.body.id === GROUP_REJECTED) return { ok: true, id: GROUP_RESTORED[0], ids: GROUP_RESTORED }
           return opts.body.id === RESTORE_ID ? { ok: true, id: RESTORED_AS }
@@ -726,8 +731,10 @@ async function mount(appLocale, parts = 'both') {
           record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }, ...HISTORY.entries],
         counts: HISTORY.counts }
       }
+      const left = d => (REST.gone ? { ...d, memory: (d.memory || []).filter(r => !REST.gone.has(r.id)),
+        skills: (d.skills || []).filter(r => !REST.gone.has(r.id)) } : d)
       const table = {
-        '/pending': pendingFor(REST.mode),
+        '/pending': left(pendingFor(REST.mode)),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
           : pendingFor(REST.mode).counts), records: pendingFor(REST.mode).records },
         '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE
@@ -743,6 +750,7 @@ async function mount(appLocale, parts = 'both') {
       const route = `${opts?.method || 'GET'} ${path}`
       flight.live.set(route, (flight.live.get(route) || 0) + 1)
       flight.peak.set(route, Math.max(flight.peak.get(route) || 0, flight.live.get(route)))
+      flight.total.set(route, (flight.total.get(route) || 0) + 1)
       try {
         if (REST.delay) await new Promise(r => setTimeout(r, REST.delay))
         return await answer(path, opts)
@@ -1905,6 +1913,8 @@ REST.scan = 'ok'
   }
   const toast = stub.calls.notify.at(-1)
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
+  // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
+  await act(async () => { await new Promise(r => setTimeout(r, 500)) })
   await click(buttons(clean(), /^Review again$/)[0], 60)
   const again = postsTo('/review').at(-1)?.body || {}
   if (again.id !== CLEAN_GROUP || again.subsystem !== 'skills') fail(`"Review again" on a group: ${JSON.stringify(again)}`)
@@ -2199,6 +2209,80 @@ REST.scan = 'ok'
     h.root.unmount()
     h.hostEl.remove()
   }
+}
+
+// --- 26) 1.13: a decision outlives a tab switch; every view it changes is read again ---------------
+// The busy state and the 340 ms leave timer lived in the card, so switching tabs during or just after a
+// decision dropped both: the decided card came back with Approve enabled (a second send) and the list was
+// not read again. The in-flight / leaving set now sits above the tab switch. A card on its way out is
+// inert (no pointer, no focus, hidden from assistive tech, buttons disabled). A decision, an undo or a
+// memory delete re-reads every view whose data it changes: pending, history, memory and the chip's count.
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  REST.delay = 60
+  REST.gone = new Set()
+  const h = await mount('en', 'page')
+  await wait(400)
+  const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
+  const before = sends()
+  await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
+  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /Pending/), 5)
+  const cell0 = cellOf(h, 'skills:aaa11111')
+  const during = cell0 ? buttons(cell0, /^Approve$/)[0] : null
+  if (during && !during.disabled) fail('switching tabs while a decision is in flight brought its Approve back enabled')
+  if (during) await click(during, 5)
+  await wait(90)
+  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /Pending/), 5)
+  const out = cellOf(h, 'skills:aaa11111')
+  if (out) {
+    const card = out.querySelector('.pa-card')
+    if (!card?.classList.contains('pa-leaving')) fail('a decided card came back as a normal card after a tab switch')
+    if (card?.getAttribute('aria-hidden') !== 'true' || !card?.hasAttribute('inert')) {
+      fail('a card on its way out is still exposed (no inert / aria-hidden)')
+    }
+    const live = [...out.querySelectorAll('button, input')].filter(b => !b.disabled)
+    if (live.length) fail(`a card on its way out keeps ${live.length} enabled control(s)`)
+    for (const b of buttons(out, /^Approve$/)) await click(b, 5)
+  }
+  await wait(900)
+  if (sends() - before !== 1) fail(`a decided record was sent ${sends() - before} times across tab switches`)
+  if (cellOf(h, 'skills:aaa11111')) fail('the list was not read again after a decision made across a tab switch')
+  h.root.unmount()
+  h.hostEl.remove()
+  REST.delay = 0
+  REST.gone = null
+
+  let all = null
+  const reads = () => Object.fromEntries(['/pending', '/history?limit=50', '/memory', '/count']
+    .map(p => [p, all.flight.total.get(`GET ${p}`) || 0]))
+  const grew = (from, what) => {
+    const now = reads()
+    const flat = Object.keys(from).filter(p => now[p] <= from[p])
+    if (flat.length) fail(`${what} did not read again: ${flat.join(', ')}`)
+  }
+  all = await mount('en')
+  await wait(100)
+  let from = reads()
+  await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
+  grew(from, 'a decision')
+  await click(tab(all.hostEl, /Applied/), 60)
+  from = reads()
+  await click(buttons(all.hostEl, /^Undo$/)[0], 200)
+  grew(from, 'an undo')
+  await click(tab(all.hostEl, /^Memory/), 60)
+  from = reads()
+  await click(buttons(all.hostEl, /^Delete$/)[0], 30)
+  const deletes = stub.calls.posts.filter(p => p.path === '/memory/delete').length
+  await click(buttons(all.hostEl, /^Delete$/).find(b => b.getAttribute('data-variant') === 'destructive'), 200)
+  if (stub.calls.posts.filter(p => p.path === '/memory/delete').length !== deletes + 1) fail('the memory delete was not sent')
+  grew(from, 'a memory delete')
+  all.root.unmount()
+  all.hostEl.remove()
+  all.chipRoot?.unmount?.()
+  all.chipEl?.remove?.()
 }
 
 if (problems.length) {

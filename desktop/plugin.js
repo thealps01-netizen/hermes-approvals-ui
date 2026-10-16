@@ -318,6 +318,18 @@ function say(key, ...args) {
 
 let livePending = null
 const seenHistory = new Set()
+const held = new Map()
+const heldListeners = new Set()
+const leaveTimers = new Set()
+const setHeld = (key, value) => {
+  if (value) held.set(key, value)
+  else held.delete(key)
+  for (const fn of heldListeners) fn()
+}
+const changeListeners = new Set()
+const announceChange = () => {
+  for (const fn of changeListeners) fn()
+}
 const alertListeners = new Set()
 const alertsMuted = () => ctxRef?.storage?.get?.('muted', false) === true
 const setAlertsMuted = on => {
@@ -466,7 +478,7 @@ const STYLE = `
   box-shadow:${LIT_EDGE};flex:1 1 0;min-width:0;overflow-wrap:anywhere;
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
 .pa-card:hover{border-color:var(--ui-stroke-primary,var(--ui-stroke-secondary))}
-.pa-leaving{opacity:0;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
+.pa-leaving{opacity:0;pointer-events:none;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
 .pa-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
 .pa-cmp>*{min-width:0}
 .pa-prose{font-family:inherit;font-size:${FS.body}px}
@@ -621,11 +633,11 @@ function usePending() {
     return { ...d, issues: [...(d?.issues || []), ...issues] }
   }
   const [fast, setFast] = useState(false)
-  const { data, error, at, refresh } = usePolling(load, fast ? 4000 : 15000)
+  const { data, error, at, seq, refresh } = usePolling(load, fast ? 4000 : 15000)
   useEffect(() => {
     setFast(reviewUnits(data).some(reviewWaits))
   }, [data])
-  return { data, error, at, refresh, n: total(data?.counts) }
+  return { data, error, at, seq, refresh, n: total(data?.counts) }
 }
 
 function useFade(inner) {
@@ -767,14 +779,26 @@ function RefreshButton({ onClick, label: title }) {
   }, 'tip')
 }
 
-function useLeave(onChanged) {
-  const [leaving, setLeaving] = useState(false)
-  const timer = useRef(null)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+function useHeld(key) {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const fn = () => bump(n => n + 1)
+    heldListeners.add(fn)
+    return () => heldListeners.delete(fn)
+  }, [])
+  return held.get(key) || null
+}
+
+function useLeave(key, onChanged) {
+  const leaving = Boolean(useHeld(key)?.leaving)
   const leave = () => {
-    setLeaving(true)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => onChanged(), 340)
+    setHeld(key, { leaving: true })
+    const id = window.setTimeout(() => {
+      leaveTimers.delete(id)
+      const until = onChanged()
+      if (held.get(key)?.leaving) setHeld(key, { leaving: true, until })
+    }, 340)
+    leaveTimers.add(id)
   }
   return { leaving, leave }
 }
@@ -942,20 +966,29 @@ const askReview = async (t, subsystem, id, onChanged) => {
   return res
 }
 
-function useRun(t) {
-  const [busy, setBusy] = useState('')
+function useRun(t, record) {
+  const entry = useHeld(record)
+  const busy = entry?.busy || (entry?.leaving ? 'leaving' : '')
   const run = async (key, call) => {
-    setBusy(key)
+    setHeld(record, { busy: key })
     try {
       return await call()
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.applyError'))
       return { ok: false }
     } finally {
-      setBusy('')
+      if (held.get(record)?.busy === key) setHeld(record, null)
     }
   }
   return { busy, run }
+}
+
+function useInert(leaving) {
+  const at = useRef(null)
+  useEffect(() => {
+    at.current?.toggleAttribute?.('inert', leaving)
+  }, [leaving])
+  return at
 }
 
 const heldButton = (busy, t, key, text, variant, blocked, why, onGo) => jsx(Tip, {
@@ -1236,8 +1269,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const { busy, run } = useRun(t)
-  const { leaving, leave } = useLeave(onChanged)
+  const { busy, run } = useRun(t, `${subsystem}:${item.id}`)
+  const { leaving, leave } = useLeave(`${subsystem}:${item.id}`, onChanged)
+  const cardAt = useInert(leaving)
   const plain = item.plain || {}
   const stale = plain.stale || []
   const groups = plain.groups || []
@@ -1273,17 +1307,22 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const applyFix = () => run('fix', () => fixRecord(t, item.id, onChanged))
   const decideAndLeave = async (decision, only, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
-    const r = await run(key, () => decideOne(t, subsystem, [item], decision, only, skipReview, withEdits))
-    if (r?.ok) leave()
-    else onChanged()
+    await run(key, async () => {
+      const r = await decideOne(t, subsystem, [item], decision, only, skipReview, withEdits)
+      if (r?.ok) leave()
+      else onChanged()
+      return r
+    })
   }
   const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
   const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
   const approveBtn = (...args) => heldButton(busy, t, ...args)
 
   return jsxs('div', {
+    ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'aria-busy': Boolean(busy) || undefined,
+    'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
@@ -1293,6 +1332,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
             ? jsx('input', {
                 type: 'checkbox',
                 className: 'pa-pick',
+                disabled: leaving,
                 checked: Boolean(picked),
                 'aria-label': `${t('pa.bulk.select')} #${item.id}`,
                 onChange: () => onPick()
@@ -1375,11 +1415,15 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
           jsx(Button, {
             variant: 'text',
             size: 'sm',
+            disabled: leaving,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
           canSkip && skipArmed
-            ? jsx(Button, { variant: 'text', size: 'sm', onClick: () => setSkipArmed(false), children: t('pa.btn.skipCancel') }, 'cancel')
+            ? jsx(Button, {
+                variant: 'text', size: 'sm', disabled: leaving, onClick: () => setSkipArmed(false),
+                children: t('pa.btn.skipCancel')
+              }, 'cancel')
             : null,
           canSkip
             ? jsx(Button, {
@@ -1427,8 +1471,9 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const { busy, run } = useRun(t)
-  const { leaving, leave } = useLeave(onChanged)
+  const { busy, run } = useRun(t, `skills:${item.id}`)
+  const { leaving, leave } = useLeave(`skills:${item.id}`, onChanged)
+  const cardAt = useInert(leaving)
   const parts = item.parts
   const n = parts.length
   const review = item.review || {}
@@ -1455,9 +1500,12 @@ function GroupCard({ item, onChanged, picked, onPick }) {
 
   const decideGroup = async (decision, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
-    const r = await run(key, () => decideOne(t, 'skills', [item], decision, [], skipReview, withEdits))
-    if (r?.ok) leave()
-    else onChanged()
+    await run(key, async () => {
+      const r = await decideOne(t, 'skills', [item], decision, [], skipReview, withEdits)
+      if (r?.ok) leave()
+      else onChanged()
+      return r
+    })
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
@@ -1499,6 +1547,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
             jsx(Button, {
               variant: 'text',
               size: 'xs',
+              disabled: leaving,
               'aria-expanded': lines,
               onClick: () => toggle(part.id),
               children: t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
@@ -1528,9 +1577,11 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   }
 
   return jsxs('div', {
+    ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'data-group': item.id,
     'aria-busy': Boolean(busy) || undefined,
+    'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
@@ -1540,6 +1591,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
             ? jsx('input', {
                 type: 'checkbox',
                 className: 'pa-pick',
+                disabled: leaving,
                 checked: picked === true,
                 'aria-label': `${t('pa.grp.select')} #${item.id}`,
                 onChange: () => onPick()
@@ -1606,12 +1658,14 @@ function GroupCard({ item, onChanged, picked, onPick }) {
           jsx(Button, {
             variant: 'text',
             size: 'sm',
+            disabled: leaving,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
           canSkip && skipArmed
             ? jsx(Button, {
-                variant: 'text', size: 'sm', onClick: () => setSkipArmed(false), children: t('pa.btn.skipCancel')
+                variant: 'text', size: 'sm', disabled: leaving, onClick: () => setSkipArmed(false),
+                children: t('pa.btn.skipCancel')
               }, 'cancel')
             : null,
           canSkip
@@ -1972,7 +2026,7 @@ function units(data) {
   return [...(data?.memory || []).map(item => ({ subsystem: 'memory', item })), ...out]
 }
 
-function PendingList({ data, error, refresh }) {
+function PendingList({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
   const gridRef = useRef(null)
   const seen = useRef(new Map())
@@ -2042,19 +2096,19 @@ function PendingList({ data, error, refresh }) {
         className: 'pa-cell',
         'data-key': `${subsystem}:${item.id}`,
         children: jsx(item.parts ? GroupCard : PendingCard, {
-          subsystem, item, onChanged: refresh,
+          subsystem, item, onChanged,
           picked: picked.has(`${subsystem}:${item.id}`),
           onPick: () => togglePick(`${subsystem}:${item.id}`)
         }, 'card')
       }, `${subsystem}:${item.id}`))
   }, 'grid')
   const bar = total(data.counts)
-    ? jsx(BulkBar, { items, picked, setPicked, onChanged: refresh }, 'bulk')
+    ? jsx(BulkBar, { items, picked, setPicked, onChanged }, 'bulk')
     : null
   return jsxs('div', { children: [stale, notice, bar, body] }, 'list')
 }
 
-function HistoryList({ data, error, refresh, onRestored }) {
+function HistoryList({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -2129,7 +2183,7 @@ function HistoryList({ data, error, refresh, onRestored }) {
       }, 'header'),
       jsx('div', {
         className: 'pa-cols pa-two',
-        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged: refresh, onRestored }, e.id))
+        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged, onRestored: onChanged }, e.id))
       }, 'grid')
     ]
   })
@@ -2178,8 +2232,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
       host.notifyError?.(e, t('pa.memory.deleteFailed'))
     } finally {
       setBusy(false)
-      refresh()
-      onChanged?.()
+      onChanged()
     }
   }
 
@@ -2297,9 +2350,27 @@ function MemoryView({ data, error, refresh, onChanged }) {
 function Pane() {
   const t = usePluginI18n(ID)
   const [view, setView] = useState('pending')
-  const { data, error, at, refresh, n } = usePending()
+  const { data, error, at, seq, refresh, n } = usePending()
   const mem = usePolling(api.memory, 60000)
   const hist = usePolling(api.history, 30000)
+  const refreshAll = () => {
+    const until = refresh()
+    mem.refresh()
+    hist.refresh()
+    announceChange()
+    return until
+  }
+  useEffect(() => () => {
+    for (const id of leaveTimers) window.clearTimeout(id)
+    leaveTimers.clear()
+    for (const [key, entry] of [...held]) if (entry.leaving) setHeld(key, null)
+  }, [])
+  useEffect(() => {
+    const here = new Set(units(data).map(({ subsystem, item }) => `${subsystem}:${item.id}`))
+    for (const [key, entry] of [...held]) {
+      if (entry.leaving && (!here.has(key) || (entry.until && entry.until <= seq))) setHeld(key, null)
+    }
+  }, [seq])
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
   const hc = hist.data?.counts || {}
@@ -2348,7 +2419,7 @@ function Pane() {
                 : jsx('span', { style: { marginLeft: 'auto' } }, 'spacer'),
               jsx(RefreshButton, {
                 label: t('pa.action.refresh'),
-                onClick: () => { refresh(); mem.refresh(); hist.refresh() }
+                onClick: refreshAll
               }, 'refresh')
             ]
           }, 'head'),
@@ -2392,15 +2463,13 @@ function Pane() {
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
         children: view === 'memory'
           ? jsx(MemoryView, {
-            data: mem.data, error: mem.error, refresh: mem.refresh,
-            onChanged: () => { refresh(); hist.refresh() }
+            data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshAll
           }, 'memory')
           : view === 'history'
             ? jsx(HistoryList, {
-              data: hist.data, error: hist.error, refresh: hist.refresh,
-              onRestored: () => { refresh(); hist.refresh() }
+              data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshAll
             }, 'history')
-            : jsx(PendingList, { data, error, refresh }, 'pending')
+            : jsx(PendingList, { data, error, refresh, onChanged: refreshAll }, 'pending')
       }, 'body'),
 
       jsxs('div', {
@@ -2428,7 +2497,11 @@ function Pane() {
 
 function Chip() {
   const t = usePluginI18n(ID)
-  const { data, error } = usePolling(api.count, 15000)
+  const { data, error, refresh } = usePolling(api.count, 15000)
+  useEffect(() => {
+    changeListeners.add(refresh)
+    return () => changeListeners.delete(refresh)
+  }, [])
   const n = total(data?.counts)
   const seen = useRef(null)
   const polled = useRef('0|0|0|0')
