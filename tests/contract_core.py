@@ -57,6 +57,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
             "skill_pending_diff": (2, ()),
             "_pending_path": (2, ()),
             "_find_skill_path": (1, ()),
+            "_fold_staged": (4, ()),
         },
     },
     "tools/skill_manager_tool.py": {
@@ -71,7 +72,9 @@ CONTRACT: dict[str, dict[str, Any]] = {
         "calls": {"load_on_disk_store": (0, ())},
     },
     "tools/memory_tool_store.py": {
-        "names": ("ENTRY_DELIMITER",),
+        # MemoryStore: its static `_apply_batch_op` and `_read_file` and the `remove(..., matched_entry=)`
+        # method are what approve runs; methods are not top-level, so the backend selftest proves them.
+        "names": ("ENTRY_DELIMITER", "MemoryStore"),
         "calls": {"_find_unique_match": (2, ())},
     },
     "agent/skill_utils.py": {

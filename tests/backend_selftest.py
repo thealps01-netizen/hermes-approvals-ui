@@ -144,7 +144,7 @@ def _review_selftest(tmp: Path) -> None:
     (pend / "skills" / "5e1f0006.json").unlink()
 
     stage("skills", "5e1f0005", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
-                                 "new_string": "description: Use when testing. Ölçüm şart."})
+                                 "new_string": "description: Use when testing. Измерение обязательно."})
     tr = item("skills", "5e1f0005")["review"]["hard"]
     assert any("must be English" in h["text"] for h in tr), tr
     (pend / "skills" / "5e1f0005.json").unlink()
@@ -209,14 +209,14 @@ def _review_selftest(tmp: Path) -> None:
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
                                  "operations": [{"action": "add", "content": "selftest saved note"},
-                                                {"action": "add", "content": "Kullanıcı kısa yanıt ister"}]})
+                                                {"action": "add", "content": "Пользователь хочет короткие ответы"}]})
     mem = item("memory", "5e1f0006")["review"]["hard"]
     assert any("already saved" in h["text"] for h in mem) and any("must be English" in h["text"] for h in mem), mem
 
     settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
     seen: list = []
     verdict = {"summary": "One duplicate.", "findings": [
-        {"severity": "block", "kind": "evididence", "quote": "updated", "other": "", "explain": "minor",
+        {"severity": "block", "kind": "evididence", "quote": "body updated", "other": "", "explain": "minor",
          "edit": {"find": "updated", "replace": "x"}},
         {"severity": "block", "kind": "contradiction", "quote": "a sentence the write never contains",
          "other": "", "explain": "invented", "edit": {"find": "body updated", "replace": "y"}},
@@ -348,7 +348,7 @@ def _review_selftest(tmp: Path) -> None:
 
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     memory_verdict = {"summary": "Outdates an entry.", "findings": [
-        {"severity": "fix", "kind": "contradiction", "quote": "tabs", "other": "Another note", "explain": "older entry",
+        {"severity": "fix", "kind": "contradiction", "quote": "lesson about tabs", "other": "Another note", "explain": "older entry",
          "edit": {"find": "Another note", "replace": "Another note, updated", "file": "MEMORY.md"}}]}
     globals()["_review_call"] = lambda task, **kw: answer(json.dumps(memory_verdict))
     stage("memory", "5e1f000c", {"action": "add", "target": "memory", "content": "A new lesson about tabs"})
@@ -642,7 +642,9 @@ def _integrity_selftest(tmp: Path) -> None:
 
     for rid, line, flagged in (("1e700001", "A café note in English.", False),
                                ("1e700002", "Это не английский.", True),
-                               ("1e700003", "Kısa yanıt ister.", True)):
+                               # 1.13.0: the rule sees scripts only; Turkish in Latin letters is the review's call.
+                               ("1e700003", "Kısa yanıt ister.", False),
+                               ("1e700004", "テストを必ず実行する", True)):
         stage("memory", rid, {"action": "add", "target": "memory", "content": line})
         hard = items("memory")[rid]["review"]["hard"]
         assert any("must be English" in h["text"] for h in hard) == flagged, (line, hard)
@@ -830,7 +832,10 @@ def _groups_selftest(tmp: Path) -> None:
     two = pending()["groups"]["skills"][0]
     looked, under_memo = [], []
     real_dir = globals()["_skill_dir_now"]
-    globals()["_skill_dir_now"] = lambda name: (looked.append(name), real_dir(name))[1]
+    # Only the checks' lookups count (under the request memo); the undo copy taken right before the write
+    # finds the skill on its own, outside the memo (1.13.0: the way approve finds it).
+    globals()["_skill_dir_now"] = lambda name: (looked.append(name if _MEMO.get() is not None else "|copy"),
+                                                real_dir(name))[1]
     globals()["_apply"] = lambda subsystem, pid, decision: (
         under_memo.append(_MEMO.get() is not None), looked.append("|write"), saved_apply(subsystem, pid, decision))[2]
     try:
@@ -1396,10 +1401,13 @@ def _selftest() -> int:
     assert mem["user"]["chars"] == len(_fit_delim.join(_on_disk.user_entries)), mem["user"]
     assert 0 < mem["memory"]["percent"] <= 100 and mem["memory"]["limit"] > 0, mem["memory"]
 
-    gone = memory_delete({"target": "memory", "text": "terse replies"})
+    part = memory_delete({"target": "memory", "text": "terse replies"})
+    assert part["ok"] is False and "terse replies" in memory.read_text(encoding="utf-8"),         f"1.13.0: a delete names the whole note the panel shows, never a part that could match another: {part}"
+    gone = memory_delete({"target": "memory", "text": "Prefers terse replies"})
     assert gone["ok"], gone
     assert "terse replies" not in memory.read_text(encoding="utf-8"), memory.read_text(encoding="utf-8")
-    ext_del = next(e for e in history(limit=3)["entries"] if e["kind"] == "external")
+    ext_del = history(limit=3)["entries"][0]
+    assert ext_del["kind"] == "apply" and "Deleted from MEMORY.md" in ext_del["summary"], ext_del
     assert "memories/MEMORY.md" in [f["path"] for f in ext_del["files"]], ext_del
     assert undo({"id": ext_del["id"]})["ok"] is True, "a deletion must be undoable"
     assert "terse replies" in memory.read_text(encoding="utf-8"), memory.read_text(encoding="utf-8")
