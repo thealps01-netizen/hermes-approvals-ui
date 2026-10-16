@@ -54,7 +54,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
             "get_pending": (2, ()),
             "discard_pending": (2, ()),
             "stage_write": (2, ("summary", "origin")),
-            "skill_pending_diff": (1, ()),
+            "skill_pending_diff": (2, ()),
             "_pending_path": (2, ()),
             "_find_skill_path": (1, ()),
         },
@@ -76,7 +76,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
     },
     "agent/skill_utils.py": {
         "names": (),
-        "calls": {"is_excluded_skill_path": (1, ())},
+        "calls": {"is_excluded_skill_path": (1, ()), "parse_frontmatter": (1, ()), "get_all_skills_dirs": (0, ())},
     },
     "tools/fuzzy_match.py": {
         "names": (),

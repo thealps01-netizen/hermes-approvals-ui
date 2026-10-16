@@ -149,6 +149,63 @@ def _review_selftest(tmp: Path) -> None:
     assert any("must be English" in h["text"] for h in tr), tr
     (pend / "skills" / "5e1f0005.json").unlink()
 
+    own_md = (own / "SKILL.md").read_text(encoding="utf-8")
+    dropped = own_md.replace(f"author: {author}\n", "") + "one more line\n"
+    stage("skills", "5e1f0007", {"action": "patch", "name": "own-skill", "content": dropped})
+    card = item("skills", "5e1f0007")
+    kept = card["review"]["hard"]
+    assert any(f'keep "author: {author}"' in h["text"] and (h.get("edit") or {}).get("ok") for h in kept), kept
+    shown = _write_shown(__import__("tools.write_approval", fromlist=["x"]), "skills", wa_get("skills", "5e1f0007"))
+    assert "+one more line" in shown and "old_string is empty" not in shown, \
+        f"a whole-file rewrite staged as patch+content must reach the reviewer as a diff: {shown[:300]}"
+    (pend / "skills" / "5e1f0007.json").unlink()
+
+    long_desc = "Use when testing the description length check of the approvals panel on an edit. Long."
+    stage("skills", "5e1f0008", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
+                                 "new_string": f"description: {long_desc}"})
+    desc = item("skills", "5e1f0008")["review"]["hard"]
+    cut = next((h for h in desc if "characters; the skill list shows only" in h["text"]), None)
+    assert cut and cut["edit"]["ok"] and len(cut["edit"]["replace"].strip('"')) <= 60, desc
+    (pend / "skills" / "5e1f0008.json").unlink()
+
+    other_line = "- Ship the panel only after the screenshot in both themes matches the approved sample."
+    (other / "SKILL.md").write_text((other / "SKILL.md").read_text(encoding="utf-8") + other_line + "\n", encoding="utf-8")
+    big = own_md + other_line + "\n" + "".join(f"- filler line {i}\n" for i in range(520))
+    stage("skills", "5e1f0009", {"action": "edit", "name": "own-skill", "content": big})
+    card = item("skills", "5e1f0009")["review"]
+    advice = [a["text"] for a in card.get("advice") or []]
+    assert any("grows to" in a and "references/" in a for a in advice), advice
+    assert any("already in the skill other-skill" in a for a in advice), advice
+    assert not any("grows to" in h["text"] or "other-skill" in h["text"] for h in card["hard"]), \
+        "size and cross-skill findings advise; they never lock Approve"
+    calls = []
+    real_dir = globals()["_skill_dir_now"]
+    globals()["_skill_dir_now"] = lambda name: (calls.append(name), real_dir(name))[1]
+    try:
+        pending()
+    finally:
+        globals()["_skill_dir_now"] = real_dir
+    assert calls.count("own-skill") == 1, f"one /pending must look a skill folder up once, not per check: {calls}"
+    (pend / "skills" / "5e1f0009.json").unlink()
+
+    stage("skills", "5e1f000a", {"operations": [
+        {"action": "write_file", "name": "own-skill", "file_path": "references/moved.md",
+         "file_content": f"# Moved\n\n{known_line}\n"},
+        {"action": "patch", "name": "own-skill", "old_string": f"{known_line}\n",
+         "new_string": "Details: references/moved.md.\n"}]})
+    moved = item("skills", "5e1f000a")["review"]["hard"]
+    assert not any("already in the skill" in h["text"] for h in moved), \
+        f"a line the same write moves out of SKILL.md into a reference is not a duplicate: {moved}"
+    (pend / "skills" / "5e1f000a.json").unlink()
+
+    title = "Rules that hold only outside a repository whose gate forbids them"
+    stage("skills", "5e1f000b", {"action": "patch", "name": "own-skill", "old_string": f"{known_line}\n",
+                                 "new_string": f"{known_line}\n\n## Contents\n\n- {title}\n\n## {title}\n\nText.\n"})
+    toc = item("skills", "5e1f000b")["review"]["hard"]
+    assert not any("already in the skill" in h["text"] for h in toc), \
+        f"a contents entry that names its heading is not a duplicate of the heading: {toc}"
+    (pend / "skills" / "5e1f000b.json").unlink()
+
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     stage("memory", "5e1f0006", {"action": "batch", "target": "memory",
                                  "operations": [{"action": "add", "content": "selftest saved note"},
@@ -256,6 +313,39 @@ def _review_selftest(tmp: Path) -> None:
     assert undo({"id": entry["id"]})["ok"], "the fix of the existing text must undo with the write"
     assert (own / "SKILL.md").read_bytes() == before_fix, "undo must restore the existing text too"
 
+    # 1.12.2: an edit that takes back everything one patch adds leaves "replace X with X", which Hermes
+    # refuses ("old_string and new_string are identical") and which used to block the whole fixed card.
+    noop_verdict = {"summary": "One added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "fourth lesson", "other": "", "explain": "repeats a line",
+         "edit": {"find": "fourth lesson\n", "replace": ""}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(noop_verdict))
+    stage("skills", "5e1f000e", {"action": "batch", "operations": [
+        {"action": "patch", "name": "own-skill", "old_string": "later line\n", "new_string": "later line\nfifth lesson\n"},
+        {"action": "patch", "name": "own-skill", "old_string": "2nd lesson\n", "new_string": "fourth lesson\n2nd lesson\n"}]})
+    undone_op = settle("skills", "5e1f000e")
+    assert undone_op["edits"] == 1 and undone_op["fix_left"] == [], \
+        f"a patch the fix turns into a no-op is dropped, not reported as a problem: {undone_op}"
+    with_noop = approve("skills", "5e1f000e", with_edits=True)
+    assert with_noop["ok"], with_noop
+    text = (own / "SKILL.md").read_text(encoding="utf-8")
+    assert "later line\nfifth lesson\n2nd lesson\n" in text and "fourth lesson" not in text, text
+    assert undo({"id": history(limit=1)["entries"][0]["id"]})["ok"] and (own / "SKILL.md").read_bytes() == before_fix
+
+    all_back = {"summary": "The only added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "sixth lesson", "other": "", "explain": "repeats a line",
+         "edit": {"find": "sixth lesson\n", "replace": ""}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(all_back))
+    stage("skills", "5e1f000f", {"action": "patch", "name": "own-skill", "old_string": "2nd lesson\n",
+                                 "new_string": "2nd lesson\nsixth lesson\n"})
+    nothing_left = settle("skills", "5e1f000f")
+    assert nothing_left["fix_left"] == [_tx("fix_undoes_all")], \
+        f"a fix that takes back every change says so instead of a Hermes patch error: {nothing_left}"
+    refused = approve("skills", "5e1f000f", with_edits=True)
+    assert not refused["ok"] and _tx("fix_undoes_all") in refused["error"], refused
+    assert (own / "SKILL.md").read_bytes() == before_fix and item("skills", "5e1f000f"), \
+        "a refused fix writes nothing and leaves the record pending"
+    assert decide({"subsystem": "skills", "ids": ["5e1f000f"], "decision": "reject"})["results"][0]["ok"]
+
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     memory_verdict = {"summary": "Outdates an entry.", "findings": [
         {"severity": "fix", "kind": "contradiction", "quote": "tabs", "other": "Another note", "explain": "older entry",
@@ -268,6 +358,57 @@ def _review_selftest(tmp: Path) -> None:
     assert mem_fixed["ok"], mem_fixed
     saved = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
     assert "Another note, updated" in saved and "A new lesson about tabs" in saved, saved
+    kept_all = history(limit=1)["entries"][0]
+    assert kept_all["amended"]["added"] == 0 and kept_all["amended"]["written"] == [], \
+        "an edit only to the existing text removes none of the write's new words and reports no loss"
+
+    # 1.11.1: the approved profile write whose suggested fix deleted 51 of the 54 words it added.
+    old_profile = ("When an outside tool or method overlaps his own setup, he wants whichever is actually better, "
+                   "decided by a measured head-to-head on a real task, not by README claims; the winner replaces the "
+                   "loser — never both kept side by side.")
+    proposed = ('When he asks whether an outside tool or method suits him, an unmeasured assessment is labelled as '
+                'unmeasured (README-based) and carries no fit verdict such as "useless" or "not for you"; the answer '
+                'ends with a concrete measured-test proposal on one of his real tasks, with a cost estimate, run only '
+                'after his approval. When the tool overlaps his own setup, the better one is decided by a measured '
+                'head-to-head on a real task, not by README claims; the winner replaces the loser — never both kept '
+                'side by side.')
+    shortened = proposed.split(" When the tool overlaps")[0] + " When the tool overlaps"
+    left_over = proposed.replace(shortened, "When an outside tool or method overlaps")
+    (tmp / "memories" / "USER.md").write_text(old_profile + "\n", encoding="utf-8")
+    loss_verdict = {"summary": "Repeats a rule.", "findings": [
+        {"severity": "fix", "kind": "rule", "quote": "the better one is decided by a measured head-to-head",
+         "other": "", "explain": "LOSS-WHY", "edit": {"find": shortened, "replace": "When an outside tool or method overlaps"}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(loss_verdict))
+    stage("memory", "5e1f000d", {"action": "patch", "target": "user", "old_text": old_profile, "content": proposed,
+                                 "matched_entry": old_profile})
+    loss = settle("memory", "5e1f000d")
+    assert loss["edits"] == 1 and loss["fix_effect"] == {"added": 54, "kept": 3}, loss
+    lossy = approve("memory", "5e1f000d", with_edits=True)
+    assert lossy["ok"], lossy
+    assert (tmp / "memories" / "USER.md").read_text(encoding="utf-8").strip() == left_over
+    row = history(limit=1)["entries"][0]
+    assert "the fix removed 51 of the 54 new words in the text it edited" in row["summary"], row
+    assert {k: row["amended"][k] for k in ("added", "kept", "why")} == {"added": 54, "kept": 3, "why": ["LOSS-WHY"]}, row
+    assert row["amended"]["written"] == [proposed] and row["amended"]["applied"] == [left_over], row["amended"]
+    assert undo({"id": row["id"]})["ok"], "a write approved with its fix must still undo"
+    assert (tmp / "memories" / "USER.md").read_text(encoding="utf-8").strip() == old_profile
+
+    light = {"id": "5e1f00aa", "payload": {"action": "patch", "target": "user", "old_text": old_profile,
+                                           "content": proposed}}
+    light_fixed, _ = _with_edits(light, [{"find": "measured-test proposal", "replace": "measured test proposal"}])
+    assert _fix_effect("memory", light, light_fixed) == {"added": 54, "kept": 53}, "a one-word fix keeps the rest"
+    patch_rec = {"id": "5e1f00ab", "payload": {"action": "patch", "name": "own-skill", "old_string": "body",
+                                               "new_string": "body plus a lesson about tabs"}}
+    patch_fixed, _ = _with_edits(patch_rec, [{"find": "plus a lesson about tabs", "replace": "plus notes"}])
+    assert _fix_effect("skills", patch_rec, patch_fixed) == {"added": 5, "kept": 1}, \
+        "the words already in old_string are not new words"
+    current = (own / "SKILL.md").read_text(encoding="utf-8")
+    rewrite = {"id": "5e1f00ac", "payload": {"action": "edit", "name": "own-skill",
+                                             "content": current + "- A brand new rule about tab bars.\n"}}
+    rewrite_fixed, _ = _with_edits(rewrite, [{"find": "- A brand new rule about tab bars.", "replace": "- A rule."}])
+    assert _fix_effect("skills", rewrite, rewrite_fixed) == {"added": 8, "kept": 2}, \
+        "a full rewrite counts only what it adds to the file on disk"
+    assert _fix_effect("skills", rewrite, rewrite) is None, "an unchanged write has no fix effect"
 
     globals()["_review_call"] = lambda task, **kw: (_ for _ in ()).throw(RuntimeError("provider down"))
     stage("skills", "5e1f0008", {"action": "create", "name": "new-two", "category": "cat",
@@ -687,8 +828,19 @@ def _groups_selftest(tmp: Path) -> None:
         "a group that could not be applied stays queued"
 
     two = pending()["groups"]["skills"][0]
-    fixed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve", "with_edits": True,
-                    "versions": {two["id"]: two["version"]}})["results"][0]
+    looked, under_memo = [], []
+    real_dir = globals()["_skill_dir_now"]
+    globals()["_skill_dir_now"] = lambda name: (looked.append(name), real_dir(name))[1]
+    globals()["_apply"] = lambda subsystem, pid, decision: (
+        under_memo.append(_MEMO.get() is not None), looked.append("|write"), saved_apply(subsystem, pid, decision))[2]
+    try:
+        fixed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve", "with_edits": True,
+                        "versions": {two["id"]: two["version"]}})["results"][0]
+    finally:
+        globals()["_skill_dir_now"], globals()["_apply"] = real_dir, saved_apply
+    assert under_memo == [False, False], "a write never runs under the request memo: reads after it would be stale"
+    gate = looked[:looked.index("|write")] if "|write" in looked else looked
+    assert gate.count("grp-skill") == 1, f"one approve looks the skill up once for all its checks, not per check: {gate}"
     assert fixed["ok"] and fixed["members"] == ["6a000001", "6a000002"], fixed
     assert "Read the diff" in (folder / "SKILL.md").read_text(encoding="utf-8")
     assert "through its status line" in (folder / "references" / "jobs.md").read_text(encoding="utf-8"), \
@@ -696,6 +848,9 @@ def _groups_selftest(tmp: Path) -> None:
     row = history(limit=1)["entries"][0]
     assert row["group"] == ["6a000001", "6a000002"] and len(row["changes"]) == 2 and row["undoable"], row
     assert "grp-skill · 2 changes" in row["summary"], row
+    assert "the fix removed 2 of the 9 new words in the text it edited" in row["summary"], row
+    assert {k: row["amended"][k] for k in ("added", "kept", "why")} == {"added": 9, "kept": 7, "why": ["names a host"]}, row
+    assert row["amended"]["written"] == ["# Jobs\n\nA background job reports through the panel.\n"], row["amended"]
     assert undo({"id": row["id"]})["ok"] and (folder / "SKILL.md").read_bytes() == before \
         and not (folder / "references" / "jobs.md").exists(), "one Undo takes the whole group back"
     clear()
@@ -749,8 +904,197 @@ def _groups_selftest(tmp: Path) -> None:
     assert len(calls) == paid + 1, "Review again on a group runs one review"
     clear()
 
+    # 1.12.2: inside a group, a patch the fix turns into a no-op is dropped from its change; a change
+    # left with nothing to write is named instead of failing with a Hermes patch error.
+    (folder / "SKILL.md").write_text((folder / "SKILL.md").read_text(encoding="utf-8") + "\n## Noop\n\nbase line\n",
+                                     encoding="utf-8")
+    before = (folder / "SKILL.md").read_bytes()
+    calls.clear()
+    verdicts["group"] = {"summary": "One added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "repeated line", "change": 2, "explain": "repeats",
+         "edit": {"find": "\nrepeated line\n", "replace": ""}}]}
+    stage("6d000001", {"action": "patch", "name": "grp-skill", "old_string": "base line\n",
+                       "new_string": "base line\nkept line\n"})
+    stage("6d000002", {"action": "batch", "operations": [
+        {"action": "patch", "name": "grp-skill", "old_string": "## Noop\n", "new_string": "## Noop\n\nrepeated line\n"},
+        {"action": "write_file", "name": "grp-skill", "file_path": "references/noop.md", "file_content": "# Noop\n"}]})
+    group = settle()["groups"]["skills"][0]
+    assert group["review"]["edits"] == 1 and group["review"]["fix_left"] == [], group["review"]
+    done = decide({"subsystem": "skills", "groups": [group["id"]], "decision": "approve", "with_edits": True,
+                   "versions": {group["id"]: group["version"]}})["results"][0]
+    assert done["ok"], done
+    text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    assert "base line\nkept line\n" in text and "repeated line" not in text \
+        and (folder / "references" / "noop.md").exists(), text
+    assert undo({"id": history(limit=1)["entries"][0]["id"]})["ok"] and (folder / "SKILL.md").read_bytes() == before
+    clear()
+
+    calls.clear()
+    stage("6e000001", {"action": "patch", "name": "grp-skill", "old_string": "base line\n",
+                       "new_string": "base line\nkept line\n"})
+    stage("6e000002", {"action": "patch", "name": "grp-skill", "old_string": "## Noop\n",
+                       "new_string": "## Noop\n\nrepeated line\n"})
+    group = settle()["groups"]["skills"][0]
+    assert group["review"]["fix_left"] == [f"#2 · {_tx('fix_undoes_all')}"], group["review"]
+    held = decide({"subsystem": "skills", "groups": [group["id"]], "decision": "approve", "with_edits": True,
+                   "versions": {group["id"]: group["version"]}})["results"][0]
+    assert not held["ok"] and _tx("fix_undoes_all") in held["error"] and (folder / "SKILL.md").read_bytes() == before, held
+    clear()
+
     globals()["_config"], globals()["_review_call"] = saved_config, saved_call
     _REVIEW_GATE = False
+
+
+def _outside_home_selftest(tmp: Path) -> None:
+    """Skills outside HERMES_HOME and single-operation records (1.12.3).
+
+    Seen on the owner's machine: three delete cards for skills in a shared folder outside the Hermes
+    home (`skills.external_dirs`) made /pending answer 500, so the whole panel showed an error, and
+    a single-operation delete approved in the panel kept no copy, so Undo had nothing to restore.
+    """
+    from tools import write_approval as wa
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = True
+    _PANEL_SKIPS_REVIEW[0] = True
+    pend = tmp / "pending" / "skills"
+    pend.mkdir(parents=True, exist_ok=True)
+    ext = Path(tempfile.mkdtemp(prefix="pending-approvals-ext-")).resolve()
+    config = tmp / "config.yaml"
+    saved_config = config.read_bytes() if config.exists() else None
+    config.write_text("skills:\n  external_dirs:\n    - " + json.dumps(ext.as_posix()) + "\n", encoding="utf-8")
+
+    def stage(rid: str, payload: dict) -> None:
+        (pend / f"{rid}.json").write_text(json.dumps({
+            "id": rid, "subsystem": "skills", "action": payload.get("action"), "origin": "assistant_tool",
+            "summary": f"{payload.get('action')} skill '{payload.get('name')}'", "created_at": time.time(),
+            "payload": payload}, ensure_ascii=False), encoding="utf-8")
+
+    def tree(folder: Path) -> dict:
+        return {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+
+    def entry_for(rid: str) -> dict:
+        return next(e for e in _entries() if e.get("record_id") == rid and e.get("kind") == "apply")
+
+    shared = ext / "shared-skill"
+    (shared / "references").mkdir(parents=True)
+    (shared / "SKILL.md").write_text("---\nname: shared-skill\ndescription: Read by another tool too.\n---\n\n"
+                                     "Body\n", encoding="utf-8")
+    (shared / "references" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    shared_before = tree(shared)
+
+    stage("e0e0e001", {"action": "delete", "name": "shared-skill"})
+    listing = pending()
+    assert isinstance(listing, dict), f"/pending failed on a skill outside HERMES_HOME: {getattr(listing, 'body', b'')!r}"
+    assert any(i["id"] == "e0e0e001" for i in listing["skills"]), "the outside-home card is missing"
+    done = _as_panel({"subsystem": "skills", "ids": ["e0e0e001"], "decision": "approve"})
+    assert done["results"][0]["ok"], done
+    assert not shared.exists(), "the approved delete did not run"
+    kept = entry_for("e0e0e001")
+    assert sorted(f["path"] for f in kept["files"]) == sorted((shared / r).as_posix() for r in shared_before), \
+        f"an outside-home delete kept no copy of its files: {kept['files']}"
+    back = undo({"id": kept["id"]})
+    assert back["ok"] and len(back["restored"]) == len(shared_before), back
+    assert tree(shared) == shared_before, "Undo did not put the outside-home skill back byte for byte"
+
+    solo = tmp / "skills" / "cat" / "solo-skill"
+    (solo / "scripts").mkdir(parents=True)
+    (solo / "SKILL.md").write_text("---\nname: solo-skill\ndescription: One file and a script.\n---\n\nBody\n",
+                                   encoding="utf-8")
+    (solo / "scripts" / "run.py").write_text("print('run')\n", encoding="utf-8")
+    solo_before = tree(solo)
+    stage("e0e0e002", {"action": "delete", "name": "solo-skill"})
+    assert _as_panel({"subsystem": "skills", "ids": ["e0e0e002"], "decision": "approve"})["results"][0]["ok"]
+    assert not solo.exists(), "the approved single-operation delete did not run"
+    solo_entry = entry_for("e0e0e002")
+    assert len(solo_entry["files"]) == len(solo_before), \
+        f"a single-operation delete kept no copy, so Undo has nothing to restore: {solo_entry['files']}"
+    assert undo({"id": solo_entry["id"]})["ok"] and tree(solo) == solo_before, "single-operation delete not undone"
+
+    stage("e0e0e003", {"action": "patch", "name": "solo-skill", "old_string": "Body", "new_string": "Body two"})
+    assert _as_panel({"subsystem": "skills", "ids": ["e0e0e003"], "decision": "approve"})["results"][0]["ok"]
+    assert "Body two" in (solo / "SKILL.md").read_text(encoding="utf-8")
+    assert undo({"id": entry_for("e0e0e003")["id"]})["ok"] and tree(solo) == solo_before, \
+        "a single-operation patch was not undone"
+
+    stage("e0e0e004", {"action": "delete", "name": "solo-skill"})
+    stage("e0e0e005", {"action": "patch", "name": "shared-skill", "old_string": "Body", "new_string": "Other"})
+    real_card = _card
+    globals()["_card"] = lambda subsystem, record, *a: (
+        (_ for _ in ()).throw(RuntimeError("card exploded")) if record.get("id") == "e0e0e004"
+        else real_card(subsystem, record, *a))
+    try:
+        survived = pending()
+    finally:
+        globals()["_card"] = real_card
+    assert isinstance(survived, dict), "one broken card still takes the whole list down"
+    ids = [i["id"] for i in survived["skills"]]
+    assert "e0e0e005" in ids and "e0e0e004" not in ids, ids
+    told = [t for t in survived["issues"] if "e0e0e004" in t]
+    assert told and "card exploded" in told[0] and "/skills reject e0e0e004" in told[0], survived["issues"]
+
+    stage("e0e0e007", {"action": "patch", "name": "solo-skill", "old_string": "Body", "new_string": "Third"})
+    real_group = _group_card
+    globals()["_group_card"] = lambda *a: (_ for _ in ()).throw(RuntimeError("group exploded"))
+    try:
+        survived = pending()
+    finally:
+        globals()["_group_card"] = real_group
+    assert [i["id"] for i in survived["skills"]] == ["e0e0e005"] and not survived["groups"]["skills"], survived
+    assert sum("group exploded" in t for t in survived["issues"]) == 2, survived["issues"]
+    for rid in ("e0e0e004", "e0e0e005", "e0e0e007"):
+        (pend / f"{rid}.json").unlink()
+
+    outside = Path(tempfile.mkdtemp(prefix="pending-approvals-out-"))
+    victim = outside / "victim.md"
+    victim.write_text("untouched\n", encoding="utf-8")
+    for n, bad in enumerate((victim.as_posix(), (ext / ".." / outside.name / "victim.md").as_posix(),
+                             ext.as_posix())):
+        forged = f"e0e0bee{n}"
+        _append({"id": forged, "ts": time.time(), "kind": "apply", "subsystem": "skills",
+                 "summary": "forged path", "files": [{"path": bad, "snap": "0", "before_sha": None,
+                                                     "sha_after": None, "created": True}], "undone": False})
+        refused = undo({"id": forged})
+        assert not refused["ok"] and refused["error"] == _tx("err_unsafe_spec"), (bad, refused)
+        _write_undone(forged)
+    assert victim.read_text(encoding="utf-8") == "untouched\n", "Undo deleted a file outside every skill folder"
+
+    grp = ext / "outside-grp"
+    grp.mkdir()
+    (grp / "SKILL.md").write_text("---\nname: outside-grp\ndescription: x\n---\n\nKeep\n", encoding="utf-8")
+    ops = [{"action": "write_file", "name": "outside-grp", "file_path": "references/new.md", "file_content": "n\n"}]
+    before = _touched(wa.SKILLS, ops)
+    roll = {"id": _new_id(), "files": []}
+    roll["files"] = [{"path": _rel(p), "snap": _store_copy(p, roll["id"], n)} for n, p in enumerate(before)]
+    assert [f["path"] for f in roll["files"]] == [(grp / "SKILL.md").as_posix()], roll["files"]
+    (grp / "SKILL.md").write_text("changed\n", encoding="utf-8")
+    (grp / "references").mkdir()
+    (grp / "references" / "new.md").write_text("n\n", encoding="utf-8")
+    _group_rollback(roll, before, ops, {})
+    assert (grp / "SKILL.md").read_text(encoding="utf-8").endswith("Keep\n"), "rollback did not restore the file"
+    assert not (grp / "references").exists() and grp.exists() and ext.exists(), \
+        "rollback must remove what the group created and stop at the skill's own folder"
+
+    long_desc = "A description that runs far past the limit " * 8
+    stage("e0e0e006", {"action": "create", "name": "single-long", "category": "cat",
+                       "content": "---\nname: single-long\ndescription: " + long_desc + "\n---\n\nbody\n"})
+    single = wa.get_pending(wa.SKILLS, "e0e0e006")
+    assert _skill_description_fix(single), "a single-operation create is not offered the description fix"
+    assert _blocked_approve_reason(single, []), "a single-operation create with a long description is not held"
+    ok, detail = _apply_description_fix(single)
+    assert ok, detail
+    fixed = wa.get_pending(wa.SKILLS, "e0e0e006")
+    assert not _skill_description_fix(fixed) and not _skill_problem(fixed["payload"]["content"]), fixed["payload"]
+    (pend / "e0e0e006.json").unlink()
+
+    shutil.rmtree(ext, ignore_errors=True)
+    shutil.rmtree(outside, ignore_errors=True)
+    if saved_config is None:
+        config.unlink(missing_ok=True)
+    else:
+        config.write_bytes(saved_config)
+    _REVIEW_GATE = False
+    _PANEL_SKIPS_REVIEW[0] = False
 
 
 def wa_get(subsystem: str, rid: str) -> dict:
@@ -819,7 +1163,8 @@ def _selftest() -> int:
     long_item = next(i for i in pending()["skills"] if i["id"] == "dddddddd")
     assert long_item["plain"]["stale"], long_item["plain"]
     assert "cannot be applied" in long_item["plain"]["stale"][0], long_item["plain"]["stale"]
-    assert long_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), long_item["plain"]["recommendation"]
+    assert long_item["plain"].get("fix"), "a single-operation create is not offered the description fix"
+    assert long_item["plain"]["recommendation"]["verdict"] == _tx("rec_fix"), long_item["plain"]["recommendation"]
     (tmp / "pending" / "skills" / "eeeeeeee.json").write_text(json.dumps({
         "id": "eeeeeeee", "subsystem": "skills", "action": "create", "summary": "create ok-description",
         "origin": "background_review", "created_at": time.time(),
@@ -1457,6 +1802,7 @@ def _selftest() -> int:
     _review_selftest(tmp)
     _integrity_selftest(tmp)
     _groups_selftest(tmp)
+    _outside_home_selftest(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
@@ -1478,7 +1824,11 @@ def _selftest() -> int:
           "cut input, outdated reviews, the language rule), and skill groups (1.11.0: writes to one skill are one "
           "card with one review, a conflict between them shows before approving, the rule checks run on the "
           "combined result, a member is never approved alone, a group applies whole or not at all, one Undo and "
-          "one Restore cover the group, a member is rejected on its own)")
+          "one Restore cover the group, a member is rejected on its own), and the fix effect (1.11.1: the count of "
+          "new words a suggested fix keeps, on the card, in the history summary and with the as-written copy), and "
+          "outside-home skills (1.12.3: a skill in a configured outside folder renders, applies with a copy and "
+          "undoes; a single-operation delete or patch keeps an undo copy; a broken card or group is named while "
+          "the rest render; forged history paths are refused; a single new skill gets the description fix)")
     return 0
 
 

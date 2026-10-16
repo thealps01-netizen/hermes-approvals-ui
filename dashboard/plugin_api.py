@@ -13,7 +13,8 @@ import threading
 import time
 import unicodedata
 import uuid
-from contextlib import suppress
+from collections import Counter
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -27,6 +28,25 @@ _OP_TEXT_LIMIT = 20000
 _LOCK = threading.RLock()
 _ISSUES: dict = {}
 _ISSUE_TTL = 3600
+_MEMO: contextvars.ContextVar = contextvars.ContextVar("pa_memo", default=None)
+
+
+@contextmanager
+def _memo():
+    token = _MEMO.set({})
+    try:
+        yield
+    finally:
+        _MEMO.reset(token)
+
+
+def _remember(key: tuple, make):
+    store = _MEMO.get()
+    if store is None:
+        return make()
+    if key not in store:
+        store[key] = make()
+    return store[key]
 
 
 def _log(message: str) -> None:
@@ -78,8 +98,42 @@ def _state() -> Path:
     return d
 
 
-def _skill_files(name: str | None = None) -> list[Path]:
-    skills = _home() / "skills"
+def _skill_roots() -> list[Path]:
+    home = _home() / "skills"
+    roots = [home]
+    try:
+        from agent.skill_utils import get_all_skills_dirs
+
+        found = [Path(d) for d in get_all_skills_dirs()]
+    except Exception as exc:
+        _log(f"the skill folders could not be listed, so only {home} is used: {exc!r}")
+        found = []
+    for root in found:
+        if not any(_same_place(root, r) for r in roots):
+            roots.append(root)
+    return roots
+
+
+def _norm(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
+def _same_place(a: Path, b: Path) -> bool:
+    return _norm(a) == _norm(b)
+
+
+def _inside(path: Path, root: Path) -> bool:
+    inner, outer = _norm(path), _norm(root)
+    return inner != outer and inner.startswith(outer.rstrip(os.sep) + os.sep)
+
+
+def _outside_root(path: Path) -> Path | None:
+    if _inside(path, _home()):
+        return None
+    return next((r for r in _skill_roots()[1:] if _inside(path, r)), None)
+
+
+def _skill_files_in(skills: Path, name: str | None) -> list[Path]:
     if not skills.exists():
         return []
     roots = {p.parent for p in skills.rglob("SKILL.md")} if name is not None else set()
@@ -97,6 +151,16 @@ def _skill_files(name: str | None = None) -> list[Path]:
     return out
 
 
+def _skill_files(name: str | None = None) -> list[Path]:
+    if name is None:
+        return _skill_files_in(_home() / "skills", None)
+    for root in _skill_roots():
+        found = _skill_files_in(root, name)
+        if found:
+            return found
+    return []
+
+
 def _watched() -> list[Path]:
     home = _home()
     out = [home / "memories" / "MEMORY.md", home / "memories" / "USER.md"] + _skill_files()
@@ -104,7 +168,20 @@ def _watched() -> list[Path]:
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_home()).as_posix()
+    with suppress(ValueError):
+        return path.relative_to(_home()).as_posix()
+    if _outside_root(path):
+        return Path(os.path.abspath(str(path))).as_posix()
+    raise ValueError(_tx("err_outside_roots", path=str(path)))
+
+
+def _abs(stored: object) -> Path | None:
+    text = str(stored or "").replace("\\", "/")
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        path = Path(text)
+        return path if path.is_absolute() and _outside_root(path) else None
+    rel = _safe_rel(text)
+    return _home() / rel if rel else None
 
 
 def _sha(path: Path) -> str:
@@ -444,6 +521,10 @@ def _section_of(path: Path, anchor: str) -> str:
 
 
 def _skill_file(name: str) -> Path | None:
+    return _remember(("file", name), lambda: _skill_file_now(name))
+
+
+def _skill_file_now(name: str) -> Path | None:
     from agent.skill_utils import is_excluded_skill_path
 
     for skill_md in (_home() / "skills").rglob("SKILL.md"):
@@ -499,7 +580,9 @@ _TEXT = {
     'err_not_undoable': 'This record cannot be undone (a rejected record has no file effect).',
     'err_conflict': 'The file changed after this record; send force to undo anyway.',
     'err_no_copies': 'This record has no undo copy (it may have been rejected or the copy cleaned up) — no file was touched.',
-    'err_unsafe_spec': 'This history record names a location outside your profile; undo refused.',
+    'err_unsafe_spec': 'This history record names a location outside your profile and every configured skill folder; undo refused.',
+    'err_outside_roots': '{path} is outside your profile and every configured skill folder, so the panel does not touch it.',
+    'card_failed': 'A pending {subsystem} change could not be shown, so it is left out of this list: "{summary}" ({id}). Reason: {error}. Nothing was applied and it stays pending; to drop it, type /{subsystem} reject {id} in chat.',
     'err_bad_scope': 'invalid subsystem/decision.',
     'err_no_ids': 'The id list is empty.',
     'err_no_ops_selected': 'No operation in the selected skill.',
@@ -576,6 +659,13 @@ _TEXT = {
     'hard_owner': '{name}: this skill is not yours to edit — {owner}. Change it upstream or make your own copy.',
     'hard_language': '{name}: the text must be English; this line is not: {quote}',
     'hard_duplicate': '{name}: this line is already in the skill: {quote}',
+    'hard_author_kept': '{name}: the skill must keep "author: {want}" in its header (after this write: {got}).',
+    'hard_description': '{name}: the new description is {n} characters; the skill list shows only {limit} '
+                        'and cuts the rest, so the trigger can be lost.',
+    'advice_size': '{name}: SKILL.md grows to {lines} lines (about {tokens} tokens); the budget is {max_lines} '
+                   'lines or about {max_tokens} tokens — detail belongs in references/.',
+    'advice_form': '{name}: the description does not read "Use when <trigger>. <what it does>."',
+    'advice_elsewhere': '{name}: this line is already in the skill {other}: {quote}',
     'hard_memory_duplicate': '{name}: this note is already saved: {quote}',
     'hard_unchecked': 'The rule checks could not run ({error}); approving is locked until they do.',
     'gate_hard': 'A rule check failed, so Approve stays locked: {reasons}',
@@ -597,9 +687,12 @@ _TEXT = {
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
     'amend_nothing': 'There is no suggested edit that still matches this record.',
     'fix_left': 'The suggested edits do not clear every problem, so nothing was written: {reasons}',
+    'fix_undoes_all': 'The suggested edits take back every change here, so nothing is left to write; reject it instead.',
     'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
+    'summary_fix_effect': '{summary}; the fix removed {removed} of the {added} new words in the text it edited',
     'amend_author': 'adds "author: {want}" to the header',
     'amend_drop_line': 'removes the line that is already in the skill',
+    'amend_description': 'shortens the description to {n} characters',
     'edit_target': '{file}, existing text',
     'stale_apply': '{what} → cannot be applied: {problem}.',
     'sim_exists': 'a skill named {name} already exists',
@@ -630,6 +723,10 @@ def _tx(key: str, **kw) -> str:
 
 
 def _skill_problem(content: str, new_skill: bool = True) -> str:
+    return _remember(("valid", content, new_skill), lambda: _skill_problem_now(content, new_skill))
+
+
+def _skill_problem_now(content: str, new_skill: bool) -> str:
     try:
         from tools.skill_manager_tool import _validate_frontmatter
     except Exception as exc:
@@ -749,10 +846,7 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
                 purpose_from_disk = ""
                 break
             name = op.get("name") or ""
-            try:
-                path = wa._find_skill_path(name) if name else None
-            except Exception:
-                path = None
+            path = _skill_dir(name) if name else None
             if path:
                 try:
                     purpose_from_disk = _frontmatter((path / "SKILL.md").read_text(encoding="utf-8")).get("description") or ""
@@ -934,7 +1028,7 @@ def _route_failed(where: str, exc: Exception) -> JSONResponse:
 @router.get("/pending")
 def pending():
     try:
-        with _LOCK:
+        with _LOCK, _memo():
             return _pending()
     except Exception as exc:
         return _read_failed("/pending", exc)
@@ -991,6 +1085,8 @@ def _card(subsystem: str, record: dict, steps: list) -> dict:
     state = _review_state(subsystem, record, steps)
     review = _review_public(state)
     _mark_edits(review, record, subsystem)
+    if advice := _advice_checks(subsystem, record):
+        review["advice"] = advice
     shown = {"payload": _payload_hash(record.get("payload")), "stale": plain.get("stale") or [],
              "fix": plain.get("fix") or {}, "review": state.get("rid") or state.get("finished"),
              **{k: review.get(k) for k in ("status", "hard", "verdict", "summary", "findings", "edits",
@@ -1087,9 +1183,7 @@ def _disk_rels(name: str) -> list[str]:
 
 
 def _view_md(view: dict, name: str) -> dict:
-    folder = None if name in view["gone"] else _skill_dir(name)
-    out = {p.relative_to(folder).as_posix(): p.read_text(encoding="utf-8", errors="replace")
-           for p in (sorted(folder.rglob("*.md")) if folder else [])}
+    out = {} if name in view["gone"] else dict(_md_disk(name))
     for (owner, rel), text in view["files"].items():
         if owner == name and rel.endswith(".md"):
             if text is None:
@@ -1099,12 +1193,31 @@ def _view_md(view: dict, name: str) -> dict:
     return out
 
 
+def _md_disk(name: str) -> dict:
+    return _remember(("md", name), lambda: _md_disk_now(name))
+
+
+def _md_disk_now(name: str) -> dict:
+    folder = _skill_dir(name)
+    return {p.relative_to(folder).as_posix(): p.read_text(encoding="utf-8", errors="replace")
+            for p in (sorted(folder.rglob("*.md")) if folder else [])}
+
+
+def _norm_set(text: str) -> frozenset:
+    return _remember(("norm", text), lambda: frozenset(_norm_line(l) for l in text.splitlines()))
+
+
+def _op_rel(op: dict) -> str:
+    if _rewrites_skill_md(op):
+        return "SKILL.md"
+    return str(op.get("file_path") or "SKILL.md").replace(BACKSLASH, "/").strip().lstrip("/") or "SKILL.md"
+
+
 def _view_apply(view: dict, op: dict) -> str:
     action = str(op.get("action") or "")
     name = _bare_skill(op.get("name"))
     rewrite = _rewrites_skill_md(op)
-    rel = "SKILL.md" if rewrite else (
-        str(op.get("file_path") or "SKILL.md").replace(BACKSLASH, "/").strip().lstrip("/") or "SKILL.md")
+    rel = _op_rel(op)
     if action == "create":
         if _view_exists(view, name):
             return _tx("sim_exists", name=name)
@@ -1174,7 +1287,7 @@ def _group_facts(members: list[dict]) -> dict:
     from tools import write_approval as wa
 
     view = _view_new()
-    plains, stale, hard, seen = [], [], [], set()
+    plains, stale, hard, advice, seen = [], [], [], [], set()
     for n, record in enumerate(members, 1):
         before = view
         view, problems = _view_record(view, record)
@@ -1185,10 +1298,16 @@ def _group_facts(members: list[dict]) -> dict:
             if check["text"] not in seen:
                 seen.add(check["text"])
                 hard.append({**check, "change": n})
-    return {"plains": plains, "stale": stale, "hard": hard, "view": view}
+        for check in _advice_checks(wa.SKILLS, record, before):
+            if check["text"] not in seen:
+                seen.add(check["text"])
+                advice.append({**check, "change": n})
+    return {"plains": plains, "stale": stale, "hard": hard, "advice": advice, "view": view}
 
 
 def _group_left(members: list[dict]) -> list[str]:
+    if empty := [f"#{n} · {_tx('fix_undoes_all')}" for n, r in enumerate(members, 1) if _nothing_left(r)]:
+        return empty
     facts = _group_facts(members)
     return ([f"#{h['change']} · {h['text']}" for h in facts["hard"]]
             + [f"#{s['change']} · {s['text']}" for s in facts["stale"]]
@@ -1250,7 +1369,10 @@ def _group_mark_edits(review: dict, members: list[dict]) -> None:
     open_edits = [(e["edit"], e.get("change")) for e in entries if e["edit"]["ok"]]
     review["edits"] = len(open_edits)
     if open_edits:
-        review["fix_left"] = _group_left(_group_with_edits(members, open_edits)[0])
+        fixed = _group_with_edits(members, open_edits)[0]
+        review["fix_left"] = _group_left([_writable(f) for f in fixed])
+        if effect := _group_effect(members, fixed):
+            review["fix_effect"] = effect
 
 
 def _group_card(gid: str, members: list[dict], steps: list) -> dict:
@@ -1259,6 +1381,8 @@ def _group_card(gid: str, members: list[dict], steps: list) -> dict:
     review = _review_public(state)
     review["siblings"] = 0
     _group_mark_edits(review, members)
+    if facts["advice"]:
+        review["advice"] = facts["advice"]
     result = _group_result(facts["view"])
     shown = {"members": [[r.get("id"), _payload_hash(r.get("payload"))] for r in members], "stale": facts["stale"],
              "fix": [p.get("fix") or {} for p in facts["plains"]], "review": state.get("rid") or state.get("finished"),
@@ -1301,6 +1425,7 @@ def _group_start(gid: str) -> bool:
             return False
         _REVIEW_RUNNING.add(tag)
     job = contextvars.copy_context()
+    job.run(_MEMO.set, None)
     threading.Thread(target=job.run, daemon=True, name=f"pa-review-group-{gid}",
                      args=(_group_job, gid, model, tag)).start()
     return True
@@ -1312,6 +1437,7 @@ def _group_input(members: list[dict], facts: dict, result: list, nonce: str, cut
     parts = _rule_blocks(nonce)
     known = [f"- #{h['change']}: {h['text']}" for h in facts["hard"]]
     known += [f"- #{s['change']}: {s['text']}" for s in facts["stale"]]
+    known += [f"- #{a['change']} (advice, does not lock Approve): {a['text']}" for a in facts["advice"]]
     parts.append(_block(nonce, "HARD CHECK FINDINGS", "\n".join(known) or "none"))
     changes = "\n\n".join(f"### change #{n} (pending write {r.get('id')})\n" + _write_shown(wa, wa.SKILLS, r)
                           for n, r in enumerate(members, 1))
@@ -1344,7 +1470,7 @@ def _group_job(gid: str, model: dict, tag: str) -> None:
 
     try:
         with _REVIEW_SLOTS:
-            with _LOCK:
+            with _LOCK, _memo():
                 members = _groups_now().get(gid)
                 if not members:
                     return
@@ -1408,6 +1534,7 @@ def _group_apply(gid: str, members: list[dict], suffix: str = "") -> tuple[bool,
                  "files": [], "undone": False})
         return False, reason
     _finalize_entry(entry, wa.SKILLS, ops, before)
+    _keep_amended(entry, members)
     _append(entry)
     return True, _tx("group_applied", n=len(members))
 
@@ -1417,15 +1544,18 @@ def _group_rollback(entry: dict, before: list, ops: list, queued: dict) -> None:
 
     folder = _state() / "snapshots" / entry["id"]
     for f in entry["files"]:
-        dst = _home() / f["path"]
+        dst = _abs(f["path"])
+        if dst is None:
+            _log(f"rollback skipped {f['path']}: outside every skill folder")
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_bytes(dst, (folder / f["snap"]).read_bytes())
-    skills = (_home() / "skills").resolve()
     for path in sorted(set(_touched(wa.SKILLS, ops)) - set(before)):
         with suppress(OSError):
             path.unlink()
+        stop = next((r for r in _skill_roots() if _inside(path, r)), None)
         parent = path.parent
-        while parent.resolve() != skills and skills in parent.resolve().parents:
+        while stop is not None and _inside(parent, stop):
             try:
                 parent.rmdir()
             except OSError:
@@ -1476,34 +1606,10 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
         return {"id": gid, "group": True, "ok": False, "error": _tx("fix_gone")}
     if str(body.get("decision")) == "reject":
         return _group_reject(gid, members)
-    card = _group_card(gid, members, _approved_steps())
-    if str(versions.get(gid) or "") != card["group"]["version"]:
-        return {"id": gid, "group": True, "ok": False, "stale": True, "error": _tx("gate_stale")}
-    skip = bool(body.get("skip_review"))
-    queued, suffix = {}, ""
-    if body.get("with_edits"):
-        status = card["state"]["status"]
-        if status != "done" and not (skip and status in ("failed", "unassigned")):
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": _gate_wait(status)}
-        edits = [(e["edit"], e.get("change")) for e in _review_edits(card["state"]) if e["edit"].get("ok")]
-        fixed, applied, changed = _group_with_edits(members, edits)
-        if not applied:
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": _tx("amend_nothing")}
-        if left := _group_left(fixed):
-            return {"id": gid, "group": True, "ok": False, "blocked": True,
-                    "error": _tx("fix_left", reasons=" ".join(left))}
-        for i in sorted(changed):
-            fixed[i]["amended_from"] = members[i].get("payload")
-            fixed[i]["summary"] = _tx("summary_fixed", summary=members[i].get("summary", ""), n=applied)
-            path = wa._pending_path(wa.SKILLS, str(fixed[i].get("id")))
-            queued[path] = path.read_bytes()
-            _atomic_write(path, json.dumps(fixed[i], ensure_ascii=False))
-        members = fixed
-    else:
-        reason, unreviewed = _group_gate(card, skip)
-        if reason:
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": reason}
-        suffix = _tx("group_unreviewed") if unreviewed else ""
+    with _memo():
+        refused, members, suffix, queued = _group_checked(gid, members, body, versions)
+    if refused:
+        return refused
     ok, message = _group_apply(gid, members, suffix)
     if not ok:
         for path, data in queued.items():
@@ -1512,19 +1618,64 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
     return {"id": gid, "group": True, "ok": True, "members": [r.get("id") for r in members], "message": message}
 
 
+def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) -> tuple:
+    from tools import write_approval as wa
+
+    card = _group_card(gid, members, _approved_steps())
+    skip = bool(body.get("skip_review"))
+    queued: dict = {}
+
+    def refuse(error: str, **extra) -> tuple:
+        return {"id": gid, "group": True, "ok": False, "error": error, **extra}, members, "", {}
+
+    if str(versions.get(gid) or "") != card["group"]["version"]:
+        return refuse(_tx("gate_stale"), stale=True)
+    if body.get("with_edits"):
+        status = card["state"]["status"]
+        if status != "done" and not (skip and status in ("failed", "unassigned")):
+            return refuse(_gate_wait(status), blocked=True)
+        edits = [(e["edit"], e.get("change")) for e in _review_edits(card["state"]) if e["edit"].get("ok")]
+        fixed, applied, changed = _group_with_edits(members, edits)
+        if not applied:
+            return refuse(_tx("amend_nothing"), blocked=True)
+        effect = _group_effect(members, fixed)
+        fixed = [_writable(f) for f in fixed]
+        if left := _group_left(fixed):
+            return refuse(_tx("fix_left", reasons=" ".join(left)), blocked=True)
+        why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
+        suffix = _fixed_summary("", applied, effect)
+        for i in sorted(changed):
+            fixed[i]["amended_from"] = members[i].get("payload")
+            fixed[i]["amended_effect"], fixed[i]["amended_why"] = effect, why
+            fixed[i]["summary"] = _tx("summary_fixed", summary=members[i].get("summary", ""), n=applied)
+            path = wa._pending_path(wa.SKILLS, str(fixed[i].get("id")))
+            queued[path] = path.read_bytes()
+            _atomic_write(path, json.dumps(fixed[i], ensure_ascii=False))
+        return None, fixed, suffix, queued
+    reason, unreviewed = _group_gate(card, skip)
+    if reason:
+        return refuse(reason, blocked=True)
+    return None, members, _tx("group_unreviewed") if unreviewed else "", queued
+
+
 def _pending() -> dict:
     from tools import write_approval as wa
 
     out: dict = {"groups": {wa.MEMORY: [], wa.SKILLS: []}}
     live: set = set()
+    failed: list[str] = []
     steps = _approved_steps()
     for subsystem in (wa.MEMORY, wa.SKILLS):
         records = wa.list_pending(subsystem)
         groups = {_group_id(m): m for m in (_skill_groups(records) if subsystem == wa.SKILLS else [])}
-        cards = {gid: _group_card(gid, members, steps) for gid, members in groups.items()}
-        for gid in groups:
-            out["groups"][subsystem].append(cards[gid]["group"])
+        cards: dict = {}
+        broken: dict = {}
+        for gid, members in groups.items():
             live.add(_group_tag(gid))
+            try:
+                cards[gid] = _group_card(gid, members, steps)
+            except Exception as exc:
+                broken[gid] = exc
         place = {str(r.get("id")): gid for gid, members in groups.items() for r in members}
         order, emitted = [], set()
         for record in records:
@@ -1534,37 +1685,58 @@ def _pending() -> dict:
             elif gid not in emitted:
                 emitted.add(gid)
                 order += [(r, gid, n) for n, r in enumerate(groups[gid], 1)]
-        items = []
+        built = []
         for record, gid, n in order:
-            item = {
-                "id": record.get("id"),
-                "summary": record.get("summary", ""),
-                "origin": record.get("origin", ""),
-                "staged_at": record.get("created_at"),
-                "ops": _ops(record),
-            }
-            if gid:
-                item.update(plain=cards[gid]["plains"][n - 1], group=gid, change=n)
-            else:
-                card = _card(subsystem, record, steps)
-                item.update(plain=card["plain"], version=card["version"], review=card["review"])
-            if subsystem == wa.SKILLS:
-                item["diff"] = _skill_diff_text(wa, record)
-                for i, op in enumerate(_raw_ops(record)):
-                    if i < len(item["ops"]):
-                        own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
-                        item["ops"][i].update(_op_change_stat(wa, op))
-                        item["ops"][i].update(own)
-                item["has_change"] = any(o.get("has_change") for o in item["ops"])
             live.add(f"{subsystem}-{record.get('id')}")
-            items.append(item)
-        out[subsystem] = items
+            if gid in broken:
+                continue
+            try:
+                built.append((gid, _pending_item(wa, subsystem, record, gid, n, cards, steps)))
+            except Exception as exc:
+                if gid:
+                    broken[gid] = exc
+                else:
+                    failed.append(_card_failed(subsystem, record, exc))
+        for gid, exc in broken.items():
+            failed += [_card_failed(subsystem, r, exc) for r in groups[gid]]
+        out["groups"][subsystem] = [cards[gid]["group"] for gid in groups if gid not in broken]
+        out[subsystem] = [item for gid, item in built if gid not in broken]
     out["records"] = {s: len(out[s]) for s in (wa.MEMORY, wa.SKILLS)}
     out["counts"] = {s: len(out[s]) - sum(len(g["members"]) - 1 for g in out["groups"][s])
                      for s in (wa.MEMORY, wa.SKILLS)}
     _review_prune(live)
-    out["issues"] = _issues()
+    out["issues"] = _issues() + failed
     return out
+
+
+def _pending_item(wa, subsystem: str, record: dict, gid: str, n: int, cards: dict, steps) -> dict:
+    item = {
+        "id": record.get("id"),
+        "summary": record.get("summary", ""),
+        "origin": record.get("origin", ""),
+        "staged_at": record.get("created_at"),
+        "ops": _ops(record),
+    }
+    if gid:
+        item.update(plain=cards[gid]["plains"][n - 1], group=gid, change=n)
+    else:
+        card = _card(subsystem, record, steps)
+        item.update(plain=card["plain"], version=card["version"], review=card["review"])
+    if subsystem == wa.SKILLS:
+        item["diff"] = _skill_diff_text(wa, record)
+        for i, op in enumerate(_raw_ops(record)):
+            if i < len(item["ops"]):
+                own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
+                item["ops"][i].update(_op_change_stat(wa, op))
+                item["ops"][i].update(own)
+        item["has_change"] = any(o.get("has_change") for o in item["ops"])
+    return item
+
+
+def _card_failed(subsystem: str, record: dict, exc: Exception) -> str:
+    _log(f"pending {subsystem} record {record.get('id')} could not be shown: {exc!r}")
+    return _tx("card_failed", subsystem=subsystem, id=record.get("id"),
+               summary=_short_error(str(record.get("summary") or "")), error=_short_error(str(exc) or repr(exc)))
 
 
 @router.post("/scan")
@@ -1580,9 +1752,33 @@ def _core_diff_or_blank(text: str) -> str:
     return "" if str(text).lstrip().startswith("(") else str(text)[:4000]
 
 
+def _core_diff(wa, op: dict) -> str:
+    payload = dict(op, action="edit") if op.get("action") == "patch" and _rewrites_skill_md(op) else dict(op)
+    return _remember(("diff", _payload_hash(payload)),
+                     lambda: str(wa.skill_pending_diff({"payload": payload}, _core_base(payload)) or ""))
+
+
+def _core_base(payload: dict) -> dict | None:
+    action = str(payload.get("action") or "")
+    name = str(payload.get("name") or "")
+    if action not in ("edit", "patch", "write_file") or not name:
+        return None
+    rel = "SKILL.md" if action == "edit" else str(payload.get("file_path") or "SKILL.md")
+    folder = _skill_dir(name)
+    if not folder:
+        return None
+    path = folder / rel
+    try:
+        path.resolve().relative_to(folder.resolve())
+        text = path.read_text(encoding="utf-8-sig") if path.exists() else ""
+    except (OSError, ValueError):
+        return None
+    return {name: {rel: text}}
+
+
 def _one_op_diff(wa, op: dict) -> str:
     try:
-        text = wa.skill_pending_diff({"payload": dict(op)}) or ""
+        text = _core_diff(wa, op)
     except Exception:
         return ""
     return _core_diff_or_blank(text)
@@ -1629,7 +1825,7 @@ def _skill_description_fix(record: dict) -> list[dict]:
     from tools.skill_manager_tool import SKILL_PROMPT_DESC_LIMIT as limit
 
     fixes: list[dict] = []
-    for op in ((record.get("payload") or {}).get("operations")) or []:
+    for op in _raw_ops(record):
         if op.get("action") != "create":
             continue
         content = op.get("content") or ""
@@ -1665,6 +1861,12 @@ _REVIEW_PART_LIMIT = 40000
 _REVIEW_SIBLING_LIMIT = 20000
 _REVIEW_FORMAT = 2
 _DUP_MIN = 60
+_SKILL_MAX_LINES = 500
+_SKILL_MAX_TOKENS = 5000
+_CHARS_PER_TOKEN = 4
+_DESC_FORM = re.compile(r"Use when \S.*?\.\s+\S.*\.")
+_YAML_BLOCKS = {">", ">-", ">+", "|", "|-", "|+"}
+_LINE_INDEX: dict = {"sig": None, "lines": {}}
 _MD_LINK = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 _SEVERITY = ("block", "fix", "note")
 _KINDS = ("duplicate", "contradiction", "wrong", "evidence", "rule")
@@ -1801,6 +2003,10 @@ def _op_text(op: dict) -> str:
 
 
 def _skill_dir(name: str) -> Path | None:
+    return _remember(("dir", name), lambda: _skill_dir_now(name))
+
+
+def _skill_dir_now(name: str) -> Path | None:
     from tools import write_approval as wa
 
     try:
@@ -1832,18 +2038,8 @@ def _skill_owner(name: str, author: str) -> str:
 
 
 def _skill_lines(name: str, skip: str, view: dict | None = None) -> set:
-    if view is not None:
-        return {_norm_line(l) for rel, text in _view_md(view, name).items() if rel != skip
-                for l in text.splitlines()}
-    folder = _skill_dir(name)
-    if not folder:
-        return set()
-    lines = set()
-    for path in folder.rglob("*.md"):
-        if path.relative_to(folder).as_posix() == skip:
-            continue
-        lines |= {_norm_line(l) for l in path.read_text(encoding="utf-8", errors="replace").splitlines()}
-    return lines
+    files = _view_md(view, name) if view is not None else _md_disk(name)
+    return set().union(*(_norm_set(text) for rel, text in files.items() if rel != skip))
 
 
 def _hard(name: str, text: str, edit: dict | None = None) -> dict:
@@ -2009,6 +2205,7 @@ def _skill_hard(record: dict, view: dict | None = None) -> list[dict]:
     author = _expected_author()
     out: list[dict] = []
     owners_seen: set = set()
+    kept = _kept_counts(record, view)
     for op in _raw_ops(record):
         name = str(op.get("name") or "")
         action = str(op.get("action") or "")
@@ -2032,15 +2229,174 @@ def _skill_hard(record: dict, view: dict | None = None) -> list[dict]:
         rewrite = _rewrites_skill_md(op)
         skip = str(op.get("file_path") or "") if action == "write_file" else "SKILL.md" if rewrite else ""
         known = existing if not skip else _skill_lines(_bare_skill(name), skip, view)
+        counts = kept.get(_bare_skill(name)) if kept is not None else None
+        target = "SKILL.md" if rewrite else str(op.get("file_path") or "SKILL.md")
+        mine = 1 if target.endswith(".md") else 0
         old = {_norm_line(l) for l in str(op.get("old_string") or "").splitlines()}
         for line in text.splitlines():
             key = _norm_line(line)
-            if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN and key in known and key not in old:
+            twice = counts[_dup_key(line)] > mine if counts is not None else key in known
+            if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN and twice and key not in old:
                 cut = next((c for c in (line + "\n", "\n" + line) if c in text), None)
                 drop = {"find": cut, "replace": "", "label": _tx("amend_drop_line")} if cut else None
                 out.append(_hard(name, _tx("hard_duplicate", name=name, quote=_preview(line.strip())), drop))
                 break
+    return out + _skill_result_hard(record, view, author)
+
+
+def _kept_counts(record: dict, view: dict | None) -> dict | None:
+    base = view if view is not None else _view_new()
+    after, problems = _view_record(base, record)
+    if problems:
+        return None
+    names = {_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""}
+    return {n: Counter(_dup_key(l) for text in _view_md(after, n).values() for l in text.splitlines())
+            for n in names}
+
+
+def _dup_key(line: str) -> str:
+    return ("#" if line.lstrip().startswith("#") else "") + _norm_line(line)
+
+
+def _description_of(content: str | None) -> str | None:
+    if content is None:
+        return None
+    from agent.skill_utils import parse_frontmatter
+
+    value = parse_frontmatter(content)[0].get("description")
+    return " ".join(str(value).split()) if value is not None else ""
+
+
+def _skill_results(record: dict, view: dict | None) -> list[tuple[str, str | None, str | None]]:
+    base = view if view is not None else _view_new()
+    after, problems = _view_record(base, record)
+    if problems:
+        return []
+    names = sorted({_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""})
+    return [(n, _view_read(base, n, "SKILL.md"), _view_read(after, n, "SKILL.md")) for n in names]
+
+
+def _description_edit(after: str, ops: list[dict], limit: int) -> dict | None:
+    found = _replace_frontmatter_description(after, "")
+    short = _shorten_description(_description_of(after) or "", limit)
+    if not found or found[0].strip() in _YAML_BLOCKS or not short or len(short) > limit:
+        return None
+    if not any(found[0] in _op_text(op) for op in ops):
+        return None
+    return {"find": found[0], "replace": '"' + short.replace('"', "'") + '"',
+            "label": _tx("amend_description", n=len(short))}
+
+
+def _skill_result_hard(record: dict, view: dict | None, author: str) -> list[dict]:
+    from tools.skill_manager_tool import SKILL_PROMPT_DESC_LIMIT as limit
+
+    out: list[dict] = []
+    ops = _raw_ops(record)
+    for name, before, after in _skill_results(record, view):
+        if before is None or after is None:
+            continue
+        mine = [op for op in ops if _bare_skill(op.get("name")) == name]
+        if author and _skill_author(before) == author and _skill_author(after) != author:
+            rewrite = next((op for op in mine if _rewrites_skill_md(op)), None)
+            edit = _author_edit(rewrite.get("content") or "", author) if rewrite else None
+            out.append(_hard(name, _tx("hard_author_kept", name=name, want=author,
+                                       got=_skill_author(after) or _tx("hard_nobody")), edit))
+        desc = _description_of(after) or ""
+        if desc != _description_of(before) and len(desc) > limit:
+            out.append(_hard(name, _tx("hard_description", name=name, n=len(desc), limit=limit),
+                             _description_edit(after, mine, limit)))
     return out
+
+
+def _advice_checks(subsystem: str, record: dict, view: dict | None = None) -> list[dict]:
+    from tools import write_approval as wa
+
+    if subsystem != wa.SKILLS:
+        return []
+    try:
+        return _skill_advice(record, view)
+    except Exception as exc:
+        _log(f"advice checks of {record.get('id')} could not run: {exc!r}")
+        return []
+
+
+def _skill_advice(record: dict, view: dict | None) -> list[dict]:
+    author = _expected_author()
+    out: list[dict] = []
+    for name, before, after in _skill_results(record, view):
+        if after is None:
+            continue
+        lines, tokens = len(after.splitlines()), len(after) // _CHARS_PER_TOKEN
+        grows = before is None or len(after) > len(before)
+        if grows and (lines > _SKILL_MAX_LINES or tokens > _SKILL_MAX_TOKENS):
+            out.append(_hard(name, _tx("advice_size", name=name, lines=lines, tokens=tokens,
+                                       max_lines=_SKILL_MAX_LINES, max_tokens=_SKILL_MAX_TOKENS)))
+        desc = _description_of(after) or ""
+        mine = author and _skill_author(after) == author
+        if mine and desc != _description_of(before) and not _DESC_FORM.fullmatch(desc):
+            out.append(_hard(name, _tx("advice_form", name=name)))
+    return out + _elsewhere(record)
+
+
+def _elsewhere(record: dict) -> list[dict]:
+    index = _skill_line_index()
+    out: list[dict] = []
+    done: set = set()
+    for op in _raw_ops(record):
+        name = _bare_skill(op.get("name"))
+        if not name or name in done or op.get("action") == "delete":
+            continue
+        home = _same_path(_skill_dir(name))
+        old = {_dup_key(l) for l in str(op.get("old_string") or "").splitlines()}
+        for line in _op_text(op).splitlines():
+            key = _dup_key(line)
+            if len(_norm_line(_MD_LINK.sub("", line))) < _DUP_MIN or key in old:
+                continue
+            others = sorted(d for d in index.get(key, ()) if d != home)
+            if others:
+                out.append(_hard(name, _tx("advice_elsewhere", name=name, other=Path(others[0]).name,
+                                           quote=_preview(line.strip()))))
+                done.add(name)
+                break
+    return out
+
+
+def _same_path(path: Path | None) -> str:
+    if not path:
+        return ""
+    try:
+        return os.path.normcase(str(Path(path).resolve()))
+    except OSError:
+        return os.path.normcase(str(path))
+
+
+def _skill_line_index() -> dict:
+    return _remember(("lines",), _skill_line_index_now)
+
+
+def _skill_line_index_now() -> dict:
+    root = _home() / "skills"
+    files = []
+    for path in sorted(root.rglob("*.md")) if root.is_dir() else []:
+        if any(p.startswith(".") or p == "__pycache__" for p in path.relative_to(root).parts):
+            continue
+        with suppress(OSError):
+            st = path.stat()
+            files.append((path, st.st_mtime_ns, st.st_size))
+    sig = tuple((str(p), m, s) for p, m, s in files)
+    if _LINE_INDEX["sig"] != sig:
+        homes = {p.parent: _same_path(p.parent) for p, _, _ in files if p.name == "SKILL.md"}
+        lines: dict = {}
+        for path, _, _ in files:
+            home = next((homes[d] for d in (path.parent, *path.parents) if d in homes), "")
+            if not home:
+                continue
+            with suppress(OSError):
+                for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if len(_norm_line(_MD_LINK.sub("", line))) >= _DUP_MIN:
+                        lines.setdefault(_dup_key(line), set()).add(home)
+        _LINE_INDEX.update(sig=sig, lines=lines)
+    return _LINE_INDEX["lines"]
 
 
 def _memory_hard(record: dict) -> list[dict]:
@@ -2217,6 +2573,7 @@ def _review_start(subsystem: str, record: dict) -> bool:
             return False
         _REVIEW_RUNNING.add(tag)
     job = contextvars.copy_context()
+    job.run(_MEMO.set, None)
     threading.Thread(target=job.run, daemon=True, name=f"pa-review-{record_id}",
                      args=(_review_job, subsystem, record_id, model, tag)).start()
     return True
@@ -2227,7 +2584,7 @@ def _review_job(subsystem: str, record_id: str, model: dict, tag: str) -> None:
 
     try:
         with _REVIEW_SLOTS:
-            with _LOCK:
+            with _LOCK, _memo():
                 record = wa.get_pending(subsystem, record_id)
                 if not record:
                     return
@@ -2314,7 +2671,9 @@ def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonc
 
     memories = _home() / "memories"
     parts = _rule_blocks(nonce)
-    parts.append(_block(nonce, "HARD CHECK FINDINGS", "\n".join(f"- {h['text']}" for h in hard) or "none"))
+    known = [f"- {h['text']}" for h in hard]
+    known += [f"- (advice, does not lock Approve) {a['text']}" for a in _advice_checks(subsystem, record)]
+    parts.append(_block(nonce, "HARD CHECK FINDINGS", "\n".join(known) or "none"))
     if subsystem == wa.SKILLS:
         parts.append(_block(nonce, "THE WRITE (skill change as a diff)",
                             _cut(_write_shown(wa, subsystem, record), "write", cuts)))
@@ -2360,7 +2719,7 @@ def _review_diff(wa, record: dict) -> str:
     out = []
     for op in _raw_ops(record):
         try:
-            text = str(wa.skill_pending_diff({"payload": dict(op)}) or "")
+            text = _core_diff(wa, op)
         except Exception as exc:
             _log(f"diff of {record.get('id')} for the pre-review failed: {exc!r}")
             return ""
@@ -2527,7 +2886,7 @@ def _review_again(body: dict) -> dict:
 @router.post("/reviews")
 def reviews_start(body: dict):
     try:
-        with _LOCK:
+        with _LOCK, _memo():
             return _reviews_start()
     except Exception as exc:
         return _route_failed("/reviews", exc)
@@ -2578,7 +2937,7 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
     fixes = {f["name"]: f for f in _skill_description_fix(record)}
     if not fixes:
         return False, _tx("fix_nothing")
-    ops = (record.get("payload") or {}).get("operations") or []
+    ops = _raw_ops(record)
     for op in ops:
         fix = fixes.get(op.get("name") or "")
         if op.get("action") == "create" and fix:
@@ -2594,6 +2953,28 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
 def _review_edits(state: dict) -> list[dict]:
     found = state.get("findings") if state.get("status") == "done" else []
     return [e for e in [*(state.get("hard") or []), *(found or [])] if isinstance(e.get("edit"), dict)]
+
+
+def _no_op(op: dict) -> bool:
+    return op.get("action") == "patch" and isinstance(op.get("new_string"), str) \
+        and op.get("new_string") == op.get("old_string")
+
+
+def _nothing_left(record: dict) -> bool:
+    return (record.get("payload") or {}).get("operations") == []
+
+
+def _writable(fixed: dict) -> dict:
+    if not any(_no_op(op) for op in _raw_ops(fixed)):
+        return fixed
+    out = json.loads(json.dumps(fixed))
+    kept = [op for op in _raw_ops(out) if not _no_op(op)]
+    payload = out.get("payload") or {}
+    if isinstance(payload.get("operations"), list):
+        payload["operations"] = kept
+    else:
+        out["payload"] = {"action": "batch", "operations": kept}
+    return out
 
 
 def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
@@ -2631,7 +3012,82 @@ def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
     return fixed, applied
 
 
+_EFFECT_WORDS = 20000
+
+
+def _words(text: object) -> list[str]:
+    return re.findall(r"\S+", str(text or ""))
+
+
+def _op_after(op: dict) -> str:
+    return next((str(op[f]) for f in (*_EDIT_FIELDS, "new_text") if isinstance(op.get(f), str)), "")
+
+
+def _op_before(subsystem: str, op: dict, view: dict) -> str:
+    action = str(op.get("action") or "")
+    if action in ("add", "create"):
+        return ""
+    if subsystem == "memory":
+        pinned = "" if action == "patch" else op.get("matched_entry")
+        return str(pinned or op.get("old_text") or "")
+    if action == "patch" and not op.get("content"):
+        return str(op.get("old_string") or "")
+    return _view_read(view, _bare_skill(op.get("name")), _op_rel(op)) or ""
+
+
+def _fix_effect(subsystem: str, record: dict, fixed: dict, view: dict | None = None) -> dict | None:
+    own, now = _raw_ops(record), _raw_ops(fixed)
+    if not own or len(now) < len(own):
+        return None
+    trial = _view_copy(view or _view_new())
+    added = kept = 0
+    try:
+        for op, after in zip(own, now[len(now) - len(own):]):
+            written, applied = _words(_op_after(op)), _words(_op_after(after))
+            before = _words(_op_before(subsystem, op, trial))
+            if subsystem != "memory":
+                _view_apply(trial, op)
+            if written == applied:
+                continue
+            if max(len(written), len(before), len(applied)) > _EFFECT_WORDS:
+                return None
+            new = {j for tag, _a, _b, j1, j2 in difflib.SequenceMatcher(None, before, written, autojunk=False)
+                   .get_opcodes() if tag in ("insert", "replace") for j in range(j1, j2)}
+            same = {i for tag, i1, i2, _c, _d in difflib.SequenceMatcher(None, written, applied, autojunk=False)
+                    .get_opcodes() if tag == "equal" for i in range(i1, i2)}
+            added, kept = added + len(new), kept + len(new & same)
+    except Exception as exc:
+        _log(f"the effect of the suggested fix on {record.get('id')} could not be measured: {exc!r}")
+        return None
+    return {"added": added, "kept": kept} if added else None
+
+
+def _group_effect(members: list[dict], fixed: list[dict]) -> dict | None:
+    from tools import write_approval as wa
+
+    view, added, kept = _view_new(), 0, 0
+    for record, after in zip(members, fixed):
+        effect = _fix_effect(wa.SKILLS, record, after, view) or {}
+        added, kept = added + effect.get("added", 0), kept + effect.get("kept", 0)
+        view, _problems = _view_record(view, record)
+    return {"added": added, "kept": kept} if added else None
+
+
+def _fixed_summary(summary: str, n: int, effect: dict | None) -> str:
+    text = _tx("summary_fixed", summary=summary, n=n)
+    if not effect:
+        return text
+    return _tx("summary_fix_effect", summary=text, removed=effect["added"] - effect["kept"], added=effect["added"])
+
+
+def _fix_why(state: dict, record: dict) -> list[str]:
+    return [str(e.get("explain") or e.get("text") or "") for e in _review_edits(state)
+            if _edit_open(record, e["edit"])]
+
+
 def _fix_left(subsystem: str, fixed: dict, only: list | tuple = ()) -> list[str]:
+    if _nothing_left(fixed):
+        return [_tx("fix_undoes_all")]
     hard = [h["text"] for h in _hard_checks(subsystem, fixed)
             if not only or h.get("name") in only or not h.get("name")]
     return hard + [str(s) for s in _explain(subsystem, fixed).get("stale") or []]
@@ -2648,7 +3104,9 @@ def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
     review["edits"] = len(open_edits)
     if open_edits:
         fixed, _ = _with_edits(record, open_edits)
-        review["fix_left"] = _fix_left(subsystem, fixed)
+        review["fix_left"] = _fix_left(subsystem, _writable(fixed))
+        if effect := _fix_effect(subsystem, record, fixed):
+            review["fix_effect"] = effect
 
 
 def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
@@ -2663,10 +3121,13 @@ def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
     fixed, applied = _with_edits(record, edits)
     if not applied:
         return None, b"", _tx("amend_nothing")
+    effect = _fix_effect(subsystem, record, fixed)
+    fixed = _writable(fixed)
     if left := _fix_left(subsystem, fixed, only):
         return None, b"", _tx("fix_left", reasons=" ".join(left))
     fixed["amended_from"] = record.get("payload")
-    fixed["summary"] = _tx("summary_fixed", summary=record.get("summary", ""), n=applied)
+    fixed["amended_effect"], fixed["amended_why"] = effect, _fix_why(state, record)
+    fixed["summary"] = _fixed_summary(record.get("summary", ""), applied, effect)
     path = wa._pending_path(subsystem, str(record.get("id")))
     original = path.read_bytes()
     _atomic_write(path, json.dumps(fixed, ensure_ascii=False))
@@ -2733,7 +3194,7 @@ def _touched(subsystem: str, ops: list, payload: dict | None = None) -> list[Pat
 def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
     from tools import write_approval as wa
 
-    ops = (record.get("payload") or {}).get("operations") or []
+    ops = _raw_ops(record)
     apply_ops = [op for op in ops if (op.get("name") or "") in only]
     rest_ops = [op for op in ops if (op.get("name") or "") not in only]
     if not apply_ops:
@@ -2776,11 +3237,46 @@ def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
 def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list,
                     payload: dict | None = None) -> None:
     for f in entry["files"]:
-        path = _home() / f["path"]
-        f["sha_after"] = _sha(path) if path.exists() else None
+        path = _abs(f["path"])
+        f["sha_after"] = _sha(path) if path is not None and path.exists() else None
     for path in sorted(set(_touched(subsystem, ops, payload)) - set(before)):
         entry["files"].append({"path": _rel(path), "snap": None, "before_sha": None,
                                "sha_after": _sha(path), "created": True})
+
+
+def _keep_amended(entry: dict, records: list[dict]) -> None:
+    changed = [r for r in records if r.get("amended_from") is not None]
+    if not changed:
+        return
+    effect = changed[0].get("amended_effect") or {}
+    entry["amended"] = {"added": int(effect.get("added") or 0), "kept": int(effect.get("kept") or 0),
+                        "why": [str(w) for w in changed[0].get("amended_why") or []]}
+    try:
+        folder = _state() / "snapshots" / entry["id"]
+        folder.mkdir(parents=True, exist_ok=True)
+        pairs = [{"written": r["amended_from"], "applied": r.get("payload")} for r in changed]
+        _atomic_write(folder / "amended.json", json.dumps(pairs, ensure_ascii=False))
+    except Exception as exc:
+        _log(f"the as-written copy of {entry.get('record_id')} could not be kept: {exc!r}")
+
+
+def _amended_texts(entry_id: str) -> dict:
+    try:
+        pairs = json.loads((_state() / "snapshots" / entry_id / "amended.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        _log(f"the as-written copy of history entry {entry_id} is unreadable: {exc!r}")
+        return {}
+    written, applied = [], []
+    for pair in pairs if isinstance(pairs, list) else []:
+        old = _raw_ops({"payload": pair.get("written") or {}})
+        new = _raw_ops({"payload": pair.get("applied") or {}})
+        for op, after in zip(old, new[len(new) - len(old):]):
+            if _op_after(op) != _op_after(after):
+                written.append(_op_after(op)[:_OP_TEXT_LIMIT])
+                applied.append(_op_after(after)[:_OP_TEXT_LIMIT])
+    return {"written": written, "applied": applied}
 
 
 @router.post("/decide")
@@ -2824,32 +3320,33 @@ def _decide_locked(body: dict) -> dict:
                             "error": _tx("err_member_approve")})
             continue
 
-        unreviewed, original, state = False, b"", None
-        if decision == "approve":
-            card = _card(subsystem, record, _approved_steps())
-            if str(versions.get(pending_id) or "") != card["version"]:
-                results.append({"id": pending_id, "ok": False, "stale": True, "error": _tx("gate_stale")})
-                continue
-            state = card["state"]
-        if decision == "approve" and body.get("with_edits"):
-            fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")), state)
-            if reason:
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
-            record = fixed
-        elif decision == "approve":
-            reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
-            if reason:
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
+        with _memo():
+            unreviewed, original, state = False, b"", None
+            if decision == "approve":
+                card = _card(subsystem, record, _approved_steps())
+                if str(versions.get(pending_id) or "") != card["version"]:
+                    results.append({"id": pending_id, "ok": False, "stale": True, "error": _tx("gate_stale")})
+                    continue
+                state = card["state"]
+            if decision == "approve" and body.get("with_edits"):
+                fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")), state)
+                if reason:
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
+                record = fixed
+            elif decision == "approve":
+                reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
+                if reason:
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
 
-        restore = (lambda: _restore_record(wa._pending_path(subsystem, pending_id), original)) if original \
-            else (lambda: None)
-        if decision == "approve" and subsystem == wa.SKILLS:
-            if reason := _blocked_approve_reason(record, only):
-                restore()
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
+            restore = (lambda: _restore_record(wa._pending_path(subsystem, pending_id), original)) if original \
+                else (lambda: None)
+            if decision == "approve" and subsystem == wa.SKILLS:
+                if reason := _blocked_approve_reason(record, only):
+                    restore()
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
 
         if unreviewed:
             record["summary"] = _tx("summary_unreviewed", summary=record.get("summary", ""))
@@ -2862,7 +3359,7 @@ def _decide_locked(body: dict) -> dict:
             continue
 
         payload = record.get("payload") or {}
-        entry, before, ops, kept = None, [], payload.get("operations") or [], ""
+        entry, before, ops, kept = None, [], _raw_ops(record), ""
         if decision == "approve":
             before = _touched(subsystem, ops, payload)
             entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": subsystem,
@@ -2886,6 +3383,7 @@ def _decide_locked(body: dict) -> dict:
             continue
         if entry:
             _finalize_entry(entry, subsystem, ops, before, payload)
+            _keep_amended(entry, [record])
             _append(entry)
         else:
             kept = kept or _new_id()
@@ -3071,7 +3569,10 @@ def history(limit: int = 50):
 def _history(limit: int) -> dict:
     entries = []
     for e in _entries(max(1, min(int(limit), MAX_ENTRIES))):
-        entries.append({**e, "undoable": _undoable(e), **({"restorable": True} if _restorable(e) else {})})
+        row = {**e, "undoable": _undoable(e), **({"restorable": True} if _restorable(e) else {})}
+        if isinstance(e.get("amended"), dict) and (entry_id := _valid_id(e.get("id"))):
+            row["amended"] = {**e["amended"], **_amended_texts(entry_id)}
+        entries.append(row)
     every = _entries(MAX_ENTRIES)
     counts = {"applied": sum(1 for e in every if e.get("kind") in UNDOABLE),
               "failed": sum(1 for e in every if e.get("kind") == "failed"),
@@ -3101,22 +3602,22 @@ def _undo_locked(body: dict) -> dict:
 
     targets = []
     for f in entry.get("files", []):
-        rel = _safe_rel(f.get("path"))
-        if not rel:
+        rel = str(f.get("path") or "")
+        path = _abs(rel)
+        if path is None:
             return {"ok": False, "error": _tx("err_unsafe_spec")}
         if f.get("created"):
-            targets.append((f, rel, ""))
+            targets.append((f, rel, path, ""))
             continue
         snap = str(f.get("snap") or "")
         if not snap:
             continue
         if snap in (".", "..") or "/" in snap.replace("\\", "/"):
             return {"ok": False, "error": _tx("err_unsafe_spec")}
-        targets.append((f, rel, snap))
+        targets.append((f, rel, path, snap))
 
     conflicts = []
-    for f, rel, _snap in targets:
-        path = _home() / rel
+    for f, rel, path, _snap in targets:
         if path.exists() and not force and _sha(path) != f.get("sha_after"):
             conflicts.append(rel)
     if conflicts:
@@ -3124,8 +3625,7 @@ def _undo_locked(body: dict) -> dict:
                 "error": _tx("err_conflict")}
 
     restored, removed = [], []
-    for f, rel, snap in targets:
-        dst = _home() / rel
+    for f, rel, dst, snap in targets:
         if f.get("created"):
             if dst.exists():
                 dst.unlink()

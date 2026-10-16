@@ -3,7 +3,7 @@
  *
  * Run: cd tests && node preview.mjs   (writes preview.html, exit 0 = ok)
  *
- * It draws SIX FRAMES in jsdom with the real React — the panel's REAL output, never a hand-drawn
+ * It draws SEVEN FRAMES in jsdom with the real React — the panel's REAL output, never a hand-drawn
  * mock — and embeds the application's own theme block (`_theme_preview.css`), so the colors are the
  * app's:
  *   1. Pending — the blocked record with its details OPEN: the kit PanelMeta inspector, the
@@ -16,7 +16,9 @@
  *   5. Pending — a skill GROUP (1.11.0): one card for three changes to one skill, the review lines
  *      tagged #n, the stale change, the combined Result open, one member's own lines unfolded and
  *      the held "Approve 3 changes" with its Tip.
- *   6. Pending — the narrow 420 px pane.
+ *   6. Pending — a suggested fix that deletes most of the new text (1.11.1): the red alert with the
+ *      count and "Approve as written" as the primary button.
+ *   7. Pending — the narrow 420 px pane.
  *
  * The text resolves exactly like the app does: ONE English bundle registered through
  * `ctx.i18n.register` and read through `usePluginI18n` / `ctx.i18n.t`; there is no picker. The SDK and
@@ -216,6 +218,24 @@ const MEMORY = {
 }
 
 let version = 0
+const FIX_WRITTEN = 'When a tool overlaps the setup, the better one is decided by a measured test on a real task, '
+  + 'and the result names what was measured, on which task, and at what cost.'
+const FIXLOSS = {
+  ...PENDING,
+  memory: [{
+    ...PENDING.memory[0],
+    ops: [{ action: 'add', new: FIX_WRITTEN }],
+    plain: { ...PENDING.memory[0].plain, headline: 'USER.md: 1 note is added', what: ['Adds one profile note'] },
+    review: {
+      status: 'done', verdict: 'fix', summary: 'The note repeats a rule the profile already has.', hard: [],
+      model: 'gpt-5.5', usage: { input: 4120, output: 210, cost_usd: 0, cost_status: 'included' }, edits: 1,
+      fix_effect: { added: 33, kept: 3 },
+      findings: [{ severity: 'fix', kind: 'duplicate', quote: 'the better one is decided by a measured test',
+                   other: 'A measured head-to-head decides.', explain: 'The profile already says this.',
+                   edit: { find: FIX_WRITTEN, replace: 'The better one is decided.', ok: true } }]
+    }
+  }]
+}
 async function frame(actions, pending = PENDING) {
   const registrations = []
   const ctx = {
@@ -314,6 +334,17 @@ frames.push({
     await click(byText(card()?.querySelector('.pa-member'), /^Show lines$/), 'Show lines on #1')
     if (!/Approve 3 changes/.test(card()?.textContent || '')) problems.push('the group card lost its Approve 3 changes')
   }, GROUPED)
+})
+
+frames.push({
+  label: 'Pending — a suggested fix that deletes most of the new text (1.11.1): the alert with its count, Approve as written primary',
+  html: await frame(async hostEl => {
+    const card = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
+    if (!/deletes 30 of the 33 new words/.test(card?.textContent || '')) problems.push('the fix-effect alert is not drawn')
+    if (byText(card, /^Approve as written$/)?.getAttribute('data-variant') !== 'default') {
+      problems.push('Approve as written is not the primary button under a heavy fix')
+    }
+  }, FIXLOSS)
 })
 
 frames.push({

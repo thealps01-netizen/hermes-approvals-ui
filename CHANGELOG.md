@@ -5,6 +5,140 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.4
+
+### Changed
+
+* **The plugin now states the Hermes version it needs: 0.22.0 or newer.** `plugin.yaml` carries
+  `requires_hermes: ">=0.22.0"`, so an older Hermes skips the plugin with "requires hermes >=0.22.0,
+  running …" instead of loading a panel whose approvals fail. Measured: the full gate suite passes on
+  Hermes 0.22.0 and 0.22.2; on 0.21.7 approving a memory `patch` write fails ("Unknown staged
+  action 'patch'"), and before 0.21.6 the skill diff call has the wrong signature.
+* **CI tests the oldest supported Hermes.** The pinned core moved from a September revision that 1.11.1
+  and later no longer ran on to the v0.22.0 release; the sparse checkout gained `pm/`, `providers/` and
+  `hermes_platform/`, and the backend selftest installs `ruamel.yaml`, all of which that core imports.
+* **Install is one step.** The README points to **Settings → Plugins → Install from Git** in the
+  desktop app (or `hermes plugins install`); the app copies the Desktop UI half itself, so the manual
+  copy step is gone.
+* **The backend selftest passes on the Windows CI runner.** Its temp folder has a short 8.3 name
+  (`C:\Users\RUNNER~1\…`) while Hermes reports the same files under their long name, so the
+  outside-home checks compared two spellings of one path. The test now resolves its folder once;
+  reproduced locally with a short-name temp folder (red before, green after). The panel itself was
+  not affected: approve and undo worked in that run.
+
+## 1.12.3
+
+### Fixed
+
+* **A card for a skill outside the Hermes folder no longer breaks the whole panel.** Hermes also loads
+  skills from shared folders (`skills.external_dirs`, for example a folder other AI tools read too). A
+  pending change to such a skill made the list fail with "is not in the subpath of …", so the panel
+  showed only an error and no card at all, the other cards included. Seen on the owner's machine with
+  three delete cards for skills in a shared folder. The panel now shows these cards, keeps a copy of
+  the skill's files before approving (stored under the file's own full path) and Undo puts them back.
+  Undo still refuses any path outside the Hermes folder and every configured skill folder.
+* **Approving a single-change card now keeps an undo copy.** A card with one change (for example
+  "delete skill X", the form Hermes uses for a single write) was applied without a copy of the files
+  it touched, so its Undo had nothing to restore. Two skill deletions approved this way on the owner's
+  machine have no copy in the history. Single-change cards now keep a copy like batch cards do.
+* **A single new skill whose description is too long is offered the shortened description.** The
+  "shorten the description" fix only looked at batch cards; a single new skill was only marked as not
+  applicable.
+* **One card that cannot be shown no longer hides the others.** If a pending change cannot be turned
+  into a card, the panel shows the other cards and names the broken one in the notice at the top, with
+  its id and the reason; nothing is applied and it stays pending (`/skills reject <id>` in chat drops it).
+
+## 1.12.2
+
+### Fixed
+
+* **"Approve with the reviewer's fix" no longer fails when the fix takes back a whole patch.** When a
+  suggested edit removed exactly the text one patch adds (or put back exactly the text it removes), that
+  patch became "replace X with X". Hermes refuses such a patch ("old_string and new_string are
+  identical"), so the whole fixed approval was refused and only plain Approve worked. Seen on the
+  owner's skill clean-up (game-dev follow-up card, 5 patches). Such a patch writes nothing, so it is now
+  left out before the checks and the write; the other patches are applied as fixed. When the fix takes
+  back every change of a card (or of one change in a group), the panel says so and suggests rejecting
+  it, instead of showing a Hermes patch error. Replayed on that card with the app's Python 3.14: 1.12.1
+  refuses, 1.12.2 writes the skill as the other 4 patches leave it.
+
+## 1.12.1
+
+### Fixed
+
+* **Approving a large skill change no longer freezes the panel.** Approving the owner's batch 2 with
+  the reviewer's fix took 73 s (abap-dev, 3 changes) and 32 s (agent-plugin-vetting, 2 changes). The
+  app stops waiting after 30 s, so the panel said "Could not apply the record" although both were
+  applied, and while an approval runs the backend answers nothing else, so the panel looked dead.
+  The approval checks (card, fix, what the fix leaves, its effect) each searched the skill folders
+  again; they now share one memo, which ends before the first write. Replayed on the same records with
+  the app's own Python 3.14: 82.1 s → 18.9 s and 29.0 s → 8.6 s, with byte-identical skills as the result.
+  The remaining time is spent in Hermes' own write path, outside this plugin.
+* **An approval that outlives the app's 30 s wait is reported as what it became.** The panel reads the
+  history (which waits for the backend) and says applied, rejected, failed with its reason, still
+  running, or that nothing was recorded, instead of "Could not apply the record". Bulk approve does the
+  same.
+
+### Corrected
+
+* The 1.12.0 timings below were measured with Python 3.11. The app runs Python 3.14, where Hermes
+  reads skill headers with a slower YAML parser, so the same work is slower there. Timings from 1.12.1
+  on are measured on the app's own interpreter.
+
+## 1.12.0
+
+### Fixed
+
+* **The panel no longer freezes the app when many changes are waiting.** The panel asked for the
+  list every 4 seconds while a review was running and did not wait for the last answer. The backend
+  answers one request at a time; with 5 records and 33 changes each answer took about 2 seconds, so
+  the requests piled up (38 waiting at once), filled the app's shared worker pool and froze the chat
+  list, projects and profiles for 13 minutes. Every poll (list, chip, history, memory) now asks again
+  only after its last answer arrived, and one request looks each skill up once instead of once per
+  check. Measured on the owner's real batch 2–4 proposals (8 records, 271 changes, a scratch copy of
+  the skills): one list request took 37.3 s, now 1.16 s; one record (abap-dev) 1.27 s → 0.22 s.
+* **A whole-file rewrite staged as a patch is shown as a diff.** Hermes stages some rewrites as
+  `patch` with `content` and no `old_string`; its own preview then fails (`patch would fail:
+  old_string is empty`) and the card and the reviewer saw no change at all. Those rewrites are now
+  diffed as the rewrite they are.
+* **Moving text inside a skill is no longer a "duplicate".** The duplicate rule compared a written
+  line with the skill as it was, so a write that moves a line (out of SKILL.md into a reference, or
+  to another place in the same file) locked Approve, and its suggested edit would have deleted the
+  moved line. It now counts the line in the skill as the write leaves it. A contents entry that
+  names its own heading is not a duplicate either. On the owner's batch 2 proposals this removes 6
+  false locks (abap-dev 4, agent-plugin-vetting 2).
+
+### Added
+
+* **Two more rule checks (they lock Approve, each with a suggested edit).** A change to one of your
+  skills must keep `author: <you>` in the header, and a changed description must fit the skill list
+  (60 characters; the list cuts the rest, so the trigger can be lost). New skills were already held
+  to both.
+* **Advice checks (shown on the card, never lock Approve).** SKILL.md growing past 500 lines or about
+  5,000 tokens, a changed description of your own skill that does not read `Use when <trigger>.
+  <what it does>.`, and a line that already sits in another skill. They are computed locally — no
+  model call, no cost — and the reviewer sees them too.
+
+## 1.11.1
+
+### Fixed
+
+* **A suggested fix can no longer delete most of a write without the card saying so.** A reviewer's
+  edit once removed 51 of the 54 words an approved memory write added, and the card only offered
+  **Approve with the fix** as its primary button. The card now states what the fix keeps of the new
+  text it edits (`With the fix, 53 of the 54 new words in the text it edits remain.`). When the fix
+  removes half or more of those words, the line becomes a red alert with the count and percentage,
+  and **Approve as written** becomes the primary button. **Approve with the fix** stays available
+  either way (a flagged card still has a way forward besides Reject, as in 1.9.3). The count is
+  computed locally from the write and the edited write — no model call, no cost. Edits only to text
+  already in the file count as keeping every new word. Groups show one count for the whole set.
+* **A write approved with its fix keeps an audit trail.** The history summary adds the count (`… —
+  approved with 1 suggested edit(s); the fix removed 51 of the 54 new words in the text it edited`),
+  the entry records the count and the reviewer's reasons, and the Applied row offers **Compare with
+  the write as staged**, which shows the text as written beside the text that was applied. The
+  as-written copy lives with the entry's undo copies, so clearing the history removes it; the row
+  then says the copy is no longer kept. Entries written before 1.11.1 show nothing new.
+
 ## 1.11.0
 
 ### Changed

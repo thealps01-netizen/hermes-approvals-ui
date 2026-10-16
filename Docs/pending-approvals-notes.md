@@ -745,6 +745,162 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **`GET /count`** now lists both queues (the core's `list_pending`) to fold groups, still without
   `_LOCK`: it reads record payloads only, never the review files or the history.
 
+## 1.11.1 — the effect of a suggested fix
+
+* **Why (measured on the owner's history, read-only).** A memory patch that added 54 words to the
+  user profile was approved with its suggested edit; the edit kept 3 of them (`the better one`),
+  and nothing on the card said so — **Approve with the fix** was the primary button and the review
+  report is pruned once the record is decided, so the loss was found only by reading the file. The
+  reviewer is advice and varies between runs (see above), so the guard is computed, not asked of it.
+* **The count.** `_fix_effect()` compares, per operation, the text the write puts in place (`content`,
+  `file_content`, `new_string`) with the same field after `_with_edits()`. The words new to the
+  target are the `insert`/`replace` side of a word-level `difflib.SequenceMatcher` between the text
+  it replaces and the written text: `old_text` for a memory patch, the pinned `matched_entry` for a
+  memory replace, `old_string` for a skill patch, and the simulated file (`_view_read`, the same view
+  the 1.11.0 group result uses) for a full rewrite or `write_file`. The kept words are those new words
+  that are still `equal` in the edited text. Operations the fix does not change, and edits only to the
+  existing target (prepended operations), count as keeping everything. A group sums its members over
+  one view played in order. The count is skipped (no line, no change of buttons) above 20,000 words
+  per side or on any error, which is logged.
+* **The card.** `review.fix_effect = {added, kept}`. Removed ≥ half of `added` → a `pa-alert-danger`
+  line with the count and percentage, and `Approve as written` / `Approve N changes` takes the
+  `default` variant while `Approve with the fix` drops to `outline`; below half → a plain note and the
+  1.9.3 order. The fix is never held by this count: 1.9.3 added it so a flagged card has a way forward
+  besides Reject.
+* **The history.** A fixed apply row carries `amended: {added, kept, why}` and its summary the count;
+  the as-written payload and the applied payload go to `snapshots/<entry>/amended.json`, so they are
+  pruned with the entry's undo copies. `/history` adds the differing texts (`written`, `applied`, each
+  capped like the other op texts); a row whose copy is gone gets neither and reads that it is no
+  longer kept.
+
+## 1.12.0 — the panel freeze, rewrite diffs, more checks
+
+* **Why (measured, read-only).** On 2026-10-16 the app froze for 13 minutes with 5 skill records
+  (33 operations) waiting. Two py-spy dumps of the backend showed 17 waiting `GET /pending`, 18
+  `_scan_external` and 3 `/history` calls behind `_LOCK`: `usePolling` used `setInterval`, so a
+  4 s poll fired again while the last request was still open, and one `/pending` looked the same skill
+  folder up once per operation and check (148 lookups, ~2 s). The waiting requests held the app's
+  worker threads (40), so unrelated routes timed out at 30 s while chat kept working.
+* **Polls never overlap.** `usePolling` schedules the next `setTimeout` only after `load()` settles;
+  unmounting clears it. `render_check` holds every request open and fails if any 4 s / 15 s timer
+  (interval or timeout) is scheduled meanwhile.
+* **One lookup per request.** `_memo()` opens a per-request store (a `ContextVar`, so threads never
+  share it) around `/pending`, `POST /reviews` and the input step of each review job. Inside it
+  `_skill_dir`, `_skill_file`, the skill's markdown files, normalised line sets, the frontmatter
+  validator and the core diff are computed once per key. Outside it every call reads fresh. The core
+  diff gets the base file through `skill_pending_diff(record, staged)`, so the core does not search the
+  skill folder again. Bench (scratch home, owner's 8 proposals, 271 operations): 37.3 s → 1.16 s per
+  `/pending`; skill-folder searches 1064 → 8.
+* **Rewrite diffs.** `_core_diff()` sends a `patch` that carries `content` (`_rewrites_skill_md`) to the
+  core as `edit`, which is what Hermes applies; the core's own patch preview refuses an empty
+  `old_string`. Reported upstream separately; the plugin does not edit the core.
+* **Duplicates on the result.** `hard_duplicate` used to test a written line against the skill's
+  lines BEFORE the write, so a move inside one record (write the reference, cut SKILL.md; or two
+  hunks of one file) read as a duplicate and its edit would have dropped the moved line.
+  `_kept_counts()` plays the record on the view and counts each line over the skill's markdown as the
+  write leaves it; a written line is a duplicate when it appears there more often than its own copy
+  (minus one when the target is markdown). `_dup_key()` keeps a heading apart from a list entry with
+  the same words, so a contents list is not a duplicate of its headings. A record the view cannot
+  play falls back to the old comparison. Measured on the owner's batch 2 proposals: 6 false locks → 0.
+* **Rule checks on the result.** `_skill_result_hard()` plays the record on the view and compares
+  SKILL.md before and after: a skill that carried the owner's `author` must keep it (edit: put the
+  line back into the rewrite), and a description that changed must fit `SKILL_PROMPT_DESC_LIMIT`
+  (edit: the first sentence shortened, only when the description line is in the write). Creates are
+  untouched: `hard_author` and the description fix already cover them.
+* **Advice.** `_advice_checks()` → `review.advice`, drawn as muted `Check` rows under the findings
+  and passed to the reviewer as "advice, does not lock Approve". Size: SKILL.md grows past 500 lines
+  or ~5,000 tokens (chars/4). Form: the owner's changed description against
+  `Use when <trigger>. <what it does>.` Elsewhere: a written line (≥ 60 chars without links, not part
+  of `old_string`) found in another skill's markdown; the line index is rebuilt only when a file's
+  mtime or size changes. A planned machine-path check was dropped (the owner's provenance guard
+  already refuses them at write time), and so was a referenced-file check (31 references in the owner's
+  skills, 0 real misses, every "miss" pointed into another skill or tool).
+
+## 1.12.1 — approve under one memo, late answers read from the history
+
+* **Why (measured, read-only).** Approving batch 2 with the reviewer's fix ran 73 s and 32 s on the
+  live backend (`desktop.log` request times; history entries `b0ba0b3e`, `e96cba2b`). The app's
+  request timeout is 30 s, so the panel showed `applyError` for two writes that had landed, and every
+  other route waited behind `_LOCK`. A replay on a scratch home (pre-images from those entries'
+  snapshots, the same five records, the rebuilt reviewer edits) on the app's interpreter
+  (`tools/python-3.14.7`, through `hermes_bootstrap`) gave 82.1 s / 29.0 s with the installed 1.12.0.
+  1.12.0's bench used the core's 3.11 venv, where the frontmatter parser is much faster; that is why
+  the freeze looked fixed.
+* **One memo per gate, closed before the write.** `_group_decide` runs `_group_checked()` (card,
+  `_group_with_edits`, `_group_left`, `_group_effect`, `_group_gate`) inside `_memo()`, then
+  `_group_apply` outside it. The single-record path in `_decide_locked` does the same. Keeping the
+  write outside matters: the memo caches skill files, folders and the line index by name, so a read
+  after a write inside it would see the old disk. Selftest: one group approve looks `grp-skill` up
+  once before its first write (it was once per check), and `_apply` never runs with a memo open; both
+  were checked against mutants (memo removed → the lookup count fails; apply wrapped → the memo check
+  fails). Replay: 18.9 s / 8.6 s, skills byte-identical to the live result (sha256 prefix
+  `bfe83326f3f703c7`). A folder-name index on top of the memo saved nothing (18.1 s → 18.1 s) and was
+  dropped. The rest is the core's `skill_manage` path (`_find_skill` per operation), not this plugin.
+* **Late answers.** `decideAll()` wraps `api.decide`; when the request throws, `settled()` reads
+  `/history` (it queues behind the same `_LOCK`, so it answers when the decide is done) and maps each
+  item to the newest entry since the click: by `record_id`, a group's member ids or `group`. `apply` →
+  `lateApplied`, `rejected` → the normal reject toast, `failed` → its summary, no entry → `lateNothing`,
+  history unanswered → `lateRunning` (a warning; the card re-reads the list). Single, group and bulk
+  decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
+  failed is caught.
+
+## 1.12.3 — skills outside the Hermes home, single-operation records
+
+* **Why (seen live).** Three delete cards for skills in `~/.agents/skills` (a `skills.external_dirs`
+  folder) made `/pending` answer 500: `_review_snapshot` keys the review on `_rel(path)`, and `_rel`
+  was `path.relative_to(_home())`, which raises for any path outside the home. `_pending` built every
+  card in one loop, so that one exception emptied the whole panel. The same day, the approved
+  `delete skill 'skill-creator'` (and earlier `hermes-bot-fleet`) landed in the history with
+  `files: []`: the `/decide` path read `payload["operations"]`, which a single-operation record (the
+  shape the core stages for one write) does not have, so `_touched` saw no operation and nothing was
+  copied.
+* **Skill roots come from the host.** `_skill_roots()` is the home `skills/` folder plus
+  `agent.skill_utils.get_all_skills_dirs()` (create_dir and external dirs, in the host's order), pinned
+  in `tests/contract_core.py`. `_skill_files(name)` returns the first root that holds the skill — the
+  same precedence as the core's lookup — and `_skill_files()` (the watch list for out-of-band edits)
+  stays home-only on purpose: other tools update shared folders, and those updates are not Hermes
+  writes that skipped the gate.
+* **Paths.** `_rel` keeps the home-relative form for home files and stores the absolute POSIX path
+  for a file inside an outside root; anything else raises `err_outside_roots`. `_abs(stored)` is the
+  one inverse used by undo, rollback and `_finalize_entry`: a relative path goes through `_safe_rel`,
+  an absolute one must lie strictly inside a currently configured outside root after normalisation
+  (a `..` escape normalises out of it), else `err_unsafe_spec`. `_group_rollback` removes emptied
+  folders up to the file's own root, not the home `skills/` folder.
+* **Single-operation records.** Every reader of a record's operations goes through `_raw_ops`
+  (`operations`, or the payload itself when it carries an `action`): the `/decide` path, the subset
+  approve, the description fix and its apply. `_nothing_left` still reads `operations == []` on
+  purpose (a fix that emptied a batch).
+* **One broken card.** `_pending` builds each card in its own `try`; a failing card (or a failing
+  group, all its members) is left out and named in `issues` with `card_failed`. Its review state stays
+  in `live`, so `_review_prune` does not drop it.
+* **Checks.** `_outside_home_selftest`: an outside-root delete renders, applies, keeps both files under
+  their absolute paths and undoes byte-identical; a home single-operation delete and patch keep copies
+  and undo; a card and a group that raise are named while the rest render; three forged history paths
+  (outside, `..` escape, the root itself) are refused and the victim file is untouched; the group
+  rollback restores and stops at the root; a single-operation create gets the description fix. Before
+  the change the outside-root case fails with the live error text.
+
+## 1.12.2 — a fix that turns a patch into a no-op
+
+* **Why (seen live).** Batch 3's game-dev follow-up (5 patches) could only be approved plainly. The
+  reviewer's one edit deleted the line patch 5 adds, so `_with_edits` left patch 5 as `old_string ==
+  new_string`; the core's `fuzzy_find_and_replace` rejects that (`IDENTICAL_STRINGS_ERROR`), the dry
+  run in `_fix_left` reported it, and the approve was refused. An edit that puts back what a patch
+  removes, or deletes what it adds, always produces this, and both are normal reviewer fixes.
+* **`_writable(fixed)`** drops every `patch` whose `new_string == old_string` (it writes nothing). It
+  runs after `_fix_effect`/`_group_effect` (the effect still counts the words the fix removed) and
+  before `_fix_left`/`_group_left` and the write, in both the listing (`_mark_edits`,
+  `_group_mark_edits`) and the approve path (`_stage_fixed`, `_group_checked`), so the card shows the
+  same answer the approve gives. A record left with `operations == []` is named by `fix_undoes_all`
+  (single: the whole reason; group: `#n ·` per member) instead of a core error.
+* **Checks.** Selftest: a batch where the fix empties one of two patches is approved and writes the
+  other; a fix that takes back the only patch is refused with `fix_undoes_all` and writes nothing; the
+  same two cases inside a group. Seven mutants (each guard removed in turn, plus `_no_op` never true)
+  all fail the selftest. Replay of the live card on a scratch home with the app's Python 3.14 (stored
+  card operations and pre-image, the reviewer's edit rebuilt from the session; the stored review had
+  been cleaned up after approval): installed 1.12.1 refuses with the identical-strings error, 1.12.2
+  writes base + patches 1–4, byte-identical.
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.

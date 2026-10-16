@@ -131,12 +131,16 @@ const BUNDLES = {
         skipWarn: 'This write was not checked against your rules. Apply it anyway?',
         title: 'Pre-review',
         rule: 'Rule check',
+        check: 'Check',
         edit: 'Suggested edit',
         inWrite: 'In the write',
         notes: n => `${plural(n, 'minor note', 'minor notes')} under Details`,
         fixHint: 'Writes the change with the suggested edits shown above applied. The rule checks run again on the edited text first.',
         fixLeft: why => `The suggested edits do not clear every problem: ${why}`,
         fixCovers: (n, all) => `The fix covers ${n} of ${all} problems; the others have no edit and stay as advice.`,
+        fixKeeps: (kept, added) => `With the fix, ${kept} of the ${added} new words in the text it edits remain.`,
+        fixRemoves: (removed, added, pct) => `The suggested fix deletes ${removed} of the ${added} new words ` +
+          `in the text it edits (${pct}%). Read it before approving with it; Approve as written keeps the write.`,
         unverified: 'Unverified quote',
         cut: list => `The reviewer saw a shortened input; it left out ${list}.`,
         cutPart: (chars, part) => `${plural(chars, 'character', 'characters')} of ${part}`,
@@ -212,6 +216,14 @@ const BUNDLES = {
         notUndoable: 'This record cannot be undone',
         restored: 'Restored',
         changesHide: 'Hide changes',
+        fixEffect: (removed, added) => `The suggested fix removed ${removed} of the ${added} new words in the text ` +
+          'it edited.',
+        asWritten: 'Compare with the write as staged',
+        asWrittenHide: 'Hide the comparison',
+        written: n => `As written (${grouped(n)} characters)`,
+        applied: n => `Applied (${grouped(n)} characters)`,
+        why: text => `Reviewer: ${text}`,
+        noCopy: 'The as-written copy is no longer kept.',
       },
       empty: {
         errorTitle: 'The pane could not read its data',
@@ -267,6 +279,9 @@ const BUNDLES = {
         saved: 'Saved — you can undo it from the “Applied” tab',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
+        lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
+        lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
+        lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
@@ -529,7 +544,9 @@ function usePolling(load, ms) {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let alive = true
+    let h = 0
     const run = async () => {
+      if (!alive) return
       try {
         const d = await load()
         if (alive) {
@@ -540,12 +557,13 @@ function usePolling(load, ms) {
       } catch (e) {
         if (alive) setError(e)
       }
+      clearTimeout(h)
+      if (alive) h = setTimeout(run, ms)
     }
     void run()
-    const h = setInterval(run, ms)
     return () => {
       alive = false
-      clearInterval(h)
+      clearTimeout(h)
     }
   }, [ms, tick])
   return { data, error, at, refresh: () => setTick(t => t + 1) }
@@ -798,11 +816,16 @@ const reviewFacts = review => {
     major,
     doubtful: findings.filter(f => weighty(f) && f.unverified),
     notes: findings.filter(f => f.severity === 'note'),
+    advice: review.advice || [],
     edits: review.edits || 0,
     fixLeft: review.fix_left || [],
+    effect: review.fix_effect && Number(review.fix_effect.added) > 0 ? review.fix_effect : null,
     unfixed: [...hard, ...major].filter(x => !x.edit?.ok).length
   }
 }
+const fixHeavy = effect => Boolean(effect) && (effect.added - effect.kept) * 2 >= effect.added
+const approveVariants = (edits, effect) => !edits ? ['default', 'default']
+  : fixHeavy(effect) ? ['default', 'outline'] : ['outline', 'default']
 const cardState = (hard, stale, fix, failedBefore, status, verdict) => (hard ? ['pa.status.rule', 'destructive']
   : stale ? ['pa.status.stale', 'destructive']
     : fix ? ['pa.status.fixFirst', 'warn']
@@ -821,11 +844,37 @@ const alertBox = (key, children, danger) =>
 const told = (t, decision, one) => {
   if (one.ok && decision === 'reject' && one.history_id) return { kind: 'success', message: t('pa.notify.rejected') }
   if (one.ok) return { kind: 'success', message: one.message || t('pa.notify.saved') }
-  if (one.stale) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
+  if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
+const settled = async (t, items, since) => {
+  let entries
+  try {
+    entries = (await api.history())?.entries || []
+  } catch {
+    entries = null
+  }
+  return items.map(item => {
+    if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
+    const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
+    const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
+    const e = entries.find(x => (x.ts || 0) >= since && ours(x))
+    if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
+    if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
+    return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
+      : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
+  })
+}
+const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
+  const since = Date.now() / 1000 - 2
+  try {
+    return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
+  } catch {
+    return { ok: true, results: await settled(t, items, since) }
+  }
+}
 const decideOne = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  const res = await api.decide(subsystem, items, decision, only, skipReview, withEdits)
+  const res = await decideAll(t, subsystem, items, decision, only, skipReview, withEdits)
   const one = (res?.results || [])[0] || {}
   host.notify(told(t, decision, one))
   return one
@@ -1019,7 +1068,7 @@ function Change({ op, where, t, badge }) {
 
 function ReviewSection({ review, facts, tone, busy, onAgain }) {
   const t = usePluginI18n(ID)
-  const { status, hard, major, doubtful, notes, edits, fixLeft, unfixed } = facts
+  const { status, hard, major, doubtful, notes, edits, fixLeft, unfixed, effect, advice } = facts
   const usage = review.usage || {}
   const meta = [
     review.model,
@@ -1094,7 +1143,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       status === 'unassigned' ? gist('unassigned', t('pa.review.unassigned')) : null,
       status === 'failed' ? gist('failed', t('pa.review.failed', review.error || '')) : null,
       status === 'done' ? gist('summary', review.summary || t('pa.review.empty')) : null,
-      hard.length || major.length
+      hard.length || major.length || advice.length
         ? jsx('div', {
             className: 'pa-majors',
             children: [
@@ -1106,7 +1155,8 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
                   quote('q', t('pa.review.inWrite'), f.quote),
                   quote('o', t('pa.review.other'), f.other)
                 ])
-              })
+              }),
+              ...advice.map((a, i) => problem(`a${i}`, t('pa.review.check'), 'muted', `${tagOf(a)}${a.text}`))
             ]
           }, 'majors')
         : null,
@@ -1115,6 +1165,13 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
         : null,
       ...asides,
       edits > 0 && fixLeft.length ? alertBox('left', t('pa.review.fixLeft', fixLeft.join(' ')), true) : null,
+      edits > 0 && effect && fixHeavy(effect)
+        ? alertBox('effect', t('pa.review.fixRemoves', effect.added - effect.kept, effect.added,
+            Math.round(100 * (effect.added - effect.kept) / effect.added)), true)
+        : null,
+      edits > 0 && effect && !fixHeavy(effect)
+        ? jsx('div', { className: 'pa-note', children: t('pa.review.fixKeeps', effect.kept, effect.added) }, 'effect')
+        : null,
       edits > 0 && !fixLeft.length && unfixed > 0
         ? jsx('div', { className: 'pa-note', children: t('pa.review.fixCovers', edits, edits + unfixed) }, 'covers')
         : null,
@@ -1140,7 +1197,8 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const refused = plain.refused || []
   const review = item.review || {}
   const facts = reviewFacts(review)
-  const { status, hard, notes, edits, fixLeft } = facts
+  const { status, hard, notes, edits, fixLeft, effect } = facts
+  const [asIsVariant, fixedVariant] = approveVariants(edits, effect)
   const ops = item.ops || []
   const reviewLocked = !reviewed(item)
   const heldByRule = Boolean(fix) || refused.length > 0
@@ -1169,7 +1227,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
     const r = await run(key, () => decideOne(t, subsystem, [item], decision, only, skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale) onChanged()
+    else if (r?.stale || r?.late) onChanged()
   }
   const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
   const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
@@ -1296,10 +1354,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                 onClick: () => void decideAndLeave('reject'),
                 children: t('pa.btn.reject')
               }, 'reject'),
-              approveBtn('approve', t(edits ? 'pa.btn.approveAsIs' : 'pa.btn.approve'), edits ? 'outline' : 'default',
+              approveBtn('approve', t(edits ? 'pa.btn.approveAsIs' : 'pa.btn.approve'), asIsVariant,
                 approveBlocked, heldWhy, () => decideAndLeave('approve')),
               edits
-                ? approveBtn('fixed', t('pa.btn.approveFixed'), 'default', fixBlocked, fixWhy,
+                ? approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked, fixWhy,
                     () => decideAndLeave('approve', [], false, true))
                 : null
             ]
@@ -1327,7 +1385,8 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const n = parts.length
   const review = item.review || {}
   const facts = reviewFacts(review)
-  const { status, hard, notes, edits, fixLeft } = facts
+  const { status, hard, notes, edits, fixLeft, effect } = facts
+  const [asIsVariant, fixedVariant] = approveVariants(edits, effect)
   const stale = item.stale || []
   const fixes = parts.filter(p => (p.plain || {}).fix)
   const failed = parts.filter(p => (p.plain || {}).last_error)
@@ -1350,7 +1409,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
     const r = await run(key, () => decideOne(t, 'skills', [item], decision, [], skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale) onChanged()
+    else if (r?.stale || r?.late) onChanged()
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
@@ -1528,10 +1587,10 @@ function GroupCard({ item, onChanged, picked, onPick }) {
                 onClick: () => void decideGroup('reject'),
                 children: t('pa.grp.rejectAll', n)
               }, 'reject'),
-              heldButton(busy, t, 'approve', t('pa.grp.approve', n), edits ? 'outline' : 'default',
+              heldButton(busy, t, 'approve', t('pa.grp.approve', n), asIsVariant,
                 groupBlocked, heldWhy, () => decideGroup('approve')),
               edits
-                ? heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), 'default', withFixBlocked, withFixWhy,
+                ? heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, withFixBlocked, withFixWhy,
                     () => decideGroup('approve', false, true))
                 : null
             ]
@@ -1548,9 +1607,26 @@ function HistoryCard({ entry, onChanged, onRestored }) {
   const [conflict, setConflict] = useState(null)
   const [busy, setBusy] = useState(false)
   const [fold, setFold] = useState(false)
+  const [cmp, setCmp] = useState(false)
   const kindKey = HIST_KEY[entry.kind]
   const files = entry.files || []
   const changes = entry.changes || []
+  const amended = entry.amended && typeof entry.amended === 'object' ? entry.amended : null
+  const written = amended ? amended.written : []
+  const applied = (amended && amended.applied) || []
+  const sides = (text, i) => jsxs('div', {
+    className: 'pa-cmp',
+    children: [
+      jsx(Field, {
+        label: t('pa.hist.written', text.length),
+        children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: text }, 'text')
+      }, 'written'),
+      jsx(Field, {
+        label: t('pa.hist.applied', String(applied[i] || '').length),
+        children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: String(applied[i] || '') }, 'text')
+      }, 'applied')
+    ]
+  }, `p${i}`)
   const restorable = entry.kind === 'rejected' && entry.restorable === true && !entry.restored
 
   const undo = async force => {
@@ -1637,6 +1713,40 @@ function HistoryCard({ entry, onChanged, onRestored }) {
           }, 'changes')
         : null,
 
+      amended && Number(amended.added) > 0
+        ? jsx('div', {
+            className: 'pa-aside',
+            'data-amended': 'effect',
+            children: t('pa.hist.fixEffect', amended.added - amended.kept, amended.added)
+          }, 'effect')
+        : null,
+
+      amended
+        ? jsxs('div', {
+            className: 'pa-hist-list',
+            'data-amended': 'copy',
+            children: [
+              !Array.isArray(written)
+                ? jsx('div', { className: 'pa-aside', children: t('pa.hist.noCopy') }, 'gone')
+                : written.length
+                  ? jsx(Button, {
+                      variant: 'text',
+                      size: 'xs',
+                      style: { alignSelf: 'flex-start' },
+                      'aria-expanded': cmp,
+                      onClick: () => setCmp(v => !v),
+                      children: t(cmp ? 'pa.hist.asWrittenHide' : 'pa.hist.asWritten')
+                    }, 'cmp')
+                  : null,
+              ...(cmp && Array.isArray(written) ? [
+                ...(amended.why || []).map((w, i) => jsx('div', { className: 'pa-aside', children: t('pa.hist.why', w) },
+                  `w${i}`)),
+                ...written.map((text, i) => sides(String(text || ''), i))
+              ] : [])
+            ]
+          }, 'amended')
+        : null,
+
       jsxs('div', {
         style: { display: 'flex', flexDirection: 'column', gap: G.xxs },
         children: [
@@ -1708,7 +1818,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
         const group = chosen.filter(c => c.subsystem === subsystem).map(c => c.item)
         if (!group.length) continue
         try {
-          const res = await api.decide(subsystem, group, decision)
+          const res = await decideAll(t, subsystem, group, decision)
           const results = res?.results || []
           ok += results.filter(r => r.ok).length
           bad.push(...results.filter(r => !r.ok)
