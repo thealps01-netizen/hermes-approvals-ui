@@ -945,6 +945,158 @@ def _groups_selftest(tmp: Path) -> None:
     _REVIEW_GATE = False
 
 
+def _outside_home_selftest(tmp: Path) -> None:
+    """Skills outside HERMES_HOME and single-operation records (1.12.3).
+
+    Seen on the owner's machine: three delete cards for skills in a shared folder outside the Hermes
+    home (`skills.external_dirs`) made /pending answer 500, so the whole panel showed an error, and
+    a single-operation delete approved in the panel kept no copy, so Undo had nothing to restore.
+    """
+    from tools import write_approval as wa
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = True
+    _PANEL_SKIPS_REVIEW[0] = True
+    pend = tmp / "pending" / "skills"
+    pend.mkdir(parents=True, exist_ok=True)
+    ext = Path(tempfile.mkdtemp(prefix="pending-approvals-ext-"))
+    config = tmp / "config.yaml"
+    saved_config = config.read_bytes() if config.exists() else None
+    config.write_text("skills:\n  external_dirs:\n    - " + json.dumps(ext.as_posix()) + "\n", encoding="utf-8")
+
+    def stage(rid: str, payload: dict) -> None:
+        (pend / f"{rid}.json").write_text(json.dumps({
+            "id": rid, "subsystem": "skills", "action": payload.get("action"), "origin": "assistant_tool",
+            "summary": f"{payload.get('action')} skill '{payload.get('name')}'", "created_at": time.time(),
+            "payload": payload}, ensure_ascii=False), encoding="utf-8")
+
+    def tree(folder: Path) -> dict:
+        return {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+
+    def entry_for(rid: str) -> dict:
+        return next(e for e in _entries() if e.get("record_id") == rid and e.get("kind") == "apply")
+
+    shared = ext / "shared-skill"
+    (shared / "references").mkdir(parents=True)
+    (shared / "SKILL.md").write_text("---\nname: shared-skill\ndescription: Read by another tool too.\n---\n\n"
+                                     "Body\n", encoding="utf-8")
+    (shared / "references" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    shared_before = tree(shared)
+
+    stage("e0e0e001", {"action": "delete", "name": "shared-skill"})
+    listing = pending()
+    assert isinstance(listing, dict), f"/pending failed on a skill outside HERMES_HOME: {getattr(listing, 'body', b'')!r}"
+    assert any(i["id"] == "e0e0e001" for i in listing["skills"]), "the outside-home card is missing"
+    done = _as_panel({"subsystem": "skills", "ids": ["e0e0e001"], "decision": "approve"})
+    assert done["results"][0]["ok"], done
+    assert not shared.exists(), "the approved delete did not run"
+    kept = entry_for("e0e0e001")
+    assert sorted(f["path"] for f in kept["files"]) == sorted((shared / r).as_posix() for r in shared_before), \
+        f"an outside-home delete kept no copy of its files: {kept['files']}"
+    back = undo({"id": kept["id"]})
+    assert back["ok"] and len(back["restored"]) == len(shared_before), back
+    assert tree(shared) == shared_before, "Undo did not put the outside-home skill back byte for byte"
+
+    solo = tmp / "skills" / "cat" / "solo-skill"
+    (solo / "scripts").mkdir(parents=True)
+    (solo / "SKILL.md").write_text("---\nname: solo-skill\ndescription: One file and a script.\n---\n\nBody\n",
+                                   encoding="utf-8")
+    (solo / "scripts" / "run.py").write_text("print('run')\n", encoding="utf-8")
+    solo_before = tree(solo)
+    stage("e0e0e002", {"action": "delete", "name": "solo-skill"})
+    assert _as_panel({"subsystem": "skills", "ids": ["e0e0e002"], "decision": "approve"})["results"][0]["ok"]
+    assert not solo.exists(), "the approved single-operation delete did not run"
+    solo_entry = entry_for("e0e0e002")
+    assert len(solo_entry["files"]) == len(solo_before), \
+        f"a single-operation delete kept no copy, so Undo has nothing to restore: {solo_entry['files']}"
+    assert undo({"id": solo_entry["id"]})["ok"] and tree(solo) == solo_before, "single-operation delete not undone"
+
+    stage("e0e0e003", {"action": "patch", "name": "solo-skill", "old_string": "Body", "new_string": "Body two"})
+    assert _as_panel({"subsystem": "skills", "ids": ["e0e0e003"], "decision": "approve"})["results"][0]["ok"]
+    assert "Body two" in (solo / "SKILL.md").read_text(encoding="utf-8")
+    assert undo({"id": entry_for("e0e0e003")["id"]})["ok"] and tree(solo) == solo_before, \
+        "a single-operation patch was not undone"
+
+    stage("e0e0e004", {"action": "delete", "name": "solo-skill"})
+    stage("e0e0e005", {"action": "patch", "name": "shared-skill", "old_string": "Body", "new_string": "Other"})
+    real_card = _card
+    globals()["_card"] = lambda subsystem, record, *a: (
+        (_ for _ in ()).throw(RuntimeError("card exploded")) if record.get("id") == "e0e0e004"
+        else real_card(subsystem, record, *a))
+    try:
+        survived = pending()
+    finally:
+        globals()["_card"] = real_card
+    assert isinstance(survived, dict), "one broken card still takes the whole list down"
+    ids = [i["id"] for i in survived["skills"]]
+    assert "e0e0e005" in ids and "e0e0e004" not in ids, ids
+    told = [t for t in survived["issues"] if "e0e0e004" in t]
+    assert told and "card exploded" in told[0] and "/skills reject e0e0e004" in told[0], survived["issues"]
+
+    stage("e0e0e007", {"action": "patch", "name": "solo-skill", "old_string": "Body", "new_string": "Third"})
+    real_group = _group_card
+    globals()["_group_card"] = lambda *a: (_ for _ in ()).throw(RuntimeError("group exploded"))
+    try:
+        survived = pending()
+    finally:
+        globals()["_group_card"] = real_group
+    assert [i["id"] for i in survived["skills"]] == ["e0e0e005"] and not survived["groups"]["skills"], survived
+    assert sum("group exploded" in t for t in survived["issues"]) == 2, survived["issues"]
+    for rid in ("e0e0e004", "e0e0e005", "e0e0e007"):
+        (pend / f"{rid}.json").unlink()
+
+    outside = Path(tempfile.mkdtemp(prefix="pending-approvals-out-"))
+    victim = outside / "victim.md"
+    victim.write_text("untouched\n", encoding="utf-8")
+    for n, bad in enumerate((victim.as_posix(), (ext / ".." / outside.name / "victim.md").as_posix(),
+                             ext.as_posix())):
+        forged = f"e0e0bee{n}"
+        _append({"id": forged, "ts": time.time(), "kind": "apply", "subsystem": "skills",
+                 "summary": "forged path", "files": [{"path": bad, "snap": "0", "before_sha": None,
+                                                     "sha_after": None, "created": True}], "undone": False})
+        refused = undo({"id": forged})
+        assert not refused["ok"] and refused["error"] == _tx("err_unsafe_spec"), (bad, refused)
+        _write_undone(forged)
+    assert victim.read_text(encoding="utf-8") == "untouched\n", "Undo deleted a file outside every skill folder"
+
+    grp = ext / "outside-grp"
+    grp.mkdir()
+    (grp / "SKILL.md").write_text("---\nname: outside-grp\ndescription: x\n---\n\nKeep\n", encoding="utf-8")
+    ops = [{"action": "write_file", "name": "outside-grp", "file_path": "references/new.md", "file_content": "n\n"}]
+    before = _touched(wa.SKILLS, ops)
+    roll = {"id": _new_id(), "files": []}
+    roll["files"] = [{"path": _rel(p), "snap": _store_copy(p, roll["id"], n)} for n, p in enumerate(before)]
+    assert [f["path"] for f in roll["files"]] == [(grp / "SKILL.md").as_posix()], roll["files"]
+    (grp / "SKILL.md").write_text("changed\n", encoding="utf-8")
+    (grp / "references").mkdir()
+    (grp / "references" / "new.md").write_text("n\n", encoding="utf-8")
+    _group_rollback(roll, before, ops, {})
+    assert (grp / "SKILL.md").read_text(encoding="utf-8").endswith("Keep\n"), "rollback did not restore the file"
+    assert not (grp / "references").exists() and grp.exists() and ext.exists(), \
+        "rollback must remove what the group created and stop at the skill's own folder"
+
+    long_desc = "A description that runs far past the limit " * 8
+    stage("e0e0e006", {"action": "create", "name": "single-long", "category": "cat",
+                       "content": "---\nname: single-long\ndescription: " + long_desc + "\n---\n\nbody\n"})
+    single = wa.get_pending(wa.SKILLS, "e0e0e006")
+    assert _skill_description_fix(single), "a single-operation create is not offered the description fix"
+    assert _blocked_approve_reason(single, []), "a single-operation create with a long description is not held"
+    ok, detail = _apply_description_fix(single)
+    assert ok, detail
+    fixed = wa.get_pending(wa.SKILLS, "e0e0e006")
+    assert not _skill_description_fix(fixed) and not _skill_problem(fixed["payload"]["content"]), fixed["payload"]
+    (pend / "e0e0e006.json").unlink()
+
+    shutil.rmtree(ext, ignore_errors=True)
+    shutil.rmtree(outside, ignore_errors=True)
+    if saved_config is None:
+        config.unlink(missing_ok=True)
+    else:
+        config.write_bytes(saved_config)
+    _REVIEW_GATE = False
+    _PANEL_SKIPS_REVIEW[0] = False
+
+
 def wa_get(subsystem: str, rid: str) -> dict:
     from tools import write_approval as wa
 
@@ -1011,7 +1163,8 @@ def _selftest() -> int:
     long_item = next(i for i in pending()["skills"] if i["id"] == "dddddddd")
     assert long_item["plain"]["stale"], long_item["plain"]
     assert "cannot be applied" in long_item["plain"]["stale"][0], long_item["plain"]["stale"]
-    assert long_item["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), long_item["plain"]["recommendation"]
+    assert long_item["plain"].get("fix"), "a single-operation create is not offered the description fix"
+    assert long_item["plain"]["recommendation"]["verdict"] == _tx("rec_fix"), long_item["plain"]["recommendation"]
     (tmp / "pending" / "skills" / "eeeeeeee.json").write_text(json.dumps({
         "id": "eeeeeeee", "subsystem": "skills", "action": "create", "summary": "create ok-description",
         "origin": "background_review", "created_at": time.time(),
@@ -1649,6 +1802,7 @@ def _selftest() -> int:
     _review_selftest(tmp)
     _integrity_selftest(tmp)
     _groups_selftest(tmp)
+    _outside_home_selftest(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "
@@ -1671,7 +1825,10 @@ def _selftest() -> int:
           "card with one review, a conflict between them shows before approving, the rule checks run on the "
           "combined result, a member is never approved alone, a group applies whole or not at all, one Undo and "
           "one Restore cover the group, a member is rejected on its own), and the fix effect (1.11.1: the count of "
-          "new words a suggested fix keeps, on the card, in the history summary and with the as-written copy)")
+          "new words a suggested fix keeps, on the card, in the history summary and with the as-written copy), and "
+          "outside-home skills (1.12.3: a skill in a configured outside folder renders, applies with a copy and "
+          "undoes; a single-operation delete or patch keeps an undo copy; a broken card or group is named while "
+          "the rest render; forged history paths are refused; a single new skill gets the description fix)")
     return 0
 
 

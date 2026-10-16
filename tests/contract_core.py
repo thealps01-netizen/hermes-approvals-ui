@@ -76,7 +76,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
     },
     "agent/skill_utils.py": {
         "names": (),
-        "calls": {"is_excluded_skill_path": (1, ()), "parse_frontmatter": (1, ())},
+        "calls": {"is_excluded_skill_path": (1, ()), "parse_frontmatter": (1, ()), "get_all_skills_dirs": (0, ())},
     },
     "tools/fuzzy_match.py": {
         "names": (),

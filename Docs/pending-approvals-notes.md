@@ -844,6 +844,42 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.12.3 — skills outside the Hermes home, single-operation records
+
+* **Why (seen live).** Three delete cards for skills in `~/.agents/skills` (a `skills.external_dirs`
+  folder) made `/pending` answer 500: `_review_snapshot` keys the review on `_rel(path)`, and `_rel`
+  was `path.relative_to(_home())`, which raises for any path outside the home. `_pending` built every
+  card in one loop, so that one exception emptied the whole panel. The same day, the approved
+  `delete skill 'skill-creator'` (and earlier `hermes-bot-fleet`) landed in the history with
+  `files: []`: the `/decide` path read `payload["operations"]`, which a single-operation record (the
+  shape the core stages for one write) does not have, so `_touched` saw no operation and nothing was
+  copied.
+* **Skill roots come from the host.** `_skill_roots()` is the home `skills/` folder plus
+  `agent.skill_utils.get_all_skills_dirs()` (create_dir and external dirs, in the host's order), pinned
+  in `tests/contract_core.py`. `_skill_files(name)` returns the first root that holds the skill — the
+  same precedence as the core's lookup — and `_skill_files()` (the watch list for out-of-band edits)
+  stays home-only on purpose: other tools update shared folders, and those updates are not Hermes
+  writes that skipped the gate.
+* **Paths.** `_rel` keeps the home-relative form for home files and stores the absolute POSIX path
+  for a file inside an outside root; anything else raises `err_outside_roots`. `_abs(stored)` is the
+  one inverse used by undo, rollback and `_finalize_entry`: a relative path goes through `_safe_rel`,
+  an absolute one must lie strictly inside a currently configured outside root after normalisation
+  (a `..` escape normalises out of it), else `err_unsafe_spec`. `_group_rollback` removes emptied
+  folders up to the file's own root, not the home `skills/` folder.
+* **Single-operation records.** Every reader of a record's operations goes through `_raw_ops`
+  (`operations`, or the payload itself when it carries an `action`): the `/decide` path, the subset
+  approve, the description fix and its apply. `_nothing_left` still reads `operations == []` on
+  purpose (a fix that emptied a batch).
+* **One broken card.** `_pending` builds each card in its own `try`; a failing card (or a failing
+  group, all its members) is left out and named in `issues` with `card_failed`. Its review state stays
+  in `live`, so `_review_prune` does not drop it.
+* **Checks.** `_outside_home_selftest`: an outside-root delete renders, applies, keeps both files under
+  their absolute paths and undoes byte-identical; a home single-operation delete and patch keep copies
+  and undo; a card and a group that raise are named while the rest render; three forged history paths
+  (outside, `..` escape, the root itself) are refused and the victim file is untouched; the group
+  rollback restores and stops at the root; a single-operation create gets the description fix. Before
+  the change the outside-root case fails with the live error text.
+
 ## 1.12.2 — a fix that turns a patch into a no-op
 
 * **Why (seen live).** Batch 3's game-dev follow-up (5 patches) could only be approved plainly. The

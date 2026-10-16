@@ -98,8 +98,42 @@ def _state() -> Path:
     return d
 
 
-def _skill_files(name: str | None = None) -> list[Path]:
-    skills = _home() / "skills"
+def _skill_roots() -> list[Path]:
+    home = _home() / "skills"
+    roots = [home]
+    try:
+        from agent.skill_utils import get_all_skills_dirs
+
+        found = [Path(d) for d in get_all_skills_dirs()]
+    except Exception as exc:
+        _log(f"the skill folders could not be listed, so only {home} is used: {exc!r}")
+        found = []
+    for root in found:
+        if not any(_same_place(root, r) for r in roots):
+            roots.append(root)
+    return roots
+
+
+def _norm(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
+def _same_place(a: Path, b: Path) -> bool:
+    return _norm(a) == _norm(b)
+
+
+def _inside(path: Path, root: Path) -> bool:
+    inner, outer = _norm(path), _norm(root)
+    return inner != outer and inner.startswith(outer.rstrip(os.sep) + os.sep)
+
+
+def _outside_root(path: Path) -> Path | None:
+    if _inside(path, _home()):
+        return None
+    return next((r for r in _skill_roots()[1:] if _inside(path, r)), None)
+
+
+def _skill_files_in(skills: Path, name: str | None) -> list[Path]:
     if not skills.exists():
         return []
     roots = {p.parent for p in skills.rglob("SKILL.md")} if name is not None else set()
@@ -117,6 +151,16 @@ def _skill_files(name: str | None = None) -> list[Path]:
     return out
 
 
+def _skill_files(name: str | None = None) -> list[Path]:
+    if name is None:
+        return _skill_files_in(_home() / "skills", None)
+    for root in _skill_roots():
+        found = _skill_files_in(root, name)
+        if found:
+            return found
+    return []
+
+
 def _watched() -> list[Path]:
     home = _home()
     out = [home / "memories" / "MEMORY.md", home / "memories" / "USER.md"] + _skill_files()
@@ -124,7 +168,20 @@ def _watched() -> list[Path]:
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_home()).as_posix()
+    with suppress(ValueError):
+        return path.relative_to(_home()).as_posix()
+    if _outside_root(path):
+        return Path(os.path.abspath(str(path))).as_posix()
+    raise ValueError(_tx("err_outside_roots", path=str(path)))
+
+
+def _abs(stored: object) -> Path | None:
+    text = str(stored or "").replace("\\", "/")
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        path = Path(text)
+        return path if path.is_absolute() and _outside_root(path) else None
+    rel = _safe_rel(text)
+    return _home() / rel if rel else None
 
 
 def _sha(path: Path) -> str:
@@ -523,7 +580,9 @@ _TEXT = {
     'err_not_undoable': 'This record cannot be undone (a rejected record has no file effect).',
     'err_conflict': 'The file changed after this record; send force to undo anyway.',
     'err_no_copies': 'This record has no undo copy (it may have been rejected or the copy cleaned up) — no file was touched.',
-    'err_unsafe_spec': 'This history record names a location outside your profile; undo refused.',
+    'err_unsafe_spec': 'This history record names a location outside your profile and every configured skill folder; undo refused.',
+    'err_outside_roots': '{path} is outside your profile and every configured skill folder, so the panel does not touch it.',
+    'card_failed': 'A pending {subsystem} change could not be shown, so it is left out of this list: "{summary}" ({id}). Reason: {error}. Nothing was applied and it stays pending; to drop it, type /{subsystem} reject {id} in chat.',
     'err_bad_scope': 'invalid subsystem/decision.',
     'err_no_ids': 'The id list is empty.',
     'err_no_ops_selected': 'No operation in the selected skill.',
@@ -1485,15 +1544,18 @@ def _group_rollback(entry: dict, before: list, ops: list, queued: dict) -> None:
 
     folder = _state() / "snapshots" / entry["id"]
     for f in entry["files"]:
-        dst = _home() / f["path"]
+        dst = _abs(f["path"])
+        if dst is None:
+            _log(f"rollback skipped {f['path']}: outside every skill folder")
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_bytes(dst, (folder / f["snap"]).read_bytes())
-    skills = (_home() / "skills").resolve()
     for path in sorted(set(_touched(wa.SKILLS, ops)) - set(before)):
         with suppress(OSError):
             path.unlink()
+        stop = next((r for r in _skill_roots() if _inside(path, r)), None)
         parent = path.parent
-        while parent.resolve() != skills and skills in parent.resolve().parents:
+        while stop is not None and _inside(parent, stop):
             try:
                 parent.rmdir()
             except OSError:
@@ -1601,14 +1663,19 @@ def _pending() -> dict:
 
     out: dict = {"groups": {wa.MEMORY: [], wa.SKILLS: []}}
     live: set = set()
+    failed: list[str] = []
     steps = _approved_steps()
     for subsystem in (wa.MEMORY, wa.SKILLS):
         records = wa.list_pending(subsystem)
         groups = {_group_id(m): m for m in (_skill_groups(records) if subsystem == wa.SKILLS else [])}
-        cards = {gid: _group_card(gid, members, steps) for gid, members in groups.items()}
-        for gid in groups:
-            out["groups"][subsystem].append(cards[gid]["group"])
+        cards: dict = {}
+        broken: dict = {}
+        for gid, members in groups.items():
             live.add(_group_tag(gid))
+            try:
+                cards[gid] = _group_card(gid, members, steps)
+            except Exception as exc:
+                broken[gid] = exc
         place = {str(r.get("id")): gid for gid, members in groups.items() for r in members}
         order, emitted = [], set()
         for record in records:
@@ -1618,37 +1685,58 @@ def _pending() -> dict:
             elif gid not in emitted:
                 emitted.add(gid)
                 order += [(r, gid, n) for n, r in enumerate(groups[gid], 1)]
-        items = []
+        built = []
         for record, gid, n in order:
-            item = {
-                "id": record.get("id"),
-                "summary": record.get("summary", ""),
-                "origin": record.get("origin", ""),
-                "staged_at": record.get("created_at"),
-                "ops": _ops(record),
-            }
-            if gid:
-                item.update(plain=cards[gid]["plains"][n - 1], group=gid, change=n)
-            else:
-                card = _card(subsystem, record, steps)
-                item.update(plain=card["plain"], version=card["version"], review=card["review"])
-            if subsystem == wa.SKILLS:
-                item["diff"] = _skill_diff_text(wa, record)
-                for i, op in enumerate(_raw_ops(record)):
-                    if i < len(item["ops"]):
-                        own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
-                        item["ops"][i].update(_op_change_stat(wa, op))
-                        item["ops"][i].update(own)
-                item["has_change"] = any(o.get("has_change") for o in item["ops"])
             live.add(f"{subsystem}-{record.get('id')}")
-            items.append(item)
-        out[subsystem] = items
+            if gid in broken:
+                continue
+            try:
+                built.append((gid, _pending_item(wa, subsystem, record, gid, n, cards, steps)))
+            except Exception as exc:
+                if gid:
+                    broken[gid] = exc
+                else:
+                    failed.append(_card_failed(subsystem, record, exc))
+        for gid, exc in broken.items():
+            failed += [_card_failed(subsystem, r, exc) for r in groups[gid]]
+        out["groups"][subsystem] = [cards[gid]["group"] for gid in groups if gid not in broken]
+        out[subsystem] = [item for gid, item in built if gid not in broken]
     out["records"] = {s: len(out[s]) for s in (wa.MEMORY, wa.SKILLS)}
     out["counts"] = {s: len(out[s]) - sum(len(g["members"]) - 1 for g in out["groups"][s])
                      for s in (wa.MEMORY, wa.SKILLS)}
     _review_prune(live)
-    out["issues"] = _issues()
+    out["issues"] = _issues() + failed
     return out
+
+
+def _pending_item(wa, subsystem: str, record: dict, gid: str, n: int, cards: dict, steps) -> dict:
+    item = {
+        "id": record.get("id"),
+        "summary": record.get("summary", ""),
+        "origin": record.get("origin", ""),
+        "staged_at": record.get("created_at"),
+        "ops": _ops(record),
+    }
+    if gid:
+        item.update(plain=cards[gid]["plains"][n - 1], group=gid, change=n)
+    else:
+        card = _card(subsystem, record, steps)
+        item.update(plain=card["plain"], version=card["version"], review=card["review"])
+    if subsystem == wa.SKILLS:
+        item["diff"] = _skill_diff_text(wa, record)
+        for i, op in enumerate(_raw_ops(record)):
+            if i < len(item["ops"]):
+                own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
+                item["ops"][i].update(_op_change_stat(wa, op))
+                item["ops"][i].update(own)
+        item["has_change"] = any(o.get("has_change") for o in item["ops"])
+    return item
+
+
+def _card_failed(subsystem: str, record: dict, exc: Exception) -> str:
+    _log(f"pending {subsystem} record {record.get('id')} could not be shown: {exc!r}")
+    return _tx("card_failed", subsystem=subsystem, id=record.get("id"),
+               summary=_short_error(str(record.get("summary") or "")), error=_short_error(str(exc) or repr(exc)))
 
 
 @router.post("/scan")
@@ -1737,7 +1825,7 @@ def _skill_description_fix(record: dict) -> list[dict]:
     from tools.skill_manager_tool import SKILL_PROMPT_DESC_LIMIT as limit
 
     fixes: list[dict] = []
-    for op in ((record.get("payload") or {}).get("operations")) or []:
+    for op in _raw_ops(record):
         if op.get("action") != "create":
             continue
         content = op.get("content") or ""
@@ -2849,7 +2937,7 @@ def _apply_description_fix(record: dict) -> tuple[bool, str]:
     fixes = {f["name"]: f for f in _skill_description_fix(record)}
     if not fixes:
         return False, _tx("fix_nothing")
-    ops = (record.get("payload") or {}).get("operations") or []
+    ops = _raw_ops(record)
     for op in ops:
         fix = fixes.get(op.get("name") or "")
         if op.get("action") == "create" and fix:
@@ -3106,7 +3194,7 @@ def _touched(subsystem: str, ops: list, payload: dict | None = None) -> list[Pat
 def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
     from tools import write_approval as wa
 
-    ops = (record.get("payload") or {}).get("operations") or []
+    ops = _raw_ops(record)
     apply_ops = [op for op in ops if (op.get("name") or "") in only]
     rest_ops = [op for op in ops if (op.get("name") or "") not in only]
     if not apply_ops:
@@ -3149,8 +3237,8 @@ def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
 def _finalize_entry(entry: dict, subsystem: str, ops: list, before: list,
                     payload: dict | None = None) -> None:
     for f in entry["files"]:
-        path = _home() / f["path"]
-        f["sha_after"] = _sha(path) if path.exists() else None
+        path = _abs(f["path"])
+        f["sha_after"] = _sha(path) if path is not None and path.exists() else None
     for path in sorted(set(_touched(subsystem, ops, payload)) - set(before)):
         entry["files"].append({"path": _rel(path), "snap": None, "before_sha": None,
                                "sha_after": _sha(path), "created": True})
@@ -3271,7 +3359,7 @@ def _decide_locked(body: dict) -> dict:
             continue
 
         payload = record.get("payload") or {}
-        entry, before, ops, kept = None, [], payload.get("operations") or [], ""
+        entry, before, ops, kept = None, [], _raw_ops(record), ""
         if decision == "approve":
             before = _touched(subsystem, ops, payload)
             entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": subsystem,
@@ -3514,22 +3602,22 @@ def _undo_locked(body: dict) -> dict:
 
     targets = []
     for f in entry.get("files", []):
-        rel = _safe_rel(f.get("path"))
-        if not rel:
+        rel = str(f.get("path") or "")
+        path = _abs(rel)
+        if path is None:
             return {"ok": False, "error": _tx("err_unsafe_spec")}
         if f.get("created"):
-            targets.append((f, rel, ""))
+            targets.append((f, rel, path, ""))
             continue
         snap = str(f.get("snap") or "")
         if not snap:
             continue
         if snap in (".", "..") or "/" in snap.replace("\\", "/"):
             return {"ok": False, "error": _tx("err_unsafe_spec")}
-        targets.append((f, rel, snap))
+        targets.append((f, rel, path, snap))
 
     conflicts = []
-    for f, rel, _snap in targets:
-        path = _home() / rel
+    for f, rel, path, _snap in targets:
         if path.exists() and not force and _sha(path) != f.get("sha_after"):
             conflicts.append(rel)
     if conflicts:
@@ -3537,8 +3625,7 @@ def _undo_locked(body: dict) -> dict:
                 "error": _tx("err_conflict")}
 
     restored, removed = [], []
-    for f, rel, snap in targets:
-        dst = _home() / rel
+    for f, rel, dst, snap in targets:
         if f.get("created"):
             if dst.exists():
                 dst.unlink()

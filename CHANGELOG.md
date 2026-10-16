@@ -5,6 +5,28 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.3
+
+### Fixed
+
+* **A card for a skill outside the Hermes folder no longer breaks the whole panel.** Hermes also loads
+  skills from shared folders (`skills.external_dirs`, for example a folder other AI tools read too). A
+  pending change to such a skill made the list fail with "is not in the subpath of â€¦", so the panel
+  showed only an error and no card at all, the other cards included. Seen on the owner's machine with
+  three delete cards for skills in a shared folder. The panel now shows these cards, keeps a copy of
+  the skill's files before approving (stored under the file's own full path) and Undo puts them back.
+  Undo still refuses any path outside the Hermes folder and every configured skill folder.
+* **Approving a single-change card now keeps an undo copy.** A card with one change (for example
+  "delete skill X", the form Hermes uses for a single write) was applied without a copy of the files
+  it touched, so its Undo had nothing to restore. Two skill deletions approved this way on the owner's
+  machine have no copy in the history. Single-change cards now keep a copy like batch cards do.
+* **A single new skill whose description is too long is offered the shortened description.** The
+  "shorten the description" fix only looked at batch cards; a single new skill was only marked as not
+  applicable.
+* **One card that cannot be shown no longer hides the others.** If a pending change cannot be turned
+  into a card, the panel shows the other cards and names the broken one in the notice at the top, with
+  its id and the reason; nothing is applied and it stays pending (`/skills reject <id>` in chat drops it).
+
 ## 1.12.2
 
 ### Fixed
