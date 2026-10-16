@@ -816,6 +816,34 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   already refuses them at write time), and so was a referenced-file check (31 references in the owner's
   skills, 0 real misses, every "miss" pointed into another skill or tool).
 
+## 1.12.1 — approve under one memo, late answers read from the history
+
+* **Why (measured, read-only).** Approving batch 2 with the reviewer's fix ran 73 s and 32 s on the
+  live backend (`desktop.log` request times; history entries `b0ba0b3e`, `e96cba2b`). The app's
+  request timeout is 30 s, so the panel showed `applyError` for two writes that had landed, and every
+  other route waited behind `_LOCK`. A replay on a scratch home (pre-images from those entries'
+  snapshots, the same five records, the rebuilt reviewer edits) on the app's interpreter
+  (`tools/python-3.14.7`, through `hermes_bootstrap`) gave 82.1 s / 29.0 s with the installed 1.12.0.
+  1.12.0's bench used the core's 3.11 venv, where the frontmatter parser is much faster; that is why
+  the freeze looked fixed.
+* **One memo per gate, closed before the write.** `_group_decide` runs `_group_checked()` (card,
+  `_group_with_edits`, `_group_left`, `_group_effect`, `_group_gate`) inside `_memo()`, then
+  `_group_apply` outside it. The single-record path in `_decide_locked` does the same. Keeping the
+  write outside matters: the memo caches skill files, folders and the line index by name, so a read
+  after a write inside it would see the old disk. Selftest: one group approve looks `grp-skill` up
+  once before its first write (it was once per check), and `_apply` never runs with a memo open; both
+  were checked against mutants (memo removed → the lookup count fails; apply wrapped → the memo check
+  fails). Replay: 18.9 s / 8.6 s, skills byte-identical to the live result (sha256 prefix
+  `bfe83326f3f703c7`). A folder-name index on top of the memo saved nothing (18.1 s → 18.1 s) and was
+  dropped. The rest is the core's `skill_manage` path (`_find_skill` per operation), not this plugin.
+* **Late answers.** `decideAll()` wraps `api.decide`; when the request throws, `settled()` reads
+  `/history` (it queues behind the same `_LOCK`, so it answers when the decide is done) and maps each
+  item to the newest entry since the click: by `record_id`, a group's member ids or `group`. `apply` →
+  `lateApplied`, `rejected` → the normal reject toast, `failed` → its summary, no entry → `lateNothing`,
+  history unanswered → `lateRunning` (a warning; the card re-reads the list). Single, group and bulk
+  decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
+  failed is caught.
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.

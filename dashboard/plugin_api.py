@@ -1541,22 +1541,40 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
         return {"id": gid, "group": True, "ok": False, "error": _tx("fix_gone")}
     if str(body.get("decision")) == "reject":
         return _group_reject(gid, members)
+    with _memo():
+        refused, members, suffix, queued = _group_checked(gid, members, body, versions)
+    if refused:
+        return refused
+    ok, message = _group_apply(gid, members, suffix)
+    if not ok:
+        for path, data in queued.items():
+            _restore_record(path, data)
+        return {"id": gid, "group": True, "ok": False, "error": message}
+    return {"id": gid, "group": True, "ok": True, "members": [r.get("id") for r in members], "message": message}
+
+
+def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) -> tuple:
+    from tools import write_approval as wa
+
     card = _group_card(gid, members, _approved_steps())
-    if str(versions.get(gid) or "") != card["group"]["version"]:
-        return {"id": gid, "group": True, "ok": False, "stale": True, "error": _tx("gate_stale")}
     skip = bool(body.get("skip_review"))
-    queued, suffix = {}, ""
+    queued: dict = {}
+
+    def refuse(error: str, **extra) -> tuple:
+        return {"id": gid, "group": True, "ok": False, "error": error, **extra}, members, "", {}
+
+    if str(versions.get(gid) or "") != card["group"]["version"]:
+        return refuse(_tx("gate_stale"), stale=True)
     if body.get("with_edits"):
         status = card["state"]["status"]
         if status != "done" and not (skip and status in ("failed", "unassigned")):
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": _gate_wait(status)}
+            return refuse(_gate_wait(status), blocked=True)
         edits = [(e["edit"], e.get("change")) for e in _review_edits(card["state"]) if e["edit"].get("ok")]
         fixed, applied, changed = _group_with_edits(members, edits)
         if not applied:
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": _tx("amend_nothing")}
+            return refuse(_tx("amend_nothing"), blocked=True)
         if left := _group_left(fixed):
-            return {"id": gid, "group": True, "ok": False, "blocked": True,
-                    "error": _tx("fix_left", reasons=" ".join(left))}
+            return refuse(_tx("fix_left", reasons=" ".join(left)), blocked=True)
         effect = _group_effect(members, fixed)
         why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
         suffix = _fixed_summary("", applied, effect)
@@ -1567,18 +1585,11 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
             path = wa._pending_path(wa.SKILLS, str(fixed[i].get("id")))
             queued[path] = path.read_bytes()
             _atomic_write(path, json.dumps(fixed[i], ensure_ascii=False))
-        members = fixed
-    else:
-        reason, unreviewed = _group_gate(card, skip)
-        if reason:
-            return {"id": gid, "group": True, "ok": False, "blocked": True, "error": reason}
-        suffix = _tx("group_unreviewed") if unreviewed else ""
-    ok, message = _group_apply(gid, members, suffix)
-    if not ok:
-        for path, data in queued.items():
-            _restore_record(path, data)
-        return {"id": gid, "group": True, "ok": False, "error": message}
-    return {"id": gid, "group": True, "ok": True, "members": [r.get("id") for r in members], "message": message}
+        return None, fixed, suffix, queued
+    reason, unreviewed = _group_gate(card, skip)
+    if reason:
+        return refuse(reason, blocked=True)
+    return None, members, _tx("group_unreviewed") if unreviewed else "", queued
 
 
 def _pending() -> dict:
@@ -3192,32 +3203,33 @@ def _decide_locked(body: dict) -> dict:
                             "error": _tx("err_member_approve")})
             continue
 
-        unreviewed, original, state = False, b"", None
-        if decision == "approve":
-            card = _card(subsystem, record, _approved_steps())
-            if str(versions.get(pending_id) or "") != card["version"]:
-                results.append({"id": pending_id, "ok": False, "stale": True, "error": _tx("gate_stale")})
-                continue
-            state = card["state"]
-        if decision == "approve" and body.get("with_edits"):
-            fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")), state)
-            if reason:
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
-            record = fixed
-        elif decision == "approve":
-            reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
-            if reason:
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
+        with _memo():
+            unreviewed, original, state = False, b"", None
+            if decision == "approve":
+                card = _card(subsystem, record, _approved_steps())
+                if str(versions.get(pending_id) or "") != card["version"]:
+                    results.append({"id": pending_id, "ok": False, "stale": True, "error": _tx("gate_stale")})
+                    continue
+                state = card["state"]
+            if decision == "approve" and body.get("with_edits"):
+                fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")), state)
+                if reason:
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
+                record = fixed
+            elif decision == "approve":
+                reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
+                if reason:
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
 
-        restore = (lambda: _restore_record(wa._pending_path(subsystem, pending_id), original)) if original \
-            else (lambda: None)
-        if decision == "approve" and subsystem == wa.SKILLS:
-            if reason := _blocked_approve_reason(record, only):
-                restore()
-                results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
-                continue
+            restore = (lambda: _restore_record(wa._pending_path(subsystem, pending_id), original)) if original \
+                else (lambda: None)
+            if decision == "approve" and subsystem == wa.SKILLS:
+                if reason := _blocked_approve_reason(record, only):
+                    restore()
+                    results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
+                    continue
 
         if unreviewed:
             record["summary"] = _tx("summary_unreviewed", summary=record.get("summary", ""))

@@ -5,6 +5,29 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.1
+
+### Fixed
+
+* **Approving a large skill change no longer freezes the panel.** Approving the owner's batch 2 with
+  the reviewer's fix took 73 s (abap-dev, 3 changes) and 32 s (agent-plugin-vetting, 2 changes). The
+  app stops waiting after 30 s, so the panel said "Could not apply the record" although both were
+  applied, and while an approval runs the backend answers nothing else, so the panel looked dead.
+  The approval checks (card, fix, what the fix leaves, its effect) each searched the skill folders
+  again; they now share one memo, which ends before the first write. Replayed on the same records with
+  the app's own Python 3.14: 82.1 s → 18.9 s and 29.0 s → 8.6 s, with byte-identical skills as the result.
+  The remaining time is spent in Hermes' own write path, outside this plugin.
+* **An approval that outlives the app's 30 s wait is reported as what it became.** The panel reads the
+  history (which waits for the backend) and says applied, rejected, failed with its reason, still
+  running, or that nothing was recorded, instead of "Could not apply the record". Bulk approve does the
+  same.
+
+### Corrected
+
+* The 1.12.0 timings below were measured with Python 3.11. The app runs Python 3.14, where Hermes
+  reads skill headers with a slower YAML parser, so the same work is slower there. Timings from 1.12.1
+  on are measured on the app's own interpreter.
+
 ## 1.12.0
 
 ### Fixed

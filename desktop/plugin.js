@@ -279,6 +279,9 @@ const BUNDLES = {
         saved: 'Saved — you can undo it from the “Applied” tab',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
+        lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
+        lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
+        lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
@@ -841,11 +844,37 @@ const alertBox = (key, children, danger) =>
 const told = (t, decision, one) => {
   if (one.ok && decision === 'reject' && one.history_id) return { kind: 'success', message: t('pa.notify.rejected') }
   if (one.ok) return { kind: 'success', message: one.message || t('pa.notify.saved') }
-  if (one.stale) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
+  if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
+const settled = async (t, items, since) => {
+  let entries
+  try {
+    entries = (await api.history())?.entries || []
+  } catch {
+    entries = null
+  }
+  return items.map(item => {
+    if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
+    const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
+    const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
+    const e = entries.find(x => (x.ts || 0) >= since && ours(x))
+    if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
+    if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
+    return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
+      : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
+  })
+}
+const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
+  const since = Date.now() / 1000 - 2
+  try {
+    return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
+  } catch {
+    return { ok: true, results: await settled(t, items, since) }
+  }
+}
 const decideOne = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  const res = await api.decide(subsystem, items, decision, only, skipReview, withEdits)
+  const res = await decideAll(t, subsystem, items, decision, only, skipReview, withEdits)
   const one = (res?.results || [])[0] || {}
   host.notify(told(t, decision, one))
   return one
@@ -1198,7 +1227,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
     const r = await run(key, () => decideOne(t, subsystem, [item], decision, only, skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale) onChanged()
+    else if (r?.stale || r?.late) onChanged()
   }
   const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
   const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
@@ -1380,7 +1409,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
     const r = await run(key, () => decideOne(t, 'skills', [item], decision, [], skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale) onChanged()
+    else if (r?.stale || r?.late) onChanged()
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
@@ -1789,7 +1818,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
         const group = chosen.filter(c => c.subsystem === subsystem).map(c => c.item)
         if (!group.length) continue
         try {
-          const res = await api.decide(subsystem, group, decision)
+          const res = await decideAll(t, subsystem, group, decision)
           const results = res?.results || []
           ok += results.filter(r => r.ok).length
           bad.push(...results.filter(r => !r.ok)

@@ -2,7 +2,7 @@
   "name": "pending-approvals",
   "label": "Approvals",
   "description": "Memory/skill writes waiting for approval: the details, approve/reject, the history and undo.",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "api": "plugin_api.py",
   "license": "MIT",
   "homepage": "https://github.com/thealps01-netizen/hermes-approvals-ui",

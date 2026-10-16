@@ -679,6 +679,7 @@ async function mount(appLocale, parts = 'both') {
           if (REST.mode === 'groupsqueued') REST.mode = 'groupsstarted'
           return { ok: true, started: 1 }
         }
+        if (path === '/decide' && String(REST.post).startsWith('late')) throw new Error('Request timed out after 30000ms')
         if (REST.post === 'hold') return new Promise(() => {})
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
@@ -702,6 +703,11 @@ async function mount(appLocale, parts = 'both') {
       GETS.push(path)
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
+      if (path === '/history?limit=50' && REST.post === 'latebusy') throw new Error('Request timed out after 30000ms')
+      if (path === '/history?limit=50' && REST.post === 'late') {
+        return { entries: [{ id: 'la7e0001', ts: Date.now() / 1000, kind: 'apply', subsystem: 'skills',
+          record_id: 'aaa11111', summary: 'late', files: [], undoable: true }, ...HISTORY.entries], counts: HISTORY.counts }
+      }
       const table = {
         '/pending': pendingFor(REST.mode),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
@@ -1341,6 +1347,23 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!cellOf(stale, 'skills:aaa11111')) fail('a stale card left the list as if it had been approved')
   REST.post = 'normal'
   stale.hostEl.remove()
+
+  // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
+  // history (which waits for the backend) and reports what happened, not "Could not apply".
+  for (const [mode, kind, text] of [
+    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
+    ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
+    ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
+    REST.post = mode
+    const late = await mount('en')
+    await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
+    const said = stub.calls.notify[stub.calls.notify.length - 1]
+    if (said?.kind !== kind || said?.message !== text) {
+      fail(`a /decide that outlived the request timeout (${mode}) is reported wrong: ${JSON.stringify(said)}`)
+    }
+    REST.post = 'normal'
+    late.hostEl.remove()
+  }
 
   const rej = await mount('en')
   const cell = cellOf(rej, 'skills:aaa11111')

@@ -795,8 +795,19 @@ def _groups_selftest(tmp: Path) -> None:
         "a group that could not be applied stays queued"
 
     two = pending()["groups"]["skills"][0]
-    fixed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve", "with_edits": True,
-                    "versions": {two["id"]: two["version"]}})["results"][0]
+    looked, under_memo = [], []
+    real_dir = globals()["_skill_dir_now"]
+    globals()["_skill_dir_now"] = lambda name: (looked.append(name), real_dir(name))[1]
+    globals()["_apply"] = lambda subsystem, pid, decision: (
+        under_memo.append(_MEMO.get() is not None), looked.append("|write"), saved_apply(subsystem, pid, decision))[2]
+    try:
+        fixed = decide({"subsystem": "skills", "groups": [two["id"]], "decision": "approve", "with_edits": True,
+                        "versions": {two["id"]: two["version"]}})["results"][0]
+    finally:
+        globals()["_skill_dir_now"], globals()["_apply"] = real_dir, saved_apply
+    assert under_memo == [False, False], "a write never runs under the request memo: reads after it would be stale"
+    gate = looked[:looked.index("|write")] if "|write" in looked else looked
+    assert gate.count("grp-skill") == 1, f"one approve looks the skill up once for all its checks, not per check: {gate}"
     assert fixed["ok"] and fixed["members"] == ["6a000001", "6a000002"], fixed
     assert "Read the diff" in (folder / "SKILL.md").read_text(encoding="utf-8")
     assert "through its status line" in (folder / "references" / "jobs.md").read_text(encoding="utf-8"), \
