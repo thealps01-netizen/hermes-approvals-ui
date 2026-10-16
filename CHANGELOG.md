@@ -5,6 +5,20 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.12.2
+
+### Fixed
+
+* **"Approve with the reviewer's fix" no longer fails when the fix takes back a whole patch.** When a
+  suggested edit removed exactly the text one patch adds (or put back exactly the text it removes), that
+  patch became "replace X with X". Hermes refuses such a patch ("old_string and new_string are
+  identical"), so the whole fixed approval was refused and only plain Approve worked. Seen on the
+  owner's skill clean-up (game-dev follow-up card, 5 patches). Such a patch writes nothing, so it is now
+  left out before the checks and the write; the other patches are applied as fixed. When the fix takes
+  back every change of a card (or of one change in a group), the panel says so and suggests rejecting
+  it, instead of showing a Hermes patch error. Replayed on that card with the app's Python 3.14: 1.12.1
+  refuses, 1.12.2 writes the skill as the other 4 patches leave it.
+
 ## 1.12.1
 
 ### Fixed

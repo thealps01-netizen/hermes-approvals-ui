@@ -628,6 +628,7 @@ _TEXT = {
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
     'amend_nothing': 'There is no suggested edit that still matches this record.',
     'fix_left': 'The suggested edits do not clear every problem, so nothing was written: {reasons}',
+    'fix_undoes_all': 'The suggested edits take back every change here, so nothing is left to write; reject it instead.',
     'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
     'summary_fix_effect': '{summary}; the fix removed {removed} of the {added} new words in the text it edited',
     'amend_author': 'adds "author: {want}" to the header',
@@ -1246,6 +1247,8 @@ def _group_facts(members: list[dict]) -> dict:
 
 
 def _group_left(members: list[dict]) -> list[str]:
+    if empty := [f"#{n} · {_tx('fix_undoes_all')}" for n, r in enumerate(members, 1) if _nothing_left(r)]:
+        return empty
     facts = _group_facts(members)
     return ([f"#{h['change']} · {h['text']}" for h in facts["hard"]]
             + [f"#{s['change']} · {s['text']}" for s in facts["stale"]]
@@ -1308,7 +1311,7 @@ def _group_mark_edits(review: dict, members: list[dict]) -> None:
     review["edits"] = len(open_edits)
     if open_edits:
         fixed = _group_with_edits(members, open_edits)[0]
-        review["fix_left"] = _group_left(fixed)
+        review["fix_left"] = _group_left([_writable(f) for f in fixed])
         if effect := _group_effect(members, fixed):
             review["fix_effect"] = effect
 
@@ -1573,9 +1576,10 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
         fixed, applied, changed = _group_with_edits(members, edits)
         if not applied:
             return refuse(_tx("amend_nothing"), blocked=True)
+        effect = _group_effect(members, fixed)
+        fixed = [_writable(f) for f in fixed]
         if left := _group_left(fixed):
             return refuse(_tx("fix_left", reasons=" ".join(left)), blocked=True)
-        effect = _group_effect(members, fixed)
         why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
         suffix = _fixed_summary("", applied, effect)
         for i in sorted(changed):
@@ -2863,6 +2867,28 @@ def _review_edits(state: dict) -> list[dict]:
     return [e for e in [*(state.get("hard") or []), *(found or [])] if isinstance(e.get("edit"), dict)]
 
 
+def _no_op(op: dict) -> bool:
+    return op.get("action") == "patch" and isinstance(op.get("new_string"), str) \
+        and op.get("new_string") == op.get("old_string")
+
+
+def _nothing_left(record: dict) -> bool:
+    return (record.get("payload") or {}).get("operations") == []
+
+
+def _writable(fixed: dict) -> dict:
+    if not any(_no_op(op) for op in _raw_ops(fixed)):
+        return fixed
+    out = json.loads(json.dumps(fixed))
+    kept = [op for op in _raw_ops(out) if not _no_op(op)]
+    payload = out.get("payload") or {}
+    if isinstance(payload.get("operations"), list):
+        payload["operations"] = kept
+    else:
+        out["payload"] = {"action": "batch", "operations": kept}
+    return out
+
+
 def _with_edits(record: dict, edits: list[dict]) -> tuple[dict, int]:
     fixed = json.loads(json.dumps(record))
     applied = 0
@@ -2972,6 +2998,8 @@ def _fix_why(state: dict, record: dict) -> list[str]:
 
 
 def _fix_left(subsystem: str, fixed: dict, only: list | tuple = ()) -> list[str]:
+    if _nothing_left(fixed):
+        return [_tx("fix_undoes_all")]
     hard = [h["text"] for h in _hard_checks(subsystem, fixed)
             if not only or h.get("name") in only or not h.get("name")]
     return hard + [str(s) for s in _explain(subsystem, fixed).get("stale") or []]
@@ -2988,7 +3016,7 @@ def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
     review["edits"] = len(open_edits)
     if open_edits:
         fixed, _ = _with_edits(record, open_edits)
-        review["fix_left"] = _fix_left(subsystem, fixed)
+        review["fix_left"] = _fix_left(subsystem, _writable(fixed))
         if effect := _fix_effect(subsystem, record, fixed):
             review["fix_effect"] = effect
 
@@ -3005,10 +3033,11 @@ def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
     fixed, applied = _with_edits(record, edits)
     if not applied:
         return None, b"", _tx("amend_nothing")
+    effect = _fix_effect(subsystem, record, fixed)
+    fixed = _writable(fixed)
     if left := _fix_left(subsystem, fixed, only):
         return None, b"", _tx("fix_left", reasons=" ".join(left))
     fixed["amended_from"] = record.get("payload")
-    effect = _fix_effect(subsystem, record, fixed)
     fixed["amended_effect"], fixed["amended_why"] = effect, _fix_why(state, record)
     fixed["summary"] = _fixed_summary(record.get("summary", ""), applied, effect)
     path = wa._pending_path(subsystem, str(record.get("id")))

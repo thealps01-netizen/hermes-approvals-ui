@@ -844,6 +844,27 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.12.2 — a fix that turns a patch into a no-op
+
+* **Why (seen live).** Batch 3's game-dev follow-up (5 patches) could only be approved plainly. The
+  reviewer's one edit deleted the line patch 5 adds, so `_with_edits` left patch 5 as `old_string ==
+  new_string`; the core's `fuzzy_find_and_replace` rejects that (`IDENTICAL_STRINGS_ERROR`), the dry
+  run in `_fix_left` reported it, and the approve was refused. An edit that puts back what a patch
+  removes, or deletes what it adds, always produces this, and both are normal reviewer fixes.
+* **`_writable(fixed)`** drops every `patch` whose `new_string == old_string` (it writes nothing). It
+  runs after `_fix_effect`/`_group_effect` (the effect still counts the words the fix removed) and
+  before `_fix_left`/`_group_left` and the write, in both the listing (`_mark_edits`,
+  `_group_mark_edits`) and the approve path (`_stage_fixed`, `_group_checked`), so the card shows the
+  same answer the approve gives. A record left with `operations == []` is named by `fix_undoes_all`
+  (single: the whole reason; group: `#n ·` per member) instead of a core error.
+* **Checks.** Selftest: a batch where the fix empties one of two patches is approved and writes the
+  other; a fix that takes back the only patch is refused with `fix_undoes_all` and writes nothing; the
+  same two cases inside a group. Seven mutants (each guard removed in turn, plus `_no_op` never true)
+  all fail the selftest. Replay of the live card on a scratch home with the app's Python 3.14 (stored
+  card operations and pre-image, the reviewer's edit rebuilt from the session; the stored review had
+  been cleaned up after approval): installed 1.12.1 refuses with the identical-strings error, 1.12.2
+  writes base + patches 1–4, byte-identical.
+
 ## Version
 
 1.7.0 — bulk approve/reject (two-step, one `/decide` per subsystem, only applicable records), palette rows `Open Approvals` + `Approval alerts`, alert mute in `ctx.storage`, merge draft into the chat box (unsent, not an approval), `_ID_RE.fullmatch`.

@@ -313,6 +313,39 @@ def _review_selftest(tmp: Path) -> None:
     assert undo({"id": entry["id"]})["ok"], "the fix of the existing text must undo with the write"
     assert (own / "SKILL.md").read_bytes() == before_fix, "undo must restore the existing text too"
 
+    # 1.12.2: an edit that takes back everything one patch adds leaves "replace X with X", which Hermes
+    # refuses ("old_string and new_string are identical") and which used to block the whole fixed card.
+    noop_verdict = {"summary": "One added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "fourth lesson", "other": "", "explain": "repeats a line",
+         "edit": {"find": "fourth lesson\n", "replace": ""}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(noop_verdict))
+    stage("skills", "5e1f000e", {"action": "batch", "operations": [
+        {"action": "patch", "name": "own-skill", "old_string": "later line\n", "new_string": "later line\nfifth lesson\n"},
+        {"action": "patch", "name": "own-skill", "old_string": "2nd lesson\n", "new_string": "fourth lesson\n2nd lesson\n"}]})
+    undone_op = settle("skills", "5e1f000e")
+    assert undone_op["edits"] == 1 and undone_op["fix_left"] == [], \
+        f"a patch the fix turns into a no-op is dropped, not reported as a problem: {undone_op}"
+    with_noop = approve("skills", "5e1f000e", with_edits=True)
+    assert with_noop["ok"], with_noop
+    text = (own / "SKILL.md").read_text(encoding="utf-8")
+    assert "later line\nfifth lesson\n2nd lesson\n" in text and "fourth lesson" not in text, text
+    assert undo({"id": history(limit=1)["entries"][0]["id"]})["ok"] and (own / "SKILL.md").read_bytes() == before_fix
+
+    all_back = {"summary": "The only added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "sixth lesson", "other": "", "explain": "repeats a line",
+         "edit": {"find": "sixth lesson\n", "replace": ""}}]}
+    globals()["_review_call"] = lambda task, **kw: answer(json.dumps(all_back))
+    stage("skills", "5e1f000f", {"action": "patch", "name": "own-skill", "old_string": "2nd lesson\n",
+                                 "new_string": "2nd lesson\nsixth lesson\n"})
+    nothing_left = settle("skills", "5e1f000f")
+    assert nothing_left["fix_left"] == [_tx("fix_undoes_all")], \
+        f"a fix that takes back every change says so instead of a Hermes patch error: {nothing_left}"
+    refused = approve("skills", "5e1f000f", with_edits=True)
+    assert not refused["ok"] and _tx("fix_undoes_all") in refused["error"], refused
+    assert (own / "SKILL.md").read_bytes() == before_fix and item("skills", "5e1f000f"), \
+        "a refused fix writes nothing and leaves the record pending"
+    assert decide({"subsystem": "skills", "ids": ["5e1f000f"], "decision": "reject"})["results"][0]["ok"]
+
     (tmp / "memories" / "MEMORY.md").write_text("Selftest saved note\n§\nAnother note\n", encoding="utf-8")
     memory_verdict = {"summary": "Outdates an entry.", "findings": [
         {"severity": "fix", "kind": "contradiction", "quote": "tabs", "other": "Another note", "explain": "older entry",
@@ -869,6 +902,43 @@ def _groups_selftest(tmp: Path) -> None:
     assert rerun["ok"] and rerun["group"] == again["id"], rerun
     settle()
     assert len(calls) == paid + 1, "Review again on a group runs one review"
+    clear()
+
+    # 1.12.2: inside a group, a patch the fix turns into a no-op is dropped from its change; a change
+    # left with nothing to write is named instead of failing with a Hermes patch error.
+    (folder / "SKILL.md").write_text((folder / "SKILL.md").read_text(encoding="utf-8") + "\n## Noop\n\nbase line\n",
+                                     encoding="utf-8")
+    before = (folder / "SKILL.md").read_bytes()
+    calls.clear()
+    verdicts["group"] = {"summary": "One added line repeats another.", "findings": [
+        {"severity": "fix", "kind": "duplicate", "quote": "repeated line", "change": 2, "explain": "repeats",
+         "edit": {"find": "\nrepeated line\n", "replace": ""}}]}
+    stage("6d000001", {"action": "patch", "name": "grp-skill", "old_string": "base line\n",
+                       "new_string": "base line\nkept line\n"})
+    stage("6d000002", {"action": "batch", "operations": [
+        {"action": "patch", "name": "grp-skill", "old_string": "## Noop\n", "new_string": "## Noop\n\nrepeated line\n"},
+        {"action": "write_file", "name": "grp-skill", "file_path": "references/noop.md", "file_content": "# Noop\n"}]})
+    group = settle()["groups"]["skills"][0]
+    assert group["review"]["edits"] == 1 and group["review"]["fix_left"] == [], group["review"]
+    done = decide({"subsystem": "skills", "groups": [group["id"]], "decision": "approve", "with_edits": True,
+                   "versions": {group["id"]: group["version"]}})["results"][0]
+    assert done["ok"], done
+    text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    assert "base line\nkept line\n" in text and "repeated line" not in text \
+        and (folder / "references" / "noop.md").exists(), text
+    assert undo({"id": history(limit=1)["entries"][0]["id"]})["ok"] and (folder / "SKILL.md").read_bytes() == before
+    clear()
+
+    calls.clear()
+    stage("6e000001", {"action": "patch", "name": "grp-skill", "old_string": "base line\n",
+                       "new_string": "base line\nkept line\n"})
+    stage("6e000002", {"action": "patch", "name": "grp-skill", "old_string": "## Noop\n",
+                       "new_string": "## Noop\n\nrepeated line\n"})
+    group = settle()["groups"]["skills"][0]
+    assert group["review"]["fix_left"] == [f"#2 · {_tx('fix_undoes_all')}"], group["review"]
+    held = decide({"subsystem": "skills", "groups": [group["id"]], "decision": "approve", "with_edits": True,
+                   "versions": {group["id"]: group["version"]}})["results"][0]
+    assert not held["ok"] and _tx("fix_undoes_all") in held["error"] and (folder / "SKILL.md").read_bytes() == before, held
     clear()
 
     globals()["_config"], globals()["_review_call"] = saved_config, saved_call
