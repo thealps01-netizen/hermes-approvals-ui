@@ -7,9 +7,8 @@ look has no version at all.
 
 ## 1.13.1
 
-Two more independent reviews found 15 defects in 1.13.0 and 6 in the first 1.13.1 candidate; all 21
-are fixed here. One of them was introduced by 1.13.0
-(a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
+Three more independent reviews found 15 defects in 1.13.0 and 8 in two earlier 1.13.1 candidates; all
+of them are fixed here. One was introduced by 1.13.0 (a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
 did: fabricated quotes, malformed review answers, and writes that landed being reported as failed.
 Each defect has a regression check that failed on the code it was found in (`tests/regress_audit.py`,
 `tests/render_check.mjs`).
@@ -27,14 +26,14 @@ Each defect has a regression check that failed on the code it was found in (`tes
 * **Quotes, the whole class:**
   * A made-up quote stitched from short common words with "..." (for example "Always ... owner") no
     longer counts as verified.
-  * A correct short quote counts again when it is distinctive: a whole word or command that appears
-    exactly once in the write, such as "Привет", "Merci" or "rm -rf ~". Its suggested translation can be
-    applied. A word that appears several times, a piece from inside a word, or a short word from the
-    rules does not count.
+  * A correct short quote counts again when it is a whole word or command of the write, such as
+    "Привет", "Merci", "sudo" or "rm -rf ~". Its suggested translation can be applied. A piece from
+    inside a word, or a short word that is only in the rules, does not count.
   * Chinese and Japanese quotes with "..." count again.
 * **The language rule no longer locks English with maths or phonetics,** such as ℝⁿ, αβ, ΔΔG, 𝑥𝑦,
-  full-width letters or IPA. Greek locks from three letters in a row or two Greek words in a row
-  ("Θα το δω"), and accents written as separate marks no longer hide Greek or Arabic text.
+  full-width letters or IPA, and not on symbol pairs such as `αβ/γδ` or `αβ γδ`. Greek locks from three
+  letters in a row or three short Greek words in a row ("Θα το δω"), and accents written as separate
+  marks no longer hide Greek or Arabic text.
 * **A saved note written again without its final full stop** is caught as already saved.
 
 ### Fixed — data
@@ -51,8 +50,9 @@ Each defect has a regression check that failed on the code it was found in (`tes
 * **Once armed, "Apply unreviewed" follows the card.** If a refresh brings a new rule failure, makes
   the card stale or starts the review, the confirm disarms. This works for single cards and groups.
 * **A decision that timed out is never shown another attempt's result.** If the history could not be
-  read before the click, the panel says it cannot tell whether the change was applied, points to the
-  Applied tab and reads the list again.
+  read before the click, the panel reports an apply or reject it then finds for that record, and
+  otherwise says it cannot tell whether the change was applied, points to the Applied tab and reads the
+  list again.
 * **Leaving the Approvals page during a decision** no longer leaves an empty gap for 15 seconds. The
   page you come back to reads the list again.
 * **A lone remaining card drops its hidden tick**, so a later bulk action cannot include it unseen.

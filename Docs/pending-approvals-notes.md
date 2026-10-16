@@ -844,6 +844,27 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.13.1 — three more reviews
+
+* **Short quotes.** A quote that squashes to fewer than 8 characters counts when it is a whole word of
+  the write (4+ letters in Latin script, 2+ in other scripts, 2+ ideographs as a substring because CJK
+  has no spaces). It does not have to be unique: the proof text repeats the write by construction
+  (a memory record's summary embeds its content; a skill proof holds the op text and its diff lines), so
+  a "once only" rule dropped nearly every short quote of a real write, including `sudo` in a blocking
+  finding. Regression checks for the quote rule stage records the way core does, never a hand-built
+  proof. The quote/other swap (quote in the rules, other in the write) needs long quotes on both sides,
+  because a short rules word plus a short write word proves nothing.
+* **Greek.** Greek letters are common English notation (αβ, ΔΔG, γδ T cells). Greek locks at three
+  letters in a row, or at three Greek tokens of 2+ letters separated only by spaces; punctuation or a
+  Latin letter resets the count. A line built only of one- and two-letter Greek words with
+  punctuation between them can pass; the AI review reports it, as it does Latin-script languages.
+  Combining marks are skipped so decomposed accents do not split a word.
+* **Landed writes.** One approve of one id prints `Approved 1` or `Approved 0` in core's `_approve`;
+  the count alone decides. The echoed notes can contain any line, including `Failed:`.
+* **Late answers without a baseline.** When the history could not be read before the click, an apply or
+  reject row for the record is still its answer (record ids are random and decided once), but a failed
+  row may be an older attempt, so it is not; then the panel says the outcome is unknown.
+
 ## 1.13.0 — the 1.12.4 audit
 
 Three audits of 1.12.4 (backend, reviewer logic, panel) found 40 defects, each reproduced against the

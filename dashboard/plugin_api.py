@@ -2219,10 +2219,10 @@ def _foreign_at(text: str, known: set) -> int:
                     if last == "greek" and run >= 2:
                         words += 1
                     run, start = (1, i) if kind else (0, i)
-                if ch.isalpha() and not kind:
+                if ch.isalpha() and not kind or not ch.isalnum() and not ch.isspace():
                     words = 0
                 last = kind
-                if kind and run >= _RUN[kind] or kind == "greek" and run >= 2 and words:
+                if kind and run >= _RUN[kind] or kind == "greek" and run >= 2 and words >= 2:
                     return at + start
         at += len(line)
     return -1
@@ -2955,10 +2955,9 @@ def _quoted(quote: str, proof: str, short: bool = True) -> bool:
         return False
     word = _proof(quote).strip()
     if any(_script_letter(ch) == "ideograph" for ch in word):
-        return len(pieces[0]) >= 2 and proof.count(word) == 1
+        return len(pieces[0]) >= 2 and word in proof
     least = 2 if any(_script_letter(ch) for ch in word) else _WORD_MIN
-    hits = re.findall(r"(?<!\w)" + re.escape(word) + r"(?!\w)", proof)
-    return len(pieces[0]) >= least and len(hits) == 1
+    return len(pieces[0]) >= least and re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", proof) is not None
 
 
 def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonce: str, cuts: list) -> str:

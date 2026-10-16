@@ -2512,10 +2512,11 @@ REST.scan = 'ok'
     REST.coldApplied = applied
     const cold = await mount('en', 'page')
     const coldReads = cold.flight.total.get('GET /pending') || 0
-    await click(buttons(cellOf(cold, 'skills:aaa11111'), /^Approve$/)[0], 200)
+    await click(buttons(cellOf(cold, 'skills:aaa11111'), /^Approve$/)[0], applied ? 700 : 200)
     const coldSaid = stub.calls.notify.at(-1)
-    if (coldSaid?.kind !== 'error' || coldSaid?.message !== UNKNOWN) {
-      fail(`a late /decide with no history read before the click (history then shows ${applied ? 'an apply' : 'an older failed'} row) claimed an outcome it cannot know: ${JSON.stringify(coldSaid)}`)
+    if (applied ? coldSaid?.kind === 'error' || !/applied/i.test(coldSaid?.message || '')
+      : coldSaid?.kind !== 'error' || coldSaid?.message !== UNKNOWN) {
+      fail(`a late /decide with no history read before the click (history then shows ${applied ? 'an apply row: it must say so' : 'only an older failed row: the outcome is unknown'}): ${JSON.stringify(coldSaid)}`)
     }
     if ((cold.flight.total.get('GET /pending') || 0) <= coldReads) fail('a late /decide with no history baseline did not read the list again')
     REST.post = 'normal'

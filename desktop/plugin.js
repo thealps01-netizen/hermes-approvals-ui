@@ -932,11 +932,10 @@ const settled = async (t, items, known) => {
   }
   return items.map(item => {
     if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
-    if (!known) return { id: item.id, ok: false, error: t('pa.notify.lateUnknown') }
     const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
     const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
-    const e = entries.find(x => !known.has(x.id) && ours(x))
-    if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
+    const e = entries.find(x => (known ? !known.has(x.id) : x.kind !== 'failed') && ours(x))
+    if (!e) return { id: item.id, ok: false, error: t(known ? 'pa.notify.lateNothing' : 'pa.notify.lateUnknown') }
     if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
     return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
       : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }

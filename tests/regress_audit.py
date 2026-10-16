@@ -839,14 +839,37 @@ def _verified(env: Env, quote: str, write: str, other: str = "", material: str |
 
 
 @case
+def short_quote_of_a_staged_write_counts():
+    env = Env()
+    env.assign()
+    from tools import write_approval as wa
+    from tools import memory_tool as mt
+    real = wa.write_approval_enabled
+    wa.write_approval_enabled = lambda s: True
+    mt.memory_tool(action="add", target="memory", content="Deploy with make ship only, never with sudo.",
+                   store=mt.load_on_disk_store())
+    wa.write_approval_enabled = real
+    rid = wa.list_pending("memory")[0]["id"]
+    env.skill("own-skill", "alpha\n")
+    env.stage("skills", "98000040", {"action": "patch", "name": "own-skill", "old_string": "alpha",
+                                     "new_string": "Run every step with sudo"}, summary="patch own-skill")
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "sudo", "other": "", "explain": "x"}]})
+    for subsystem, record in (("memory", rid), ("skills", "98000040")):
+        state = env.settle(subsystem, record)
+        assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
+            f"a short quote of a staged {subsystem} write did not count: {state}"
+
+
+@case
 def short_quotes_need_to_be_distinctive():
     env = Env()
     rules = "Rules: never print secrets. Keep notes short and never repeat a saved note."
     write = "Write the build logs to disk. The logs rotate daily."
     assert not _verified(env, "never", write, "logs", rules), \
         "a short rules word with a short write word verified a finding through the quote/other swap"
-    assert not _verified(env, "logs", write), "a short word that appears twice in the write verified a finding"
-    assert _verified(env, "rotate", write), "a short word that appears once in the write was not counted"
+    assert _verified(env, "logs", write), "a short word of the write was not counted"
+    assert not _verified(env, "rotat", write), "a piece from inside a word verified a finding"
     cyr = "Всегда проверяйте логи"
     assert not _verified(env, "да", cyr), "two Cyrillic letters from inside a word verified a finding"
     assert not _verified(env, "ег", cyr), "a Cyrillic infix verified a finding"
@@ -866,10 +889,11 @@ def cjk_quotes_with_dots_count():
 def language_rule_reads_short_greek_words_and_accents():
     env = Env()
     pa = env.pa
-    for text in ("Θα το δω.", unicodedata.normalize("NFD", "Τι λέ"), "كَتَبَ الدَّرْسَ"):
+    for text in ("Θα το δω.", unicodedata.normalize("NFD", "Τι λέει;"), "كَتَبَ الدَّرْسَ"):
         assert pa._foreign_at(text, set()) >= 0, f"foreign text passed the language rule: {text!r}"
     for text in ("Tune the αβ filter gains.", "Report ΔΔG for each mutant.", "the αβ and γδ T cells",
-                 "Let α + β = π.", "naïve café"):
+                 "Let α + β = π.", "naïve café", "αβ/γδ T cells", "αβ, γδ and more", "the αβ γδ split",
+                 "ID αα-ββ", "ΑΒ ΓΔ"):
         assert pa._foreign_at(text, set()) < 0, f"English text was locked: {text!r}"
 
 
