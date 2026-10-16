@@ -600,7 +600,8 @@ def _preview(text: str, n: int = 60) -> str:
 _TEXT = {
     'kind_memory': 'Memory note → {file}',
     'err_target_text': 'target (memory|user) with text to delete is required.',
-    'err_not_deleted': 'the note could not be deleted.',
+    'err_not_deleted': 'This note is no longer in {file} as the list showed it (it was changed or removed '
+                       'since), so nothing was deleted. The list is read again.',
     'err_already_undone': 'This record was already undone.',
     'err_not_undoable': 'This record cannot be undone (a rejected record has no file effect).',
     'err_conflict': 'The file changed after this record; send force to undo anyway.',
@@ -2169,7 +2170,8 @@ def _skill_author(content: str) -> str:
 
 
 def _norm_line(line: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"^(?:[\s>*\-#]+|\d+[.)](?=\s))+", "", line)).strip().lower()
+    line = re.sub(r"\s+", " ", re.sub(r"^(?:[\s>*\-#]+|\d+[.)](?=\s))+", "", line)).strip().lower()
+    return line.rstrip(" .!;:,")
 
 
 def _quote_at(text: str, at: int) -> str:
@@ -2909,9 +2911,15 @@ def _squash(text: str) -> str:
 def _quoted(quote: str, proof: str) -> bool:
     pieces = [_squash(p) for p in re.split(r"\.\.\.|…", str(quote or ""))]
     pieces = [p for p in pieces if p]
-    if not pieces or sum(map(len, pieces)) < min(_QUOTE_MIN, len(proof)):
+    if not pieces or max(map(len, pieces)) < min(_QUOTE_MIN, len(proof)):
         return False
-    return all(p in proof for p in pieces)
+    at = 0
+    for piece in pieces:
+        at = proof.find(piece, at)
+        if at < 0:
+            return False
+        at += len(piece)
+    return True
 
 
 def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonce: str, cuts: list) -> str:
@@ -3868,7 +3876,7 @@ def memory_delete(body: dict):
             result = load_on_disk_store().remove(target, text, matched_entry=text)
             if not result.get("success"):
                 _remove_snapshots(entry["id"])
-                return {"ok": False, "error": result.get("error") or _tx("err_not_deleted")}
+                return {"ok": False, "error": _tx("err_not_deleted", file=path.name)}
             for f in entry["files"]:
                 f["sha_after"] = _sha(path) if path.exists() else None
             _append(entry)

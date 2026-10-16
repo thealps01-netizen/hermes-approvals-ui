@@ -327,6 +327,23 @@ def duplicate_note_rule():
                                      "content": "The build uses uv for every package."})
     assert any("already saved" in h for h in _hard_texts(env, "memory", "93000003")), \
         "a replace that copies another saved note passed"
+    env.stage("memory", "93000004", {"action": "add", "target": "memory",
+                                     "content": "The build uses uv for every package"})
+    assert any("already saved" in h for h in _hard_texts(env, "memory", "93000004")), \
+        "a saved note written again without its final full stop passed"
+
+
+@case
+def quote_pieces_need_one_real_span_in_order():
+    env = Env()
+    proof = env.pa._squash("Always keep a backup of the config.\nAsk the owner first.")
+    def counted(quote):
+        out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+            {"severity": "block", "kind": "wrong", "quote": quote, "other": "", "explain": "x"}]}), proof)
+        return not out["findings"][0].get("unverified")
+    assert not counted("Always ... owner"), "a quote of two short common words joined by '...' was counted"
+    assert not counted("owner first ... Always keep a backup"), "quote pieces out of order were counted"
+    assert counted("Always keep a backup ... owner first"), "a real quote with '...' was not counted"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -635,6 +652,20 @@ def memory_delete_removes_only_the_exact_entry():
     assert row["kind"] != "external", f"the delete was recorded as an external change: {row}"
     back = _body(env.pa.undo({"id": row["id"]}))
     assert back.get("ok") and "Fridays" in mem.read_text(encoding="utf-8"), back
+
+
+@case
+def memory_delete_refusal_says_what_happened():
+    env = Env()
+    env.memory("Use tabs for indentation", "Other note")
+    env.pa.scan_now()
+    env.memory("Use tabs for indentation, never spaces, in every repo", "Other note")
+    out = _body(env.pa.memory_delete({"target": "memory", "text": "Use tabs for indentation"}))
+    error = str(out.get("error") or "")
+    assert not out.get("ok") and error, out
+    assert "staged" not in error and "pending record" not in error, \
+        f"a panel delete answers with the core's text for a pending write: {error}"
+    assert "nothing was deleted" in error, error
 
 
 @case

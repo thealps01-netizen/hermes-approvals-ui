@@ -220,7 +220,7 @@ def _review_selftest(tmp: Path) -> None:
          "edit": {"find": "updated", "replace": "x"}},
         {"severity": "block", "kind": "contradiction", "quote": "a sentence the write never contains",
          "other": "", "explain": "invented", "edit": {"find": "body updated", "replace": "y"}},
-        {"severity": "block", "kind": "duplicate", "quote": "body ... updated", "other": "o1", "explain": "said twice",
+        {"severity": "block", "kind": "duplicate", "quote": "body updated ... new lesson", "other": "o1", "explain": "said twice",
          "edit": {"find": "body updated", "replace": "body updated once"}}]}
     hold = threading.Event()
 
@@ -231,7 +231,7 @@ def _review_selftest(tmp: Path) -> None:
 
     globals()["_review_call"] = judge
     stage("skills", "5e1f0007", {"action": "patch", "name": "own-skill", "old_string": "body",
-                                 "new_string": "body updated"})
+                                 "new_string": "body updated with the new lesson"})
     (own / "SKILL.md").write_text((own / "SKILL.md").read_text(encoding="utf-8") + "body\n", encoding="utf-8")
     first = item("skills", "5e1f0007")["review"]
     assert first["status"] == "queued" and first["provider"] == "selftest" and not seen, \
