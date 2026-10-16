@@ -317,6 +317,7 @@ function say(key, ...args) {
 }
 
 let livePending = null
+const seenHistory = new Set()
 const alertListeners = new Set()
 const alertsMuted = () => ctxRef?.storage?.get?.('muted', false) === true
 const setAlertsMuted = on => {
@@ -339,7 +340,11 @@ const api = {
   count: () => ctxRef.rest('/count'),
   startReviews: () => ctxRef.rest('/reviews', { method: 'POST', body: {} }),
   scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
-  history: () => ctxRef.rest('/history?limit=50'),
+  history: async () => {
+    const d = await ctxRef.rest('/history?limit=50')
+    for (const e of d?.entries || []) seenHistory.add(e.id)
+    return d
+  },
   memory: () => ctxRef.rest('/memory'),
   deleteEntry: (target, text) => ctxRef.rest('/memory/delete', { method: 'POST', body: { target, text } }),
   clearHistory: keepUndoable =>
@@ -886,7 +891,7 @@ const told = (t, decision, one) => {
   if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
-const settled = async (t, items, since) => {
+const settled = async (t, items, known) => {
   let entries
   try {
     entries = (await api.history())?.entries || []
@@ -897,24 +902,28 @@ const settled = async (t, items, since) => {
     if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
     const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
     const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
-    const e = entries.find(x => (x.ts || 0) >= since && ours(x))
+    const e = entries.find(x => !known.has(x.id) && ours(x))
     if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
     if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
     return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
       : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
   })
 }
+const timedOut = e => /timed? ?out|timeout/i.test(String(e?.message || e || ''))
 const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  const since = Date.now() / 1000 - 2
+  if (!seenHistory.size) await api.history().catch(() => null)
+  const known = new Set(seenHistory)
   try {
     return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
-  } catch {
-    return { ok: true, results: await settled(t, items, since) }
+  } catch (e) {
+    if (timedOut(e)) return { ok: true, results: await settled(t, items, known) }
+    const error = errText(e) || t('pa.notify.failed')
+    return { ok: false, error, results: items.map(item => ({ id: item.id, ok: false, error })) }
   }
 }
 const decideOne = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
   const res = await decideAll(t, subsystem, items, decision, only, skipReview, withEdits)
-  const one = (res?.results || [])[0] || {}
+  const one = (res?.results || [])[0] || { ok: false, error: res?.error }
   host.notify(told(t, decision, one))
   return one
 }
@@ -1266,7 +1275,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
     const r = await run(key, () => decideOne(t, subsystem, [item], decision, only, skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale || r?.late) onChanged()
+    else onChanged()
   }
   const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
   const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
@@ -1448,11 +1457,11 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
     const r = await run(key, () => decideOne(t, 'skills', [item], decision, [], skipReview, withEdits))
     if (r?.ok) leave()
-    else if (r?.stale || r?.late) onChanged()
+    else onChanged()
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
-    if (one.ok) onChanged()
+    onChanged()
     return one
   })
   const toggle = id => setShown(prev => {
@@ -1862,7 +1871,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
           ok += results.filter(r => r.ok).length
           bad.push(...results.filter(r => !r.ok)
             .map(r => r.error || t(r.stale ? 'pa.notify.stale' : 'pa.notify.failed')))
-          if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
+          if (!res?.ok && !results.length) bad.push(res?.error || t('pa.notify.failed'))
         } catch (e) {
           bad.push(String(e?.message || e))
         }

@@ -660,6 +660,7 @@ const decided = body => [...decidedGroups(body), ...body.ids.map(id => {
 let version = 0
 async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
+  REST.lateDecided = false
   const registrations = []
   // Requests in flight per route for THIS mount (1.13: a poll never has two requests open at once).
   const flight = { live: new Map(), peak: new Map() }
@@ -680,7 +681,14 @@ async function mount(appLocale, parts = 'both') {
           if (REST.mode === 'groupsqueued') REST.mode = 'groupsstarted'
           return { ok: true, started: 1 }
         }
-        if (path === '/decide' && String(REST.post).startsWith('late')) throw new Error('Request timed out after 30000ms')
+        if (path === '/decide' && String(REST.post).startsWith('late')) {
+          REST.lateDecided = true
+          throw new Error('Request timed out after 30000ms')
+        }
+        if (path === '/decide' && REST.post === 'decide500') {
+          throw new Error('500: {"ok": false, "error": "Could not run /decide: disk full"}')
+        }
+        if (path === '/decide' && REST.post === 'notok') return { ok: false, error: 'BACKEND-REASON-xyz' }
         if (REST.post === 'hold') return new Promise(() => {})
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
@@ -705,9 +713,18 @@ async function mount(appLocale, parts = 'both') {
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       if (path === '/history?limit=50' && REST.post === 'latebusy') throw new Error('Request timed out after 30000ms')
-      if (path === '/history?limit=50' && REST.post === 'late') {
-        return { entries: [{ id: 'la7e0001', ts: Date.now() / 1000, kind: 'apply', subsystem: 'skills',
-          record_id: 'aaa11111', summary: 'late', files: [], undoable: true }, ...HISTORY.entries], counts: HISTORY.counts }
+      // The backend writes the late entry only once the decision reached it; `lateskew` stamps it with a
+      // server clock an hour behind the panel's, `lateold` holds an older failed attempt read before the click.
+      if (path === '/history?limit=50' && (REST.post === 'late' || REST.post === 'lateskew')) {
+        const skew = REST.post === 'lateskew' ? 3600 : 0
+        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: 'apply', subsystem: 'skills',
+          record_id: 'aaa11111', summary: 'late', files: [], undoable: true }] : []
+        return { entries: [...late, ...HISTORY.entries], counts: HISTORY.counts }
+      }
+      if (path === '/history?limit=50' && REST.post === 'lateold') {
+        return { entries: [{ id: 'f0f0f0f0', ts: Date.now() / 1000 - 60, kind: 'failed', subsystem: 'skills',
+          record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }, ...HISTORY.entries],
+        counts: HISTORY.counts }
       }
       const table = {
         '/pending': pendingFor(REST.mode),
@@ -2142,6 +2159,46 @@ REST.scan = 'ok'
   REST.delay = 0
   busy.root.unmount()
   busy.hostEl.remove()
+}
+
+// --- 25) 1.13: a failed /decide says why and re-reads; the late check needs no shared clock ----------
+// An HTTP 500 from /decide was reported as "The panel stopped waiting and no change was recorded" (that
+// is the timeout's text) and the backend's own error was hidden; an ok:false without results lost its
+// error to a generic "Could not be applied". After ANY failed decision the list is read again. A late
+// answer is matched by record id against the history rows the panel had NOT seen before the click, so a
+// server clock behind the panel's no longer turns an applied record into "nothing recorded".
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const reads = () => GETS.filter(p => p === '/pending').length
+  for (const [mode, text] of [['decide500', 'Could not run /decide: disk full'], ['notok', 'BACKEND-REASON-xyz']]) {
+    REST.post = mode
+    const h = await mount('en', 'page')
+    const from = reads()
+    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    const said = stub.calls.notify.at(-1)
+    if (said?.kind !== 'error' || said?.message !== text) {
+      fail(`a failed /decide (${mode}) does not show the backend's own error: ${JSON.stringify(said)}`)
+    }
+    if (reads() <= from) fail(`a failed /decide (${mode}) does not read the list again`)
+    if (cellOf(h, 'skills:aaa11111')?.querySelector('.pa-leaving')) fail(`a failed /decide (${mode}) sent the card away`)
+    REST.post = 'normal'
+    h.root.unmount()
+    h.hostEl.remove()
+  }
+  for (const [mode, kind, text] of [
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
+    ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
+    REST.post = mode
+    const h = await mount('en', 'page')
+    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    const said = stub.calls.notify.at(-1)
+    if (said?.kind !== kind || said?.message !== text) {
+      fail(`a late /decide (${mode}) is judged by the clock or by a row read before the click: ${JSON.stringify(said)}`)
+    }
+    REST.post = 'normal'
+    h.root.unmount()
+    h.hostEl.remove()
+  }
 }
 
 if (problems.length) {
