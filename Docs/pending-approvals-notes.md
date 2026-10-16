@@ -919,6 +919,18 @@ failed on 1.12.4 and passes now; `PA_MODULE=<old plugin_api.py>` runs the cases 
   panel" instead of waiting for the outside-change scan.
 * **Undo of a new skill** removes every folder the write left empty up to the skill folder
   (`templates/` sorted after `SKILL.md` and kept the folder); a category folder is never touched.
+* **Panel.** `usePolling` keeps one load in flight per poll; a refresh during a load is folded into
+  one follow-up (the 1.12.0 rule, which Refresh and post-action reads had broken). With data loaded, a
+  failed poll keeps it and shows `pa.empty.refreshFailed` with Retry; the full error state is for a
+  view that never loaded. In-flight and leaving cards live in a module store keyed `subsystem:id`
+  above the tab switch, released by the pending load that reflects the decision, so a tab switch can
+  neither re-enable Approve nor lose the re-read; a leaving card is `inert`. One `refreshAll` (pending,
+  history, memory, chip count) follows every decision, fix, review, undo, restore and delete. Only a
+  timeout runs the late-answer check, and it matches history rows by `record_id` that were not there
+  before the click — never by comparing client and server clocks; other errors show the backend's
+  `error`. The clear label uses `/history` `counts.total`. With the review `unassigned` or `failed`,
+  `Approve with the fix` arms the two-step unreviewed confirm and sends `with_edits` + `skip_review`
+  only when the fix clears every rule failure (`fix_left` empty, no `plain.fix`, nothing stale).
 
 ## 1.12.3 — skills outside the Hermes home, single-operation records
 
