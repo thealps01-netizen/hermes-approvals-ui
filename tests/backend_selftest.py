@@ -959,7 +959,7 @@ def _outside_home_selftest(tmp: Path) -> None:
     _PANEL_SKIPS_REVIEW[0] = True
     pend = tmp / "pending" / "skills"
     pend.mkdir(parents=True, exist_ok=True)
-    ext = Path(tempfile.mkdtemp(prefix="pending-approvals-ext-"))
+    ext = Path(tempfile.mkdtemp(prefix="pending-approvals-ext-")).resolve()
     config = tmp / "config.yaml"
     saved_config = config.read_bytes() if config.exists() else None
     config.write_text("skills:\n  external_dirs:\n    - " + json.dumps(ext.as_posix()) + "\n", encoding="utf-8")

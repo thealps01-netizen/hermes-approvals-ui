@@ -20,6 +20,11 @@ look has no version at all.
 * **Install is one step.** The README points to **Settings → Plugins → Install from Git** in the
   desktop app (or `hermes plugins install`); the app copies the Desktop UI half itself, so the manual
   copy step is gone.
+* **The backend selftest passes on the Windows CI runner.** Its temp folder has a short 8.3 name
+  (`C:\Users\RUNNER~1\…`) while Hermes reports the same files under their long name, so the
+  outside-home checks compared two spellings of one path. The test now resolves its folder once;
+  reproduced locally with a short-name temp folder (red before, green after). The panel itself was
+  not affected: approve and undo worked in that run.
 
 ## 1.12.3
 
