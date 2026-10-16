@@ -202,8 +202,9 @@ const BUNDLES = {
       hist: {
         apply: 'Approved and applied',
         rejected: 'Rejected',
-        clear: n => (n ? `Clear ${plural(n, 'record', 'records')}` : 'Clear'),
-        clearConfirm: 'Clearing drops the undo copies — those records can no longer be taken back.',
+        clear: n => (n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
+        clearConfirm: n => `Clearing deletes all ${plural(n, 'record', 'records')} of the history, not only the ones `
+          + 'shown, and drops their undo copies — those records can no longer be taken back.',
         clearCancel: 'Cancel',
         cleared: n => `Cleared ${plural(n, 'record', 'records')}`,
         clearFailed: 'Could not clear the history',
@@ -739,19 +740,15 @@ function LoadError({ title: heading, error, onRetry }) {
   }, 'error')
 }
 
-function StaleNotice({ error, onRetry, style }) {
-  const t = usePluginI18n(ID)
-  if (!error) return null
-  return jsxs('div', {
-    className: 'pa-alert pa-stale',
-    role: 'status',
-    style,
-    children: [
-      jsx('span', { children: t('pa.empty.refreshFailed', errText(error)) }, 'text'),
-      jsx(Button, { variant: 'outline', size: 'xs', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
-    ]
-  }, 'stale')
-}
+const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
+  className: 'pa-alert pa-stale',
+  role: 'status',
+  style,
+  children: [
+    jsx('span', { children: t('pa.empty.refreshFailed', errText(error)) }, 'text'),
+    jsx(Button, { variant: 'outline', size: 'xs', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
+  ]
+}, 'stale'))
 
 const WAITING = { figure: '—', tone: 'off', delta: '' }
 
@@ -1265,11 +1262,13 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
+  const [fixArmed, setFixArmed] = useState(false)
   const detailsAt = useRef(null)
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
   const { busy, run } = useRun(t, `${subsystem}:${item.id}`)
+  const detailsId = `pa-details-${subsystem}-${item.id}`
   const { leaving, leave } = useLeave(`${subsystem}:${item.id}`, onChanged)
   const cardAt = useInert(leaving)
   const plain = item.plain || {}
@@ -1290,9 +1289,11 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     ? (hard.length ? hard.map(h => h.text).join(' ') : t('pa.review.locked'))
     : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
   const failedBefore = Boolean(plain.last_error)
-  const canSkip = !hard.length && !stale.length && (status === 'failed' || status === 'unassigned')
+  const unchecked = status === 'failed' || status === 'unassigned'
+  const canSkip = !hard.length && !stale.length && !fix && unchecked
   const isNewSkill = groups.some(g => g.kind === 'new')
   const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)
+  const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length && !fix && !stale.length
   const fixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
@@ -1347,7 +1348,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
       stale.length
         ? alertBox('stale', [t('pa.status.staleWhy'),
-            ...stale.map(s => jsx('div', { className: 'pa-alert-sub', children: s }, s))], true)
+            ...stale.map((s, i) => jsx('div', { className: 'pa-alert-sub', children: s }, `${i}:${s}`))], true)
         : null,
       failedBefore ? alertBox('failed', `${t('pa.field.failedBefore')}: ${plain.last_error}`, true) : null,
 
@@ -1393,13 +1394,14 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
       fix && fixView(fix, t, busy, 'fix', () => void applyFix()),
 
-      canSkip && skipArmed
+      (canSkip && skipArmed) || fixArmed
         ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
         : null,
 
       open &&
         jsxs('div', {
           ref: detailsAt,
+          id: detailsId,
           className: 'pa-details',
           children: [
             jsx(PanelSectionLabel, { children: t('pa.field.change') }, 'changeLabel'),
@@ -1416,12 +1418,15 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
             variant: 'text',
             size: 'sm',
             disabled: leaving,
+            'aria-expanded': open,
+            'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
-          canSkip && skipArmed
+          (canSkip && skipArmed) || fixArmed
             ? jsx(Button, {
-                variant: 'text', size: 'sm', disabled: leaving, onClick: () => setSkipArmed(false),
+                variant: 'text', size: 'sm', disabled: leaving,
+                onClick: () => { setSkipArmed(false); setFixArmed(false) },
                 children: t('pa.btn.skipCancel')
               }, 'cancel')
             : null,
@@ -1448,10 +1453,12 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
               }, 'reject'),
               approveBtn('approve', t(edits ? 'pa.btn.approveAsIs' : 'pa.btn.approve'), asIsVariant,
                 approveBlocked, heldWhy, () => decideAndLeave('approve')),
-              edits
-                ? approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked, fixWhy,
-                    () => decideAndLeave('approve', [], false, true))
-                : null
+              !edits ? null
+                : fixArmed
+                  ? approveBtn('fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
+                      () => decideAndLeave('approve', [], true, true))
+                  : approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed, fixWhy,
+                      fixUnreviewed ? () => setFixArmed(true) : () => decideAndLeave('approve', [], false, true))
             ]
           }, 'actions')
         ]
@@ -1466,7 +1473,9 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
+  const [fixArmed, setFixArmed] = useState(false)
   const [shown, setShown] = useState(() => new Set())
+  const detailsId = `pa-details-skills-${item.id}`
   const detailsAt = useRef(null)
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
@@ -1490,8 +1499,10 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const heldWhy = reviewLocked
     ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : t('pa.review.locked'))
     : stale.length ? staleHeld : t('pa.grp.fixHeld', changeList(fixes))
-  const canSkip = !hard.length && !stale.length && (status === 'failed' || status === 'unassigned')
+  const unchecked = status === 'failed' || status === 'unassigned'
+  const canSkip = !hard.length && !stale.length && !fixes.length && unchecked
   const withFixBlocked = status !== 'done' || fixLeft.length > 0 || fixes.length > 0
+  const fixUnreviewed = withFixBlocked && unchecked && edits > 0 && !fixLeft.length && !fixes.length && !stale.length
   const withFixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
@@ -1624,7 +1635,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
         onAgain: () => run('review', () => askReview(t, 'skills', item.id, onChanged))
       }, 'review'),
 
-      canSkip && skipArmed
+      (canSkip && skipArmed) || fixArmed
         ? jsx('div', {
             style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn')
           }, 'skipWarn')
@@ -1633,6 +1644,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
       open &&
         jsxs('div', {
           ref: detailsAt,
+          id: detailsId,
           className: 'pa-details',
           children: [
             jsx(PanelSectionLabel, { children: t('pa.grp.result') }, 'resultLabel'),
@@ -1659,12 +1671,15 @@ function GroupCard({ item, onChanged, picked, onPick }) {
             variant: 'text',
             size: 'sm',
             disabled: leaving,
+            'aria-expanded': open,
+            'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
-          canSkip && skipArmed
+          (canSkip && skipArmed) || fixArmed
             ? jsx(Button, {
-                variant: 'text', size: 'sm', disabled: leaving, onClick: () => setSkipArmed(false),
+                variant: 'text', size: 'sm', disabled: leaving,
+                onClick: () => { setSkipArmed(false); setFixArmed(false) },
                 children: t('pa.btn.skipCancel')
               }, 'cancel')
             : null,
@@ -1691,10 +1706,13 @@ function GroupCard({ item, onChanged, picked, onPick }) {
               }, 'reject'),
               heldButton(busy, t, 'approve', t('pa.grp.approve', n), asIsVariant,
                 groupBlocked, heldWhy, () => decideGroup('approve')),
-              edits
-                ? heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, withFixBlocked, withFixWhy,
-                    () => decideGroup('approve', false, true))
-                : null
+              !edits ? null
+                : fixArmed
+                  ? heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
+                      () => decideGroup('approve', true, true))
+                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant,
+                      withFixBlocked && !fixUnreviewed, withFixWhy,
+                      fixUnreviewed ? () => setFixArmed(true) : () => decideGroup('approve', false, true))
             ]
           }, 'actions')
         ]
@@ -2032,6 +2050,12 @@ function PendingList({ data, error, refresh, onChanged }) {
   const seen = useRef(new Map())
   const [picked, setPicked] = useState(() => new Set())
   const items = units(data)
+  const keys = items.map(({ subsystem, item }) => `${subsystem}:${item.id}`).join('\n')
+  useEffect(() => {
+    const here = new Set(keys.split('\n'))
+    setPicked(prev => ([...prev].every(key => here.has(key)) ? prev
+      : new Set([...prev].filter(key => here.has(key)))))
+  }, [keys])
   const togglePick = key => setPicked(prev => {
     const next = new Set(prev)
     if (next.has(key)) next.delete(key)
@@ -2071,14 +2095,14 @@ function PendingList({ data, error, refresh, onChanged }) {
 
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
-  const stale = jsx(StaleNotice, { error, onRetry: refresh, style: { margin: '12px 12px 0' } }, 'stale')
+  const stale = staleNotice(t, error, refresh, { margin: '12px 12px 0' })
   const issues = data.issues || []
   const notice = issues.length
     ? jsx('div', {
         className: 'pa-alert pa-alert-danger',
         role: 'alert',
         style: { margin: '12px 12px 0' },
-        children: issues.map(text => jsx('div', { children: text }, text))
+        children: issues.map((text, i) => jsx('div', { children: text }, `${i}:${text}`))
       }, 'issues')
     : null
   const body = !total(data.counts)
@@ -2098,7 +2122,7 @@ function PendingList({ data, error, refresh, onChanged }) {
         children: jsx(item.parts ? GroupCard : PendingCard, {
           subsystem, item, onChanged,
           picked: picked.has(`${subsystem}:${item.id}`),
-          onPick: () => togglePick(`${subsystem}:${item.id}`)
+          onPick: items.length > 1 ? () => togglePick(`${subsystem}:${item.id}`) : null
         }, 'card')
       }, `${subsystem}:${item.id}`))
   }, 'grid')
@@ -2113,6 +2137,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const entries = data?.entries || []
+  const all = data?.counts?.total ?? entries.length
 
   const clear = async () => {
     setBusy(true)
@@ -2141,7 +2166,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
-      jsx(StaleNotice, { error, onRetry: refresh }, 'stale'),
+      staleNotice(t, error, refresh),
       jsx('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm },
         children: confirming
@@ -2150,7 +2175,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
               children: [
                 jsx('div', {
                   className: 'pa-alert pa-alert-danger',
-                  children: t('pa.hist.clearConfirm')
+                  children: t('pa.hist.clearConfirm', all)
                 }, 'copy'),
                 jsxs('div', {
                   style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: G.xs },
@@ -2167,7 +2192,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
                       size: 'sm',
                       loading: busy,
                       onClick: () => void clear(),
-                      children: t('pa.hist.clear', entries.length)
+                      children: t('pa.hist.clear', all)
                     }, 'confirm')
                   ]
                 }, 'row')
@@ -2178,7 +2203,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
               size: 'sm',
               style: { marginLeft: 'auto' },
               onClick: () => setConfirming(true),
-              children: t('pa.hist.clear', entries.length)
+              children: t('pa.hist.clear', all)
             }, 'arm')
       }, 'header'),
       jsx('div', {
@@ -2205,11 +2230,12 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
   const store = data?.[target]
+  const pct = store ? fill(store).pct : 0
   const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
   const draftMerge = async () => {
     let placed = false
     try {
-      placed = await host.composer?.insertText?.(null, mergeRequest(store.file, store.percent), { mode: 'block' })
+      placed = await host.composer?.insertText?.(null, mergeRequest(store.file, pct), { mode: 'block' })
     } catch {
       placed = false
     }
@@ -2241,7 +2267,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
-      jsx(StaleNotice, { error, onRetry: refresh }, 'stale'),
+      staleNotice(t, error, refresh),
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
@@ -2262,12 +2288,12 @@ function MemoryView({ data, error, refresh, onChanged }) {
           store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(store.updated)) }, 'updated') : null
         ]
       }, 'meta'),
-      store.percent >= 90 &&
+      pct >= 90 &&
         jsxs('div', {
           className: 'pa-alert',
           children: [
             jsx('div', { style: { fontWeight: 600, color: 'var(--ui-text-primary)' }, children: t('pa.memory.warnTitle') }, 'title'),
-            t('pa.memory.warnBody', store.percent),
+            t('pa.memory.warnBody', pct),
             jsxs('div', {
               style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, marginTop: G.xs },
               children: [

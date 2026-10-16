@@ -504,7 +504,7 @@ const HISTORY = { entries: [
   { id: 'bb22cc33', ts: Date.now() / 1000 - 3600, kind: 'rejected', subsystem: 'skills', summary: 'batch(12 ops: ' + 'patch, '.repeat(28) + 'on hermes-desktop-plugin-dev — ' + HIST_TAIL, files: [], undoable: false },
   { id: 'cc33dd44', ts: Date.now() / 1000 - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: ' + 'long description '.repeat(30), files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
   { id: 'dd44ee55', ts: Date.now() / 1000 - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused', files: [], undoable: false }
-], counts: { applied: 57, failed: 1, undoable: 2 } }
+], counts: { applied: 57, failed: 1, undoable: 2, total: 87 } }
 const HISTORY_RESTORE = { entries: [
   { id: RESTORE_ID, ts: Date.now() / 1000 - 300, kind: 'rejected', subsystem: 'skills', summary: 'new-skill rejected',
     files: [], undoable: false, restorable: true },
@@ -525,7 +525,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -734,7 +734,7 @@ async function mount(appLocale, parts = 'both') {
       const left = d => (REST.gone ? { ...d, memory: (d.memory || []).filter(r => !REST.gone.has(r.id)),
         skills: (d.skills || []).filter(r => !REST.gone.has(r.id)) } : d)
       const table = {
-        '/pending': left(pendingFor(REST.mode)),
+        '/pending': REST.pending || left(pendingFor(REST.mode)),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
           : pendingFor(REST.mode).counts), records: pendingFor(REST.mode).records },
         '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE
@@ -1091,7 +1091,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   await click(draft, 40)
   const put = stub.calls.composer[stub.calls.composer.length - 1]
   if (!put || put.sessionId !== null || put.opts?.mode !== 'block') fail(`the draft did not go to the active chat box: ${JSON.stringify(put)}`)
-  must(put?.text, ['MEMORY.md is 100% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
+  must(put?.text, ['MEMORY.md is 99% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
   if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
   if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
   if (stub.calls.notify[stub.calls.notify.length - 1]?.message !== 'Merge request is in the chat box — read it, then send.') {
@@ -1165,10 +1165,12 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 {
   const clear = buttons(en.hostEl, /Clear/)[0]
-  if ((clear?.textContent || '') !== 'Clear 4 records') fail(`the clear label is not a real plural: ${clear?.textContent}`)
+  // 1.13: the backend clears the whole history (counts.total), not just the 4 rows shown.
+  if ((clear?.textContent || '') !== 'Clear all 87 records') fail(`the clear label does not state the real total: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
   await click(clear)
-  must(en.hostEl.textContent, ['Clearing drops the undo copies'], 'clear confirmation copy')
+  must(en.hostEl.textContent, ['Clearing deletes all 87 records', 'not only the ones shown', 'undo copies'],
+    'clear confirmation copy')
   if (stub.calls.posts.some(p => p.path === '/history/clear')) fail('the clear fired before confirmation')
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the clear confirmation (two-step) did not appear')
@@ -2283,6 +2285,125 @@ REST.scan = 'ok'
   all.hostEl.remove()
   all.chipRoot?.unmount?.()
   all.chipEl?.remove?.()
+}
+
+// --- 27) 1.13: small honesty fixes on cards, the bulk bar, the KPI strip and the history clear -----
+// A lone pending record drew a selection box that did nothing, and a selection outlived its record.
+// "Approve without review" was offered on a card held by "Shorten first" (the backend refuses it).
+// MEMORY.md read 99 % "Nearly full" in the KPI and "100% full" on the Memory tab (floor vs round).
+// Repeated stale lines or issues gave React duplicate keys. "Details and changes" did not say what it
+// opens or whether it is open. With no review model (or a failed review) an automatic rule fix that
+// clears every rule failure could only be rejected: it now gets the two-step "Apply unreviewed" confirm
+// and sends with_edits + skip_review; it stays held while the fix leaves a rule failure behind.
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  const keyWarnings = []
+  const realError = console.error
+  console.error = (...a) => {
+    if (/same key/.test(String(a[0]))) keyWarnings.push(String(a[1] ?? a[0]))
+    return realError(...a)
+  }
+
+  REST.pending = { ...PENDING, memory: [], skills: [PENDING.skills[1]], counts: { memory: 0, skills: 1 } }
+  const lone = await mount('en', 'page')
+  if (lone.hostEl.querySelectorAll('.pa-pick').length) fail('a lone pending record draws a selection box with nothing to bulk-act on')
+  lone.root.unmount()
+  lone.hostEl.remove()
+
+  REST.pending = null
+  REST.gone = new Set()
+  const pick = await mount('en', 'page')
+  for (const key of ['skills:aaa11111', 'skills:def67890']) {
+    const box = cellOf(pick, key)?.querySelector('.pa-pick')
+    if (box) await click(box, 10)
+  }
+  REST.gone.add('aaa11111')
+  await click(pick.hostEl.querySelector('.pa-refresh'), 150)
+  REST.gone.delete('aaa11111')
+  await click(pick.hostEl.querySelector('.pa-refresh'), 150)
+  if (cellOf(pick, 'skills:aaa11111')?.querySelector('.pa-pick')?.checked) {
+    fail('a selection outlives its record: the record came back still ticked')
+  }
+  REST.gone = null
+  pick.root.unmount()
+  pick.hostEl.remove()
+
+  REST.pending = { ...PENDING, skills: PENDING.skills.map(s => (s.id === 'def67890'
+    ? { ...s, review: { status: 'unassigned', hard: [] } } : s)) }
+  const short = await mount('en', 'page')
+  if (buttons(cellOf(short, 'skills:def67890'), /Approve without review/).length) {
+    fail('"Approve without review" is offered on a card held by "Shorten first"')
+  }
+  short.root.unmount()
+  short.hostEl.remove()
+
+  const DUP = 'The same stale line.'
+  REST.pending = { ...PENDING, issues: ['Twice said.', 'Twice said.'],
+    skills: PENDING.skills.map(s => (s.id === 'aaa11111' ? { ...s, plain: { ...s.plain, stale: [DUP, DUP] } } : s)) }
+  const dup = await mount('en', 'page')
+  if (keyWarnings.length) fail(`duplicate React keys: ${[...new Set(keyWarnings)].join(', ')}`)
+  REST.pending = null
+  for (const key of ['memory:abc12345', 'skills:aaa11111']) {
+    const toggle = buttons(cellOf(dup, key), /^Details and changes$/)[0]
+    const panel = toggle?.getAttribute('aria-controls')
+    if (toggle?.getAttribute('aria-expanded') !== 'false' || !panel) fail(`the ${key} Details toggle has no aria-expanded/aria-controls`)
+    if (toggle) await click(toggle, 20)
+    const open = buttons(cellOf(dup, key), /^Hide details$/)[0]
+    if (open?.getAttribute('aria-expanded') !== 'true' || !panel || !dup.hostEl.querySelector(`[id="${panel}"]`)) {
+      fail(`the open ${key} Details toggle does not point at the details it opened`)
+    }
+  }
+  dup.root.unmount()
+  dup.hostEl.remove()
+  console.error = realError
+
+  const mem = await mount('en', 'page')
+  const kpi = [...mem.hostEl.querySelectorAll('.pa-kpis [data-slot]')].map(e => e.textContent).join(' ')
+  await click(tab(mem.hostEl, /^Memory/), 60)
+  const said = mem.hostEl.querySelector('[role="tabpanel"]')?.textContent || ''
+  const kpiPct = (mem.hostEl.querySelector('.pa-kpis')?.textContent.match(/(\d+)%/) || [])[1]
+  const tabPct = (said.match(/(\d+)% full/) || [])[1]
+  if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
+  mem.root.unmount()
+  mem.hostEl.remove()
+
+  const unreviewed = left => ({ ...PENDING, skills: PENDING.skills.map(s => (s.id === 'aaa11111'
+    ? { ...s, review: { status: 'unassigned', edits: 1, fix_left: left,
+        hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }] } } : s)) })
+  REST.pending = unreviewed([])
+  const fixable = await mount('en', 'page')
+  const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const before = sends().length
+  const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0]
+  if (!withFix() || withFix().classList.contains('pa-held') || withFix().getAttribute('aria-disabled') === 'true') {
+    fail('with no review model a rule fix that clears every failure still cannot be approved')
+  }
+  if (withFix()) await click(withFix(), 30)
+  if (sends().length !== before) fail('the unreviewed fix was sent on the first click (no confirm step)')
+  if (withFix()?.textContent !== 'Apply unreviewed' || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
+    fail('the unreviewed fix has no two-step "Apply unreviewed" confirm')
+  }
+  if (withFix()) await click(withFix(), 80)
+  const body = sends().at(-1)?.body || {}
+  if (sends().length !== before + 1 || !body.with_edits || !body.skip_review) {
+    fail(`the unreviewed fix did not send with_edits + skip_review: ${JSON.stringify(body)}`)
+  }
+  fixable.root.unmount()
+  fixable.hostEl.remove()
+
+  REST.pending = unreviewed(['new-skill: still missing the author line.'])
+  const partial = await mount('en', 'page')
+  const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
+  const from = sends().length
+  if (held) {
+    await click(held, 30)
+    await click(buttons(cellOf(partial, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0], 60)
+  }
+  if (!held?.classList.contains('pa-held') || sends().length !== from) fail('a rule fix that leaves a failure behind was unlocked')
+  REST.pending = null
+  partial.root.unmount()
+  partial.hostEl.remove()
 }
 
 if (problems.length) {
