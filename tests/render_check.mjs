@@ -525,7 +525,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0 }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -661,8 +661,9 @@ let version = 0
 async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
   const registrations = []
-  const ctx = {
-    rest: async (path, opts) => {
+  // Requests in flight per route for THIS mount (1.13: a poll never has two requests open at once).
+  const flight = { live: new Map(), peak: new Map() }
+  const answer = async (path, opts) => {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
         if (path === '/undo') {
@@ -719,6 +720,18 @@ async function mount(appLocale, parts = 'both') {
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
       return table[path]
+  }
+  const ctx = {
+    rest: async (path, opts) => {
+      const route = `${opts?.method || 'GET'} ${path}`
+      flight.live.set(route, (flight.live.get(route) || 0) + 1)
+      flight.peak.set(route, Math.max(flight.peak.get(route) || 0, flight.live.get(route)))
+      try {
+        if (REST.delay) await new Promise(r => setTimeout(r, REST.delay))
+        return await answer(path, opts)
+      } finally {
+        flight.live.set(route, flight.live.get(route) - 1)
+      }
     },
     os: { notify: (...a) => stub.calls.os.push(a) },
     storage: {
@@ -765,7 +778,7 @@ async function mount(appLocale, parts = 'both') {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title }
+  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title, flight }
 }
 
 // The register-time label path is exercised for real: `ctx.i18n.t` resolves through the SAME
@@ -2070,6 +2083,65 @@ REST.scan = 'ok'
   }
   hist.hostEl.remove()
   REST.mode = 'normal'
+}
+
+// --- 24) 1.13: a failed refresh keeps the loaded list; polls never overlap ---------------------------
+// One failed or timed-out poll once replaced the whole loaded Pending list with the error screen. With
+// data on screen the cards stay and a small notice says the refresh failed, with Retry; the full error
+// state is only for a pane that has nothing to show. Refresh (and every post-action re-read) started a
+// new request while the last was still open: a refresh during a load is folded into ONE follow-up load
+// after it, so no poll ever has two requests in flight.
+{
+  const cells = h => h.hostEl.querySelectorAll('.pa-cell').length
+  const kept = await mount('en', 'page')
+  REST.mode = 'fail'
+  await click(kept.hostEl.querySelector('.pa-refresh'), 80)
+  if (kept.hostEl.querySelector('[data-slot="error-state"]')) {
+    fail('a failed refresh replaced the loaded pending list with the full error state')
+  }
+  if (cells(kept) !== 3) fail(`a failed refresh hid the loaded records (${cells(kept)} cards left)`)
+  const notice = kept.hostEl.querySelector('.pa-stale')
+  if (!notice || !notice.textContent.includes('list exploded')) {
+    fail('a failed refresh over loaded data shows no “could not refresh” notice with its reason')
+  }
+  REST.mode = 'normal'
+  const retry = buttons(notice || kept.hostEl, /^Retry$/)[0]
+  if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the “could not refresh” notice offers no kit Retry')
+  if (retry) await click(retry, 80)
+  if (kept.hostEl.querySelector('.pa-stale')) fail('the “could not refresh” notice stays after a successful Retry')
+  await click(tab(kept.hostEl, /Applied/), 40)
+  REST.mode = 'fail'
+  await click(kept.hostEl.querySelector('.pa-refresh'), 80)
+  if (kept.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed refresh replaced the loaded history with the error state')
+  if (!kept.hostEl.querySelector('.pa-stale') || !kept.hostEl.querySelectorAll('.pa-card').length) {
+    fail('a failed refresh of the history hid its rows or said nothing')
+  }
+  REST.mode = 'normal'
+  kept.root.unmount()
+  kept.hostEl.remove()
+
+  REST.delay = 30
+  const busy = await mount('en', 'page')
+  await act(async () => { await new Promise(r => setTimeout(r, 150)) })
+  for (let i = 0; i < 5; i += 1) await click(busy.hostEl.querySelector('.pa-refresh'), 5)
+  await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+  const over = [...busy.flight.peak].filter(([, n]) => n > 1)
+  if (over.length) {
+    fail(`polls overlap after 5 rapid Refresh clicks: ${over.map(([r, n]) => `${r} ×${n}`).join(', ')} in flight at once`)
+  }
+  const burst = GETS.filter(p => p === '/pending').length
+  await act(async () => {
+    for (let i = 0; i < 5; i += 1) {
+      busy.hostEl.querySelector('.pa-refresh').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    }
+  })
+  await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+  const folded = GETS.filter(p => p === '/pending').length - burst
+  if (folded !== 2) fail(`5 Refresh clicks in one burst read /pending ${folded} times, not one load plus ONE follow-up`)
+  if ([...busy.flight.peak].some(([, n]) => n > 1)) fail('a burst of Refresh clicks overlapped a poll')
+  REST.delay = 0
+  busy.root.unmount()
+  busy.hostEl.remove()
 }
 
 if (problems.length) {

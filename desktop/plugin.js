@@ -239,6 +239,8 @@ const BUNDLES = {
         memoryError: 'Memory could not be read.',
         scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
           + 'The pending list is current; an outside change may be missing from “Applied” until a check succeeds.',
+        refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
+          + 'successful read.',
         reviewsFailed: why => (why
           ? `The pre-reviews could not be started: ${why}. The next refresh tries again.`
           : 'The pre-reviews could not be started. The next refresh tries again.'),
@@ -515,6 +517,8 @@ const STYLE = `
 .pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
   background:color-mix(in srgb,var(--ui-orange) 12%,transparent);
   border-left:3px solid var(--ui-orange);padding:8px 12px}
+.pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
+.pa-stale>span{flex:1 1 220px;min-width:0}
 .pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
 .pa-tabs{display:flex;align-items:center;min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
 .pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
@@ -538,35 +542,55 @@ const STYLE = `
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
 
 function usePolling(load, ms) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [at, setAt] = useState(null)
-  const [tick, setTick] = useState(0)
+  const [state, setState] = useState({ data: null, error: null, at: null, seq: 0 })
+  const poll = useRef(null)
+  const wait = useRef(ms)
+  wait.current = ms
   useEffect(() => {
-    let alive = true
-    let h = 0
-    const run = async () => {
-      if (!alive) return
+    const p = { alive: true, busy: false, again: false, h: 0, started: 0 }
+    const go = async seq => {
       try {
-        const d = await load()
-        if (alive) {
-          setData(d)
-          setError(null)
-          setAt(Date.now())
-        }
-      } catch (e) {
-        if (alive) setError(e)
+        const data = await load()
+        if (p.alive) setState({ data, error: null, at: Date.now(), seq })
+      } catch (error) {
+        if (p.alive) setState(s => ({ ...s, error }))
       }
-      clearTimeout(h)
-      if (alive) h = setTimeout(run, ms)
+      p.busy = false
+      if (!p.alive) return
+      if (p.again) {
+        p.again = false
+        p.run()
+      } else {
+        p.h = setTimeout(p.run, wait.current)
+      }
     }
-    void run()
+    p.run = () => {
+      if (!p.alive) return p.started
+      clearTimeout(p.h)
+      if (p.busy) {
+        p.again = true
+        return p.started + 1
+      }
+      p.busy = true
+      p.started += 1
+      void go(p.started)
+      return p.started
+    }
+    poll.current = p
+    p.run()
     return () => {
-      alive = false
-      clearTimeout(h)
+      p.alive = false
+      clearTimeout(p.h)
     }
-  }, [ms, tick])
-  return { data, error, at, refresh: () => setTick(t => t + 1) }
+  }, [])
+  useEffect(() => {
+    const p = poll.current
+    if (!p || !p.alive || p.busy) return
+    clearTimeout(p.h)
+    p.h = setTimeout(p.run, ms)
+  }, [ms])
+  const refresh = useRef(() => poll.current?.run() ?? 0).current
+  return { ...state, refresh }
 }
 
 function usePending() {
@@ -578,11 +602,12 @@ function usePending() {
     } catch (e) {
       issues.push(say('pa.empty.scanFailed', errText(e)))
     }
-    const d = await api.pending()
+    let d = await api.pending()
     if (reviewUnits(d).some(i => (i.review || {}).status === 'queued')) {
       try {
         const res = await api.startReviews()
         if (res?.ok === false) issues.push(say('pa.empty.reviewsFailed', res.error || ''))
+        else if (res?.started) d = await api.pending()
       } catch (e) {
         issues.push(say('pa.empty.reviewsFailed', errText(e)))
       }
@@ -695,6 +720,20 @@ function LoadError({ title: heading, error, onRetry }) {
       children: t('pa.empty.retry')
     }, 'retry')
   }, 'error')
+}
+
+function StaleNotice({ error, onRetry, style }) {
+  const t = usePluginI18n(ID)
+  if (!error) return null
+  return jsxs('div', {
+    className: 'pa-alert pa-stale',
+    role: 'status',
+    style,
+    children: [
+      jsx('span', { children: t('pa.empty.refreshFailed', errText(error)) }, 'text'),
+      jsx(Button, { variant: 'outline', size: 'xs', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
+    ]
+  }, 'stale')
 }
 
 const WAITING = { figure: '—', tone: 'off', delta: '' }
@@ -1967,8 +2006,9 @@ function PendingList({ data, error, refresh }) {
     seen.current = next
   })
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
+  if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  const stale = jsx(StaleNotice, { error, onRetry: refresh, style: { margin: '12px 12px 0' } }, 'stale')
   const issues = data.issues || []
   const notice = issues.length
     ? jsx('div', {
@@ -2002,7 +2042,7 @@ function PendingList({ data, error, refresh }) {
   const bar = total(data.counts)
     ? jsx(BulkBar, { items, picked, setPicked, onChanged: refresh }, 'bulk')
     : null
-  return jsxs('div', { children: [notice, bar, body] }, 'list')
+  return jsxs('div', { children: [stale, notice, bar, body] }, 'list')
 }
 
 function HistoryList({ data, error, refresh, onRestored }) {
@@ -2027,9 +2067,9 @@ function HistoryList({ data, error, refresh, onRestored }) {
     }
   }
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
+  if (!data && error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
-  if (!entries.length) {
+  if (!entries.length && !error) {
     return jsx(EmptyState, {
       title: t('pa.empty.historyTitle'),
       description: t('pa.empty.historyBody')
@@ -2038,6 +2078,7 @@ function HistoryList({ data, error, refresh, onRestored }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
+      jsx(StaleNotice, { error, onRetry: refresh }, 'stale'),
       jsx('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm },
         children: confirming
@@ -2133,11 +2174,12 @@ function MemoryView({ data, error, refresh, onChanged }) {
     }
   }
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
+  if (!store && error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
   if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
+      jsx(StaleNotice, { error, onRetry: refresh }, 'stale'),
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
