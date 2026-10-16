@@ -444,7 +444,7 @@ def _counts(listed: dict | None = None) -> dict:
 
     if listed is None:
         landed = _landed()
-        listed = {s: _sweep_landed(s, wa.list_pending(s), landed) for s in (wa.MEMORY, wa.SKILLS)}
+        listed = {s: _sweep_landed(s, _list_pending(wa, s), landed) for s in (wa.MEMORY, wa.SKILLS)}
     folded = sum(len(m) - 1 for m in _skill_groups(listed[wa.SKILLS]))
     return {wa.MEMORY: len(listed[wa.MEMORY]), wa.SKILLS: len(listed[wa.SKILLS]) - folded}
 
@@ -1086,7 +1086,7 @@ def count():
     from tools import write_approval as wa
 
     try:
-        listed = {s: wa.list_pending(s) for s in (wa.MEMORY, wa.SKILLS)}
+        listed = {s: _list_pending(wa, s) for s in (wa.MEMORY, wa.SKILLS)}
         return {"counts": _counts(listed), "records": {s: len(r) for s, r in listed.items()}}
     except Exception as exc:
         return _read_failed("/count", exc)
@@ -1176,7 +1176,7 @@ def _skill_groups(records: list[dict]) -> list[list[dict]]:
 def _groups_now() -> dict:
     from tools import write_approval as wa
 
-    return {_group_id(m): m for m in _skill_groups(wa.list_pending(wa.SKILLS))}
+    return {_group_id(m): m for m in _skill_groups(_list_pending(wa, wa.SKILLS))}
 
 
 def _combined(gid: str, members: list[dict]) -> dict:
@@ -1536,7 +1536,7 @@ def _group_job(gid: str, model: dict, tag: str) -> None:
                               "targets": snap["targets"], "rules": _rules_sha(), "prompt": _GROUP_PROMPT_V,
                               "assigned": model, "siblings": 0, "cut": cuts, "seen": {},
                               "members": [r.get("id") for r in members]}
-                proofs = [_squash(_write_text(wa.SKILLS, r)) for r in members]
+                proofs = [_proof(_write_text(wa.SKILLS, r)) for r in members]
             started = time.time()
             try:
                 state = {"status": "done", **_review_run(wa.SKILLS, prompt, model, nonce, "".join(proofs),
@@ -1632,7 +1632,9 @@ def _group_apply_claimed(gid: str, members: list[dict], suffix: str, queued: dic
     entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": wa.SKILLS,
              "summary": _group_summary(members) + suffix, "record_id": gid,
              "group": [r.get("id") for r in members], "changes": [str(r.get("summary") or "") for r in members],
-             "payload_hash": _payload_hash(_combined(gid, members)["payload"]), "files": [], "undone": False}
+             "payload_hash": _payload_hash(_combined(gid, members)["payload"]),
+             "member_hashes": {str(r.get("id")): _payload_hash(r.get("payload")) for r in members},
+             "files": [], "undone": False}
     for n, path in enumerate(before):
         entry["files"].append({"path": _rel(path), "snap": _store_copy(path, entry["id"], n),
                                "before_sha": _sha(path), "sha_after": None})
@@ -1791,7 +1793,7 @@ def _pending() -> dict:
     landed = _landed()
     _unclaim_left()
     for subsystem in (wa.MEMORY, wa.SKILLS):
-        records = _sweep_landed(subsystem, wa.list_pending(subsystem), landed)
+        records = _sweep_landed(subsystem, _list_pending(wa, subsystem), landed)
         groups = {_group_id(m): m for m in (_skill_groups(records) if subsystem == wa.SKILLS else [])}
         cards: dict = {}
         broken: dict = {}
@@ -2183,27 +2185,36 @@ def _quote_at(text: str, at: int) -> str:
 _IDEOGRAPHIC = ("CJK ", "HIRAGANA ", "KATAKANA ", "HANGUL ", "IDEOGRAPHIC ")
 
 
+_RUN = {"word": 2, "greek": 3}
+
+
 def _script_letter(ch: str) -> str:
-    if ord(ch) < 128 or not ch.isalpha():
+    if ord(ch) < 128 or not ch.isalpha() or unicodedata.category(ch) == "Lm":
         return ""
-    name = unicodedata.name(ch, "")
+    base = unicodedata.normalize("NFKC", ch)[:1] or ch
+    if ord(base) < 128:
+        return ""
+    name = unicodedata.name(base, "")
     if name.startswith("LATIN "):
         return ""
-    return "ideograph" if name.startswith(_IDEOGRAPHIC) else "word"
+    if name.startswith(_IDEOGRAPHIC):
+        return "ideograph"
+    return "greek" if name.startswith("GREEK ") else "word"
 
 
 def _foreign_at(text: str, known: set) -> int:
     at = 0
     for line in str(text or "").splitlines(keepends=True):
         if _norm_line(line) not in known:
-            run = 0
+            run, last = 0, ""
             for i, ch in enumerate(line):
                 kind = _script_letter(ch)
                 if kind == "ideograph":
                     return at + i
-                run = run + 1 if kind == "word" else 0
-                if run >= 2:
-                    return at + i - 1
+                run = run + 1 if kind and kind == last else (1 if kind else 0)
+                last = kind
+                if kind and run >= _RUN[kind]:
+                    return at + i - run + 1
         at += len(line)
     return -1
 
@@ -2694,7 +2705,7 @@ def _review_siblings(subsystem: str, record: dict) -> list[dict]:
     from tools import write_approval as wa
 
     names = _target_names(subsystem, record)
-    return [r for r in wa.list_pending(subsystem)
+    return [r for r in _list_pending(wa, subsystem)
             if r.get("id") != record.get("id") and names & _target_names(subsystem, r)]
 
 
@@ -2828,7 +2839,7 @@ def _review_job(subsystem: str, record_id: str, model: dict, tag: str) -> None:
     try:
         with _REVIEW_SLOTS:
             with _LOCK, _memo():
-                record = wa.get_pending(subsystem, record_id)
+                record = _get_pending(wa, subsystem, record_id)
                 if not record:
                     return
                 now = _review_state(subsystem, record)
@@ -2843,7 +2854,7 @@ def _review_job(subsystem: str, record_id: str, model: dict, tag: str) -> None:
                          "targets": snap["targets"], "rules": _rules_sha(), "prompt": _REVIEW_PROMPT_V,
                          "assigned": model, "siblings": len(siblings), "cut": cuts,
                          "seen": {str(r.get("id")): _payload_hash(r.get("payload")) for r in siblings}}
-                proof = _squash(_write_text(subsystem, record))
+                proof = _proof(_write_text(subsystem, record))
             started = time.time()
             try:
                 state = {"status": "done", **_review_run(subsystem, prompt, model, nonce, proof)}
@@ -2852,7 +2863,7 @@ def _review_job(subsystem: str, record_id: str, model: dict, tag: str) -> None:
                 state = {"status": "failed", "error": _short_error(str(exc) or repr(exc)), **model}
         state.update(facts, rid=uuid.uuid4().hex[:12], started=started, finished=time.time())
         with _LOCK:
-            if wa.get_pending(subsystem, record_id) and \
+            if _get_pending(wa, subsystem, record_id) and \
                     float(_review_read(subsystem, record_id).get("started") or 0) <= started:
                 target = _review_path(subsystem, record_id)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -2902,24 +2913,38 @@ def _write_text(subsystem: str, record: dict) -> str:
 
 
 _QUOTE_MIN = 8
+_WORD_MIN = 4
 
 
 def _squash(text: str) -> str:
     return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", str(text or "")).lower())
 
 
+def _proof(text: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(text or "")).lower())
+
+
 def _quoted(quote: str, proof: str) -> bool:
+    flat = _squash(proof)
     pieces = [_squash(p) for p in re.split(r"\.\.\.|…", str(quote or ""))]
     pieces = [p for p in pieces if p]
-    if not pieces or max(map(len, pieces)) < min(_QUOTE_MIN, len(proof)):
+    if not pieces:
         return False
-    at = 0
-    for piece in pieces:
-        at = proof.find(piece, at)
-        if at < 0:
-            return False
-        at += len(piece)
-    return True
+    if max(map(len, pieces)) >= min(_QUOTE_MIN, len(flat)):
+        at = 0
+        for piece in pieces:
+            at = flat.find(piece, at)
+            if at < 0:
+                return False
+            at += len(piece)
+        return True
+    if len(pieces) > 1:
+        return False
+    short = _proof(quote).strip()
+    if any(_script_letter(ch) for ch in short):
+        return len(pieces[0]) >= (1 if any(_script_letter(ch) == "ideograph" for ch in short) else 2) \
+            and short in proof
+    return len(pieces[0]) >= _WORD_MIN and re.search(r"(?<!\w)" + re.escape(short) + r"(?!\w)", proof) is not None
 
 
 def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonce: str, cuts: list) -> str:
@@ -2994,27 +3019,23 @@ _EDIT_LIMIT = 20000
 
 def _answer_json(text: str) -> dict | None:
     decoder = json.JSONDecoder()
-    first = None
     for at in [m.start() for m in re.finditer(r"\{", text)]:
         try:
             data, _end = decoder.raw_decode(text, at)
         except ValueError:
             continue
-        if isinstance(data, dict):
-            if "findings" in data or "summary" in data:
-                return data
-            first = first if first is not None else data
-    return first
+        if isinstance(data, dict) and "findings" in data:
+            return data
+    return None
 
 
 def _review_parse(text: str, proof: str | None = None, changes: int = 0, material: str | None = None) -> dict:
     data = _answer_json(str(text or ""))
-    if not isinstance(data, dict) or not isinstance(data.get("findings") or [], list):
+    if not isinstance(data, dict) or not isinstance(data.get("findings"), list) \
+            or not all(isinstance(item, dict) for item in data["findings"]):
         raise ValueError(_tx("review_bad_answer", text=_preview(str(text or ""))))
     findings = []
-    for item in data.get("findings") or []:
-        if not isinstance(item, dict):
-            continue
+    for item in data["findings"]:
         found = {k: str(item.get(k) or "").strip()[:800] for k in ("severity", "kind", "quote", "other", "explain")}
         edit = item.get("edit")
         if isinstance(edit, dict) and str(edit.get("find") or "").strip() and str(edit.get("find")) != str(edit.get("replace") or ""):
@@ -3080,7 +3101,7 @@ def _review_run(subsystem: str, prompt: str, model: dict, nonce: str, proof: str
                                       {"role": "user", "content": prompt}])
     provider = route.get("provider") or model.get("provider") or ""
     used = route.get("model") or model.get("model") or ""
-    material = _squash(prompt) if proof is not None else None
+    material = _proof(prompt) if proof is not None else None
     return {**_review_parse(extract_content_or_reasoning(response), proof, changes, material), "provider": provider,
             "model": used,
             "usage": _review_usage(response, provider, used)}
@@ -3145,7 +3166,7 @@ def _review_again(body: dict) -> dict:
         return {"ok": False, "error": _tx("err_bad_scope")}
     if not _review_model():
         return {"ok": False, "error": _tx("review_again_no_model")}
-    record = wa.get_pending(subsystem, record_id)
+    record = _get_pending(wa, subsystem, record_id)
     if subsystem == wa.SKILLS:
         groups = _groups_now()
         gid = record_id if record_id in groups else next(
@@ -3179,7 +3200,7 @@ def _reviews_start() -> dict:
     if _review_model():
         steps = _approved_steps()
         for subsystem in (wa.MEMORY, wa.SKILLS):
-            records = wa.list_pending(subsystem)
+            records = _list_pending(wa, subsystem)
             groups = _skill_groups(records) if subsystem == wa.SKILLS else []
             inside = {str(r.get("id")) for members in groups for r in members}
             for record in records:
@@ -3430,7 +3451,7 @@ def _fix_locked(body: dict) -> dict:
     record_id = _valid_id(body.get("id"))
     if subsystem != wa.SKILLS or not record_id:
         return {"ok": False, "error": _tx("fix_bad_request")}
-    record = wa.get_pending(subsystem, record_id)
+    record = _get_pending(wa, subsystem, record_id)
     if not record:
         return {"ok": False, "error": _tx("fix_gone")}
     ok, detail = _apply_description_fix(record)
@@ -3452,16 +3473,16 @@ def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
     if subsystem == wa.MEMORY:
         from tools.memory_tool import load_on_disk_store
         store = load_on_disk_store()
-    if wa.get_pending(subsystem, pending_id) is None:
+    if _get_pending(wa, subsystem, pending_id) is None:
         return False, _tx("fix_gone")
     text = (handle_pending_subcommand(subsystem, [decision, pending_id], memory_store=store) or "").strip()
-    if wa.get_pending(subsystem, pending_id) is None:
+    if _get_pending(wa, subsystem, pending_id) is None:
         return True, text
-    landed = decision == "approve" and bool(re.match(r"Approved [1-9]", text)) and "Failed" not in text
+    landed = decision == "approve" and bool(re.match(r"Approved [1-9]", text)) and "Failed:" not in text.splitlines()
     if landed:
         for _ in range(10):
             time.sleep(0.1)
-            if wa.discard_pending(subsystem, pending_id) or wa.get_pending(subsystem, pending_id) is None:
+            if wa.discard_pending(subsystem, pending_id) or _get_pending(wa, subsystem, pending_id) is None:
                 break
         else:
             _log(f"{subsystem}/{pending_id} was applied but its record file could not be deleted yet")
@@ -3469,8 +3490,33 @@ def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
 
 
 def _landed() -> set:
-    return {(str(e.get("subsystem")), str(e.get("record_id")), str(e.get("payload_hash")))
-            for e in _entries(MAX_ENTRIES) if e.get("kind") == "apply" and e.get("record_id")}
+    landed = set()
+    for e in _entries(MAX_ENTRIES):
+        if e.get("kind") != "apply" or not e.get("record_id"):
+            continue
+        landed.add((str(e.get("subsystem")), str(e.get("record_id")), str(e.get("payload_hash"))))
+        members = e.get("member_hashes")
+        if isinstance(members, dict):
+            landed.update((str(e.get("subsystem")), str(rid), str(h)) for rid, h in members.items())
+    return landed
+
+
+def _with_content(wa, subsystem: str, record):
+    if subsystem == wa.MEMORY and isinstance(record, dict):
+        payload = record.get("payload")
+        ops = payload.get("operations") if isinstance(payload, dict) else None
+        for op in [payload, *(ops if isinstance(ops, list) else [])]:
+            if isinstance(op, dict) and not op.get("content") and isinstance(op.get("new_text"), str):
+                op["content"] = op["new_text"]
+    return record
+
+
+def _list_pending(wa, subsystem: str) -> list[dict]:
+    return [_with_content(wa, subsystem, record) for record in wa.list_pending(subsystem)]
+
+
+def _get_pending(wa, subsystem: str, record_id: str):
+    return _with_content(wa, subsystem, wa.get_pending(subsystem, record_id))
 
 
 def _sweep_landed(subsystem: str, records: list[dict], landed: set | None = None) -> list[dict]:
@@ -3620,7 +3666,7 @@ def _decide_locked(body: dict) -> dict:
             continue
         results.append(_group_decide(gid, current.get(gid), body, versions))
     for pending_id in ids:
-        record = wa.get_pending(subsystem, pending_id)
+        record = _get_pending(wa, subsystem, pending_id)
         if record and not _sweep_landed(subsystem, [record]):
             record = None
         if not record:
@@ -3765,7 +3811,7 @@ def _restore_locked(body: dict) -> dict:
         staged = wa.stage_write(subsystem, record["payload"], summary=str(record.get("summary") or ""),
                                 origin=str(record.get("origin") or "foreground"))
         new_id = _valid_id((staged or {}).get("id"))
-        fresh = wa.get_pending(subsystem, new_id) if new_id else None
+        fresh = _get_pending(wa, subsystem, new_id) if new_id else None
         if not fresh:
             return {"ok": False, "error": _tx("err_restore_failed")}
         if float(fresh.get("created_at") or 0) <= last:
