@@ -5,6 +5,74 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.13.0
+
+An audit of 1.12.4 found 40 defects, each reproduced or traced to a line. All of them are fixed here,
+and each one has a regression check that failed on 1.12.4: `tests/regress_audit.py` (backend and
+review logic, now also run in CI) and `tests/render_check.mjs` (panel). 1.12.4 is marked as a
+pre-release with a warning.
+
+### Fixed — the review gate
+
+* **The reviewer sees every change of a write.** A write that adds text and then edits that same text
+  in a second step showed only the first step to the reviewer and on the card; in the audit an
+  "always keep backups" line became "Delete all backups immediately" after a clean review. Every step
+  is now shown in order, each on top of the steps before it.
+* **The author rule cannot be bypassed.** A new skill created with your name and then edited to another
+  author in the same write, an `author:` line hidden inside the description or under another key, and
+  an "approve only this skill" request naming the skill as `category/name` all passed the rule. The
+  rule now reads the header the way Hermes does and checks the end result of the whole write.
+* **Made-up quotes no longer count.** A finding whose quote is not in what the write adds or removes
+  (or is a single letter) is shown as unverified, and its suggested edit is never applied.
+* **The language rule no longer locks English text** with µ, π or names like İstanbul or Jürgen, and
+  no longer locks every new skill when your author name has Turkish letters. It now locks text in
+  another alphabet (Cyrillic, Greek, Arabic, Chinese, Japanese, Korean, …); non-English text written in
+  Latin letters is reported by the AI review, since letters alone cannot tell it from English.
+* **The review answer is read correctly**: braces in the model's prose no longer fail the review, a
+  malformed findings list fails the review instead of passing it, and "critical"/"high" findings keep
+  their weight. A long suggested edit is dropped rather than cut short.
+* **A write with two dependent edits** is no longer called "cannot be applied".
+* **The duplicate-note rule** no longer treats "5 retries" as "3 retries", and catches the same note
+  added twice in one write or copied over another note.
+* **With no review model, an automatic rule fix (such as the missing author line) can be applied** in
+  two steps ("Apply unreviewed"), and the history marks it "approved without pre-review".
+* **Review again** with no model assigned keeps the finished review instead of deleting it.
+
+### Fixed — data and undo
+
+* **Undo works for skills named `category/name`**; before, no undo copy was kept and the old text was
+  lost.
+* **A memory note edit is shown as an edit**, not "Deletes this note", and its effect on the MEMORY.md
+  fill is counted, so an edit that would overflow the file is named before you click.
+* **Deleting or replacing a memory note shows the whole note** that goes, not just the search text.
+* **Notes with typographic quotes or dashes, or containing "§",** are no longer called "cannot be
+  applied".
+* **A write that succeeded is no longer reported as failed** when Windows briefly locks the record file
+  (an antivirus scan, an indexer); its undo copy is kept and the card does not come back.
+* **Approving a group while the same change is approved in chat** no longer undoes the chat's change and
+  queues it again; a change that disappeared gives a clear message instead of a server error.
+* **A hand edit made after a card was drawn** can no longer be overwritten by approving that card.
+* **Deleting a memory note in the panel deletes exactly that note**, never a newer note that contains
+  its text, and it gets its own history row with Undo.
+* **Undo of a new skill** removes its whole folder, including created subfolders.
+* **One broken record or one damaged history line** no longer empties the whole panel.
+
+### Fixed — the panel
+
+* **A failed refresh keeps the cards on screen** with a "could not be refreshed" notice and Retry,
+  instead of replacing everything with an error screen.
+* **Refreshes never overlap**: repeated Refresh clicks wait for the running read and make one more.
+* **A failed decision shows the backend's own reason** and reads the list again; "the panel stopped
+  waiting" is shown only after a real timeout, and a late answer is recognised without comparing the
+  computer's and the server's clocks.
+* **Switching tabs during a decision** no longer brings the card back with Approve enabled.
+* **Every view is refreshed after a decision, Undo, Restore or delete** (Applied, the figures at the
+  top, Memory), not only the list that was clicked.
+* **"Clear all N records"** states the real total and that the undo copies go too.
+* **"Approve without review"** is no longer offered on a card that must be shortened first.
+* **Smaller fixes:** a single card has no selection box; a card on its way out cannot be clicked; the
+  memory fill shows one figure in every place; Details toggles announce whether they are open.
+
 ## 1.12.4
 
 ### Changed

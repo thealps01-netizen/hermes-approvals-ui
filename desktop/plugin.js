@@ -202,8 +202,9 @@ const BUNDLES = {
       hist: {
         apply: 'Approved and applied',
         rejected: 'Rejected',
-        clear: n => (n ? `Clear ${plural(n, 'record', 'records')}` : 'Clear'),
-        clearConfirm: 'Clearing drops the undo copies — those records can no longer be taken back.',
+        clear: n => (n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
+        clearConfirm: n => `Clearing deletes all ${plural(n, 'record', 'records')} of the history, not only the ones `
+          + 'shown, and drops their undo copies — those records can no longer be taken back.',
         clearCancel: 'Cancel',
         cleared: n => `Cleared ${plural(n, 'record', 'records')}`,
         clearFailed: 'Could not clear the history',
@@ -239,6 +240,8 @@ const BUNDLES = {
         memoryError: 'Memory could not be read.',
         scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
           + 'The pending list is current; an outside change may be missing from “Applied” until a check succeeds.',
+        refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
+          + 'successful read.',
         reviewsFailed: why => (why
           ? `The pre-reviews could not be started: ${why}. The next refresh tries again.`
           : 'The pre-reviews could not be started. The next refresh tries again.'),
@@ -315,6 +318,19 @@ function say(key, ...args) {
 }
 
 let livePending = null
+const seenHistory = new Set()
+const held = new Map()
+const heldListeners = new Set()
+const leaveTimers = new Set()
+const setHeld = (key, value) => {
+  if (value) held.set(key, value)
+  else held.delete(key)
+  for (const fn of heldListeners) fn()
+}
+const changeListeners = new Set()
+const announceChange = () => {
+  for (const fn of changeListeners) fn()
+}
 const alertListeners = new Set()
 const alertsMuted = () => ctxRef?.storage?.get?.('muted', false) === true
 const setAlertsMuted = on => {
@@ -337,7 +353,11 @@ const api = {
   count: () => ctxRef.rest('/count'),
   startReviews: () => ctxRef.rest('/reviews', { method: 'POST', body: {} }),
   scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
-  history: () => ctxRef.rest('/history?limit=50'),
+  history: async () => {
+    const d = await ctxRef.rest('/history?limit=50')
+    for (const e of d?.entries || []) seenHistory.add(e.id)
+    return d
+  },
   memory: () => ctxRef.rest('/memory'),
   deleteEntry: (target, text) => ctxRef.rest('/memory/delete', { method: 'POST', body: { target, text } }),
   clearHistory: keepUndoable =>
@@ -459,7 +479,7 @@ const STYLE = `
   box-shadow:${LIT_EDGE};flex:1 1 0;min-width:0;overflow-wrap:anywhere;
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
 .pa-card:hover{border-color:var(--ui-stroke-primary,var(--ui-stroke-secondary))}
-.pa-leaving{opacity:0;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
+.pa-leaving{opacity:0;pointer-events:none;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
 .pa-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
 .pa-cmp>*{min-width:0}
 .pa-prose{font-family:inherit;font-size:${FS.body}px}
@@ -515,6 +535,8 @@ const STYLE = `
 .pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
   background:color-mix(in srgb,var(--ui-orange) 12%,transparent);
   border-left:3px solid var(--ui-orange);padding:8px 12px}
+.pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
+.pa-stale>span{flex:1 1 220px;min-width:0}
 .pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
 .pa-tabs{display:flex;align-items:center;min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
 .pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
@@ -538,35 +560,55 @@ const STYLE = `
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
 
 function usePolling(load, ms) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [at, setAt] = useState(null)
-  const [tick, setTick] = useState(0)
+  const [state, setState] = useState({ data: null, error: null, at: null, seq: 0 })
+  const poll = useRef(null)
+  const wait = useRef(ms)
+  wait.current = ms
   useEffect(() => {
-    let alive = true
-    let h = 0
-    const run = async () => {
-      if (!alive) return
+    const p = { alive: true, busy: false, again: false, h: 0, started: 0 }
+    const go = async seq => {
       try {
-        const d = await load()
-        if (alive) {
-          setData(d)
-          setError(null)
-          setAt(Date.now())
-        }
-      } catch (e) {
-        if (alive) setError(e)
+        const data = await load()
+        if (p.alive) setState({ data, error: null, at: Date.now(), seq })
+      } catch (error) {
+        if (p.alive) setState(s => ({ ...s, error }))
       }
-      clearTimeout(h)
-      if (alive) h = setTimeout(run, ms)
+      p.busy = false
+      if (!p.alive) return
+      if (p.again) {
+        p.again = false
+        p.run()
+      } else {
+        p.h = setTimeout(p.run, wait.current)
+      }
     }
-    void run()
+    p.run = () => {
+      if (!p.alive) return p.started
+      clearTimeout(p.h)
+      if (p.busy) {
+        p.again = true
+        return p.started + 1
+      }
+      p.busy = true
+      p.started += 1
+      void go(p.started)
+      return p.started
+    }
+    poll.current = p
+    p.run()
     return () => {
-      alive = false
-      clearTimeout(h)
+      p.alive = false
+      clearTimeout(p.h)
     }
-  }, [ms, tick])
-  return { data, error, at, refresh: () => setTick(t => t + 1) }
+  }, [])
+  useEffect(() => {
+    const p = poll.current
+    if (!p || !p.alive || p.busy) return
+    clearTimeout(p.h)
+    p.h = setTimeout(p.run, ms)
+  }, [ms])
+  const refresh = useRef(() => poll.current?.run() ?? 0).current
+  return { ...state, refresh }
 }
 
 function usePending() {
@@ -578,11 +620,12 @@ function usePending() {
     } catch (e) {
       issues.push(say('pa.empty.scanFailed', errText(e)))
     }
-    const d = await api.pending()
+    let d = await api.pending()
     if (reviewUnits(d).some(i => (i.review || {}).status === 'queued')) {
       try {
         const res = await api.startReviews()
         if (res?.ok === false) issues.push(say('pa.empty.reviewsFailed', res.error || ''))
+        else if (res?.started) d = await api.pending()
       } catch (e) {
         issues.push(say('pa.empty.reviewsFailed', errText(e)))
       }
@@ -591,11 +634,11 @@ function usePending() {
     return { ...d, issues: [...(d?.issues || []), ...issues] }
   }
   const [fast, setFast] = useState(false)
-  const { data, error, at, refresh } = usePolling(load, fast ? 4000 : 15000)
+  const { data, error, at, seq, refresh } = usePolling(load, fast ? 4000 : 15000)
   useEffect(() => {
     setFast(reviewUnits(data).some(reviewWaits))
   }, [data])
-  return { data, error, at, refresh, n: total(data?.counts) }
+  return { data, error, at, seq, refresh, n: total(data?.counts) }
 }
 
 function useFade(inner) {
@@ -697,6 +740,16 @@ function LoadError({ title: heading, error, onRetry }) {
   }, 'error')
 }
 
+const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
+  className: 'pa-alert pa-stale',
+  role: 'status',
+  style,
+  children: [
+    jsx('span', { children: t('pa.empty.refreshFailed', errText(error)) }, 'text'),
+    jsx(Button, { variant: 'outline', size: 'xs', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
+  ]
+}, 'stale'))
+
 const WAITING = { figure: '—', tone: 'off', delta: '' }
 
 const fill = f => {
@@ -723,14 +776,26 @@ function RefreshButton({ onClick, label: title }) {
   }, 'tip')
 }
 
-function useLeave(onChanged) {
-  const [leaving, setLeaving] = useState(false)
-  const timer = useRef(null)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+function useHeld(key) {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const fn = () => bump(n => n + 1)
+    heldListeners.add(fn)
+    return () => heldListeners.delete(fn)
+  }, [])
+  return held.get(key) || null
+}
+
+function useLeave(key, onChanged) {
+  const leaving = Boolean(useHeld(key)?.leaving)
   const leave = () => {
-    setLeaving(true)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => onChanged(), 340)
+    setHeld(key, { leaving: true })
+    const id = window.setTimeout(() => {
+      leaveTimers.delete(id)
+      const until = onChanged()
+      if (held.get(key)?.leaving) setHeld(key, { leaving: true, until })
+    }, 340)
+    leaveTimers.add(id)
   }
   return { leaving, leave }
 }
@@ -847,7 +912,7 @@ const told = (t, decision, one) => {
   if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
-const settled = async (t, items, since) => {
+const settled = async (t, items, known) => {
   let entries
   try {
     entries = (await api.history())?.entries || []
@@ -858,24 +923,28 @@ const settled = async (t, items, since) => {
     if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
     const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
     const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
-    const e = entries.find(x => (x.ts || 0) >= since && ours(x))
+    const e = entries.find(x => !known.has(x.id) && ours(x))
     if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
     if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
     return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
       : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
   })
 }
+const timedOut = e => /timed? ?out|timeout/i.test(String(e?.message || e || ''))
 const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  const since = Date.now() / 1000 - 2
+  if (!seenHistory.size) await api.history().catch(() => null)
+  const known = new Set(seenHistory)
   try {
     return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
-  } catch {
-    return { ok: true, results: await settled(t, items, since) }
+  } catch (e) {
+    if (timedOut(e)) return { ok: true, results: await settled(t, items, known) }
+    const error = errText(e) || t('pa.notify.failed')
+    return { ok: false, error, results: items.map(item => ({ id: item.id, ok: false, error })) }
   }
 }
 const decideOne = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
   const res = await decideAll(t, subsystem, items, decision, only, skipReview, withEdits)
-  const one = (res?.results || [])[0] || {}
+  const one = (res?.results || [])[0] || { ok: false, error: res?.error }
   host.notify(told(t, decision, one))
   return one
 }
@@ -894,20 +963,29 @@ const askReview = async (t, subsystem, id, onChanged) => {
   return res
 }
 
-function useRun(t) {
-  const [busy, setBusy] = useState('')
+function useRun(t, record) {
+  const entry = useHeld(record)
+  const busy = entry?.busy || (entry?.leaving ? 'leaving' : '')
   const run = async (key, call) => {
-    setBusy(key)
+    setHeld(record, { busy: key })
     try {
       return await call()
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.applyError'))
       return { ok: false }
     } finally {
-      setBusy('')
+      if (held.get(record)?.busy === key) setHeld(record, null)
     }
   }
   return { busy, run }
+}
+
+function useInert(leaving) {
+  const at = useRef(null)
+  useEffect(() => {
+    at.current?.toggleAttribute?.('inert', leaving)
+  }, [leaving])
+  return at
 }
 
 const heldButton = (busy, t, key, text, variant, blocked, why, onGo) => jsx(Tip, {
@@ -1184,12 +1262,15 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
+  const [fixArmed, setFixArmed] = useState(false)
   const detailsAt = useRef(null)
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const { busy, run } = useRun(t)
-  const { leaving, leave } = useLeave(onChanged)
+  const { busy, run } = useRun(t, `${subsystem}:${item.id}`)
+  const detailsId = `pa-details-${subsystem}-${item.id}`
+  const { leaving, leave } = useLeave(`${subsystem}:${item.id}`, onChanged)
+  const cardAt = useInert(leaving)
   const plain = item.plain || {}
   const stale = plain.stale || []
   const groups = plain.groups || []
@@ -1208,9 +1289,11 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     ? (hard.length ? hard.map(h => h.text).join(' ') : t('pa.review.locked'))
     : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
   const failedBefore = Boolean(plain.last_error)
-  const canSkip = !hard.length && !stale.length && (status === 'failed' || status === 'unassigned')
+  const unchecked = status === 'failed' || status === 'unassigned'
+  const canSkip = !hard.length && !stale.length && !fix && unchecked
   const isNewSkill = groups.some(g => g.kind === 'new')
   const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)
+  const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length && !fix && !stale.length
   const fixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
@@ -1225,17 +1308,22 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const applyFix = () => run('fix', () => fixRecord(t, item.id, onChanged))
   const decideAndLeave = async (decision, only, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
-    const r = await run(key, () => decideOne(t, subsystem, [item], decision, only, skipReview, withEdits))
-    if (r?.ok) leave()
-    else if (r?.stale || r?.late) onChanged()
+    await run(key, async () => {
+      const r = await decideOne(t, subsystem, [item], decision, only, skipReview, withEdits)
+      if (r?.ok) leave()
+      else onChanged()
+      return r
+    })
   }
   const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
   const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
   const approveBtn = (...args) => heldButton(busy, t, ...args)
 
   return jsxs('div', {
+    ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'aria-busy': Boolean(busy) || undefined,
+    'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
@@ -1245,6 +1333,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
             ? jsx('input', {
                 type: 'checkbox',
                 className: 'pa-pick',
+                disabled: leaving,
                 checked: Boolean(picked),
                 'aria-label': `${t('pa.bulk.select')} #${item.id}`,
                 onChange: () => onPick()
@@ -1259,7 +1348,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
       stale.length
         ? alertBox('stale', [t('pa.status.staleWhy'),
-            ...stale.map(s => jsx('div', { className: 'pa-alert-sub', children: s }, s))], true)
+            ...stale.map((s, i) => jsx('div', { className: 'pa-alert-sub', children: s }, `${i}:${s}`))], true)
         : null,
       failedBefore ? alertBox('failed', `${t('pa.field.failedBefore')}: ${plain.last_error}`, true) : null,
 
@@ -1305,13 +1394,14 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
       fix && fixView(fix, t, busy, 'fix', () => void applyFix()),
 
-      canSkip && skipArmed
+      (canSkip && skipArmed) || fixArmed
         ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
         : null,
 
       open &&
         jsxs('div', {
           ref: detailsAt,
+          id: detailsId,
           className: 'pa-details',
           children: [
             jsx(PanelSectionLabel, { children: t('pa.field.change') }, 'changeLabel'),
@@ -1327,11 +1417,18 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
           jsx(Button, {
             variant: 'text',
             size: 'sm',
+            disabled: leaving,
+            'aria-expanded': open,
+            'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
-          canSkip && skipArmed
-            ? jsx(Button, { variant: 'text', size: 'sm', onClick: () => setSkipArmed(false), children: t('pa.btn.skipCancel') }, 'cancel')
+          (canSkip && skipArmed) || fixArmed
+            ? jsx(Button, {
+                variant: 'text', size: 'sm', disabled: leaving,
+                onClick: () => { setSkipArmed(false); setFixArmed(false) },
+                children: t('pa.btn.skipCancel')
+              }, 'cancel')
             : null,
           canSkip
             ? jsx(Button, {
@@ -1356,10 +1453,12 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
               }, 'reject'),
               approveBtn('approve', t(edits ? 'pa.btn.approveAsIs' : 'pa.btn.approve'), asIsVariant,
                 approveBlocked, heldWhy, () => decideAndLeave('approve')),
-              edits
-                ? approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked, fixWhy,
-                    () => decideAndLeave('approve', [], false, true))
-                : null
+              !edits ? null
+                : fixArmed
+                  ? approveBtn('fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
+                      () => decideAndLeave('approve', [], true, true))
+                  : approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed, fixWhy,
+                      fixUnreviewed ? () => setFixArmed(true) : () => decideAndLeave('approve', [], false, true))
             ]
           }, 'actions')
         ]
@@ -1374,13 +1473,16 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
+  const [fixArmed, setFixArmed] = useState(false)
   const [shown, setShown] = useState(() => new Set())
+  const detailsId = `pa-details-skills-${item.id}`
   const detailsAt = useRef(null)
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const { busy, run } = useRun(t)
-  const { leaving, leave } = useLeave(onChanged)
+  const { busy, run } = useRun(t, `skills:${item.id}`)
+  const { leaving, leave } = useLeave(`skills:${item.id}`, onChanged)
+  const cardAt = useInert(leaving)
   const parts = item.parts
   const n = parts.length
   const review = item.review || {}
@@ -1397,8 +1499,10 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const heldWhy = reviewLocked
     ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : t('pa.review.locked'))
     : stale.length ? staleHeld : t('pa.grp.fixHeld', changeList(fixes))
-  const canSkip = !hard.length && !stale.length && (status === 'failed' || status === 'unassigned')
+  const unchecked = status === 'failed' || status === 'unassigned'
+  const canSkip = !hard.length && !stale.length && !fixes.length && unchecked
   const withFixBlocked = status !== 'done' || fixLeft.length > 0 || fixes.length > 0
+  const fixUnreviewed = withFixBlocked && unchecked && edits > 0 && !fixLeft.length && !fixes.length && !stale.length
   const withFixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
@@ -1407,13 +1511,16 @@ function GroupCard({ item, onChanged, picked, onPick }) {
 
   const decideGroup = async (decision, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
-    const r = await run(key, () => decideOne(t, 'skills', [item], decision, [], skipReview, withEdits))
-    if (r?.ok) leave()
-    else if (r?.stale || r?.late) onChanged()
+    await run(key, async () => {
+      const r = await decideOne(t, 'skills', [item], decision, [], skipReview, withEdits)
+      if (r?.ok) leave()
+      else onChanged()
+      return r
+    })
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
-    if (one.ok) onChanged()
+    onChanged()
     return one
   })
   const toggle = id => setShown(prev => {
@@ -1451,6 +1558,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
             jsx(Button, {
               variant: 'text',
               size: 'xs',
+              disabled: leaving,
               'aria-expanded': lines,
               onClick: () => toggle(part.id),
               children: t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
@@ -1480,9 +1588,11 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   }
 
   return jsxs('div', {
+    ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'data-group': item.id,
     'aria-busy': Boolean(busy) || undefined,
+    'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
@@ -1492,6 +1602,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
             ? jsx('input', {
                 type: 'checkbox',
                 className: 'pa-pick',
+                disabled: leaving,
                 checked: picked === true,
                 'aria-label': `${t('pa.grp.select')} #${item.id}`,
                 onChange: () => onPick()
@@ -1524,7 +1635,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
         onAgain: () => run('review', () => askReview(t, 'skills', item.id, onChanged))
       }, 'review'),
 
-      canSkip && skipArmed
+      (canSkip && skipArmed) || fixArmed
         ? jsx('div', {
             style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn')
           }, 'skipWarn')
@@ -1533,6 +1644,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
       open &&
         jsxs('div', {
           ref: detailsAt,
+          id: detailsId,
           className: 'pa-details',
           children: [
             jsx(PanelSectionLabel, { children: t('pa.grp.result') }, 'resultLabel'),
@@ -1558,12 +1670,17 @@ function GroupCard({ item, onChanged, picked, onPick }) {
           jsx(Button, {
             variant: 'text',
             size: 'sm',
+            disabled: leaving,
+            'aria-expanded': open,
+            'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
             children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
           }, 'details'),
-          canSkip && skipArmed
+          (canSkip && skipArmed) || fixArmed
             ? jsx(Button, {
-                variant: 'text', size: 'sm', onClick: () => setSkipArmed(false), children: t('pa.btn.skipCancel')
+                variant: 'text', size: 'sm', disabled: leaving,
+                onClick: () => { setSkipArmed(false); setFixArmed(false) },
+                children: t('pa.btn.skipCancel')
               }, 'cancel')
             : null,
           canSkip
@@ -1589,10 +1706,13 @@ function GroupCard({ item, onChanged, picked, onPick }) {
               }, 'reject'),
               heldButton(busy, t, 'approve', t('pa.grp.approve', n), asIsVariant,
                 groupBlocked, heldWhy, () => decideGroup('approve')),
-              edits
-                ? heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, withFixBlocked, withFixWhy,
-                    () => decideGroup('approve', false, true))
-                : null
+              !edits ? null
+                : fixArmed
+                  ? heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
+                      () => decideGroup('approve', true, true))
+                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant,
+                      withFixBlocked && !fixUnreviewed, withFixWhy,
+                      fixUnreviewed ? () => setFixArmed(true) : () => decideGroup('approve', false, true))
             ]
           }, 'actions')
         ]
@@ -1823,7 +1943,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
           ok += results.filter(r => r.ok).length
           bad.push(...results.filter(r => !r.ok)
             .map(r => r.error || t(r.stale ? 'pa.notify.stale' : 'pa.notify.failed')))
-          if (!res?.ok) bad.push(res?.error || t('pa.notify.failed'))
+          if (!res?.ok && !results.length) bad.push(res?.error || t('pa.notify.failed'))
         } catch (e) {
           bad.push(String(e?.message || e))
         }
@@ -1924,12 +2044,18 @@ function units(data) {
   return [...(data?.memory || []).map(item => ({ subsystem: 'memory', item })), ...out]
 }
 
-function PendingList({ data, error, refresh }) {
+function PendingList({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
   const gridRef = useRef(null)
   const seen = useRef(new Map())
   const [picked, setPicked] = useState(() => new Set())
   const items = units(data)
+  const keys = items.map(({ subsystem, item }) => `${subsystem}:${item.id}`).join('\n')
+  useEffect(() => {
+    const here = new Set(keys.split('\n'))
+    setPicked(prev => ([...prev].every(key => here.has(key)) ? prev
+      : new Set([...prev].filter(key => here.has(key)))))
+  }, [keys])
   const togglePick = key => setPicked(prev => {
     const next = new Set(prev)
     if (next.has(key)) next.delete(key)
@@ -1967,15 +2093,16 @@ function PendingList({ data, error, refresh }) {
     seen.current = next
   })
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
+  if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  const stale = staleNotice(t, error, refresh, { margin: '12px 12px 0' })
   const issues = data.issues || []
   const notice = issues.length
     ? jsx('div', {
         className: 'pa-alert pa-alert-danger',
         role: 'alert',
         style: { margin: '12px 12px 0' },
-        children: issues.map(text => jsx('div', { children: text }, text))
+        children: issues.map((text, i) => jsx('div', { children: text }, `${i}:${text}`))
       }, 'issues')
     : null
   const body = !total(data.counts)
@@ -1993,23 +2120,24 @@ function PendingList({ data, error, refresh }) {
         className: 'pa-cell',
         'data-key': `${subsystem}:${item.id}`,
         children: jsx(item.parts ? GroupCard : PendingCard, {
-          subsystem, item, onChanged: refresh,
+          subsystem, item, onChanged,
           picked: picked.has(`${subsystem}:${item.id}`),
-          onPick: () => togglePick(`${subsystem}:${item.id}`)
+          onPick: items.length > 1 ? () => togglePick(`${subsystem}:${item.id}`) : null
         }, 'card')
       }, `${subsystem}:${item.id}`))
   }, 'grid')
   const bar = total(data.counts)
-    ? jsx(BulkBar, { items, picked, setPicked, onChanged: refresh }, 'bulk')
+    ? jsx(BulkBar, { items, picked, setPicked, onChanged }, 'bulk')
     : null
-  return jsxs('div', { children: [notice, bar, body] }, 'list')
+  return jsxs('div', { children: [stale, notice, bar, body] }, 'list')
 }
 
-function HistoryList({ data, error, refresh, onRestored }) {
+function HistoryList({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const entries = data?.entries || []
+  const all = data?.counts?.total ?? entries.length
 
   const clear = async () => {
     setBusy(true)
@@ -2027,9 +2155,9 @@ function HistoryList({ data, error, refresh, onRestored }) {
     }
   }
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
+  if (!data && error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
-  if (!entries.length) {
+  if (!entries.length && !error) {
     return jsx(EmptyState, {
       title: t('pa.empty.historyTitle'),
       description: t('pa.empty.historyBody')
@@ -2038,6 +2166,7 @@ function HistoryList({ data, error, refresh, onRestored }) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
+      staleNotice(t, error, refresh),
       jsx('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm },
         children: confirming
@@ -2046,7 +2175,7 @@ function HistoryList({ data, error, refresh, onRestored }) {
               children: [
                 jsx('div', {
                   className: 'pa-alert pa-alert-danger',
-                  children: t('pa.hist.clearConfirm')
+                  children: t('pa.hist.clearConfirm', all)
                 }, 'copy'),
                 jsxs('div', {
                   style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: G.xs },
@@ -2063,7 +2192,7 @@ function HistoryList({ data, error, refresh, onRestored }) {
                       size: 'sm',
                       loading: busy,
                       onClick: () => void clear(),
-                      children: t('pa.hist.clear', entries.length)
+                      children: t('pa.hist.clear', all)
                     }, 'confirm')
                   ]
                 }, 'row')
@@ -2074,12 +2203,12 @@ function HistoryList({ data, error, refresh, onRestored }) {
               size: 'sm',
               style: { marginLeft: 'auto' },
               onClick: () => setConfirming(true),
-              children: t('pa.hist.clear', entries.length)
+              children: t('pa.hist.clear', all)
             }, 'arm')
       }, 'header'),
       jsx('div', {
         className: 'pa-cols pa-two',
-        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged: refresh, onRestored }, e.id))
+        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged, onRestored: onChanged }, e.id))
       }, 'grid')
     ]
   })
@@ -2101,11 +2230,12 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const [confirming, setConfirming] = useState(null)
   const [busy, setBusy] = useState(false)
   const store = data?.[target]
+  const pct = store ? fill(store).pct : 0
   const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
   const draftMerge = async () => {
     let placed = false
     try {
-      placed = await host.composer?.insertText?.(null, mergeRequest(store.file, store.percent), { mode: 'block' })
+      placed = await host.composer?.insertText?.(null, mergeRequest(store.file, pct), { mode: 'block' })
     } catch {
       placed = false
     }
@@ -2128,16 +2258,16 @@ function MemoryView({ data, error, refresh, onChanged }) {
       host.notifyError?.(e, t('pa.memory.deleteFailed'))
     } finally {
       setBusy(false)
-      refresh()
-      onChanged?.()
+      onChanged()
     }
   }
 
-  if (error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
+  if (!store && error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
   if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
+      staleNotice(t, error, refresh),
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
@@ -2158,12 +2288,12 @@ function MemoryView({ data, error, refresh, onChanged }) {
           store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(store.updated)) }, 'updated') : null
         ]
       }, 'meta'),
-      store.percent >= 90 &&
+      pct >= 90 &&
         jsxs('div', {
           className: 'pa-alert',
           children: [
             jsx('div', { style: { fontWeight: 600, color: 'var(--ui-text-primary)' }, children: t('pa.memory.warnTitle') }, 'title'),
-            t('pa.memory.warnBody', store.percent),
+            t('pa.memory.warnBody', pct),
             jsxs('div', {
               style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, marginTop: G.xs },
               children: [
@@ -2246,9 +2376,27 @@ function MemoryView({ data, error, refresh, onChanged }) {
 function Pane() {
   const t = usePluginI18n(ID)
   const [view, setView] = useState('pending')
-  const { data, error, at, refresh, n } = usePending()
+  const { data, error, at, seq, refresh, n } = usePending()
   const mem = usePolling(api.memory, 60000)
   const hist = usePolling(api.history, 30000)
+  const refreshAll = () => {
+    const until = refresh()
+    mem.refresh()
+    hist.refresh()
+    announceChange()
+    return until
+  }
+  useEffect(() => () => {
+    for (const id of leaveTimers) window.clearTimeout(id)
+    leaveTimers.clear()
+    for (const [key, entry] of [...held]) if (entry.leaving) setHeld(key, null)
+  }, [])
+  useEffect(() => {
+    const here = new Set(units(data).map(({ subsystem, item }) => `${subsystem}:${item.id}`))
+    for (const [key, entry] of [...held]) {
+      if (entry.leaving && (!here.has(key) || (entry.until && entry.until <= seq))) setHeld(key, null)
+    }
+  }, [seq])
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
   const hc = hist.data?.counts || {}
@@ -2297,7 +2445,7 @@ function Pane() {
                 : jsx('span', { style: { marginLeft: 'auto' } }, 'spacer'),
               jsx(RefreshButton, {
                 label: t('pa.action.refresh'),
-                onClick: () => { refresh(); mem.refresh(); hist.refresh() }
+                onClick: refreshAll
               }, 'refresh')
             ]
           }, 'head'),
@@ -2341,15 +2489,13 @@ function Pane() {
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
         children: view === 'memory'
           ? jsx(MemoryView, {
-            data: mem.data, error: mem.error, refresh: mem.refresh,
-            onChanged: () => { refresh(); hist.refresh() }
+            data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshAll
           }, 'memory')
           : view === 'history'
             ? jsx(HistoryList, {
-              data: hist.data, error: hist.error, refresh: hist.refresh,
-              onRestored: () => { refresh(); hist.refresh() }
+              data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshAll
             }, 'history')
-            : jsx(PendingList, { data, error, refresh }, 'pending')
+            : jsx(PendingList, { data, error, refresh, onChanged: refreshAll }, 'pending')
       }, 'body'),
 
       jsxs('div', {
@@ -2377,7 +2523,11 @@ function Pane() {
 
 function Chip() {
   const t = usePluginI18n(ID)
-  const { data, error } = usePolling(api.count, 15000)
+  const { data, error, refresh } = usePolling(api.count, 15000)
+  useEffect(() => {
+    changeListeners.add(refresh)
+    return () => changeListeners.delete(refresh)
+  }, [])
   const n = total(data?.counts)
   const seen = useRef(null)
   const polled = useRef('0|0|0|0')

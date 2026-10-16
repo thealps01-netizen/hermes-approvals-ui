@@ -99,6 +99,7 @@ what every rule and every measurement asserts — is in [`tests/README.md`](test
 
 | Gate | Command (from `tests/`) | Proves |
 |---|---|---|
+| Audit regressions | `PYTHONPATH="$HERMES_AGENT_DIR" "$CORE_PYTHON" regress_audit.py` | One case per confirmed backend and reviewer finding of the 1.12.4 audit, each in its own process and throwaway `HERMES_HOME`; each failed on 1.12.4 |
 | Static audit | `python audit_static.py` | One `en` bundle reaching `ctx.i18n.register`, every `t()` key resolving, no language switch left, no `panes` claim, no comment/docstring, loader-safe imports, host-kit usage, theme variables only, the two-step delete/clear/force-undo and bulk decisions intact, one version across the manifests, and the installed copy byte-identical to the repo file |
 | Canary run | `python canary_audit.py` | That the audit **can** fail: one violation injected per rule, exit 1 with that rule's message, file restored byte for byte, audit green again |
 | Render/behaviour | `node render_check.mjs` | jsdom + real React + a host-kit stub: registration, the kit skeleton, no native `title=`, accessible names, the blocked-record lock, the description fix, details/diff, the pre-review section, the suggested edit approved with the write (`Approve with the fix`, one `/decide` with `with_edits`; no flagged card left with Reject as the only move), two-step destructive actions, bulk decisions, palette rows, the alert mute, the merge draft, the KPI cards + chip, FLIP, English text under two app locales |
@@ -169,8 +170,10 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
 * **Every pending write is pre-reviewed before Approve unlocks.** Two layers read it first:
   * **Rule checks** (no model, always on) lock Approve outright: a new skill without the owner's
     `author:` line (the name comes from `plugins.entries.pending-approvals.skill_author`), an edit to a
-    skill that is hub-installed, bundled or written by someone else, non-English text, and a line or
-    memory note that is already saved. A failed rule check cannot be skipped.
+    skill that is hub-installed, bundled or written by someone else, text in a non-Latin script
+    (Cyrillic, Greek, Arabic, CJK, …), and a line or memory note that is already saved. A failed rule
+    check cannot be skipped. Non-English text written in Latin letters (French, Turkish, …) cannot be
+    told from English by its letters; the AI review reports it.
   * **An AI review** reads the write next to the current skill or memory file, the other writes
     waiting for the same file, and the owner's `USER.md` / `MEMORY.md`, and reports duplicates,
     contradictions, wrong facts, a missing measurement and other rule breaches — each with the quoted
@@ -185,16 +188,18 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
     with an older prompt or before `USER.md` changed is marked on the card; it is never re-run
     without your click.
   * **The reviewer's input is data.** The material reaches the model in blocks bounded by a random
-    marker the prompt declares as data, so a write cannot pose as a rule check or an instruction. A
-    finding whose quote cannot be found in the write is shown as unverified and does not count toward
-    the verdict. Input cut for length is named on the card.
+    marker the prompt declares as data, so a write cannot pose as a rule check or an instruction. Every
+    operation of a record is shown to it in order, each against what the operations before it left. A
+    finding whose quote cannot be found in what the write adds or removes is shown as unverified and
+    does not count toward the verdict. Input cut for length is named on the card.
   * **Approve is bound to what you saw.** Each card carries a version of the write, its rule checks
     and its review; an approve sends it back, and when anything changed in between nothing is written
     and the card is redrawn.
   * **Writes to one skill are decided together.** The changes are played in order without writing
     anything, so a change that no longer applies after an earlier one is named on the card and locks
     Approve before anything is written; the rule checks run on the combined result. Approve applies
-    every change in order and puts every file and record back if one of them fails. A single change
+    every change in order and puts every file and record back if one of them fails; while it runs, a
+    chat command cannot decide one of its changes. A single change
     of a set is never approved alone (the backend refuses it); it can be rejected alone.
   * Approve stays locked while the review is queued or running. When no model is set or the review
     failed, a two-step **Approve without review** applies it anyway and marks the history entry

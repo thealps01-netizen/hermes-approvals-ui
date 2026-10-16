@@ -844,6 +844,94 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.13.0 — the 1.12.4 audit
+
+Three audits of 1.12.4 (backend, reviewer logic, panel) found 40 defects, each reproduced against the
+real module or traced to a line. Every backend and reviewer finding has a case in
+`tests/regress_audit.py` (one Python process and one throwaway home per case, stubbed reviewer) that
+failed on 1.12.4 and passes now; `PA_MODULE=<old plugin_api.py>` runs the cases against another copy.
+
+* **Every operation is played, not diffed against disk.** `_staged_ops` walks a skills record the way
+  the core applies a batch: each operation is diffed with `skill_pending_diff(record, staged)` against
+  what the EARLIER operations left (`wa._fold_staged`, the core's own fold; disk only for a file no
+  earlier operation touched). Before, every operation was diffed against disk alone: a `write_file`
+  then a `patch` of the text it wrote produced "(patch would fail)", which `_review_diff` dropped — so
+  the reviewer and the card never saw the patch (seen: "Delete all backups immediately" applied after
+  a clean review) — and two dependent patches were called stale. The patch precheck runs the core's
+  `fuzzy_find_and_replace` on the same staged text, for home and `skills.external_dirs` skills alike
+  (the old precheck skipped outside roots). Each operation the diff cannot show (a failing patch, an
+  unknown action) reaches the reviewer and a multi-operation card as `(operation N: reason)` plus its
+  JSON, so nothing in a record is invisible. The card's diff, the review diff and the `added/removed`
+  counts read the same played list.
+* **A skill is found the way approve finds it.** `_skill_files(name)` and `_skill_file_now` resolve
+  through `wa._find_skill_path` (bare name, `category/name` or frontmatter name; archived copies out),
+  so a write named `cat/name` keeps its undo copy. `_skill_files` reads the memoized `_skill_dir`; the
+  undo copy right before the write is the one lookup outside the check memo.
+* **Author rule.** `_skill_author` reads the top-level `author` as YAML (`parse_frontmatter`): a line
+  splitter took `author:` from a description block or a nested key. A record that creates a skill with
+  the owner's author and then patches it away is caught by the result check, which now also runs for
+  new skills. `only` names compare by bare name (`_in_only`), so `only=["cat/x"]` keeps the result rules.
+* **Language rule sees scripts only.** Two letters of another alphabet in a row, or one CJK/kana/Hangul
+  character, lock Approve. A lone symbol letter (µ, π) and Latin letters with marks (İstanbul, Müller)
+  pass. French, Spanish or Turkish written in Latin letters cannot be told from English by letters;
+  the review prompt names that case as a `rule` finding with the English translation as its edit. The
+  owner's own `author:` line is never read as foreign.
+* **Duplicate notes.** `_norm_line` drops list markers and an ordered-list number ("3. ") but keeps a
+  number that is part of the sentence ("5 retries" ≠ "3 retries"); a replace that copies another saved
+  note, or one record adding the same note twice, is caught; the note a replace overwrites is its
+  pinned `matched_entry`.
+* **Quotes.** The proof text is what the write adds, removes or names; diff context lines are the
+  current target, so a quote found only there is unverified. A quote needs at least 8 squashed
+  characters (one letter is in any text). A finding may quote existing material when its `other` is
+  from the write (a duplicate written the other way round). Text is NFKC-normalised before squashing.
+* **The answer parser.** `_answer_json` takes the first whole JSON object (preferring one with
+  `findings`/`summary`), so braces in prose around it no longer fail the review; `findings` that is not
+  a list fails the review instead of reading as clean; `critical/high/blocker…` map to `block`,
+  `medium/warning` to `fix`, `low/minor/info` to `note`. An edit longer than 20,000 characters is
+  dropped and logged, never cut (a cut edit applies partly).
+* **Review again** with no model assigned keeps the finished review. **A fix approved without a
+  pre-review** carries the "approved without pre-review" mark, single record and group alike.
+* **Memory cards play core's batch step.** `_memory_play` runs each operation through
+  `MemoryStore._apply_batch_op` on a copy of the current entries, with the pinned `matched_entry` —
+  the code approve runs. The card shows the whole note an edit changes or a removal deletes (not the
+  search text), a `patch` is "Edits this note: … — x becomes y", the fill number counts the patched
+  note, and quote/dash-tolerant matches and notes containing "§" are applicable. An unpinned edit is
+  named: the core refuses it.
+* **The version binds the shown diff.** A skill card's version includes its diff against the current
+  file, and a group's includes the combined result, so a hand edit after the card was drawn makes an
+  approve with the old version write nothing (it silently dropped the edit when no model was assigned).
+* **A write that landed is a success.** On Windows the core can apply a write and fail to delete the
+  record file (a scanner holds it). `_apply` reads the core's reply ("Approved N", no "Failed"), retries
+  the delete for a second, and `_sweep_landed` drops a record whose payload hash the history lists as
+  applied from every listing, count and decide; the history row keeps its undo copy.
+* **Group apply claims its records.** Before the first write the members are renamed to
+  `<id>.json.pa-claim`, invisible to the core's `*.json` listing, so a chat `/skills approve` cannot
+  apply a member mid-group (the group then rolled it back and queued it again). Each member is put back
+  just before its own apply; on failure, rollback deletes the claim; a member already gone answers
+  "decided somewhere else" instead of a 500 with an orphan copy; `_unclaim_left` returns claims a
+  stopped run left. Amended (with-fix) members return to their staged text on a refusal and on a crash.
+* **Broken input never empties the panel.** A skills record whose payload or operation is not an
+  object raises `err_bad_record` for its own card (it joins no group); `history.jsonl` lines that are
+  not objects or not UTF-8 are skipped by every reader (`_history_lines`, `_history_row`), and
+  `/history` and `/history/clear` answer a structured error.
+* **Memory delete** removes exactly the note the panel shows (`matched_entry=text`), never a note that
+  merely contains it, keeps its own undo copy and writes an `apply` row "Deleted from MEMORY.md in the
+  panel" instead of waiting for the outside-change scan.
+* **Undo of a new skill** removes every folder the write left empty up to the skill folder
+  (`templates/` sorted after `SKILL.md` and kept the folder); a category folder is never touched.
+* **Panel.** `usePolling` keeps one load in flight per poll; a refresh during a load is folded into
+  one follow-up (the 1.12.0 rule, which Refresh and post-action reads had broken). With data loaded, a
+  failed poll keeps it and shows `pa.empty.refreshFailed` with Retry; the full error state is for a
+  view that never loaded. In-flight and leaving cards live in a module store keyed `subsystem:id`
+  above the tab switch, released by the pending load that reflects the decision, so a tab switch can
+  neither re-enable Approve nor lose the re-read; a leaving card is `inert`. One `refreshAll` (pending,
+  history, memory, chip count) follows every decision, fix, review, undo, restore and delete. Only a
+  timeout runs the late-answer check, and it matches history rows by `record_id` that were not there
+  before the click — never by comparing client and server clocks; other errors show the backend's
+  `error`. The clear label uses `/history` `counts.total`. With the review `unassigned` or `failed`,
+  `Approve with the fix` arms the two-step unreviewed confirm and sends `with_edits` + `skip_review`
+  only when the fix clears every rule failure (`fix_left` empty, no `plain.fix`, nothing stale).
+
 ## 1.12.3 — skills outside the Hermes home, single-operation records
 
 * **Why (seen live).** Three delete cards for skills in `~/.agents/skills` (a `skills.external_dirs`

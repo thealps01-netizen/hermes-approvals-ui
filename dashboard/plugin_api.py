@@ -154,11 +154,11 @@ def _skill_files_in(skills: Path, name: str | None) -> list[Path]:
 def _skill_files(name: str | None = None) -> list[Path]:
     if name is None:
         return _skill_files_in(_home() / "skills", None)
-    for root in _skill_roots():
-        found = _skill_files_in(root, name)
-        if found:
-            return found
-    return []
+    folder = _skill_dir(name)
+    if folder is None or not folder.is_dir():
+        return []
+    root = next((r for r in _skill_roots() if _inside(folder, r)), folder.parent)
+    return [p for p in _skill_files_in(root, folder.name) if _inside(p, folder)]
 
 
 def _watched() -> list[Path]:
@@ -261,6 +261,21 @@ def _history_path() -> Path:
     return _state() / "history.jsonl"
 
 
+def _history_lines() -> list[str]:
+    path = _history_path()
+    if not path.exists():
+        return []
+    return [l for l in path.read_bytes().decode("utf-8", errors="replace").splitlines() if l.strip()]
+
+
+def _history_row(line: str) -> dict | None:
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return None
+    return row if isinstance(row, dict) else None
+
+
 def _append(entry: dict) -> None:
     with _LOCK:
         with _history_path().open("a", encoding="utf-8") as fh:
@@ -270,20 +285,13 @@ def _append(entry: dict) -> None:
 
 def _entries(limit: int = 50) -> list[dict]:
     path = _history_path()
-    if not path.exists():
-        return []
     out, bad = [], 0
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            try:
-                row = json.loads(line)
-            except ValueError:
-                bad += 1
-                continue
-            if isinstance(row, dict):
-                out.append(row)
-            else:
-                bad += 1
+    for line in _history_lines():
+        row = _history_row(line)
+        if row is None:
+            bad += 1
+        else:
+            out.append(row)
     if bad:
         _note_issue("history", _tx("issue_history", n=bad, file=path.name))
     out.reverse()
@@ -292,16 +300,13 @@ def _entries(limit: int = 50) -> list[dict]:
 
 def _prune() -> None:
     path = _history_path()
-    lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    lines = _history_lines()
     if len(lines) <= MAX_ENTRIES:
         return
     dropped, kept = lines[:-MAX_ENTRIES], lines[-MAX_ENTRIES:]
     for line in dropped:
-        try:
-            entry_id = json.loads(line).get("id")
-        except Exception:
-            continue
-        _remove_snapshots(entry_id)
+        if (row := _history_row(line)) is not None:
+            _remove_snapshots(row.get("id"))
     _atomic_write(path, "\n".join(kept) + "\n")
 
 
@@ -311,7 +316,12 @@ def _new_id() -> str:
 
 def _raw_ops(record: dict) -> list[dict]:
     payload = record.get("payload") or {}
-    return payload.get("operations") or ([payload] if payload.get("action") else [])
+    if not isinstance(payload, dict):
+        raise ValueError(_tx("err_bad_record"))
+    ops = payload.get("operations") or ([payload] if payload.get("action") else [])
+    if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
+        raise ValueError(_tx("err_bad_record"))
+    return ops
 
 
 def _rewrites_skill_md(op: dict) -> bool:
@@ -324,8 +334,8 @@ def _payload_hash(payload: object) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def _op_change_stat(wa, op: dict) -> dict:
-    diff = _one_op_diff(wa, op)
+def _op_change_stat(wa, op: dict, diff: str | None = None) -> dict:
+    diff = _one_op_diff(wa, op) if diff is None else _core_diff_or_blank(diff)
     if not diff:
         return {}
     content = (op.get("content") or op.get("file_content") or op.get("new_string") or "")
@@ -370,13 +380,27 @@ def _op_lines(old: str, new: str) -> dict:
             "added": sum(1 for r in rows if r[0] == "+"), "removed": sum(1 for r in rows if r[0] == "-")}
 
 
-def _ops(record: dict) -> list[dict]:
+def _ops(record: dict, memory: bool = False) -> list[dict]:
     payload = record.get("payload") or {}
-    ops = _raw_ops(record)
+    ops = _memory_ops(record) if memory else _raw_ops(record)
+    steps = []
+    if memory:
+        steps = (_memory_play(record) or {}).get("steps") or []
     out = []
-    for op in ops:
+    for n, op in enumerate(ops):
         action = op.get("action", "")
         item = {"action": action}
+        step = steps[n] if n < len(steps) else None
+        if step and action in ("replace", "remove", "patch"):
+            item["old"] = str(step["entry"] or step["old"])[:_OP_TEXT_LIMIT]
+            item["new"] = str(step["after"] or "")[:_OP_TEXT_LIMIT]
+            if action == "patch":
+                item["span_old"], item["span_new"] = step["old"][:_OP_TEXT_LIMIT], step["new"][:_OP_TEXT_LIMIT]
+            full = {"old": step["entry"] or step["old"], "new": step["after"] or ""}
+            item["old_len"], item["new_len"] = len(str(full["old"])), len(str(full["new"]))
+            item.update(_op_lines(full["old"], full["new"]))
+            out.append(item)
+            continue
         if action in ("replace", "remove"):
             item["old"] = op.get("old_text", "")
             item["new"] = op.get("content", "")
@@ -418,7 +442,9 @@ def _ops(record: dict) -> list[dict]:
 def _counts(listed: dict | None = None) -> dict:
     from tools import write_approval as wa
 
-    listed = listed or {s: wa.list_pending(s) for s in (wa.MEMORY, wa.SKILLS)}
+    if listed is None:
+        landed = _landed()
+        listed = {s: _sweep_landed(s, wa.list_pending(s), landed) for s in (wa.MEMORY, wa.SKILLS)}
     folded = sum(len(m) - 1 for m in _skill_groups(listed[wa.SKILLS]))
     return {wa.MEMORY: len(listed[wa.MEMORY]), wa.SKILLS: len(listed[wa.SKILLS]) - folded}
 
@@ -489,8 +515,11 @@ _MEM_FILE = {"memory": "MEMORY.md", "user": "USER.md"}
 
 def _entries_of(path: Path) -> list[str]:
     try:
-        return [e.strip() for e in path.read_text(encoding="utf-8").split("§") if e.strip()]
-    except Exception:
+        from tools.memory_tool_store import MemoryStore
+
+        return list(MemoryStore._read_file(path))
+    except Exception as exc:
+        _log(f"{path.name} could not be split into entries: {exc!r}")
         return []
 
 
@@ -525,13 +554,9 @@ def _skill_file(name: str) -> Path | None:
 
 
 def _skill_file_now(name: str) -> Path | None:
-    from agent.skill_utils import is_excluded_skill_path
-
-    for skill_md in (_home() / "skills").rglob("SKILL.md"):
-        if skill_md.parent.name != name or is_excluded_skill_path(skill_md):
-            continue
-        return skill_md
-    return None
+    folder = _skill_dir(name)
+    skill_md = folder / "SKILL.md" if folder else None
+    return skill_md if skill_md and skill_md.is_file() else None
 
 
 def _skill_target(name: str, file_path: object) -> Path | None:
@@ -584,6 +609,7 @@ _TEXT = {
     'err_outside_roots': '{path} is outside your profile and every configured skill folder, so the panel does not touch it.',
     'card_failed': 'A pending {subsystem} change could not be shown, so it is left out of this list: "{summary}" ({id}). Reason: {error}. Nothing was applied and it stays pending; to drop it, type /{subsystem} reject {id} in chat.',
     'err_bad_scope': 'invalid subsystem/decision.',
+    'err_bad_record': 'this record is not shaped the way Hermes stages a write (an operation or the payload is not an object); reject it',
     'err_no_ids': 'The id list is empty.',
     'err_no_ops_selected': 'No operation in the selected skill.',
     'apply_done': '{n} operation(s) applied.',
@@ -592,8 +618,13 @@ _TEXT = {
     'what_add': 'Adds a new note: {p}',
     'what_replace': 'Changes this note: {p}',
     'what_remove': 'Deletes this note: {p}',
-    'stale_gone': '{what} → cannot be applied: that text is no longer in {file} (another record may have changed it)',
-    'stale_ambiguous': '{what} → ambiguous: that text matches {n} notes in {file}, the target cannot be chosen',
+    'what_patch_note': 'Edits this note: {p} — {old} becomes {new}',
+    'summary_deleted': 'Deleted from {file} in the panel: {p}',
+    'group_member_gone': 'A change of this group was decided somewhere else (for example in chat), so nothing was written; the list is read again.',
+    'group_member_busy': 'A change of this group is in use by another program ({error}), so nothing was written; try again.',
+    'what_unknown_note': 'An operation Hermes does not know: {action}',
+    'stale_mem_refused': '{what} → cannot be applied: {problem}',
+    'stale_mem_unpinned': 'this edit was staged without the note it targets, so Hermes refuses it; reject it and let the agent write it again',
     'count_add': 'Adds {n} note(s)',
     'count_rep': 'updates {n} note(s)',
     'count_rem': 'deletes {n} note(s)',
@@ -608,7 +639,7 @@ _TEXT = {
     'rec_failed_before': 'Approving was already attempted and Hermes refused: {error} Approving it again as-is fails the same way; the full error is in the red box below.',
     'stale_memory_limit': '{file}: this change would put the file at {after}/{limit} chars ({over} over). Hermes refuses the write; a record that frees room (merge/remove) must be approved first.',
     'rec_memory_limit_reason': '{file} is {percent_before}% full and this record would reach {after}/{limit} chars — Hermes refuses the write. Reject it; approve a record that frees room instead.',
-    'rec_mem_fit_reason': 'It adds a note; {file} goes {before}% → {after}% ({limit} chars max). It fits and can be approved.',
+    'rec_mem_fit_reason': '{file} goes {before}% → {after}% ({limit} chars max). It fits and can be approved.',
     'stale_path': '{what} → cannot be applied: Hermes refuses this file path — {problem}.',
     'stale_frontmatter': '{what} → cannot be applied: the validator rejects it — {problem}.',
     'head_new': 'New skill: {names}',
@@ -644,8 +675,6 @@ _TEXT = {
     'stale_unvalidated': '{what} → could not be validated: Hermes\' skill validator could not run, so this record was not checked.',
     'rec_unvalidated': 'Could not validate',
     'rec_unvalidated_reason': 'Hermes\' skill validator could not run, so nothing here was checked and approving is not recommended. Refresh once Hermes is healthy; the error is in the Hermes log.',
-    'stale_mem_ambiguous': '{file}: {text} matches more than one note, so Hermes cannot tell which one to change.',
-    'stale_mem_unmatched': '{file}: no note matches {text} any more.',
     'issue_index': 'The watch index was unreadable ({problem}); it was set aside as {name} and rebuilt. Changes made outside the pane while it was unreadable were not recorded.',
     'err_read': 'Could not read: {error}',
     'err_route': 'The request could not be completed: {error}',
@@ -667,6 +696,8 @@ _TEXT = {
     'advice_form': '{name}: the description does not read "Use when <trigger>. <what it does>."',
     'advice_elsewhere': '{name}: this line is already in the skill {other}: {quote}',
     'hard_memory_duplicate': '{name}: this note is already saved: {quote}',
+    'hard_memory_twice': '{name}: this record writes the same note twice: {quote}',
+    'review_again_no_model': 'No model is assigned to the approvals review (Settings → Models), so the review was kept as it is.',
     'hard_unchecked': 'The rule checks could not run ({error}); approving is locked until they do.',
     'gate_hard': 'A rule check failed, so Approve stays locked: {reasons}',
     'gate_running': 'The pre-review is still running; Approve unlocks when it finishes.',
@@ -764,57 +795,75 @@ def _last_error(record_id: str) -> str:
     if not record_id:
         return ""
     try:
-        path = _history_path()
-        rows = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    except Exception:
+        rows = _history_lines()
+    except OSError as exc:
+        _log(f"the history could not be read for {record_id}: {exc!r}")
         return ""
     for line in reversed(rows):
-        try:
-            row = json.loads(line)
-        except Exception:
-            continue
-        if row.get("kind") == "failed" and row.get("record_id") == record_id:
+        row = _history_row(line)
+        if row is not None and row.get("kind") == "failed" and row.get("record_id") == record_id:
             return str(row.get("summary") or "")
     return ""
 
 
-def _memory_fit(record: dict) -> dict:
+def _memory_ops(record: dict) -> list[dict]:
+    payload = record.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise ValueError(_tx("err_bad_record"))
+    ops = payload.get("operations") if payload.get("action") == "batch" else [payload]
+    if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
+        raise ValueError(_tx("err_bad_record"))
+    return ops
+
+
+def _memory_play(record: dict) -> dict:
     from tools.memory_tool import load_on_disk_store
-    from tools.memory_tool_store import ENTRY_DELIMITER, _find_unique_match
+    from tools.memory_tool_store import ENTRY_DELIMITER, MemoryStore
 
     payload = record.get("payload") or {}
     target = str(payload.get("target") or "memory")
-    ops = payload.get("operations") or [payload]
-    file_label = _MEM_FILE.get(target, "MEMORY.md")
+    ops = _memory_ops(record)
     try:
         store = load_on_disk_store()
         entries = list(store.user_entries if target == "user" else store.memory_entries)
         limit = store.user_char_limit if target == "user" else store.memory_char_limit
     except Exception as exc:
-        _log(f"the memory store could not be read for the fill precheck: {exc}")
+        _log(f"the memory store could not be read for the precheck: {exc!r}")
         return {}
-    before = len(ENTRY_DELIMITER.join(entries))
-    working = list(entries)
-    for op in ops:
-        action = op.get("action", "")
-        content = (op.get("content") or "").strip()
-        old = (op.get("old_text") or "").strip()
-        if action == "add":
-            working.append(content)
+    working, steps = list(entries), []
+    for i, op in enumerate(ops):
+        act = str(op.get("action") or "")
+        content, old = str(op.get("content") or op.get("new_text") or ""), str(op.get("old_text") or "")
+        if act != "patch":
+            content, old = content.strip(), old.strip()
+        pinned = op.get("matched_entry")
+        if act in ("replace", "remove", "patch") and not pinned:
+            steps.append({"action": act, "old": old, "new": content, "entry": None, "after": None,
+                          "error": _tx("stale_mem_unpinned")})
             continue
-        if not old:
-            continue
-        idx, ambiguous = _find_unique_match(working, old)
-        if idx is None or ambiguous:
-            problem = (_tx("stale_mem_ambiguous", file=file_label, text=_preview(old)) if ambiguous
-                       else _tx("stale_mem_unmatched", file=file_label, text=_preview(old)))
-            _log(problem)
-            return {"file": file_label, "problem": problem}
-        working = working[:idx] + ([content] if action == "replace" else []) + working[idx + 1:]
-    after = len(ENTRY_DELIMITER.join(working))
-    return {"file": file_label, "before": before, "after": after, "limit": limit,
-            "over": max(0, after - limit), "percent_before": round(100 * before / limit) if limit else 0,
-            "percent_after": round(100 * after / limit) if limit else 0}
+        msg, previous, _cls, patched = MemoryStore._apply_batch_op(
+            working, act, content, old, f"Operation {i + 1} ({act or 'unknown'})", pinned)
+        entry = previous if not msg and act != "add" else (pinned if isinstance(pinned, str) else None)
+        after = (patched if act == "patch" else content if act in ("replace", "add") else None) if not msg else None
+        steps.append({"action": act, "old": old, "new": content, "entry": entry, "after": after,
+                      "error": _short_error(str(msg or ""))})
+    before, total = len(ENTRY_DELIMITER.join(entries)), len(ENTRY_DELIMITER.join(working))
+    return {"file": _MEM_FILE.get(target, "MEMORY.md"), "steps": steps, "before": before, "after": total,
+            "limit": limit}
+
+
+def _memory_fit(record: dict) -> dict:
+    play = _memory_play(record)
+    if not play:
+        return {}
+    limit, before, after = play["limit"], play["before"], play["after"]
+    fit = {"file": play["file"], "before": before, "after": after, "limit": limit,
+           "over": max(0, after - limit), "percent_before": round(100 * before / limit) if limit else 0,
+           "percent_after": round(100 * after / limit) if limit else 0}
+    refused = next((s["error"] for s in play["steps"] if s["error"]), "")
+    if refused:
+        fit["problem"] = refused
+    return fit
 
 
 def _origin_why(origin: str, summary: str = "") -> str:
@@ -858,35 +907,38 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
     if subsystem == wa.MEMORY:
         file_label = _MEM_FILE.get(payload.get("target", "memory"), "MEMORY.md")
         kind_label = _tx("kind_memory", file=file_label)
-        entries = _entries_of(_home() / "memories" / file_label)
-        for op in ops:
-            action, old, new = op.get("action", ""), op.get("old_text", ""), op.get("content", "")
+        steps = (_memory_play(record) or {}).get("steps") or [
+            {"action": str(op.get("action") or ""), "old": str(op.get("old_text") or ""),
+             "new": str(op.get("content") or ""), "entry": op.get("matched_entry"), "after": None, "error": ""}
+            for op in _memory_ops(record)]
+        for step in steps:
+            action, note = step["action"], step["entry"] or step["old"]
             if action == "add":
-                what.append(_tx("what_add", p=_preview(new)))
+                what.append(_tx("what_add", p=_preview(step["new"])))
+            elif action == "patch":
+                what.append(_tx("what_patch_note", p=_preview(note), old=_preview(step["old"], 40),
+                                new=_preview(step["new"], 40)))
             elif action == "replace":
-                what.append(_tx("what_replace", p=_preview(old)))
+                what.append(_tx("what_replace", p=_preview(note)))
+            elif action == "remove":
+                what.append(_tx("what_remove", p=_preview(note)))
             else:
-                what.append(_tx("what_remove", p=_preview(old)))
-            if action in ("replace", "remove") and old:
-                hits = [e for e in entries if old in e]
-                if not hits:
-                    stale.append(_tx("stale_gone", what=what[-1], file=file_label))
-                elif len(hits) > 1:
-                    stale.append(_tx("stale_ambiguous", what=what[-1], file=file_label, n=len(hits)))
-        adds = sum(1 for op in ops if op.get("action") == "add")
-        reps = sum(1 for op in ops if op.get("action") == "replace")
-        rems = sum(1 for op in ops if op.get("action") == "remove")
+                what.append(_tx("what_unknown_note", action=action or "?"))
+            if step["error"]:
+                stale.append(_tx("stale_mem_refused", what=what[-1], problem=step["error"].rstrip(".")))
+        tally = {a: sum(1 for s in steps if s["action"] == a) for a in ("add", "patch", "replace", "remove")}
         headline = file_label + ": " + ", ".join(p for p in (
-            _tx("count_add", n=adds) if adds else "", _tx("count_rep", n=reps) if reps else "",
-            _tx("count_rem", n=rems) if rems else "") if p)
+            _tx("count_add", n=tally["add"]) if tally["add"] else "",
+            _tx("count_rep", n=tally["patch"] + tally["replace"]) if tally["patch"] + tally["replace"] else "",
+            _tx("count_rem", n=tally["remove"]) if tally["remove"] else "") if p)
         groups = [{"name": file_label, "kind": "update", "ops": what, "files": [file_label]}]
         effect = _tx("effect_memory", file=file_label)
         target_label = file_label
     else:
         kind_label = _tx("kind_skill")
         per_name: dict = {}
-        written: set[str] = set()
-        for op in ops:
+        played = _staged_ops(wa, record) if view is None else []
+        for n_op, op in enumerate(ops):
             action = op.get("action", "")
             name = op.get("name", "") or "?"
             rewrite = _rewrites_skill_md(op)
@@ -929,17 +981,11 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
                     what.append(_tx("what_section", where=where, section=section))
                 else:
                     what.append(_tx("what_patch", where=where, p=_preview(op.get("old_string") or "")))
-            if action == "patch" and not rewrite and view is None:
-                target = _skill_target(name, op.get("file_path"))
-                if target and str(target) not in written:
-                    problem = _patch_problem(target, op, rel)
-                    if problem:
-                        stale.append(_tx("stale_patch", what=what[-1],
-                                         problem=problem.strip().rstrip(".")))
-            if action in ("create", "write_file") or rewrite:
-                written_target = _skill_target(name, None if rewrite else op.get("file_path"))
-                if written_target:
-                    written.add(str(written_target))
+            if action == "patch" and not rewrite and n_op < len(played):
+                problem = played[n_op]["error"]
+                if problem:
+                    stale.append(_tx("stale_patch", what=what[-1],
+                                     problem=problem.strip().rstrip(".")))
             if purpose_from_disk and not any(n["label"] == _tx("note_what") for n in notes):
                 notes.append({"label": _tx("note_what"), "text": purpose_from_disk})
             group = per_name.setdefault(name, {"name": name, "kind": "update", "ops": [], "files": []})
@@ -1000,10 +1046,10 @@ def _recommendation(subsystem: str, plain: dict, record: dict) -> dict:
                 "reason": _tx("rec_memory_limit_reason", file=fit["file"], after=fit["after"],
                               limit=fit["limit"], percent_before=fit["percent_before"])}
     file_label = (fit.get("file") if fit else None) or plain.get("target") or "MEMORY.md"
-    ops = (record.get("payload") or {}).get("operations") or [record.get("payload") or {}]
-    has_remove = any(op.get("action") == "remove" for op in ops)
+    has_remove = any(op.get("action") == "remove" for op in _memory_ops(record))
+    grows = fit and fit.get("after", 0) > fit.get("before", 0)
     if fit:
-        if has_remove:
+        if has_remove and not grows:
             return {"verdict": _tx("rec_approve"),
                     "reason": _tx("rec_mem_remove_reason", file=file_label,
                                   percent=fit["percent_before"])}
@@ -1087,7 +1133,10 @@ def _card(subsystem: str, record: dict, steps: list) -> dict:
     _mark_edits(review, record, subsystem)
     if advice := _advice_checks(subsystem, record):
         review["advice"] = advice
+    from tools import write_approval as wa
+
     shown = {"payload": _payload_hash(record.get("payload")), "stale": plain.get("stale") or [],
+             "diff": _skill_diff_text(wa, record) if subsystem == wa.SKILLS else "",
              "fix": plain.get("fix") or {}, "review": state.get("rid") or state.get("finished"),
              **{k: review.get(k) for k in ("status", "hard", "verdict", "summary", "findings", "edits",
                                             "fix_left", "error")}}
@@ -1385,6 +1434,7 @@ def _group_card(gid: str, members: list[dict], steps: list) -> dict:
         review["advice"] = facts["advice"]
     result = _group_result(facts["view"])
     shown = {"members": [[r.get("id"), _payload_hash(r.get("payload"))] for r in members], "stale": facts["stale"],
+             "result": result,
              "fix": [p.get("fix") or {} for p in facts["plains"]], "review": state.get("rid") or state.get("finished"),
              **{k: review.get(k) for k in ("status", "hard", "verdict", "summary", "findings", "edits",
                                             "fix_left", "error")}}
@@ -1507,7 +1557,73 @@ def _group_job(gid: str, model: dict, tag: str) -> None:
             _REVIEW_RUNNING.discard(tag)
 
 
+_CLAIM = ".pa-claim"
+
+
+def _claim_path(record_id: str) -> Path:
+    from tools import write_approval as wa
+
+    path = wa._pending_path(wa.SKILLS, record_id)
+    return path.with_name(path.name + _CLAIM)
+
+
+def _claim(members: list[dict]) -> str:
+    from tools import write_approval as wa
+
+    done = []
+    for record in members:
+        rid = str(record.get("id"))
+        try:
+            os.replace(wa._pending_path(wa.SKILLS, rid), _claim_path(rid))
+        except FileNotFoundError:
+            _unclaim(done)
+            return _tx("group_member_gone")
+        except OSError as exc:
+            _unclaim(done)
+            return _tx("group_member_busy", error=_short_error(str(exc)))
+        done.append(rid)
+    return ""
+
+
+def _unclaim(record_ids: list) -> None:
+    from tools import write_approval as wa
+
+    for rid in record_ids:
+        held = _claim_path(str(rid))
+        if held.exists() and not wa._pending_path(wa.SKILLS, str(rid)).exists():
+            try:
+                os.replace(held, wa._pending_path(wa.SKILLS, str(rid)))
+            except OSError as exc:
+                _log(f"claimed record {rid} could not be put back: {exc!r}")
+        else:
+            held.unlink(missing_ok=True)
+
+
+def _unclaim_left() -> None:
+    from tools import write_approval as wa
+
+    folder = wa._pending_path(wa.SKILLS, "x").parent
+    if folder.is_dir():
+        _unclaim([p.name[:-len(".json" + _CLAIM)] for p in folder.glob("*.json" + _CLAIM)])
+
+
 def _group_apply(gid: str, members: list[dict], suffix: str = "") -> tuple[bool, str]:
+    from tools import write_approval as wa
+
+    ids = [str(r.get("id")) for r in members]
+    try:
+        queued = {rid: wa._pending_path(wa.SKILLS, rid).read_bytes() for rid in ids}
+    except FileNotFoundError:
+        return False, _tx("group_member_gone")
+    if reason := _claim(members):
+        return False, reason
+    try:
+        return _group_apply_claimed(gid, members, suffix, queued)
+    finally:
+        _unclaim(ids)
+
+
+def _group_apply_claimed(gid: str, members: list[dict], suffix: str, queued: dict) -> tuple[bool, str]:
     from tools import write_approval as wa
 
     ops = [op for r in members for op in _raw_ops(r)]
@@ -1519,10 +1635,11 @@ def _group_apply(gid: str, members: list[dict], suffix: str = "") -> tuple[bool,
     for n, path in enumerate(before):
         entry["files"].append({"path": _rel(path), "snap": _store_copy(path, entry["id"], n),
                                "before_sha": _sha(path), "sha_after": None})
-    queued = {str(r.get("id")): wa._pending_path(wa.SKILLS, str(r.get("id"))).read_bytes() for r in members}
     for n, record in enumerate(members, 1):
         try:
-            ok, message = _apply(wa.SKILLS, str(record.get("id")), "approve")
+            rid = str(record.get("id"))
+            os.replace(_claim_path(rid), wa._pending_path(wa.SKILLS, rid))
+            ok, message = _apply(wa.SKILLS, rid, "approve")
         except Exception as exc:
             ok, message = False, str(exc) or repr(exc)
         if ok:
@@ -1563,6 +1680,7 @@ def _group_rollback(entry: dict, before: list, ops: list, queued: dict) -> None:
             parent = parent.parent
     for record_id, data in queued.items():
         path = wa._pending_path(wa.SKILLS, record_id)
+        _claim_path(record_id).unlink(missing_ok=True)
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write_bytes(path, data)
@@ -1610,10 +1728,14 @@ def _group_decide(gid: str, members: list[dict] | None, body: dict, versions: di
         refused, members, suffix, queued = _group_checked(gid, members, body, versions)
     if refused:
         return refused
-    ok, message = _group_apply(gid, members, suffix)
+    ok = False
+    try:
+        ok, message = _group_apply(gid, members, suffix)
+    finally:
+        if not ok:
+            for path, data in queued.items():
+                _restore_record(path, data)
     if not ok:
-        for path, data in queued.items():
-            _restore_record(path, data)
         return {"id": gid, "group": True, "ok": False, "error": message}
     return {"id": gid, "group": True, "ok": True, "members": [r.get("id") for r in members], "message": message}
 
@@ -1643,7 +1765,7 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
         if left := _group_left(fixed):
             return refuse(_tx("fix_left", reasons=" ".join(left)), blocked=True)
         why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
-        suffix = _fixed_summary("", applied, effect)
+        suffix = _fixed_summary("", applied, effect) + (_tx("group_unreviewed") if status != "done" else "")
         for i in sorted(changed):
             fixed[i]["amended_from"] = members[i].get("payload")
             fixed[i]["amended_effect"], fixed[i]["amended_why"] = effect, why
@@ -1665,8 +1787,10 @@ def _pending() -> dict:
     live: set = set()
     failed: list[str] = []
     steps = _approved_steps()
+    landed = _landed()
+    _unclaim_left()
     for subsystem in (wa.MEMORY, wa.SKILLS):
-        records = wa.list_pending(subsystem)
+        records = _sweep_landed(subsystem, wa.list_pending(subsystem), landed)
         groups = {_group_id(m): m for m in (_skill_groups(records) if subsystem == wa.SKILLS else [])}
         cards: dict = {}
         broken: dict = {}
@@ -1715,7 +1839,7 @@ def _pending_item(wa, subsystem: str, record: dict, gid: str, n: int, cards: dic
         "summary": record.get("summary", ""),
         "origin": record.get("origin", ""),
         "staged_at": record.get("created_at"),
-        "ops": _ops(record),
+        "ops": _ops(record, subsystem == wa.MEMORY),
     }
     if gid:
         item.update(plain=cards[gid]["plains"][n - 1], group=gid, change=n)
@@ -1724,10 +1848,11 @@ def _pending_item(wa, subsystem: str, record: dict, gid: str, n: int, cards: dic
         item.update(plain=card["plain"], version=card["version"], review=card["review"])
     if subsystem == wa.SKILLS:
         item["diff"] = _skill_diff_text(wa, record)
+        played = _staged_ops(wa, record)
         for i, op in enumerate(_raw_ops(record)):
-            if i < len(item["ops"]):
+            if i < len(item["ops"]) and isinstance(op, dict):
                 own = {k: item["ops"][i][k] for k in ("added", "removed") if k in item["ops"][i]}
-                item["ops"][i].update(_op_change_stat(wa, op))
+                item["ops"][i].update(_op_change_stat(wa, op, played[i]["diff"] if i < len(played) else None))
                 item["ops"][i].update(own)
         item["has_change"] = any(o.get("has_change") for o in item["ops"])
     return item
@@ -1750,6 +1875,66 @@ def scan_now():
 
 def _core_diff_or_blank(text: str) -> str:
     return "" if str(text).lstrip().startswith("(") else str(text)[:4000]
+
+
+def _staged_ops(wa, record: dict) -> list[dict]:
+    def play() -> list[dict]:
+        from tools.fuzzy_match import fuzzy_find_and_replace
+
+        staged: dict = {}
+        written: set = set()
+        out = []
+        for op in _raw_ops(record):
+            rewrite = op.get("action") == "patch" and _rewrites_skill_md(op)
+            payload = dict(op, action="edit") if rewrite else dict(op)
+            action, name = str(payload.get("action") or ""), str(payload.get("name") or "")
+            rel = "SKILL.md" if action in ("edit", "create") else str(payload.get("file_path") or "SKILL.md")
+            if action in ("edit", "patch", "write_file") and name and rel not in staged.get(name, {}):
+                base = _core_base(payload)
+                if base is not None:
+                    staged.setdefault(name, {})[rel] = base[name][rel]
+            error = ""
+            try:
+                diff = str(wa.skill_pending_diff({"payload": payload}, staged) or "")
+            except Exception as exc:
+                _log(f"the diff of {record.get('id')} could not be built: {exc!r}")
+                diff, error = "", _short_error(repr(exc))
+            if action == "patch" and not error:
+                content = None
+                if not isinstance(payload.get("new_string"), str):
+                    error = "new_string is required for 'patch'. Use an empty string to delete matched text."
+                elif (name, rel) in written:
+                    content = staged.get(name, {}).get(rel, "")
+                elif (target := _skill_target(name, payload.get("file_path"))) is not None:
+                    if target.exists():
+                        content = staged.get(name, {}).get(rel)
+                    else:
+                        error = f"File not found: {rel}"
+                if content is not None:
+                    _new, _count, _strategy, problem = fuzzy_find_and_replace(
+                        content or "", str(payload.get("old_string") or ""), payload["new_string"],
+                        bool(payload.get("replace_all")))
+                    error = _short_error(problem or "")
+            out.append({"op": op, "diff": diff, "error": error})
+            try:
+                wa._fold_staged(staged, action, name, payload)
+            except Exception as exc:
+                _log(f"operation {len(out)} of {record.get('id')} could not be played forward: {exc!r}")
+            if action in ("create", "edit", "write_file") or (action == "patch" and not error):
+                written.add((name, rel))
+        return out
+
+    return _remember(("staged", str(record.get("id")), _payload_hash(record.get("payload"))), play)
+
+
+def _op_shown(n: int, entry: dict) -> str:
+    diff = entry["diff"]
+    if diff and not diff.lstrip().startswith("("):
+        return diff
+    op = entry["op"] if isinstance(entry["op"], dict) else {"value": entry["op"]}
+    raw = json.dumps(op, ensure_ascii=False, indent=1)[:4000]
+    reason = entry["error"] or diff.strip()
+    return f"(operation {n}: {reason})\n{raw}" if reason else f"(operation {n})\n{raw}"
 
 
 def _core_diff(wa, op: dict) -> str:
@@ -1785,9 +1970,15 @@ def _one_op_diff(wa, op: dict) -> str:
 
 
 def _skill_diff_text(wa, record: dict) -> str:
-    payload = record.get("payload") or {}
-    parts = [d for d in (_one_op_diff(wa, op) for op in _raw_ops(record)) if d]
-    return "\n".join(parts)[:4000] if parts else _one_op_diff(wa, payload)
+    try:
+        played = _staged_ops(wa, record)
+    except Exception as exc:
+        _log(f"the diff of {record.get('id')} could not be built: {exc!r}")
+        return ""
+    parts = [_op_shown(n, e) if len(played) > 1 or e["error"] else _core_diff_or_blank(e["diff"])
+             for n, e in enumerate(played, 1)]
+    parts = [p for p in parts if p]
+    return "\n".join(parts)[:4000]
 
 
 _DANGLING_WORDS = {"and", "or", "for", "to", "of", "in", "on", "at", "with", "the", "a", "an", "by", "as", "that"}
@@ -1898,7 +2089,9 @@ _REVIEW_RULES = (
     "file lists and another file states differently is a finding. Do not guess beyond the material.\n"
     "4. rule: any other breach of an owner rule (scope, a skill rule written into memory or the reverse, "
     "instruction phrasing in memory, machine-specific paths, project-specific names in a general skill, "
-    "editing a third-party skill, language).\n"
+    "editing a third-party skill, language). Text that is not English is a rule finding even when it is "
+    "written in Latin letters (Turkish, French, Spanish, German, ...); its edit replaces it with the English "
+    "translation.\n"
     "Do not repeat the HARD CHECK findings; the owner already sees them. Only exception: when a HARD CHECK "
     "finding says text must be English, add one rule finding whose edit replaces that text with its English "
     "translation. A '[... N more characters cut ...]' "
@@ -1965,11 +2158,18 @@ def _expected_author() -> str:
 
 
 def _skill_author(content: str) -> str:
-    return _frontmatter(content).get("author", "")
+    from agent.skill_utils import parse_frontmatter
+
+    try:
+        value = parse_frontmatter(str(content or ""))[0].get("author")
+    except Exception as exc:
+        _log(f"a frontmatter could not be read for the author rule: {exc!r}")
+        return ""
+    return str(value).strip() if isinstance(value, (str, int, float)) else ""
 
 
 def _norm_line(line: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"^[\s>*\-\d.)#]+", "", line)).strip().lower()
+    return re.sub(r"\s+", " ", re.sub(r"^(?:[\s>*\-#]+|\d+[.)](?=\s))+", "", line)).strip().lower()
 
 
 def _quote_at(text: str, at: int) -> str:
@@ -1978,22 +2178,30 @@ def _quote_at(text: str, at: int) -> str:
     return _preview(text[start:end if end >= 0 else len(text)])
 
 
-_TURKISH_ONLY = frozenset("çğıöşüÇĞİÖŞÜ")
+_IDEOGRAPHIC = ("CJK ", "HIRAGANA ", "KATAKANA ", "HANGUL ", "IDEOGRAPHIC ")
 
 
-def _foreign_letter(ch: str) -> bool:
+def _script_letter(ch: str) -> str:
     if ord(ch) < 128 or not ch.isalpha():
-        return False
-    return ch in _TURKISH_ONLY or not unicodedata.name(ch, "").startswith("LATIN ")
+        return ""
+    name = unicodedata.name(ch, "")
+    if name.startswith("LATIN "):
+        return ""
+    return "ideograph" if name.startswith(_IDEOGRAPHIC) else "word"
 
 
 def _foreign_at(text: str, known: set) -> int:
     at = 0
     for line in str(text or "").splitlines(keepends=True):
         if _norm_line(line) not in known:
-            hit = next((i for i, ch in enumerate(line) if _foreign_letter(ch)), -1)
-            if hit >= 0:
-                return at + hit
+            run = 0
+            for i, ch in enumerate(line):
+                kind = _script_letter(ch)
+                if kind == "ideograph":
+                    return at + i
+                run = run + 1 if kind == "word" else 0
+                if run >= 2:
+                    return at + i - 1
         at += len(line)
     return -1
 
@@ -2019,6 +2227,10 @@ def _skill_dir_now(name: str) -> Path | None:
 
 def _bare_skill(name: str) -> str:
     return str(name or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def _in_only(name: object, only) -> bool:
+    return bool(name) and _bare_skill(str(name)) in {_bare_skill(str(o)) for o in only}
 
 
 def _skill_owner(name: str, author: str) -> str:
@@ -2222,6 +2434,8 @@ def _skill_hard(record: dict, view: dict | None = None) -> list[dict]:
             if owner := _skill_owner(name, author):
                 out.append(_hard(name, _tx("hard_owner", name=name, owner=owner)))
         existing = set() if action == "create" else _skill_lines(_bare_skill(name), "", view)
+        if author:
+            existing = existing | {_norm_line(f"author: {author}")}
         if (at := _foreign_at(text, existing)) >= 0:
             out.append(_hard(name, _tx("hard_language", name=name, quote=_quote_at(text, at))))
         if action in ("create", "delete"):
@@ -2293,9 +2507,16 @@ def _skill_result_hard(record: dict, view: dict | None, author: str) -> list[dic
     out: list[dict] = []
     ops = _raw_ops(record)
     for name, before, after in _skill_results(record, view):
-        if before is None or after is None:
+        if after is None:
             continue
         mine = [op for op in ops if _bare_skill(op.get("name")) == name]
+        if before is None:
+            created = next((op for op in mine if op.get("action") == "create"), None)
+            if author and created and _skill_author(created.get("content") or "") == author \
+                    and _skill_author(after) != author:
+                out.append(_hard(name, _tx("hard_author", name=name, want=author,
+                                           got=_skill_author(after) or _tx("hard_nobody"))))
+            continue
         if author and _skill_author(before) == author and _skill_author(after) != author:
             rewrite = next((op for op in mine if _rewrites_skill_md(op)), None)
             edit = _author_edit(rewrite.get("content") or "", author) if rewrite else None
@@ -2406,13 +2627,29 @@ def _memory_hard(record: dict) -> list[dict]:
     known = {_norm_line(e) for e in entries}
     lines = {_norm_line(line) for e in entries for line in e.splitlines()}
     out: list[dict] = []
+    seen: set = set()
     for op in payload.get("operations") or [payload]:
+        if not isinstance(op, dict):
+            continue
         content = str(op.get("content") or "")
         if (at := _foreign_at(content, lines)) >= 0:
             out.append(_hard(file_name, _tx("hard_language", name=file_name, quote=_quote_at(content, at))))
-        if op.get("action") == "add" and content.strip() and _norm_line(content) in known:
+        key = _norm_line(content)
+        if op.get("action") not in ("add", "replace") or not content.strip():
+            continue
+        old = str(op.get("old_text") or "")
+        pinned = op.get("matched_entry")
+        replaced = set()
+        if op.get("action") == "replace":
+            replaced = {_norm_line(e) for e in entries if old and old in e}
+            if isinstance(pinned, str):
+                replaced = {_norm_line(pinned)}
+        if key in known - replaced:
             out.append(_hard(file_name, _tx("hard_memory_duplicate", name=file_name,
-                                                quote=_preview(content.strip()))))
+                                            quote=_preview(content.strip()))))
+        elif key in seen:
+            out.append(_hard(file_name, _tx("hard_memory_twice", name=file_name, quote=_preview(content.strip()))))
+        seen.add(key)
     return out
 
 
@@ -2444,7 +2681,11 @@ def _target_names(subsystem: str, record: dict) -> set:
 
     if subsystem == wa.MEMORY:
         return {_MEM_FILE.get(str((record.get("payload") or {}).get("target") or "memory"), "MEMORY.md")}
-    return {_bare_skill(op.get("name")) for op in _raw_ops(record)} - {""}
+    try:
+        ops = _raw_ops(record)
+    except ValueError:
+        return set()
+    return {_bare_skill(op.get("name")) for op in ops} - {""}
 
 
 def _review_siblings(subsystem: str, record: dict) -> list[dict]:
@@ -2648,22 +2889,29 @@ def _write_text(subsystem: str, record: dict) -> str:
     parts = [str(record.get("summary") or "")]
     if subsystem == wa.SKILLS:
         keys = ("content", "file_content", "new_string", "old_string", "name", "file_path")
-        parts += [str(op.get(k) or "") for op in _raw_ops(record) for k in keys]
-        parts.append(_review_diff(wa, record))
+        parts += [str(op.get(k) or "") for op in _raw_ops(record) if isinstance(op, dict) for k in keys]
+        parts += [line[1:] for line in _review_diff(wa, record).splitlines()
+                  if line[:1] in ("+", "-") and not line.startswith(("+++", "---"))]
     else:
         payload = record.get("payload") or {}
-        parts += [str(op.get(k) or "") for op in payload.get("operations") or [payload] for k in ("content", "old_text")]
+        parts += [str(op.get(k) or "") for op in payload.get("operations") or [payload] if isinstance(op, dict)
+                  for k in ("content", "old_text")]
     return "\n".join(parts)
 
 
+_QUOTE_MIN = 8
+
+
 def _squash(text: str) -> str:
-    return re.sub(r"[\W_]+", "", str(text or "").lower())
+    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", str(text or "")).lower())
 
 
 def _quoted(quote: str, proof: str) -> bool:
     pieces = [_squash(p) for p in re.split(r"\.\.\.|…", str(quote or ""))]
     pieces = [p for p in pieces if p]
-    return bool(pieces) and all(p in proof for p in pieces)
+    if not pieces or sum(map(len, pieces)) < min(_QUOTE_MIN, len(proof)):
+        return False
+    return all(p in proof for p in pieces)
 
 
 def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonce: str, cuts: list) -> str:
@@ -2716,16 +2964,12 @@ def _target_block(nonce: str, record: dict, cuts: list) -> str:
 
 
 def _review_diff(wa, record: dict) -> str:
-    out = []
-    for op in _raw_ops(record):
-        try:
-            text = _core_diff(wa, op)
-        except Exception as exc:
-            _log(f"diff of {record.get('id')} for the pre-review failed: {exc!r}")
-            return ""
-        if not text.lstrip().startswith("("):
-            out.append(text)
-    return "\n".join(out)
+    try:
+        played = _staged_ops(wa, record)
+    except Exception as exc:
+        _log(f"diff of {record.get('id')} for the pre-review failed: {exc!r}")
+        return ""
+    return "\n".join(_op_shown(n, e) for n, e in enumerate(played, 1))
 
 
 def _review_call(task: str, **kw):
@@ -2734,13 +2978,30 @@ def _review_call(task: str, **kw):
     return call_llm(task, **kw)
 
 
-def _review_parse(text: str, proof: str | None = None, changes: int = 0) -> dict:
-    match = re.search(r"\{.*\}", str(text or ""), re.S)
-    try:
-        data = json.loads(match.group(0)) if match else None
-    except ValueError:
-        data = None
-    if not isinstance(data, dict):
+_SEVERITY_WORDS = {"critical": "block", "blocker": "block", "blocking": "block", "high": "block", "error": "block",
+                   "major": "block", "medium": "fix", "warning": "fix", "warn": "fix", "moderate": "fix",
+                   "low": "note", "minor": "note", "info": "note", "trivial": "note"}
+_EDIT_LIMIT = 20000
+
+
+def _answer_json(text: str) -> dict | None:
+    decoder = json.JSONDecoder()
+    first = None
+    for at in [m.start() for m in re.finditer(r"\{", text)]:
+        try:
+            data, _end = decoder.raw_decode(text, at)
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            if "findings" in data or "summary" in data:
+                return data
+            first = first if first is not None else data
+    return first
+
+
+def _review_parse(text: str, proof: str | None = None, changes: int = 0, material: str | None = None) -> dict:
+    data = _answer_json(str(text or ""))
+    if not isinstance(data, dict) or not isinstance(data.get("findings") or [], list):
         raise ValueError(_tx("review_bad_answer", text=_preview(str(text or ""))))
     findings = []
     for item in data.get("findings") or []:
@@ -2749,20 +3010,28 @@ def _review_parse(text: str, proof: str | None = None, changes: int = 0) -> dict
         found = {k: str(item.get(k) or "").strip()[:800] for k in ("severity", "kind", "quote", "other", "explain")}
         edit = item.get("edit")
         if isinstance(edit, dict) and str(edit.get("find") or "").strip() and str(edit.get("find")) != str(edit.get("replace") or ""):
-            found["edit"] = {"find": str(edit["find"])[:4000], "replace": str(edit.get("replace") or "")[:4000]}
-            if str(edit.get("file") or "").strip():
-                found["edit"]["file"] = str(edit["file"]).strip()[:300]
+            find, replace = str(edit["find"]), str(edit.get("replace") or "")
+            if len(find) <= _EDIT_LIMIT and len(replace) <= _EDIT_LIMIT:
+                found["edit"] = {"find": find, "replace": replace}
+                if str(edit.get("file") or "").strip():
+                    found["edit"]["file"] = str(edit["file"]).strip()[:300]
+            else:
+                _log(f"a suggested edit of {len(find)}/{len(replace)} characters was dropped: too long to show")
         said = str(item.get("change") or "").strip().lstrip("#")
         if changes and said.isdigit() and 0 < int(said) <= changes:
             found["change"] = int(said)
-        found["severity"] = found["severity"].lower() if found["severity"].lower() in _SEVERITY else "note"
+        severity = found["severity"].lower()
+        severity = _SEVERITY_WORDS.get(severity, severity)
+        found["severity"] = severity if severity in _SEVERITY else "note"
         kind = found["kind"].lower()
         found["kind"] = next((k for k in _KINDS if kind[:4] == k[:4]), "rule")
         if found["kind"] == "evidence":
             found["severity"] = "note"
         if found["severity"] == "note":
             found.pop("edit", None)
-        if proof is not None and not (_quoted(found["quote"], proof) or _quoted(found["other"], proof)):
+        if proof is not None and not (
+                _quoted(found["quote"], proof)
+                or (material is not None and _quoted(found["other"], proof) and _quoted(found["quote"], material))):
             found["unverified"] = True
             found.pop("edit", None)
         findings.append(found)
@@ -2803,7 +3072,8 @@ def _review_run(subsystem: str, prompt: str, model: dict, nonce: str, proof: str
                                       {"role": "user", "content": prompt}])
     provider = route.get("provider") or model.get("provider") or ""
     used = route.get("model") or model.get("model") or ""
-    return {**_review_parse(extract_content_or_reasoning(response), proof, changes), "provider": provider,
+    material = _squash(prompt) if proof is not None else None
+    return {**_review_parse(extract_content_or_reasoning(response), proof, changes, material), "provider": provider,
             "model": used,
             "usage": _review_usage(response, provider, used)}
 
@@ -2837,7 +3107,7 @@ def _review_gate(subsystem: str, record: dict, only: list, skip_review: bool,
     if not _REVIEW_GATE:
         return "", False
     state = state or _review_state(subsystem, record)
-    hard = [h for h in state["hard"] if not only or h.get("name") in only or not h.get("name")]
+    hard = [h for h in state["hard"] if not only or _in_only(h.get("name"), only) or not h.get("name")]
     if hard:
         return _tx("gate_hard", reasons=" ".join(h["text"] for h in hard)), False
     status = state["status"]
@@ -2865,6 +3135,8 @@ def _review_again(body: dict) -> dict:
     record_id = _valid_id(body.get("id"))
     if subsystem not in (wa.MEMORY, wa.SKILLS) or not record_id:
         return {"ok": False, "error": _tx("err_bad_scope")}
+    if not _review_model():
+        return {"ok": False, "error": _tx("review_again_no_model")}
     record = wa.get_pending(subsystem, record_id)
     if subsystem == wa.SKILLS:
         groups = _groups_now()
@@ -2923,7 +3195,7 @@ def _blocked_approve_reason(record: dict, only: list) -> str:
     ops = (record.get("payload") or {}).get("operations") or [record.get("payload") or {}]
     for op in ops:
         name = str(op.get("name") or "")
-        if op.get("action") != "create" or name not in fixes or (only and name not in only):
+        if op.get("action") != "create" or name not in fixes or (only and not _in_only(name, only)):
             continue
         fix = fixes[name]
         return _tx("rec_fix_blocked", name=name, before=fix["before"], limit=limit,
@@ -3089,7 +3361,7 @@ def _fix_left(subsystem: str, fixed: dict, only: list | tuple = ()) -> list[str]
     if _nothing_left(fixed):
         return [_tx("fix_undoes_all")]
     hard = [h["text"] for h in _hard_checks(subsystem, fixed)
-            if not only or h.get("name") in only or not h.get("name")]
+            if not only or _in_only(h.get("name"), only) or not h.get("name")]
     return hard + [str(s) for s in _explain(subsystem, fixed).get("stale") or []]
 
 
@@ -3174,8 +3446,37 @@ def _apply(subsystem: str, pending_id: str, decision: str) -> tuple[bool, str]:
         store = load_on_disk_store()
     if wa.get_pending(subsystem, pending_id) is None:
         return False, _tx("fix_gone")
-    text = handle_pending_subcommand(subsystem, [decision, pending_id], memory_store=store)
-    return wa.get_pending(subsystem, pending_id) is None, (text or "").strip()
+    text = (handle_pending_subcommand(subsystem, [decision, pending_id], memory_store=store) or "").strip()
+    if wa.get_pending(subsystem, pending_id) is None:
+        return True, text
+    landed = decision == "approve" and bool(re.match(r"Approved [1-9]", text)) and "Failed" not in text
+    if landed:
+        for _ in range(10):
+            time.sleep(0.1)
+            if wa.discard_pending(subsystem, pending_id) or wa.get_pending(subsystem, pending_id) is None:
+                break
+        else:
+            _log(f"{subsystem}/{pending_id} was applied but its record file could not be deleted yet")
+    return landed, text
+
+
+def _landed() -> set:
+    return {(str(e.get("subsystem")), str(e.get("record_id")), str(e.get("payload_hash")))
+            for e in _entries(MAX_ENTRIES) if e.get("kind") == "apply" and e.get("record_id")}
+
+
+def _sweep_landed(subsystem: str, records: list[dict], landed: set | None = None) -> list[dict]:
+    from tools import write_approval as wa
+
+    landed = _landed() if landed is None else landed
+    out = []
+    for record in records:
+        key = (subsystem, str(record.get("id")), _payload_hash(record.get("payload")))
+        if key in landed:
+            wa.discard_pending(subsystem, str(record.get("id")))
+            continue
+        out.append(record)
+    return out
 
 
 def _touched(subsystem: str, ops: list, payload: dict | None = None) -> list[Path]:
@@ -3195,8 +3496,8 @@ def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
     from tools import write_approval as wa
 
     ops = _raw_ops(record)
-    apply_ops = [op for op in ops if (op.get("name") or "") in only]
-    rest_ops = [op for op in ops if (op.get("name") or "") not in only]
+    apply_ops = [op for op in ops if _in_only(op.get("name"), only)]
+    rest_ops = [op for op in ops if not _in_only(op.get("name"), only)]
     if not apply_ops:
         return False, _tx("err_no_ops_selected")
     entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": wa.SKILLS,
@@ -3312,6 +3613,8 @@ def _decide_locked(body: dict) -> dict:
         results.append(_group_decide(gid, current.get(gid), body, versions))
     for pending_id in ids:
         record = wa.get_pending(subsystem, pending_id)
+        if record and not _sweep_landed(subsystem, [record]):
+            record = None
         if not record:
             results.append({"id": pending_id, "ok": False, "error": _tx("fix_gone")})
             continue
@@ -3334,6 +3637,7 @@ def _decide_locked(body: dict) -> dict:
                     results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                     continue
                 record = fixed
+                unreviewed = bool(body.get("skip_review")) and str((state or {}).get("status")) != "done"
             elif decision == "approve":
                 reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
                 if reason:
@@ -3480,8 +3784,11 @@ def _restore_locked(body: dict) -> dict:
 
 @router.post("/history/clear")
 def history_clear(body: dict):
-    with _LOCK:
-        return _history_clear(bool((body or {}).get("keep_undoable")))
+    try:
+        with _LOCK:
+            return _history_clear(bool((body or {}).get("keep_undoable")))
+    except Exception as exc:
+        return _route_failed("/history/clear", exc)
 
 
 def _history_clear(keep_undoable: bool) -> dict:
@@ -3489,13 +3796,13 @@ def _history_clear(keep_undoable: bool) -> dict:
     if not path.exists():
         return {"ok": True, "removed": 0, "kept": 0}
     kept, removed = [], 0
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except Exception:
-            kept.append(line)
+    for line in _history_lines():
+        row = _history_row(line)
+        if row is None:
+            if keep_undoable:
+                kept.append(line)
+            else:
+                removed += 1
             continue
         if keep_undoable and _undoable(row):
             kept.append(json.dumps(row, ensure_ascii=False))
@@ -3550,20 +3857,50 @@ def memory_delete(body: dict):
                             status_code=400)
     try:
         with _LOCK:
-            result = load_on_disk_store().remove(target, text)
+            path = _home() / "memories" / _MEM_FILE[target]
+            _scan_external_locked()
+            entry = {"id": _new_id(), "ts": time.time(), "kind": "apply", "subsystem": "memory",
+                     "summary": _tx("summary_deleted", file=path.name, p=_preview(text)), "files": [],
+                     "undone": False}
+            if path.exists():
+                entry["files"].append({"path": _rel(path), "snap": _store_copy(path, entry["id"], 0),
+                                       "before_sha": _sha(path), "sha_after": None})
+            result = load_on_disk_store().remove(target, text, matched_entry=text)
             if not result.get("success"):
+                _remove_snapshots(entry["id"])
                 return {"ok": False, "error": result.get("error") or _tx("err_not_deleted")}
-            _scan_external()
+            for f in entry["files"]:
+                f["sha_after"] = _sha(path) if path.exists() else None
+            _append(entry)
+            _refresh_index(_watched())
     except Exception as exc:
         return _route_failed("/memory/delete", exc)
     return {"ok": True, "target": target, "message": result.get("message") or _tx("deleted"),
             "usage": result.get("usage"), "entry_count": result.get("entry_count")}
 
 
+def _remove_emptied(folders: list, removed: list) -> None:
+    skills = [Path(p).parent for p in removed if Path(p).name == "SKILL.md"]
+    for folder in sorted({Path(f) for f in folders}, key=lambda p: len(p.parts), reverse=True):
+        top = next((s for s in skills if folder == s or _inside(folder, s)), None)
+        cur = folder
+        while True:
+            try:
+                cur.rmdir()
+            except OSError:
+                break
+            if top is None or cur == top:
+                break
+            cur = cur.parent
+
+
 @router.get("/history")
 def history(limit: int = 50):
-    with _LOCK:
-        return _history(limit)
+    try:
+        with _LOCK:
+            return _history(limit)
+    except Exception as exc:
+        return _route_failed("/history", exc)
 
 
 def _history(limit: int) -> dict:
@@ -3624,14 +3961,14 @@ def _undo_locked(body: dict) -> dict:
         return {"ok": False, "conflicts": conflicts,
                 "error": _tx("err_conflict")}
 
-    restored, removed = [], []
+    restored, removed, emptied, created = [], [], [], []
     for f, rel, dst, snap in targets:
         if f.get("created"):
             if dst.exists():
                 dst.unlink()
                 removed.append(rel)
-                with suppress(OSError):
-                    dst.parent.rmdir()
+                emptied.append(dst.parent)
+                created.append(dst)
             continue
         if not snap:
             continue
@@ -3640,6 +3977,7 @@ def _undo_locked(body: dict) -> dict:
             dst.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write_bytes(dst, src.read_bytes())
             restored.append(rel)
+    _remove_emptied(emptied, created)
     if not restored and not removed:
         return {"ok": False, "restored": [], "removed": [],
                 "error": _tx("err_no_copies")}
@@ -3660,12 +3998,9 @@ def _write_undone_locked(entry_id: str) -> None:
 def _update_row_locked(entry_id: str, fields: dict) -> None:
     path = _history_path()
     out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except Exception:
+    for line in _history_lines():
+        record = _history_row(line)
+        if record is None:
             out.append(line)
             continue
         if record.get("id") == entry_id:

@@ -81,6 +81,12 @@ jobs:
           unset HERMES_HOME
           PYTHONPATH="$HERMES_AGENT_DIR" python dashboard/plugin_api.py --selftest
 
+      - name: Audit regressions (each case is a confirmed 1.12.4 audit finding; tests/regress_audit.py)
+        run: |
+          set -euo pipefail
+          unset HERMES_HOME
+          PYTHONPATH="$HERMES_AGENT_DIR" python tests/regress_audit.py
+
       - name: Render and behaviour (jsdom)
         working-directory: tests
         run: node render_check.mjs

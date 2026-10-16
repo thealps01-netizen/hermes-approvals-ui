@@ -504,7 +504,7 @@ const HISTORY = { entries: [
   { id: 'bb22cc33', ts: Date.now() / 1000 - 3600, kind: 'rejected', subsystem: 'skills', summary: 'batch(12 ops: ' + 'patch, '.repeat(28) + 'on hermes-desktop-plugin-dev — ' + HIST_TAIL, files: [], undoable: false },
   { id: 'cc33dd44', ts: Date.now() / 1000 - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: ' + 'long description '.repeat(30), files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
   { id: 'dd44ee55', ts: Date.now() / 1000 - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused', files: [], undoable: false }
-], counts: { applied: 57, failed: 1, undoable: 2 } }
+], counts: { applied: 57, failed: 1, undoable: 2, total: 87 } }
 const HISTORY_RESTORE = { entries: [
   { id: RESTORE_ID, ts: Date.now() / 1000 - 300, kind: 'rejected', subsystem: 'skills', summary: 'new-skill rejected',
     files: [], undoable: false, restorable: true },
@@ -525,7 +525,7 @@ const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -660,9 +660,11 @@ const decided = body => [...decidedGroups(body), ...body.ids.map(id => {
 let version = 0
 async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
+  REST.lateDecided = false
   const registrations = []
-  const ctx = {
-    rest: async (path, opts) => {
+  // Requests in flight per route for THIS mount (1.13: a poll never has two requests open at once).
+  const flight = { live: new Map(), peak: new Map(), total: new Map() }
+  const answer = async (path, opts) => {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
         if (path === '/undo') {
@@ -679,12 +681,24 @@ async function mount(appLocale, parts = 'both') {
           if (REST.mode === 'groupsqueued') REST.mode = 'groupsstarted'
           return { ok: true, started: 1 }
         }
-        if (path === '/decide' && String(REST.post).startsWith('late')) throw new Error('Request timed out after 30000ms')
+        if (path === '/decide' && String(REST.post).startsWith('late')) {
+          REST.lateDecided = true
+          throw new Error('Request timed out after 30000ms')
+        }
+        if (path === '/decide' && REST.post === 'decide500') {
+          throw new Error('500: {"ok": false, "error": "Could not run /decide: disk full"}')
+        }
+        if (path === '/decide' && REST.post === 'notok') return { ok: false, error: 'BACKEND-REASON-xyz' }
         if (REST.post === 'hold') return new Promise(() => {})
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
-        if (path === '/decide') return { ok: true, results: decided(opts.body), counts: { memory: 0, skills: 0 } }
+        if (path === '/decide') {
+          const results = decided(opts.body)
+          // `REST.gone`: a decided record leaves /pending, as the backend's does.
+          for (const r of results) if (r.ok) REST.gone?.add(r.id)
+          return { ok: true, results, counts: { memory: 0, skills: 0 } }
+        }
         if (path === '/restore') {
           if (opts.body.id === GROUP_REJECTED) return { ok: true, id: GROUP_RESTORED[0], ids: GROUP_RESTORED }
           return opts.body.id === RESTORE_ID ? { ok: true, id: RESTORED_AS }
@@ -704,12 +718,23 @@ async function mount(appLocale, parts = 'both') {
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
       if (path === '/history?limit=50' && REST.post === 'latebusy') throw new Error('Request timed out after 30000ms')
-      if (path === '/history?limit=50' && REST.post === 'late') {
-        return { entries: [{ id: 'la7e0001', ts: Date.now() / 1000, kind: 'apply', subsystem: 'skills',
-          record_id: 'aaa11111', summary: 'late', files: [], undoable: true }, ...HISTORY.entries], counts: HISTORY.counts }
+      // The backend writes the late entry only once the decision reached it; `lateskew` stamps it with a
+      // server clock an hour behind the panel's, `lateold` holds an older failed attempt read before the click.
+      if (path === '/history?limit=50' && (REST.post === 'late' || REST.post === 'lateskew')) {
+        const skew = REST.post === 'lateskew' ? 3600 : 0
+        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: 'apply', subsystem: 'skills',
+          record_id: 'aaa11111', summary: 'late', files: [], undoable: true }] : []
+        return { entries: [...late, ...HISTORY.entries], counts: HISTORY.counts }
       }
+      if (path === '/history?limit=50' && REST.post === 'lateold') {
+        return { entries: [{ id: 'f0f0f0f0', ts: Date.now() / 1000 - 60, kind: 'failed', subsystem: 'skills',
+          record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }, ...HISTORY.entries],
+        counts: HISTORY.counts }
+      }
+      const left = d => (REST.gone ? { ...d, memory: (d.memory || []).filter(r => !REST.gone.has(r.id)),
+        skills: (d.skills || []).filter(r => !REST.gone.has(r.id)) } : d)
       const table = {
-        '/pending': pendingFor(REST.mode),
+        '/pending': REST.pending || left(pendingFor(REST.mode)),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
           : pendingFor(REST.mode).counts), records: pendingFor(REST.mode).records },
         '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE
@@ -719,6 +744,19 @@ async function mount(appLocale, parts = 'both') {
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
       return table[path]
+  }
+  const ctx = {
+    rest: async (path, opts) => {
+      const route = `${opts?.method || 'GET'} ${path}`
+      flight.live.set(route, (flight.live.get(route) || 0) + 1)
+      flight.peak.set(route, Math.max(flight.peak.get(route) || 0, flight.live.get(route)))
+      flight.total.set(route, (flight.total.get(route) || 0) + 1)
+      try {
+        if (REST.delay) await new Promise(r => setTimeout(r, REST.delay))
+        return await answer(path, opts)
+      } finally {
+        flight.live.set(route, flight.live.get(route) - 1)
+      }
     },
     os: { notify: (...a) => stub.calls.os.push(a) },
     storage: {
@@ -765,7 +803,7 @@ async function mount(appLocale, parts = 'both') {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title }
+  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title, flight }
 }
 
 // The register-time label path is exercised for real: `ctx.i18n.t` resolves through the SAME
@@ -1053,7 +1091,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   await click(draft, 40)
   const put = stub.calls.composer[stub.calls.composer.length - 1]
   if (!put || put.sessionId !== null || put.opts?.mode !== 'block') fail(`the draft did not go to the active chat box: ${JSON.stringify(put)}`)
-  must(put?.text, ['MEMORY.md is 100% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
+  must(put?.text, ['MEMORY.md is 99% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
   if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
   if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
   if (stub.calls.notify[stub.calls.notify.length - 1]?.message !== 'Merge request is in the chat box — read it, then send.') {
@@ -1127,10 +1165,12 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 {
   const clear = buttons(en.hostEl, /Clear/)[0]
-  if ((clear?.textContent || '') !== 'Clear 4 records') fail(`the clear label is not a real plural: ${clear?.textContent}`)
+  // 1.13: the backend clears the whole history (counts.total), not just the 4 rows shown.
+  if ((clear?.textContent || '') !== 'Clear all 87 records') fail(`the clear label does not state the real total: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
   await click(clear)
-  must(en.hostEl.textContent, ['Clearing drops the undo copies'], 'clear confirmation copy')
+  must(en.hostEl.textContent, ['Clearing deletes all 87 records', 'not only the ones shown', 'undo copies'],
+    'clear confirmation copy')
   if (stub.calls.posts.some(p => p.path === '/history/clear')) fail('the clear fired before confirmation')
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the clear confirmation (two-step) did not appear')
@@ -1875,6 +1915,8 @@ REST.scan = 'ok'
   }
   const toast = stub.calls.notify.at(-1)
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
+  // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
+  await act(async () => { await new Promise(r => setTimeout(r, 500)) })
   await click(buttons(clean(), /^Review again$/)[0], 60)
   const again = postsTo('/review').at(-1)?.body || {}
   if (again.id !== CLEAN_GROUP || again.subsystem !== 'skills') fail(`"Review again" on a group: ${JSON.stringify(again)}`)
@@ -2070,6 +2112,298 @@ REST.scan = 'ok'
   }
   hist.hostEl.remove()
   REST.mode = 'normal'
+}
+
+// --- 24) 1.13: a failed refresh keeps the loaded list; polls never overlap ---------------------------
+// One failed or timed-out poll once replaced the whole loaded Pending list with the error screen. With
+// data on screen the cards stay and a small notice says the refresh failed, with Retry; the full error
+// state is only for a pane that has nothing to show. Refresh (and every post-action re-read) started a
+// new request while the last was still open: a refresh during a load is folded into ONE follow-up load
+// after it, so no poll ever has two requests in flight.
+{
+  const cells = h => h.hostEl.querySelectorAll('.pa-cell').length
+  const kept = await mount('en', 'page')
+  REST.mode = 'fail'
+  await click(kept.hostEl.querySelector('.pa-refresh'), 80)
+  if (kept.hostEl.querySelector('[data-slot="error-state"]')) {
+    fail('a failed refresh replaced the loaded pending list with the full error state')
+  }
+  if (cells(kept) !== 3) fail(`a failed refresh hid the loaded records (${cells(kept)} cards left)`)
+  const notice = kept.hostEl.querySelector('.pa-stale')
+  if (!notice || !notice.textContent.includes('list exploded')) {
+    fail('a failed refresh over loaded data shows no “could not refresh” notice with its reason')
+  }
+  REST.mode = 'normal'
+  const retry = buttons(notice || kept.hostEl, /^Retry$/)[0]
+  if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the “could not refresh” notice offers no kit Retry')
+  if (retry) await click(retry, 80)
+  if (kept.hostEl.querySelector('.pa-stale')) fail('the “could not refresh” notice stays after a successful Retry')
+  await click(tab(kept.hostEl, /Applied/), 40)
+  REST.mode = 'fail'
+  await click(kept.hostEl.querySelector('.pa-refresh'), 80)
+  if (kept.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed refresh replaced the loaded history with the error state')
+  if (!kept.hostEl.querySelector('.pa-stale') || !kept.hostEl.querySelectorAll('.pa-card').length) {
+    fail('a failed refresh of the history hid its rows or said nothing')
+  }
+  REST.mode = 'normal'
+  kept.root.unmount()
+  kept.hostEl.remove()
+
+  REST.delay = 30
+  const busy = await mount('en', 'page')
+  await act(async () => { await new Promise(r => setTimeout(r, 150)) })
+  for (let i = 0; i < 5; i += 1) await click(busy.hostEl.querySelector('.pa-refresh'), 5)
+  await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+  const over = [...busy.flight.peak].filter(([, n]) => n > 1)
+  if (over.length) {
+    fail(`polls overlap after 5 rapid Refresh clicks: ${over.map(([r, n]) => `${r} ×${n}`).join(', ')} in flight at once`)
+  }
+  const burst = GETS.filter(p => p === '/pending').length
+  await act(async () => {
+    for (let i = 0; i < 5; i += 1) {
+      busy.hostEl.querySelector('.pa-refresh').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    }
+  })
+  await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+  const folded = GETS.filter(p => p === '/pending').length - burst
+  if (folded !== 2) fail(`5 Refresh clicks in one burst read /pending ${folded} times, not one load plus ONE follow-up`)
+  if ([...busy.flight.peak].some(([, n]) => n > 1)) fail('a burst of Refresh clicks overlapped a poll')
+  REST.delay = 0
+  busy.root.unmount()
+  busy.hostEl.remove()
+}
+
+// --- 25) 1.13: a failed /decide says why and re-reads; the late check needs no shared clock ----------
+// An HTTP 500 from /decide was reported as "The panel stopped waiting and no change was recorded" (that
+// is the timeout's text) and the backend's own error was hidden; an ok:false without results lost its
+// error to a generic "Could not be applied". After ANY failed decision the list is read again. A late
+// answer is matched by record id against the history rows the panel had NOT seen before the click, so a
+// server clock behind the panel's no longer turns an applied record into "nothing recorded".
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const reads = () => GETS.filter(p => p === '/pending').length
+  for (const [mode, text] of [['decide500', 'Could not run /decide: disk full'], ['notok', 'BACKEND-REASON-xyz']]) {
+    REST.post = mode
+    const h = await mount('en', 'page')
+    const from = reads()
+    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    const said = stub.calls.notify.at(-1)
+    if (said?.kind !== 'error' || said?.message !== text) {
+      fail(`a failed /decide (${mode}) does not show the backend's own error: ${JSON.stringify(said)}`)
+    }
+    if (reads() <= from) fail(`a failed /decide (${mode}) does not read the list again`)
+    if (cellOf(h, 'skills:aaa11111')?.querySelector('.pa-leaving')) fail(`a failed /decide (${mode}) sent the card away`)
+    REST.post = 'normal'
+    h.root.unmount()
+    h.hostEl.remove()
+  }
+  for (const [mode, kind, text] of [
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
+    ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
+    REST.post = mode
+    const h = await mount('en', 'page')
+    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    const said = stub.calls.notify.at(-1)
+    if (said?.kind !== kind || said?.message !== text) {
+      fail(`a late /decide (${mode}) is judged by the clock or by a row read before the click: ${JSON.stringify(said)}`)
+    }
+    REST.post = 'normal'
+    h.root.unmount()
+    h.hostEl.remove()
+  }
+}
+
+// --- 26) 1.13: a decision outlives a tab switch; every view it changes is read again ---------------
+// The busy state and the 340 ms leave timer lived in the card, so switching tabs during or just after a
+// decision dropped both: the decided card came back with Approve enabled (a second send) and the list was
+// not read again. The in-flight / leaving set now sits above the tab switch. A card on its way out is
+// inert (no pointer, no focus, hidden from assistive tech, buttons disabled). A decision, an undo or a
+// memory delete re-reads every view whose data it changes: pending, history, memory and the chip's count.
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  REST.delay = 60
+  REST.gone = new Set()
+  const h = await mount('en', 'page')
+  await wait(400)
+  const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
+  const before = sends()
+  await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
+  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /Pending/), 5)
+  const cell0 = cellOf(h, 'skills:aaa11111')
+  const during = cell0 ? buttons(cell0, /^Approve$/)[0] : null
+  if (during && !during.disabled) fail('switching tabs while a decision is in flight brought its Approve back enabled')
+  if (during) await click(during, 5)
+  await wait(90)
+  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /Pending/), 5)
+  const out = cellOf(h, 'skills:aaa11111')
+  if (out) {
+    const card = out.querySelector('.pa-card')
+    if (!card?.classList.contains('pa-leaving')) fail('a decided card came back as a normal card after a tab switch')
+    if (card?.getAttribute('aria-hidden') !== 'true' || !card?.hasAttribute('inert')) {
+      fail('a card on its way out is still exposed (no inert / aria-hidden)')
+    }
+    const live = [...out.querySelectorAll('button, input')].filter(b => !b.disabled)
+    if (live.length) fail(`a card on its way out keeps ${live.length} enabled control(s)`)
+    for (const b of buttons(out, /^Approve$/)) await click(b, 5)
+  }
+  await wait(900)
+  if (sends() - before !== 1) fail(`a decided record was sent ${sends() - before} times across tab switches`)
+  if (cellOf(h, 'skills:aaa11111')) fail('the list was not read again after a decision made across a tab switch')
+  h.root.unmount()
+  h.hostEl.remove()
+  REST.delay = 0
+  REST.gone = null
+
+  let all = null
+  const reads = () => Object.fromEntries(['/pending', '/history?limit=50', '/memory', '/count']
+    .map(p => [p, all.flight.total.get(`GET ${p}`) || 0]))
+  const grew = (from, what) => {
+    const now = reads()
+    const flat = Object.keys(from).filter(p => now[p] <= from[p])
+    if (flat.length) fail(`${what} did not read again: ${flat.join(', ')}`)
+  }
+  all = await mount('en')
+  await wait(100)
+  let from = reads()
+  await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
+  grew(from, 'a decision')
+  await click(tab(all.hostEl, /Applied/), 60)
+  from = reads()
+  await click(buttons(all.hostEl, /^Undo$/)[0], 200)
+  grew(from, 'an undo')
+  await click(tab(all.hostEl, /^Memory/), 60)
+  from = reads()
+  await click(buttons(all.hostEl, /^Delete$/)[0], 30)
+  const deletes = stub.calls.posts.filter(p => p.path === '/memory/delete').length
+  await click(buttons(all.hostEl, /^Delete$/).find(b => b.getAttribute('data-variant') === 'destructive'), 200)
+  if (stub.calls.posts.filter(p => p.path === '/memory/delete').length !== deletes + 1) fail('the memory delete was not sent')
+  grew(from, 'a memory delete')
+  all.root.unmount()
+  all.hostEl.remove()
+  all.chipRoot?.unmount?.()
+  all.chipEl?.remove?.()
+}
+
+// --- 27) 1.13: small honesty fixes on cards, the bulk bar, the KPI strip and the history clear -----
+// A lone pending record drew a selection box that did nothing, and a selection outlived its record.
+// "Approve without review" was offered on a card held by "Shorten first" (the backend refuses it).
+// MEMORY.md read 99 % "Nearly full" in the KPI and "100% full" on the Memory tab (floor vs round).
+// Repeated stale lines or issues gave React duplicate keys. "Details and changes" did not say what it
+// opens or whether it is open. With no review model (or a failed review) an automatic rule fix that
+// clears every rule failure could only be rejected: it now gets the two-step "Apply unreviewed" confirm
+// and sends with_edits + skip_review; it stays held while the fix leaves a rule failure behind.
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  const keyWarnings = []
+  const realError = console.error
+  console.error = (...a) => {
+    if (/same key/.test(String(a[0]))) keyWarnings.push(String(a[1] ?? a[0]))
+    return realError(...a)
+  }
+
+  REST.pending = { ...PENDING, memory: [], skills: [PENDING.skills[1]], counts: { memory: 0, skills: 1 } }
+  const lone = await mount('en', 'page')
+  if (lone.hostEl.querySelectorAll('.pa-pick').length) fail('a lone pending record draws a selection box with nothing to bulk-act on')
+  lone.root.unmount()
+  lone.hostEl.remove()
+
+  REST.pending = null
+  REST.gone = new Set()
+  const pick = await mount('en', 'page')
+  for (const key of ['skills:aaa11111', 'skills:def67890']) {
+    const box = cellOf(pick, key)?.querySelector('.pa-pick')
+    if (box) await click(box, 10)
+  }
+  REST.gone.add('aaa11111')
+  await click(pick.hostEl.querySelector('.pa-refresh'), 150)
+  REST.gone.delete('aaa11111')
+  await click(pick.hostEl.querySelector('.pa-refresh'), 150)
+  if (cellOf(pick, 'skills:aaa11111')?.querySelector('.pa-pick')?.checked) {
+    fail('a selection outlives its record: the record came back still ticked')
+  }
+  REST.gone = null
+  pick.root.unmount()
+  pick.hostEl.remove()
+
+  REST.pending = { ...PENDING, skills: PENDING.skills.map(s => (s.id === 'def67890'
+    ? { ...s, review: { status: 'unassigned', hard: [] } } : s)) }
+  const short = await mount('en', 'page')
+  if (buttons(cellOf(short, 'skills:def67890'), /Approve without review/).length) {
+    fail('"Approve without review" is offered on a card held by "Shorten first"')
+  }
+  short.root.unmount()
+  short.hostEl.remove()
+
+  const DUP = 'The same stale line.'
+  REST.pending = { ...PENDING, issues: ['Twice said.', 'Twice said.'],
+    skills: PENDING.skills.map(s => (s.id === 'aaa11111' ? { ...s, plain: { ...s.plain, stale: [DUP, DUP] } } : s)) }
+  const dup = await mount('en', 'page')
+  if (keyWarnings.length) fail(`duplicate React keys: ${[...new Set(keyWarnings)].join(', ')}`)
+  REST.pending = null
+  for (const key of ['memory:abc12345', 'skills:aaa11111']) {
+    const toggle = buttons(cellOf(dup, key), /^Details and changes$/)[0]
+    const panel = toggle?.getAttribute('aria-controls')
+    if (toggle?.getAttribute('aria-expanded') !== 'false' || !panel) fail(`the ${key} Details toggle has no aria-expanded/aria-controls`)
+    if (toggle) await click(toggle, 20)
+    const open = buttons(cellOf(dup, key), /^Hide details$/)[0]
+    if (open?.getAttribute('aria-expanded') !== 'true' || !panel || !dup.hostEl.querySelector(`[id="${panel}"]`)) {
+      fail(`the open ${key} Details toggle does not point at the details it opened`)
+    }
+  }
+  dup.root.unmount()
+  dup.hostEl.remove()
+  console.error = realError
+
+  const mem = await mount('en', 'page')
+  const kpi = [...mem.hostEl.querySelectorAll('.pa-kpis [data-slot]')].map(e => e.textContent).join(' ')
+  await click(tab(mem.hostEl, /^Memory/), 60)
+  const said = mem.hostEl.querySelector('[role="tabpanel"]')?.textContent || ''
+  const kpiPct = (mem.hostEl.querySelector('.pa-kpis')?.textContent.match(/(\d+)%/) || [])[1]
+  const tabPct = (said.match(/(\d+)% full/) || [])[1]
+  if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
+  mem.root.unmount()
+  mem.hostEl.remove()
+
+  const unreviewed = left => ({ ...PENDING, skills: PENDING.skills.map(s => (s.id === 'aaa11111'
+    ? { ...s, review: { status: 'unassigned', edits: 1, fix_left: left,
+        hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }] } } : s)) })
+  REST.pending = unreviewed([])
+  const fixable = await mount('en', 'page')
+  const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const before = sends().length
+  const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0]
+  if (!withFix() || withFix().classList.contains('pa-held') || withFix().getAttribute('aria-disabled') === 'true') {
+    fail('with no review model a rule fix that clears every failure still cannot be approved')
+  }
+  if (withFix()) await click(withFix(), 30)
+  if (sends().length !== before) fail('the unreviewed fix was sent on the first click (no confirm step)')
+  if (withFix()?.textContent !== 'Apply unreviewed' || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
+    fail('the unreviewed fix has no two-step "Apply unreviewed" confirm')
+  }
+  if (withFix()) await click(withFix(), 80)
+  const body = sends().at(-1)?.body || {}
+  if (sends().length !== before + 1 || !body.with_edits || !body.skip_review) {
+    fail(`the unreviewed fix did not send with_edits + skip_review: ${JSON.stringify(body)}`)
+  }
+  fixable.root.unmount()
+  fixable.hostEl.remove()
+
+  REST.pending = unreviewed(['new-skill: still missing the author line.'])
+  const partial = await mount('en', 'page')
+  const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
+  const from = sends().length
+  if (held) {
+    await click(held, 30)
+    await click(buttons(cellOf(partial, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0], 60)
+  }
+  if (!held?.classList.contains('pa-held') || sends().length !== from) fail('a rule fix that leaves a failure behind was unlocked')
+  REST.pending = null
+  partial.root.unmount()
+  partial.hostEl.remove()
 }
 
 if (problems.length) {
