@@ -644,7 +644,8 @@ _TEXT = {
     'stale_path': '{what} → cannot be applied: Hermes refuses this file path — {problem}.',
     'stale_frontmatter': '{what} → cannot be applied: the validator rejects it — {problem}.',
     'head_new': 'New skill: {names}',
-    'head_upd': 'Update: {names}',
+    'head_upd': 'Edit skill: {names}',
+    'head_del': 'Delete skill: {names}',
     'effect_skills': 'If you approve, those files are written and the assistant reads the new version the next time it loads this skill. When a record touches more than one skill, the "only this" button inside the card applies just one — the remaining operations stay queued as a new pending record. You can take it back from the "History" tab.',
     'note_what': 'What it does',
     'why_background': 'The background review that runs after a session wanted to save this.',
@@ -996,12 +997,16 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             group["files"].append(where)
             if action == "create":
                 group["kind"] = "new"
+            elif action == "delete" and group["kind"] != "new":
+                group["kind"] = "delete"
         groups = list(per_name.values())
         target_label = ", ".join(per_name) or "?"
         new = [g["name"] for g in groups if g["kind"] == "new"]
-        upd = [g["name"] for g in groups if g["kind"] != "new"]
+        upd = [g["name"] for g in groups if g["kind"] == "update"]
+        gone = [g["name"] for g in groups if g["kind"] == "delete"]
         headline = " + ".join(p for p in (_tx("head_new", names=", ".join(new)) if new else "",
-                                          _tx("head_upd", names=", ".join(upd)) if upd else "") if p)
+                                          _tx("head_upd", names=", ".join(upd)) if upd else "",
+                                          _tx("head_del", names=", ".join(gone)) if gone else "") if p)
         effect = _tx("effect_skills")
 
     if subsystem == wa.MEMORY:

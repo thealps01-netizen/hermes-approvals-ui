@@ -1146,6 +1146,9 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 {
   const undoBtns = buttons(en.hostEl, /^Undo$/)
   if (undoBtns.length < 2) fail(`expected an Undo button per undoable record, found ${undoBtns.length}`)
+  if (undoBtns.some(b => !/^Undo: .{4,}/.test(b.getAttribute('aria-label') || ''))) {
+    fail('History Undo buttons are all read out as just "Undo", with no record named')
+  }
   await click(undoBtns[0], 60)
   const posts = stub.calls.posts.filter(p => p.path === '/undo')
   if (posts.length !== 1 || posts[0].body.force !== false) fail(`the plain undo request is wrong: ${JSON.stringify(posts)}`)
@@ -1840,6 +1843,7 @@ REST.scan = 'ok'
     fail('an unverified finding does not carry the muted "Unverified quote" tag')
   }
   const doubtBadge = doubt[0]?.querySelector('[data-slot="badge"]')
+  if (doubtBadge?.hasAttribute('tabindex')) fail('the "Unverified quote" tag is an extra Tab stop on every card')
   if (!/does not count toward the verdict/.test(doubtBadge?.getAttribute('aria-description') || '')
       || !/does not count toward the verdict/.test(doubtBadge?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
     fail('the "Unverified quote" tag does not say what it means')
@@ -2669,9 +2673,13 @@ REST.scan = 'ok'
   if (old !== '2 hours ago') fail(`a record staged two hours ago reads ${JSON.stringify(old)}, not "2 hours ago"`)
   const open = cellAt(ui, 'skills:aaa11111')
   const title = open?.querySelector('.pa-card-title')?.textContent || ''
-  if (!title || open?.querySelector('.pa-card')?.getAttribute('aria-label') !== title) {
+  const named = open?.querySelector('.pa-card')
+  const label = named && doc.getElementById(named.getAttribute('aria-labelledby') || '')
+  if (!title || named?.getAttribute('role') !== 'group' || label?.textContent !== title) {
     fail('a card is not a named group, so a screen reader cannot tell which record its Approve belongs to')
   }
+  if (named?.getAttribute('aria-label')) fail('a card repeats its title as aria-label next to its heading')
+  if (label?.getAttribute('aria-level') !== '2') fail(`card headings skip a level: ${label?.getAttribute('aria-level')}`)
   if (!(open?.querySelector('input.pa-pick')?.getAttribute('aria-label') || '').includes(title)) {
     fail('the selection checkbox does not name its record')
   }
@@ -2708,8 +2716,31 @@ REST.scan = 'ok'
   armed?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await wait(20)
   if (/Apply 2 records now\?/.test(barOf(ui)?.textContent || '')) fail('Esc does not close the bulk confirm')
+  if (doc.activeElement?.textContent !== 'Approve 2') {
+    fail(`closing the bulk confirm drops focus instead of returning it to "Approve 2": ${doc.activeElement?.tagName}`)
+  }
   if (sends() !== before) fail('Esc on the bulk confirm sent a decision')
   ui.hostEl.remove()
+
+  if (heldBtn) await click(heldBtn)
+  const firstWarn = stub.calls.notify.filter(m => m?.kind === 'warning').length
+  if (heldBtn) await click(heldBtn)
+  if (stub.calls.notify.filter(m => m?.kind === 'warning').length !== firstWarn) {
+    fail('pressing a held Approve again stacks another identical notice')
+  }
+  const edge = { ...PENDING, memory: [{ ...PENDING.memory[0], staged_at: Date.now() / 1000 - 3590 }],
+    skills: [{ ...PENDING.skills[1], plain: { ...PENDING.skills[1].plain,
+      groups: [{ kind: 'delete', name: 'old-skill', ops: [{ action: 'delete' }] }] } }],
+    counts: { memory: 1, skills: 1 } }
+  REST.pending = edge
+  const ed = await mount('en', 'page')
+  await wait(60)
+  const edgeWhen = cellAt(ed, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent
+  if (edgeWhen !== '1 hour ago') fail(`a record 59.8 minutes old reads ${JSON.stringify(edgeWhen)}, not "1 hour ago"`)
+  const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-card-title')?.textContent
+  if (delTitle !== 'Delete skill: old-skill') fail(`a skill deletion is titled ${JSON.stringify(delTitle)}`)
+  REST.pending = null
+  ed.hostEl.remove()
 
   REST.post = 'coremsg'
   REST.gone = new Set()
@@ -2728,8 +2759,24 @@ REST.scan = 'ok'
     fail(`after a decision keyboard focus falls to the page top instead of the next record: ${now?.outerHTML?.slice(0, 80)}`)
   }
   REST.post = null
-  REST.gone = null
   fo.hostEl.remove()
+
+  REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [PENDING.skills[1]], counts: { memory: 1, skills: 1 } }
+  REST.gone = new Set()
+  const two = await mount('en', 'page')
+  await wait(60)
+  const last = buttons(cellAt(two, 'skills:aaa11111'), /^Approve$/)[0]
+  last?.focus()
+  if (last) await click(last, 60)
+  REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [], counts: { memory: 1, skills: 0 } }
+  await wait(1800)
+  const kept = doc.activeElement
+  if (!kept || kept === doc.body || !two.hostEl.contains(kept)) {
+    fail(`deciding the second-last record drops focus when the last one loses its checkbox: ${kept?.tagName}`)
+  }
+  REST.pending = null
+  REST.gone = null
+  two.hostEl.remove()
 }
 
 if (problems.length) {

@@ -16,22 +16,24 @@ and read the way a non-technical owner reads it. Each change has a check that fa
   Before, no card control showed where the focus was.
 * **A held button says why when pressed.** Pressing a held Approve (single or bulk) shows the reason
   as a notice, and screen readers hear it with the button. Before, the reason was a hover tooltip only.
-* **Focus stays in the list.** After a decision, focus moves to the next record instead of the page top.
-  The bulk confirmation takes focus on Cancel and closes with Esc.
-* **Screen readers know which record a control belongs to.** Each card is a named group with a heading,
-  and its checkbox names the record.
+* **Focus stays in the list.** After a decision (a "Reject #n" inside a set included), focus moves to
+  the next record instead of the page top, also when the last record left has no checkbox. The bulk
+  confirmation takes focus on Cancel, closes with Esc, and gives focus back to the button that opened it.
+* **Screen readers know which record a control belongs to.** Each card is a group named by its heading
+  (read once), its checkbox names the record, and History's Undo and Restore name their entry.
 * **Times are in English.** "5 dk. önce" followed the system language under an English panel; it now
   reads "5 minutes ago".
 * **Notices speak plainly.** A single approve says "Saved — you can undo it from the “History” tab"
   instead of Hermes' "Approved 1 memory write(s).", and a bulk result says "3 of 3 approved" or
-  "3 of 3 rejected" instead of "3 of 3 done".
+  "3 of 3 rejected" instead of "3 of 3 done". Pressing a held button again does not stack the same notice.
 
 ### Changed
 
 * **The "Applied" tab is now "History".** It also lists rejected records, which can be restored there.
 * **Card titles say what they write.** A one-note memory card shows the note ("MEMORY.md: Adds a new
-  note: “…”"); counts read "2 notes", not "2 note(s)". A skill card reads "New skill: …" or
-  "Edit skill: …".
+  note: “…”"); counts read "2 notes", not "2 note(s)". A skill card reads "New skill: …",
+  "Edit skill: …" or "Delete skill: …" (a deletion was shown as an update), one part per kind when a
+  record does several.
 * **"Unverified quote" explains itself.** Its tooltip says the quote could not be found in the write,
   so the finding does not count toward the verdict, and the quote is labelled "The reviewer quoted".
 * Smaller wording fixes: "Clear 1 record", "It changed the same file" for one record, an empty Memory

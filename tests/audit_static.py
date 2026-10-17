@@ -611,7 +611,7 @@ def check_review_integrity_panel() -> None:
                 "read before its record changed could be approved")
     for needle in ("const held = chosen.filter(({ item }) => !pickable(item)).length",
                    "'aria-disabled': held > 0 || undefined",
-                   "onClick: held ? () => host.notify({ kind: 'warning', message: t('pa.bulk.held', held) })",
+                   "onClick: held ? () => warnOnce(t('pa.bulk.held', held))",
                    "if (decision === 'approve' && held) {"):
         if needle not in src:
             _report(f"plugin.js: {needle!r} is missing — bulk Approve is not locked while a selected "

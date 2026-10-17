@@ -80,10 +80,12 @@ const BUNDLES = {
       state: {
         newSkill: 'New skill',
         editSkill: 'Edit skill',
+        deleteSkill: 'Delete skill',
       },
       group: {
         new: 'New skill',
         update: 'Update',
+        delete: 'Delete',
         multi: 'This record touches more than one skill — you can apply just one',
       },
       grp: {
@@ -413,12 +415,19 @@ const short = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim()
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
+let lastWarn = { message: '', at: 0 }
+const warnOnce = message => {
+  const now = Date.now()
+  if (lastWarn.message === message && now - lastWarn.at < 5000) return
+  lastWarn = { message, at: now }
+  host.notify({ kind: 'warning', message })
+}
 const AGO = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month'], [Infinity, 'year']]
 const when = (t, ts) => {
   if (!ts) return ''
   let v = Math.max(0, (Date.now() - Number(ts) * 1000) / 1000)
   for (const [step, unit] of AGO) {
-    if (v < step) return unit === 'second' ? t('pa.time.now') : t('pa.time.ago', Math.round(v) || 1, unit)
+    if (Math.round(v) < step) return unit === 'second' ? t('pa.time.now') : t('pa.time.ago', Math.round(v) || 1, unit)
     v /= step
   }
   return ''
@@ -429,15 +438,18 @@ const refocus = from => {
   if (!root) return
   const own = from.closest('.pa-cell') || from
   const at = [...root.querySelectorAll('.pa-cell')].findIndex(c => c === own)
-  const move = () => {
+  const lost = () => {
     const now = document.activeElement
-    if (now && now !== document.body && now.isConnected && !own.contains(now)) return
-    const left = [...root.querySelectorAll('.pa-cell')].filter(c => c !== own && !c.querySelector('.pa-leaving'))
+    return !now || now === document.body || !now.isConnected || Boolean(now.closest('.pa-leaving'))
+  }
+  const move = () => {
+    if (!lost()) return
+    const left = [...root.querySelectorAll('.pa-cell')].filter(c => !c.querySelector('.pa-leaving'))
     const next = left[Math.min(Math.max(at, 0), left.length - 1)]
-    const target = next?.querySelector('.pa-pick, button') || root.querySelector('[role="tab"][aria-selected="true"]')
+    const target = next?.querySelector('.pa-card') || root.querySelector('[role="tab"][aria-selected="true"]')
     target?.focus()
   }
-  window.setTimeout(move, 450)
+  for (const ms of [450, 900, 1500]) window.setTimeout(move, ms)
 }
 const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).status)
@@ -488,7 +500,7 @@ const STYLE = `
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
 .pa-root button:focus-visible,.pa-root input:focus-visible,.pa-root summary:focus-visible,
-.pa-root [role="button"]:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.pa-root [role="button"]:focus-visible,.pa-root .pa-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
@@ -1060,7 +1072,7 @@ const heldButton = (busy, t, key, text, variant, blocked, why, onGo) => jsx(Tip,
       loading: busy === key,
       onClick: () => {
         if (blocked) {
-          host.notify({ kind: 'warning', message: why })
+          warnOnce(why)
           return
         }
         haptic('tap')
@@ -1241,7 +1253,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
           jsx(Tip, {
             label: t('pa.review.unverifiedWhy'),
             children: jsx(Badge, {
-              className: 'pa-tag', style: TAG, variant: 'muted', tabIndex: 0,
+              className: 'pa-tag', style: TAG, variant: 'muted',
               'aria-description': t('pa.review.unverifiedWhy'), children: t('pa.review.unverified')
             }, 'badge')
           }, 'sev'),
@@ -1359,7 +1371,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const failedBefore = Boolean(plain.last_error)
   const unchecked = status === 'failed' || status === 'unassigned'
   const canSkip = !hard.length && !stale.length && !fix && unchecked
-  const isNewSkill = groups.some(g => g.kind === 'new')
+  const SKILL_KINDS = [['new', 'pa.state.newSkill'], ['update', 'pa.state.editSkill'], ['delete', 'pa.state.deleteSkill']]
+  const skillTitle = SKILL_KINDS.map(([kind, key]) => [key, groups.filter(g => (g.kind || 'update') === kind)])
+    .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${list.map(g => g.name).join(', ')}`).join(' · ')
   const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)
   const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length && !fix && !stale.length
   if (fixArmed && !fixUnreviewed) setFixArmed(false)
@@ -1367,7 +1381,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
   const title = subsystem === 'memory' ? (plain.headline || where)
-    : `${t(isNewSkill ? 'pa.state.newSkill' : 'pa.state.editSkill')}: ${where}`
+    : skillTitle || where
   const added = tally(ops, '+')
   const removed = tally(ops, '-')
   const [stateKey, stateVariant] = cardState(hard.length > 0, stale.length > 0, Boolean(fix), failedBefore, status,
@@ -1395,7 +1409,8 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     role: 'group',
-    'aria-label': title,
+    tabIndex: -1,
+    'aria-labelledby': `pa-title-${subsystem}-${item.id}`,
     'aria-busy': Boolean(busy) || undefined,
     'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
@@ -1413,7 +1428,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                 onChange: () => onPick()
               }, 'pick')
             : null,
-          jsx('span', { className: 'pa-card-title', role: 'heading', 'aria-level': 3, children: title }, 'title'),
+          jsx('span', {
+            id: `pa-title-${subsystem}-${item.id}`, className: 'pa-card-title', role: 'heading', 'aria-level': 2, children: title
+          }, 'title'),
           ops.length ? jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat') : null,
           jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
           jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
@@ -1440,8 +1457,8 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                   jsx(Badge, {
                     className: 'pa-tag',
                     style: TAG,
-                    variant: g.kind === 'new' ? 'success' : 'muted',
-                    children: t(g.kind === 'new' ? 'pa.group.new' : 'pa.group.update')
+                    variant: g.kind === 'new' ? 'success' : g.kind === 'delete' ? 'destructive' : 'muted',
+                    children: t(g.kind === 'new' ? 'pa.group.new' : g.kind === 'delete' ? 'pa.group.delete' : 'pa.group.update')
                   }, 'kind'),
                   jsx('span', { style: { ...value, flex: 1, minWidth: 0 }, children: g.name }, 'name'),
                   jsx(Tip, {
@@ -1599,6 +1616,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   }
   const rejectPart = part => run(`reject:${part.id}`, async () => {
     const one = await decideOne(t, 'skills', [part], 'reject')
+    if (one?.ok) refocus(cardAt.current)
     onChanged()
     return one
   })
@@ -1671,7 +1689,8 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'data-group': item.id,
     role: 'group',
-    'aria-label': groupTitle,
+    tabIndex: -1,
+    'aria-labelledby': `pa-title-group-${item.id}`,
     'aria-busy': Boolean(busy) || undefined,
     'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
@@ -1689,7 +1708,9 @@ function GroupCard({ item, onChanged, picked, onPick }) {
                 onChange: () => onPick()
               }, 'pick')
             : null,
-          jsx('span', { className: 'pa-card-title', role: 'heading', 'aria-level': 3, children: groupTitle }, 'title'),
+          jsx('span', {
+            id: `pa-title-group-${item.id}`, className: 'pa-card-title', role: 'heading', 'aria-level': 2, children: groupTitle
+          }, 'title'),
           jsx('span', {
             className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
           }, 'stat'),
@@ -1975,6 +1996,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
               size: 'sm',
               loading: busy,
               onClick: () => void undo(Boolean(conflict)),
+              'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${String(entry.summary || '').slice(0, 80)}`,
               children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
             }, 'undo')
           : restorable
@@ -1984,6 +2006,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
                 size: 'sm',
                 loading: busy,
                 onClick: () => void restore(),
+                'aria-label': `${t('pa.btn.restore')}: ${String(entry.summary || '').slice(0, 80)}`,
                 children: t('pa.btn.restore')
               }, 'restore')
             : jsx('div', {
@@ -2001,8 +2024,20 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
   const [arming, setArming] = useState('')
   const [busy, setBusy] = useState(false)
   const barAt = useRef(null)
+  const armedBy = useRef('')
   useEffect(() => {
-    if (arming) barAt.current?.querySelector('.pa-bulk-cancel')?.focus()
+    const bar = barAt.current
+    if (arming) {
+      armedBy.current = arming
+      bar?.querySelector('.pa-bulk-cancel')?.focus()
+      return
+    }
+    const was = armedBy.current
+    armedBy.current = ''
+    const now = document.activeElement
+    if (!was || !bar || (now && now !== document.body && now.isConnected)) return
+    const back = [...bar.querySelectorAll('button')].find(b => b.dataset.arms === was)
+    back?.focus()
   }, [arming])
   const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
   const held = chosen.filter(({ item }) => !pickable(item)).length
@@ -2093,7 +2128,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
               jsx('span', { style: { marginLeft: 'auto' } }, 'gap'),
               n
                 ? jsx(Button, {
-                    variant: 'destructive', size: 'sm',
+                    variant: 'destructive', size: 'sm', 'data-arms': 'reject',
                     onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
                   }, 'reject')
                 : null,
@@ -2104,10 +2139,10 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
                       className: 'pa-tipwrap',
                       children: jsx(Button, {
                         className: held ? 'pa-held' : undefined,
-                        variant: 'default', size: 'sm',
+                        variant: 'default', size: 'sm', 'data-arms': 'approve',
                         'aria-disabled': held > 0 || undefined,
                         'aria-description': held ? t('pa.bulk.held', held) : undefined,
-                        onClick: held ? () => host.notify({ kind: 'warning', message: t('pa.bulk.held', held) })
+                        onClick: held ? () => warnOnce(t('pa.bulk.held', held))
                           : () => setArming('approve'),
                         children: t('pa.bulk.approve', n)
                       }, 'btn')

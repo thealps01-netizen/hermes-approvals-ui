@@ -853,6 +853,12 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **Focus after a decision.** `refocus()` runs after a successful decision, waits for the card to
   leave, and moves focus to the record now at the same position only when focus was lost or still
   inside the leaving card. A failed decision keeps focus where it was.
+* **Skill kinds.** A skill group is `new` (any create), `delete` (a delete with no create) or `update`;
+  the card title lists one part per kind, so a record creating one skill and editing another says both.
+* **Focus target.** `refocus()` focuses the `.pa-card` itself (`tabIndex: -1`), not a control inside it:
+  a lone record has no checkbox, so a checkbox target vanished ~120 ms after it was focused. It
+  retries at 450, 900 and 1500 ms and acts only while focus is lost or inside a leaving card.
+* **Repeated warnings.** A held button pressed again within 5 s with the same reason adds no notice.
 * **Relative time.** The host's `relativeTime` follows the system locale; the panel is English-only,
   so `when()` builds the phrase from the `pa.time` keys.
 * **Toast wording.** Core's `Approved N <kind> write(s).` is replaced by the panel's own saved notice;

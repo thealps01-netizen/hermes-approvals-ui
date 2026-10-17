@@ -1001,6 +1001,18 @@ def memory_card_title_names_the_note():
     assert "(s)" not in two and "Adds 2 notes" in two, f"a two-note card reads {two!r}"
 
 
+@case
+def skill_delete_card_says_delete():
+    """A pending skill deletion was titled "Edit skill: x", with nothing on the card saying it deletes."""
+    env = Env()
+    env.skill("old-skill", "# Old")
+    env.stage("skills", "97200001", {"action": "delete", "name": "old-skill"})
+    plain = env.item("skills", "97200001")["plain"]
+    kinds = [g["kind"] for g in plain["groups"]]
+    assert kinds == ["delete"], f"a delete is grouped as {kinds}"
+    assert plain["headline"] == "Delete skill: old-skill", f"a delete is headed {plain['headline']!r}"
+
+
 def _run_one(name: str) -> int:
     try:
         CASES[name]()
