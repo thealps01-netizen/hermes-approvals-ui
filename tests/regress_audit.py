@@ -1013,6 +1013,26 @@ def skill_delete_card_says_delete():
     assert plain["headline"] == "Delete skill: old-skill", f"a delete is headed {plain['headline']!r}"
 
 
+@case
+def skill_kind_follows_the_last_create_or_delete():
+    """Create-then-delete was titled "New skill"; a delete-then-create replaces the skill, so it is an edit."""
+    env = Env()
+    body = f"---\nname: {{name}}\ndescription: Use when testing. Does.\nauthor: {AUTHOR}\n---\n\nbody\n"
+    env.stage("skills", "97300001", {"action": "batch", "operations": [
+        {"action": "create", "name": "brief-a", "category": "cat", "content": body.format(name="brief-a")},
+        {"action": "delete", "name": "brief-a"}]})
+    env.skill("brief-b", body.format(name="brief-b"))
+    env.stage("skills", "97300002", {"action": "batch", "operations": [
+        {"action": "delete", "name": "brief-b"},
+        {"action": "create", "name": "brief-b", "category": "cat", "content": body.format(name="brief-b")}]})
+    gone = env.item("skills", "97300001")["plain"]
+    back = env.item("skills", "97300002")["plain"]
+    assert [g["kind"] for g in gone["groups"]] == ["delete"], f"create-then-delete is grouped as {gone['groups']}"
+    assert gone["headline"] == "Delete skill: brief-a", f"create-then-delete is headed {gone['headline']!r}"
+    assert [g["kind"] for g in back["groups"]] == ["update"], f"delete-then-create is grouped as {back['groups']}"
+    assert back["headline"] == "Edit skill: brief-b", f"delete-then-create is headed {back['headline']!r}"
+
+
 def _run_one(name: str) -> int:
     try:
         CASES[name]()

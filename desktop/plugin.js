@@ -90,6 +90,7 @@ const BUNDLES = {
       },
       grp: {
         changes: n => plural(n, 'change', 'changes'),
+        withDelete: 'includes deleting the skill',
         select: 'Select these changes',
         approve: n => `Approve ${plural(n, 'change', 'changes')}`,
         rejectAll: n => `Reject all ${n}`,
@@ -210,6 +211,8 @@ const BUNDLES = {
         less: 'Show less',
         capped: (shown, total) => `Showing ${shown} of ${total} lines`,
         noText: 'No text recorded for this operation.',
+        wholeSkill: 'whole skill',
+        deletesSkill: 'Deletes the whole skill folder. You can bring it back from the “History” tab.',
       },
       hist: {
         apply: 'Approved and applied',
@@ -1188,9 +1191,13 @@ function Change({ op, where, t, badge }) {
         children: [
           jsx('span', { className: 'pa-change-file', children: [op.name, op.file].filter(Boolean).join(' · ') || where }, 'file'),
           badge ? jsx('span', { className: 'pa-pill', children: badge }, 'badge') : null,
-          jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat')
+          jsx('span', {
+            className: 'pa-change-stat',
+            children: op.action === 'delete' ? t('pa.op.wholeSkill') : t('pa.op.lines', added, removed)
+          }, 'stat')
         ]
       }, 'head'),
+      op.action === 'delete' && !rows.length ? jsx('div', { style: hintLine, children: t('pa.op.deletesSkill') }, 'gone') :
       rows.length
         ? jsx(LogView, {
             className: 'pa-free pa-change-body',
@@ -1431,7 +1438,9 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
           jsx('span', {
             id: `pa-title-${subsystem}-${item.id}`, className: 'pa-card-title', role: 'heading', 'aria-level': 2, children: title
           }, 'title'),
-          ops.length ? jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat') : null,
+          ops.length && !ops.every(o => o.action === 'delete')
+            ? jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat')
+            : null,
           jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
           jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
         ]
@@ -1600,7 +1609,9 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
     status, review.verdict)
   const staleAt = new Set(stale.map(s => s.change))
-  const groupTitle = `${(item.names || []).join(', ')} · ${t('pa.grp.changes', n)}`
+  const deletes = parts.some(p => (p.ops || []).some(o => o.action === 'delete'))
+  const groupTitle = [(item.names || []).join(', '), t('pa.grp.changes', n), deletes ? t('pa.grp.withDelete') : '']
+    .filter(Boolean).join(' · ')
 
   const decideGroup = async (decision, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
@@ -1645,7 +1656,9 @@ function GroupCard({ item, onChanged, picked, onPick }) {
               className: 'pa-member-what', children: (plain.what || []).join(' · ') || plain.headline || ''
             }, 'what'),
             jsx('span', {
-              className: 'pa-change-stat', children: t('pa.op.lines', tally(ops, '+'), tally(ops, '-'))
+              className: 'pa-change-stat',
+              children: ops.length && ops.every(o => o.action === 'delete') ? t('pa.op.wholeSkill')
+                : t('pa.op.lines', tally(ops, '+'), tally(ops, '-'))
             }, 'stat'),
             staleAt.has(part.change)
               ? jsx(Badge, {

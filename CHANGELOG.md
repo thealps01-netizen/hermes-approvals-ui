@@ -34,6 +34,9 @@ and read the way a non-technical owner reads it. Each change has a check that fa
   note: “…”"); counts read "2 notes", not "2 note(s)". A skill card reads "New skill: …",
   "Edit skill: …" or "Delete skill: …" (a deletion was shown as an update), one part per kind when a
   record does several.
+* **A deletion reads as one.** Its change says "whole skill" and "Deletes the whole skill folder. You can
+  bring it back from the “History” tab." instead of "+0 −0" and "No text recorded for this operation.",
+  and a set of changes to one skill that deletes it is titled "… · includes deleting the skill".
 * **"Unverified quote" explains itself.** Its tooltip says the quote could not be found in the write,
   so the finding does not count toward the verdict, and the quote is labelled "The reviewer quoted".
 * Smaller wording fixes: "Clear 1 record", "It changed the same file" for one record, an empty Memory

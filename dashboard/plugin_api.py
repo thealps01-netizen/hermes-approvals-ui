@@ -995,9 +995,11 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             group = per_name.setdefault(name, {"name": name, "kind": "update", "ops": [], "files": []})
             group["ops"].append(what[-1])
             group["files"].append(where)
-            if action == "create":
+            if action == "create" and group["kind"] != "delete":
                 group["kind"] = "new"
-            elif action == "delete" and group["kind"] != "new":
+            elif action == "create":
+                group["kind"] = "update"
+            elif action == "delete":
                 group["kind"] = "delete"
         groups = list(per_name.values())
         target_label = ", ".join(per_name) or "?"

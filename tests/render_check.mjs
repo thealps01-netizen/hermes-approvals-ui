@@ -2743,8 +2743,9 @@ REST.scan = 'ok'
     fail('pressing a held Approve again stacks another identical notice')
   }
   const edge = { ...PENDING, memory: [{ ...PENDING.memory[0], staged_at: Date.now() / 1000 - 3590 }],
-    skills: [{ ...PENDING.skills[1], plain: { ...PENDING.skills[1].plain,
-      groups: [{ kind: 'delete', name: 'old-skill', ops: [{ action: 'delete' }] }] } }],
+    skills: [{ ...PENDING.skills[1], ops: [{ action: 'delete', name: 'old-skill', added: 0, removed: 0 }],
+      plain: { ...PENDING.skills[1].plain,
+        groups: [{ kind: 'delete', name: 'old-skill', ops: [{ action: 'delete' }] }] } }],
     counts: { memory: 1, skills: 1 } }
   REST.pending = edge
   const ed = await mount('en', 'page')
@@ -2753,9 +2754,37 @@ REST.scan = 'ok'
   if (edgeWhen !== '1 hour ago') fail(`a record 59.8 minutes old reads ${JSON.stringify(edgeWhen)}, not "1 hour ago"`)
   const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-card-title')?.textContent
   if (delTitle !== 'Delete skill: old-skill') fail(`a skill deletion is titled ${JSON.stringify(delTitle)}`)
+  const delCell = cellAt(ed, 'skills:aaa11111')
+  if (delCell?.querySelector('.pa-card-head .pa-change-stat')) {
+    fail(`a skill deletion shows a line count by its title: ${delCell.querySelector('.pa-card-head .pa-change-stat').textContent}`)
+  }
+  const delDetails = buttons(delCell, /^Details/)[0]
+  if (delDetails) await click(delDetails, 40)
+  const delBody = delCell?.querySelector('.pa-change')?.textContent || ''
+  if (!/whole skill/.test(delBody) || !/Deletes the whole skill folder/.test(delBody) || /No text recorded|\+0 −0/.test(delBody)) {
+    fail(`a skill deletion's change reads ${JSON.stringify(delBody)}`)
+  }
   REST.pending = null
   ed.root.unmount()
   ed.hostEl.remove()
+
+  const gd = groupsWith(CLEAN_REVIEW, STALE_REVIEW)
+  gd.skills[0] = { ...gd.skills[0], ops: [{ action: 'delete', name: 'alpha-skill', added: 0, removed: 0 }] }
+  REST.pending = gd
+  const gm = await mount('en', 'page')
+  await wait(60)
+  const gCell = cellAt(gm, `skills:${CLEAN_GROUP}`)
+  const gTitle = gCell?.querySelector('.pa-card-title')?.textContent
+  if (gTitle !== 'alpha-skill · 2 changes · includes deleting the skill') {
+    fail(`a set that deletes its skill is titled ${JSON.stringify(gTitle)}`)
+  }
+  const gStat = [...(gCell?.querySelectorAll('.pa-member[data-change="1"] .pa-change-stat') || [])].map(x => x.textContent)
+  if (!gStat.includes('whole skill') || gStat.includes('+0 −0')) {
+    fail(`the deleting change in a set reads ${JSON.stringify(gStat)}`)
+  }
+  REST.pending = null
+  gm.root.unmount()
+  gm.hostEl.remove()
 
   REST.post = 'coremsg'
   REST.gone = new Set()
