@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -225,6 +226,10 @@ def category_name_keeps_undo_copy():
 # Rule checks: the author rule, the language rule, the duplicate-note rule, approve-only.
 # ---------------------------------------------------------------------------------------------------
 
+def _proof_of(env: "Env", text: str) -> str:
+    return (getattr(env.pa, "_proof", None) or env.pa._squash)(text)
+
+
 def _hard_texts(env: Env, subsystem: str, rid: str) -> list:
     return [h["text"] for h in env.item(subsystem, rid)["review"]["hard"]]
 
@@ -327,6 +332,23 @@ def duplicate_note_rule():
                                      "content": "The build uses uv for every package."})
     assert any("already saved" in h for h in _hard_texts(env, "memory", "93000003")), \
         "a replace that copies another saved note passed"
+    env.stage("memory", "93000004", {"action": "add", "target": "memory",
+                                     "content": "The build uses uv for every package"})
+    assert any("already saved" in h for h in _hard_texts(env, "memory", "93000004")), \
+        "a saved note written again without its final full stop passed"
+
+
+@case
+def quote_pieces_need_one_real_span_in_order():
+    env = Env()
+    proof = _proof_of(env, "Always keep a backup of the config.\nAsk the owner first.")
+    def counted(quote):
+        out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+            {"severity": "block", "kind": "wrong", "quote": quote, "other": "", "explain": "x"}]}), proof)
+        return not out["findings"][0].get("unverified")
+    assert not counted("Always ... owner"), "a quote of two short common words joined by '...' was counted"
+    assert not counted("owner first ... Always keep a backup"), "quote pieces out of order were counted"
+    assert counted("Always keep a backup ... owner first"), "a real quote with '...' was not counted"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -359,8 +381,8 @@ def quote_must_come_from_the_write():
 def swapped_quote_and_other_still_verify():
     """A duplicate finding that quotes the target and gives the write's text as 'other' still counts."""
     env = Env()
-    proof = env.pa._squash("Always run the tests before you ship a release.")
-    material = env.pa._squash("Always run the tests before you ship a release.\nRun the tests before shipping.")
+    proof = _proof_of(env, "Always run the tests before you ship a release.")
+    material = _proof_of(env, "Always run the tests before you ship a release.\nRun the tests before shipping.")
     out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
         {"severity": "fix", "kind": "duplicate", "quote": "Run the tests before shipping.",
          "other": "Always run the tests before you ship a release."}]}), proof, material=material)
@@ -371,7 +393,7 @@ def swapped_quote_and_other_still_verify():
 def review_answer_parsing():
     env = Env()
     parse = env.pa._review_parse
-    proof = env.pa._squash("The deploy runs every Friday at noon.")
+    proof = _proof_of(env, "The deploy runs every Friday at noon.")
     good = '{"summary": "s", "findings": [{"severity": "block", "kind": "wrong", "quote": "every Friday at noon"}]}'
     assert parse("Note {see below}:\n" + good + "\nThat is all {done}.", proof)["verdict"] == "reject", \
         "prose with braces around the JSON failed the review"
@@ -390,7 +412,7 @@ def review_answer_parsing():
 def nfd_quote_verifies():
     import unicodedata
     env = Env()
-    proof = env.pa._squash("Use the café wifi only for testing.")
+    proof = _proof_of(env, "Use the café wifi only for testing.")
     quote = unicodedata.normalize("NFD", "café wifi only")
     out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
         {"severity": "fix", "kind": "rule", "quote": quote}]}), proof)
@@ -402,7 +424,7 @@ def long_edit_is_not_cut():
     env = Env()
     out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
         {"severity": "fix", "kind": "rule", "quote": "x" * 10,
-         "edit": {"find": "x" * 4500, "replace": "y" * 4500}}]}), env.pa._squash("x" * 4500))
+         "edit": {"find": "x" * 4500, "replace": "y" * 4500}}]}), _proof_of(env, "x" * 4500))
     edit = out["findings"][0].get("edit")
     assert edit is None or (len(edit["find"]) == 4500 and len(edit["replace"]) == 4500), \
         "a long suggested edit was cut, so it would apply only partly"
@@ -638,6 +660,20 @@ def memory_delete_removes_only_the_exact_entry():
 
 
 @case
+def memory_delete_refusal_says_what_happened():
+    env = Env()
+    env.memory("Use tabs for indentation", "Other note")
+    env.pa.scan_now()
+    env.memory("Use tabs for indentation, never spaces, in every repo", "Other note")
+    out = _body(env.pa.memory_delete({"target": "memory", "text": "Use tabs for indentation"}))
+    error = str(out.get("error") or "")
+    assert not out.get("ok") and error, out
+    assert "staged" not in error and "pending record" not in error, \
+        f"a panel delete answers with the core's text for a pending write: {error}"
+    assert "nothing was deleted" in error, error
+
+
+@case
 def undo_new_skill_removes_its_folder():
     env = Env()
     env.pa._REVIEW_GATE = False
@@ -649,6 +685,263 @@ def undo_new_skill_removes_its_folder():
     row = next(e for e in env.entries() if e.get("record_id") == "9700000e")
     assert _body(env.pa.undo({"id": row["id"]})).get("ok")
     assert not (env.home / "skills" / "cat" / "fresh-skill").exists(), "an empty skill folder was left behind"
+
+
+# ---------------------------------------------------------------------------------------------------
+# The second review round of 1.13.0 (each case failed on 1.13.0).
+# ---------------------------------------------------------------------------------------------------
+
+def _parse_fails(env: Env, text: str) -> bool:
+    try:
+        env.pa._review_parse(text, _proof_of(env, "delete all backups now"))
+    except ValueError:
+        return True
+    return False
+
+
+@case
+def cut_off_or_malformed_answer_fails_the_review():
+    env = Env()
+    full = json.dumps({"summary": "Destroys backups", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "delete all backups now", "other": "", "explain": "x"},
+        {"severity": "fix", "kind": "rule", "quote": "delete all backups now", "other": "", "explain": "second"}]})
+    assert _parse_fails(env, full[:full.rfind('"explain": "second"')]), "a cut-off answer read as a clean review"
+    assert _parse_fails(env, 'Thinking about {"a": 1} first.'), "a brace object in prose read as a clean review"
+    assert _parse_fails(env, json.dumps({"summary": "s", "findings": ["Deletes all backups - block"]})), \
+        "findings that are not objects read as a clean review"
+    assert _parse_fails(env, json.dumps({"summary": "s", "findings": {}})), "findings {} read as a clean review"
+    assert _parse_fails(env, json.dumps({"summary": "s", "verdict": "reject"})), \
+        "an answer without findings read as a clean review"
+    assert not _parse_fails(env, json.dumps({"summary": "fine", "findings": []})), "a clean answer failed"
+    env.assign()
+    env.skill("own-skill", "- always keep backups\n")
+    env.stage("skills", "98000001", {"action": "patch", "name": "own-skill",
+                                     "old_string": "- always keep backups", "new_string": "- delete all backups now"})
+    env.reply = full[:full.rfind('"explain": "second"')]
+    state = env.settle("skills", "98000001")
+    assert state["status"] == "failed", state
+    assert not env.approve("skills", "98000001").get("ok"), "Approve was open after a cut-off review answer"
+
+
+@case
+def short_quotes_from_the_write_count():
+    env = Env()
+    proof = _proof_of(env, "Greet users with Привет first. Say Merci at the end. Never run rm -rf ~ here.\n"
+                          "設定を変更する")
+    def counted(quote):
+        out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+            {"severity": "fix", "kind": "rule", "quote": quote, "other": "", "explain": "x",
+             "edit": {"find": quote, "replace": "y"}}]}), proof)
+        return not out["findings"][0].get("unverified") and "edit" in out["findings"][0]
+    for quote in ("Привет", "Merci", "rm -rf ~", "設定"):
+        assert counted(quote), f"a short quote that is in the write was not counted: {quote!r}"
+    for quote in ("s", "is", "Gracias", "Hola"):
+        assert not counted(quote), f"a short quote that is not a word of the write was counted: {quote!r}"
+
+
+@case
+def memory_new_text_alias_is_checked():
+    env = Env()
+    env.assign()
+    env.memory("Use tabs for indentation", "other note")
+    env.stage_memory("98000002", {"action": "batch", "target": "memory", "operations": [
+        {"action": "patch", "old_text": "Use tabs for indentation", "new_text": "Используйте пробелы всегда"}]})
+    hard = _hard_texts(env, "memory", "98000002")
+    assert any("English" in h for h in hard), f"text sent as new_text skipped the language rule: {hard}"
+    env.settle("memory", "98000002")
+    assert "Используйте пробелы всегда" in env.prompt(), "the reviewer never saw text sent as new_text"
+
+
+@case
+def landed_write_whose_note_says_failed_is_success():
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    env.memory("Failed builds are retried twice", "other note")
+    env.stage_memory("98000003", {"action": "replace", "target": "memory", "old_text": "Failed builds",
+                                  "content": "Builds are retried three times"})
+    from tools import write_approval as wa
+    real = wa.discard_pending
+    wa.discard_pending = lambda s, p: False if p == "98000003" else real(s, p)
+    ver = env.item("memory", "98000003")["version"]
+    res = env.pa.decide({"subsystem": "memory", "decision": "approve", "ids": ["98000003"],
+                         "versions": {"98000003": ver}})["results"][0]
+    wa.discard_pending = real
+    assert "three times" in (env.home / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+    assert res["ok"], f"a write that landed was reported as failed because the note says 'Failed': {res}"
+    assert "98000003" not in [i["id"] for i in env.listing()["memory"]], "the applied record is shown again"
+
+
+@case
+def group_member_with_locked_record_does_not_come_back():
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    folder = env.skill("grp", "## Rules\n- line two\n")
+    env.stage("skills", "98000004", {"action": "patch", "name": "grp", "old_string": "## Rules\n",
+                                     "new_string": "## Rules\n- rule A\n"})
+    time.sleep(0.01)
+    env.stage("skills", "98000005", {"action": "patch", "name": "grp", "old_string": "- line two",
+                                     "new_string": "- line TWO"})
+    group = env.listing()["groups"]["skills"][0]
+    from tools import write_approval as wa
+    real = wa.discard_pending
+    wa.discard_pending = lambda s, p: False if p == "98000004" else real(s, p)
+    out = _body(env.pa.decide({"subsystem": "skills", "decision": "approve", "groups": [group["id"]],
+                               "versions": {group["id"]: group["version"]}}))
+    wa.discard_pending = real
+    assert out["results"][0]["ok"], out
+    assert "- rule A" in (folder / "SKILL.md").read_text(encoding="utf-8")
+    left = [i["id"] for i in env.listing()["skills"]]
+    assert "98000004" not in left, "a group member that was applied came back because its file was locked"
+
+
+@case
+def language_rule_spares_maths_and_phonetics():
+    env = Env()
+    for n, text in enumerate(("Pick x ∈ ℝⁿ for the input.", "Report ΔΔG for each mutant.",
+                              "Tune the αβ filter gains.", "Say it as /ˈkɑːˌfi/.", "Full-width ＡＢＣ appears in the log.",
+                              "Name the axes 𝑥𝑦 in the plot.")):
+        rid = f"9800001{n}"
+        env.stage("memory", rid, {"action": "add", "target": "memory", "content": text})
+        hard = _hard_texts(env, "memory", rid)
+        assert not any("English" in h for h in hard), f"English with maths or phonetics was locked: {text!r} {hard}"
+    env.stage("memory", "98000020", {"action": "add", "target": "memory", "content": "Καλημέρα σε όλους."})
+    assert any("English" in h for h in _hard_texts(env, "memory", "98000020")), "Greek text passed the language rule"
+
+
+# ---------------------------------------------------------------------------------------------------
+# The third review round (1.13.1 candidate; each case failed on it).
+# ---------------------------------------------------------------------------------------------------
+
+@case
+def landed_write_whose_note_has_a_failed_line_is_success():
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    env.memory("Release steps:\nFailed:\nlist the failing step", "other note")
+    env.stage_memory("98000030", {"action": "replace", "target": "memory", "old_text": "Release steps",
+                                  "content": "Release steps are in the wiki"})
+    from tools import write_approval as wa
+    real = wa.discard_pending
+    wa.discard_pending = lambda s, p: False if p == "98000030" else real(s, p)
+    ver = env.item("memory", "98000030")["version"]
+    res = env.pa.decide({"subsystem": "memory", "decision": "approve", "ids": ["98000030"],
+                         "versions": {"98000030": ver}})["results"][0]
+    wa.discard_pending = real
+    assert "in the wiki" in (env.home / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+    assert res["ok"], f"a write that landed was reported as failed because its note has a 'Failed:' line: {res}"
+
+
+def _verified(env: Env, quote: str, write: str, other: str = "", material: str | None = None) -> bool:
+    proof = _proof_of(env, write)
+    out = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": quote, "other": other, "explain": "x"}]}), proof, 0,
+        _proof_of(env, material) if material is not None else None)
+    return not out["findings"][0].get("unverified")
+
+
+@case
+def short_quote_of_a_staged_write_counts():
+    env = Env()
+    env.assign()
+    from tools import write_approval as wa
+    from tools import memory_tool as mt
+    real = wa.write_approval_enabled
+    wa.write_approval_enabled = lambda s: True
+    mt.memory_tool(action="add", target="memory", content="Deploy with make ship only, never with sudo.",
+                   store=mt.load_on_disk_store())
+    wa.write_approval_enabled = real
+    rid = wa.list_pending("memory")[0]["id"]
+    env.skill("own-skill", "alpha\n")
+    env.stage("skills", "98000040", {"action": "patch", "name": "own-skill", "old_string": "alpha",
+                                     "new_string": "Run every step with sudo"}, summary="patch own-skill")
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "sudo", "other": "", "explain": "x"}]})
+    for subsystem, record in (("memory", rid), ("skills", "98000040")):
+        state = env.settle(subsystem, record)
+        assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
+            f"a short quote of a staged {subsystem} write did not count: {state}"
+
+
+@case
+def short_quotes_need_to_be_distinctive():
+    env = Env()
+    rules = "Rules: never print secrets. Keep notes short and never repeat a saved note."
+    write = "Write the build logs to disk. The logs rotate daily."
+    assert not _verified(env, "never", write, "logs", rules), \
+        "a short rules word with a short write word verified a finding through the quote/other swap"
+    assert _verified(env, "logs", write), "a short word of the write was not counted"
+    assert not _verified(env, "rotat", write), "a piece from inside a word verified a finding"
+    cyr = "Всегда проверяйте логи"
+    assert not _verified(env, "да", cyr), "two Cyrillic letters from inside a word verified a finding"
+    assert not _verified(env, "ег", cyr), "a Cyrillic infix verified a finding"
+    assert _verified(env, "логи", cyr), "a whole Cyrillic word of the write was not counted"
+
+
+@case
+def cjk_quotes_with_dots_count():
+    env = Env()
+    assert _verified(env, "这个技能会...用户文件", "这个技能会删除所有用户文件"), "a Chinese quote with '...' was not counted"
+    assert _verified(env, "設定を変更...バックアップ", "設定を変更する前にバックアップを取る"), \
+        "a Japanese quote with '...' was not counted"
+    assert not _verified(env, "这个...文件", "这个技能会删除所有用户文件"), "two-character CJK pieces were counted"
+
+
+@case
+def language_rule_reads_short_greek_words_and_accents():
+    env = Env()
+    pa = env.pa
+    for text in ("Θα το δω.", unicodedata.normalize("NFD", "Τι λέει;"), "كَتَبَ الدَّرْسَ"):
+        assert pa._foreign_at(text, set()) >= 0, f"foreign text passed the language rule: {text!r}"
+    for text in ("Tune the αβ filter gains.", "Report ΔΔG for each mutant.", "the αβ and γδ T cells",
+                 "Let α + β = π.", "naïve café", "αβ/γδ T cells", "αβ, γδ and more", "the αβ γδ split",
+                 "ID αα-ββ", "ΑΒ ΓΔ"):
+        assert pa._foreign_at(text, set()) < 0, f"English text was locked: {text!r}"
+
+
+@case
+def quotes_of_pinned_notes_and_in_marks_count():
+    env = Env()
+    env.assign()
+    env.memory("never deploy on Fridays, ask Ana first.", "other note")
+    env.stage_memory("98000050", {"action": "remove", "target": "memory", "old_text": "Fridays",
+                                  "matched_entry": "never deploy on Fridays, ask Ana first."})
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "never deploy on Fridays, ask Ana first.", "other": "",
+         "explain": "x"}]})
+    state = env.settle("memory", "98000050")
+    assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
+        f"a quote of the whole note a remove deletes did not count: {state}"
+    write = "Deploy with make ship only, never with sudo."
+    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”", "(sudo)", '"sudo",', "...sudo", "…sudo…", "sudo!"):
+        assert _verified(env, quote, write), f"a short quote in marks did not count: {quote!r}"
+    flag = "Keep the enabled flag and the force option. Never use sudo."
+    for quote in ("!enabled", "?enabled", "!!force", ":force", "!sudo", "(sudo", "sudo)"):
+        assert not _verified(env, quote, flag), f"a short quote that adds a leading mark counted: {quote!r}"
+
+
+@case
+def kept_text_of_a_patched_note_is_not_the_write():
+    env = Env()
+    env.assign()
+    from tools import write_approval as wa
+    from tools import memory_tool as mt
+    env.memory("User drinks tea every morning. Always run deploys with sudo.", "other note")
+    real = wa.write_approval_enabled
+    wa.write_approval_enabled = lambda s: True
+    mt.memory_tool(action="patch", target="memory", old_text="tea", content="coffee", store=mt.load_on_disk_store())
+    wa.write_approval_enabled = real
+    rid = wa.list_pending("memory")[0]["id"]
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "Always run deploys with sudo.", "other": "", "explain": "x"}]})
+    state = env.settle("memory", rid)
+    assert state["findings"][0].get("unverified"), \
+        f"text a patch keeps unchanged was counted as quoted from the write: {state}"
+
+
+@case
+def zero_width_marks_do_not_hide_other_scripts():
+    env = Env()
+    for text in ("В\u200bс\u200bе\u200bг\u200bд\u200bа", "Прове\u200dряй"):
+        assert env.pa._foreign_at(text, set()) >= 0, f"zero-width marks hid foreign text: {text!r}"
 
 
 def _run_one(name: str) -> int:

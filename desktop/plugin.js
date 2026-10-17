@@ -285,6 +285,9 @@ const BUNDLES = {
         lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
+        lateRejectedElsewhere: 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.',
+        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “Applied” tab.',
+        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
@@ -318,6 +321,8 @@ function say(key, ...args) {
 }
 
 let livePending = null
+let historyRead = false
+let paneRefresh = null
 const seenHistory = new Set()
 const held = new Map()
 const heldListeners = new Set()
@@ -327,6 +332,7 @@ const setHeld = (key, value) => {
   else held.delete(key)
   for (const fn of heldListeners) fn()
 }
+const refreshPane = () => (paneRefresh ? paneRefresh() : 1)
 const changeListeners = new Set()
 const announceChange = () => {
   for (const fn of changeListeners) fn()
@@ -354,8 +360,15 @@ const api = {
   startReviews: () => ctxRef.rest('/reviews', { method: 'POST', body: {} }),
   scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
   history: async () => {
-    const d = await ctxRef.rest('/history?limit=50')
+    let d
+    try {
+      d = await ctxRef.rest('/history?limit=50')
+    } catch (e) {
+      historyRead = false
+      throw e
+    }
     for (const e of d?.entries || []) seenHistory.add(e.id)
+    historyRead = true
     return d
   },
   memory: () => ctxRef.rest('/memory'),
@@ -786,13 +799,13 @@ function useHeld(key) {
   return held.get(key) || null
 }
 
-function useLeave(key, onChanged) {
+function useLeave(key) {
   const leaving = Boolean(useHeld(key)?.leaving)
   const leave = () => {
     setHeld(key, { leaving: true })
     const id = window.setTimeout(() => {
       leaveTimers.delete(id)
-      const until = onChanged()
+      const until = refreshPane()
       if (held.get(key)?.leaving) setHeld(key, { leaving: true, until })
     }, 340)
     leaveTimers.add(id)
@@ -912,7 +925,7 @@ const told = (t, decision, one) => {
   if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
-const settled = async (t, items, known) => {
+const settled = async (t, items, known, decision) => {
   let entries
   try {
     entries = (await api.history())?.entries || []
@@ -923,21 +936,24 @@ const settled = async (t, items, known) => {
     if (!entries) return { id: item.id, ok: false, late: true, error: t('pa.notify.lateRunning') }
     const ids = new Set([item.id, ...(item.parts || []).map(part => part.id)])
     const ours = x => ids.has(x.record_id) || (x.group || []).some(id => ids.has(id))
-    const e = entries.find(x => !known.has(x.id) && ours(x))
-    if (!e) return { id: item.id, ok: false, error: t('pa.notify.lateNothing') }
+    const e = entries.find(x => (known ? !known.has(x.id) : x.kind !== 'failed') && ours(x))
+    if (!e) return { id: item.id, ok: false, error: t(known ? 'pa.notify.lateNothing' : 'pa.notify.lateUnknown') }
     if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
+    if ((e.kind === 'rejected') !== (decision === 'reject')) {
+      return { id: item.id, ok: false, error: t(e.kind === 'rejected' ? 'pa.notify.lateRejectedElsewhere' : 'pa.notify.lateAppliedElsewhere') }
+    }
     return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
       : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
   })
 }
 const timedOut = e => /timed? ?out|timeout/i.test(String(e?.message || e || ''))
 const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  if (!seenHistory.size) await api.history().catch(() => null)
-  const known = new Set(seenHistory)
+  if (!historyRead) await api.history().catch(() => null)
+  const known = historyRead ? new Set(seenHistory) : null
   try {
     return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
   } catch (e) {
-    if (timedOut(e)) return { ok: true, results: await settled(t, items, known) }
+    if (timedOut(e)) return { ok: true, results: await settled(t, items, known, decision) }
     const error = errText(e) || t('pa.notify.failed')
     return { ok: false, error, results: items.map(item => ({ id: item.id, ok: false, error })) }
   }
@@ -1269,7 +1285,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   }, [open])
   const { busy, run } = useRun(t, `${subsystem}:${item.id}`)
   const detailsId = `pa-details-${subsystem}-${item.id}`
-  const { leaving, leave } = useLeave(`${subsystem}:${item.id}`, onChanged)
+  const { leaving, leave } = useLeave(`${subsystem}:${item.id}`)
   const cardAt = useInert(leaving)
   const plain = item.plain || {}
   const stale = plain.stale || []
@@ -1294,6 +1310,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   const isNewSkill = groups.some(g => g.kind === 'new')
   const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)
   const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length && !fix && !stale.length
+  if (fixArmed && !fixUnreviewed) setFixArmed(false)
   const fixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
@@ -1481,7 +1498,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
   const { busy, run } = useRun(t, `skills:${item.id}`)
-  const { leaving, leave } = useLeave(`skills:${item.id}`, onChanged)
+  const { leaving, leave } = useLeave(`skills:${item.id}`)
   const cardAt = useInert(leaving)
   const parts = item.parts
   const n = parts.length
@@ -1503,6 +1520,7 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const canSkip = !hard.length && !stale.length && !fixes.length && unchecked
   const withFixBlocked = status !== 'done' || fixLeft.length > 0 || fixes.length > 0
   const fixUnreviewed = withFixBlocked && unchecked && edits > 0 && !fixLeft.length && !fixes.length && !stale.length
+  if (fixArmed && !fixUnreviewed) setFixArmed(false)
   const withFixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
@@ -2053,8 +2071,10 @@ function PendingList({ data, error, refresh, onChanged }) {
   const keys = items.map(({ subsystem, item }) => `${subsystem}:${item.id}`).join('\n')
   useEffect(() => {
     const here = new Set(keys.split('\n'))
-    setPicked(prev => ([...prev].every(key => here.has(key)) ? prev
-      : new Set([...prev].filter(key => here.has(key)))))
+    setPicked(prev => {
+      const kept = here.size > 1 ? [...prev].filter(key => here.has(key)) : []
+      return kept.length === prev.size ? prev : new Set(kept)
+    })
   }, [keys])
   const togglePick = key => setPicked(prev => {
     const next = new Set(prev)
@@ -2386,12 +2406,17 @@ function Pane() {
     announceChange()
     return until
   }
-  useEffect(() => () => {
-    for (const id of leaveTimers) window.clearTimeout(id)
-    leaveTimers.clear()
-    for (const [key, entry] of [...held]) if (entry.leaving) setHeld(key, null)
+  useEffect(() => {
+    paneRefresh = refreshAll
+    return () => {
+      if (paneRefresh === refreshAll) paneRefresh = null
+      for (const id of leaveTimers) window.clearTimeout(id)
+      leaveTimers.clear()
+      for (const [key, entry] of [...held]) if (entry.leaving) setHeld(key, null)
+    }
   }, [])
   useEffect(() => {
+    if (!seq) return
     const here = new Set(units(data).map(({ subsystem, item }) => `${subsystem}:${item.id}`))
     for (const [key, entry] of [...held]) {
       if (entry.leaving && (!here.has(key) || (entry.until && entry.until <= seq))) setHeld(key, null)
@@ -2489,13 +2514,13 @@ function Pane() {
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
         children: view === 'memory'
           ? jsx(MemoryView, {
-            data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshAll
+            data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane
           }, 'memory')
           : view === 'history'
             ? jsx(HistoryList, {
-              data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshAll
+              data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
             }, 'history')
-            : jsx(PendingList, { data, error, refresh, onChanged: refreshAll }, 'pending')
+            : jsx(PendingList, { data, error, refresh, onChanged: refreshPane }, 'pending')
       }, 'body'),
 
       jsxs('div', {

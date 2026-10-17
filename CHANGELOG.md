@@ -5,6 +5,69 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.13.1
+
+Four more independent reviews found 15 defects in 1.13.0 and 14 in four earlier 1.13.1 candidates;
+all of them are fixed here. One was introduced by 1.13.0 (a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
+did: fabricated quotes, malformed review answers, and writes that landed being reported as failed.
+Each defect has a regression check that failed on the code it was found in (`tests/regress_audit.py`,
+`tests/render_check.mjs`).
+
+### Fixed — the review gate
+
+* **A cut-off or malformed review answer fails the review.** When the model's answer stopped at its
+  length limit, 1.13.0 read a piece of it as a clean review and opened Approve. The same happened with
+  a findings list of plain text, an empty `{}`, or an answer with no findings at all. All of these now
+  fail the review, and Approve stays locked.
+* **Text sent in the second field name Hermes accepts for a memory edit is checked.** A memory edit
+  can carry its new text in a second field (`new_text`) that Hermes also applies. The rules, the AI
+  reviewer and the card read the usual field only, so non-English text could pass that way without a
+  check.
+* **Quotes, the whole class:**
+  * A made-up quote stitched from short common words with "..." (for example "Always ... owner") no
+    longer counts as verified.
+  * A correct short quote counts again when it is a whole word or command of the write, such as
+    "Привет", "Merci", "sudo" or "rm -rf ~". Its suggested translation can be applied. A piece from
+    inside a word, or a short word that is only in the rules, does not count. Quote marks, brackets or backticks
+    around a short quote are ignored.
+  * A quote of the whole note that a memory remove or replace deletes counts; the part of a note that
+    a patch keeps does not.
+  * Chinese and Japanese quotes with "..." count again.
+* **The language rule no longer locks English with maths or phonetics,** such as ℝⁿ, αβ, ΔΔG, 𝑥𝑦,
+  full-width letters or IPA, and not on symbol pairs such as `αβ/γδ` or `αβ γδ`. Greek locks from three
+  letters in a row or three short Greek words in a row ("Θα το δω"), and accents written as separate
+  marks or zero-width characters between letters no longer hide text in another script.
+* **A saved note written again without its final full stop** is caught as already saved.
+
+### Fixed — data
+
+* **A group member whose record file Windows kept locked** no longer comes back after the group was
+  applied. Before, approving it again applied it twice.
+* **A write whose note contains the word "Failed"** is no longer reported as failed when its record
+  file is briefly locked. Hermes' own count ("Approved 1") decides, not the text of the notes it echoes.
+* **A refused memory delete in the panel** says that the note changed and nothing was deleted. Before,
+  it showed a Hermes message meant for a pending write.
+
+### Fixed — the panel
+
+* **Once armed, "Apply unreviewed" follows the card.** If a refresh brings a new rule failure, makes
+  the card stale or starts the review, the confirm disarms. This works for single cards and groups.
+* **A decision that timed out is never shown another attempt's result.** If the history could not be
+  read before the click, the panel reports an apply or reject it then finds for that record, and
+  otherwise says it cannot tell whether the change was applied, points to the Applied tab and reads the
+  list again.
+* **A record decided somewhere else while the panel waited is reported as such.** If you approved but
+  it was rejected from chat (or the other way round), the panel says so instead of "Saved".
+* **Leaving the Approvals page during a decision** no longer leaves an empty gap for 15 seconds. The
+  page you come back to reads the list again.
+* **A lone remaining card drops its hidden tick**, so a later bulk action cannot include it unseen.
+* **No extra history read before every decision** while the history is empty.
+
+### Docs
+
+* The README says how to update: in the desktop app, use **Install from Git** with **Force reinstall**;
+  on the command line, `hermes plugins update`; it also covers pinned installs.
+
 ## 1.13.0
 
 An audit of 1.12.4 found 40 defects, each reproduced or traced to a line. All of them are fixed here,

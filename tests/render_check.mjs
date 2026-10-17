@@ -524,8 +524,12 @@ const React = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
+// The newest notice that answers an action. The arrival notice ("N writes await your approval") fires on its
+// own poll, so on a slower runner it can land after the answer; it is never the answer to a click.
+const lastSaid = () => stub.calls.notify.filter(m => !(m?.kind === 'info' && /awaits? your approval/.test(m?.message || ''))).at(-1)
 
-const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null }
+const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null,
+  history: null }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -664,6 +668,8 @@ async function mount(appLocale, parts = 'both') {
   const registrations = []
   // Requests in flight per route for THIS mount (1.13: a poll never has two requests open at once).
   const flight = { live: new Map(), peak: new Map(), total: new Map() }
+  // Every request of THIS mount in the order it was sent ("GET /pending", "POST /decide", ...).
+  const order = []
   const answer = async (path, opts) => {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
@@ -690,6 +696,8 @@ async function mount(appLocale, parts = 'both') {
         }
         if (path === '/decide' && REST.post === 'notok') return { ok: false, error: 'BACKEND-REASON-xyz' }
         if (REST.post === 'hold') return new Promise(() => {})
+        // `REST.gate`: a /decide waits on this promise, so a test can act while the decision is in flight.
+        if (path === '/decide' && REST.gate) await REST.gate
         if (path === '/fix' && REST.post === 'fixfail') {
           return { ok: false, error: 'Could not apply The record was left exactly as it was staged; nothing was written.' }
         }
@@ -722,9 +730,20 @@ async function mount(appLocale, parts = 'both') {
       // server clock an hour behind the panel's, `lateold` holds an older failed attempt read before the click.
       if (path === '/history?limit=50' && (REST.post === 'late' || REST.post === 'lateskew')) {
         const skew = REST.post === 'lateskew' ? 3600 : 0
-        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: 'apply', subsystem: 'skills',
+        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: REST.lateKind || 'apply', subsystem: 'skills',
           record_id: 'aaa11111', summary: 'late', files: [], undoable: true }] : []
         return { entries: [...late, ...HISTORY.entries], counts: HISTORY.counts }
+      }
+      // `latecold`: the history is unreadable until the decision reached the backend, then it shows only an
+      // older failed attempt — there was no baseline before the click to tell old rows from new ones.
+      if (path === '/history?limit=50' && REST.post === 'latecold') {
+        if (!REST.lateDecided) throw new Error('Request timed out after 30000ms')
+        const row = REST.coldRow
+          ? { id: 'a0a0a0a0', ts: Date.now() / 1000, kind: REST.coldRow, subsystem: 'skills', record_id: 'aaa11111',
+            summary: 'landed', files: [], undoable: REST.coldRow === 'apply' }
+          : { id: 'f0f0f0f0', ts: Date.now() / 1000 - 600, kind: 'failed', subsystem: 'skills',
+            record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }
+        return { entries: [row, ...HISTORY.entries], counts: HISTORY.counts }
       }
       if (path === '/history?limit=50' && REST.post === 'lateold') {
         return { entries: [{ id: 'f0f0f0f0', ts: Date.now() / 1000 - 60, kind: 'failed', subsystem: 'skills',
@@ -737,7 +756,7 @@ async function mount(appLocale, parts = 'both') {
         '/pending': REST.pending || left(pendingFor(REST.mode)),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
           : pendingFor(REST.mode).counts), records: pendingFor(REST.mode).records },
-        '/history?limit=50': REST.mode === 'restore' ? HISTORY_RESTORE
+        '/history?limit=50': REST.history ? REST.history : REST.mode === 'restore' ? HISTORY_RESTORE
           : REST.mode === 'grouphist' ? HISTORY_GROUP
             : REST.mode === 'amendhist' ? HISTORY_AMENDED : HISTORY,
         '/memory': MEMORY
@@ -748,6 +767,7 @@ async function mount(appLocale, parts = 'both') {
   const ctx = {
     rest: async (path, opts) => {
       const route = `${opts?.method || 'GET'} ${path}`
+      order.push(route)
       flight.live.set(route, (flight.live.get(route) || 0) + 1)
       flight.peak.set(route, Math.max(flight.peak.get(route) || 0, flight.live.get(route)))
       flight.total.set(route, (flight.total.get(route) || 0) + 1)
@@ -803,7 +823,7 @@ async function mount(appLocale, parts = 'both') {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title, flight }
+  return { hostEl, root, chipEl, chipRoot, text, chipText: chipEl.textContent.trim(), registrations, title, flight, order }
 }
 
 // The register-time label path is exercised for real: `ctx.i18n.t` resolves through the SAME
@@ -1094,12 +1114,12 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   must(put?.text, ['MEMORY.md is 99% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
   if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
   if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
-  if (stub.calls.notify[stub.calls.notify.length - 1]?.message !== 'Merge request is in the chat box — read it, then send.') {
+  if (lastSaid()?.message !== 'Merge request is in the chat box — read it, then send.') {
     fail('placing the draft was not confirmed')
   }
   stub.state.composerLive = false
   await click(draft, 40)
-  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  const told = lastSaid()
   if (told?.kind !== 'warning' || !/No chat box is open/.test(told?.message || '')) fail(`no chat box went unreported: ${JSON.stringify(told)}`)
   stub.state.composerLive = true
 }
@@ -1311,7 +1331,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (shape !== 'memory:reject:abc12345 skills:reject:def67890+aaa11111') {
     fail(`bulk Reject does not act on every selected record, the flagged one included: ${shape}`)
   }
-  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  const said = lastSaid()
   if (said?.kind !== 'success' || said?.message !== '3 of 3 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
 
@@ -1322,7 +1342,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(pickOf(partial, 'skills:def67890'))
   await click(buttons(barOf(partial), /^Approve 2$/)[0])
   await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
-  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  const told = lastSaid()
   if (told?.kind !== 'error' || told?.message !== '1 of 2 done · 1 record failed: Hermes refused it') {
     fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
   }
@@ -1339,7 +1359,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(pickOf(stale, 'skills:def67890'))
   await click(buttons(barOf(stale), /^Approve 2$/)[0])
   await click(stale.hostEl.querySelector('.pa-bulk-go'), 80)
-  const staleSaid = stub.calls.notify[stub.calls.notify.length - 1]
+  const staleSaid = lastSaid()
   if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 done · 1 record failed: ${STALE_ERR}`) {
     fail(`a stale record in a bulk approve is not counted as a failure with its reason: ${JSON.stringify(staleSaid)}`)
   }
@@ -1379,7 +1399,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const stale = await mount('en')
   const reads = GETS.filter(p => p === '/pending').length
   await click(buttons(cellOf(stale, 'skills:aaa11111'), /^Approve$/)[0], 120)
-  const warned = stub.calls.notify[stub.calls.notify.length - 1]
+  const warned = lastSaid()
   if (warned?.kind !== 'warning' || warned?.message !== STALE_ERR) {
     fail(`a stale single Approve is not a warning toast with its error: ${JSON.stringify(warned)}`)
   }
@@ -1390,18 +1410,21 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
-  for (const [mode, kind, text] of [
+  for (const [mode, kind, text, lateKind] of [
     ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
-    ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
+    ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
+    ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
     REST.post = mode
+    REST.lateKind = lateKind
     const late = await mount('en')
     await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
-    const said = stub.calls.notify[stub.calls.notify.length - 1]
+    const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a /decide that outlived the request timeout (${mode}) is reported wrong: ${JSON.stringify(said)}`)
     }
     REST.post = 'normal'
+    REST.lateKind = undefined
     late.hostEl.remove()
   }
 
@@ -1413,7 +1436,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (rejected.length !== 1 || rejected[0].body.decision !== 'reject' || rejected[0].body.ids.join() !== 'aaa11111') {
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
-  const toast = stub.calls.notify[stub.calls.notify.length - 1]
+  const toast = lastSaid()
   if (toast?.kind !== 'success' || !/restore it from the “Applied” tab/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
@@ -1829,7 +1852,7 @@ REST.scan = 'ok'
   if (restorePost.length !== 1 || restorePost[0].body.id !== RESTORE_ID) {
     fail(`Restore did not post /restore once with the row id: ${JSON.stringify(restorePost.map(p => p.body))}`)
   }
-  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  const said = lastSaid()
   if (said?.kind !== 'success' || !said.message.includes(`#${RESTORED_AS}`)) fail(`Restore did not toast success: ${JSON.stringify(said)}`)
   if (GETS.filter(p => p === '/pending').length <= pendingReads) fail('Restore does not re-read the pending list')
   if (GETS.filter(p => p === '/history?limit=50').length <= historyReads) fail('Restore does not re-read the history')
@@ -1913,7 +1936,7 @@ REST.scan = 'ok'
   if (body.decision !== 'reject' || !same(body.groups, [STALE_GROUP]) || (body.ids || []).length) {
     fail(`"Reject all 3" did not send groups:[id]: ${JSON.stringify(body)}`)
   }
-  const toast = stub.calls.notify.at(-1)
+  const toast = lastSaid()
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
   // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
   await act(async () => { await new Promise(r => setTimeout(r, 500)) })
@@ -1983,7 +2006,7 @@ REST.scan = 'ok'
   if (postsTo('/undo').at(-1)?.body?.id !== 'abab0101') fail('Undo on a group row did not post the row id')
   await click(buttons(rejected(), /^Restore$/)[0], 80)
   if (postsTo('/restore').at(-1)?.body?.id !== GROUP_REJECTED) fail('Restore on a group row did not post the row id')
-  const back = stub.calls.notify.at(-1)
+  const back = lastSaid()
   if (back?.kind !== 'success' || !GROUP_RESTORED.every(id => back.message.includes(`#${id}`))) {
     fail(`a group Restore does not name every new id: ${JSON.stringify(back)}`)
   }
@@ -2187,7 +2210,7 @@ REST.scan = 'ok'
     const h = await mount('en', 'page')
     const from = reads()
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
-    const said = stub.calls.notify.at(-1)
+    const said = lastSaid()
     if (said?.kind !== 'error' || said?.message !== text) {
       fail(`a failed /decide (${mode}) does not show the backend's own error: ${JSON.stringify(said)}`)
     }
@@ -2203,7 +2226,7 @@ REST.scan = 'ok'
     REST.post = mode
     const h = await mount('en', 'page')
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
-    const said = stub.calls.notify.at(-1)
+    const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a late /decide (${mode}) is judged by the clock or by a row read before the click: ${JSON.stringify(said)}`)
     }
@@ -2404,6 +2427,169 @@ REST.scan = 'ok'
   REST.pending = null
   partial.root.unmount()
   partial.hostEl.remove()
+}
+
+// --- 28) 1.13.1: an armed confirm follows the data; late answers need a baseline; remount; lone pick ---
+// a) Once "Approve with the fix" was armed into "Apply unreviewed", a refresh that added a rule failure the
+//    fix leaves behind, marked the record stale, or started / finished the review left the red confirm live,
+//    and a click sent skip_review + with_edits. The armed state now holds only while its unlock conditions
+//    do: the button looks exactly like a fresh mount of the same data, and returning conditions never re-arm.
+// b) After a /decide timeout with no history read before the click, ANY history row of the record was taken
+//    as this click's answer (an old failed attempt became the result). c) An empty history counted as "never
+//    read", so every decision waited on an extra GET /history before POST /decide.
+// d) Leaving the page and coming back while a decision was in flight: the leave timer called the old pane's
+//    dead pollers, nothing was read and the decided card stayed an invisible gap until the next poll.
+// e) With two cards both ticked, deciding one kept the other selected without a box; a new record then
+//    showed "1 of 2 selected" with the old card pre-ticked.
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const look = (h, key) => {
+    const b = buttons(cellOf(h, key), /^(Approve with the fix|Apply unreviewed)$/)[0]
+    return { b, state: { text: b?.textContent, variant: b?.getAttribute('data-variant'),
+      held: Boolean(b?.classList.contains('pa-held')), aria: b?.getAttribute('aria-disabled') || null,
+      warn: /not checked against your rules/.test(cellOf(h, key)?.textContent || '') } }
+  }
+  const armedCase = async (label, key, first, next, back) => {
+    REST.pending = first
+    const h = await mount('en', 'page')
+    if (look(h, key).b) await click(look(h, key).b, 30)
+    if (look(h, key).state.text !== 'Apply unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
+    REST.pending = next
+    await click(h.hostEl.querySelector('.pa-refresh'), 120)
+    const after = look(h, key)
+    const from = sends().length
+    if (after.b) await click(after.b, 80)
+    const sent = sends().slice(from).map(p => p.body)
+    if (back) {
+      REST.pending = first
+      await click(h.hostEl.querySelector('.pa-refresh'), 120)
+      const again = look(h, key)
+      if (again.state.text !== 'Approve with the fix' || again.state.warn) {
+        fail(`[${label}] the confirm came back armed when the conditions returned: ${JSON.stringify(again.state)}`)
+      }
+      const before = sends().length
+      if (again.b) await click(again.b, 30)
+      if (sends().length !== before) fail(`[${label}] after the conditions returned one click sent the fix unconfirmed`)
+    }
+    h.root.unmount()
+    h.hostEl.remove()
+    REST.pending = next
+    const c = await mount('en', 'page')
+    const fresh = look(c, key).state
+    c.root.unmount()
+    c.hostEl.remove()
+    if (JSON.stringify(after.state) !== JSON.stringify(fresh)) {
+      fail(`[${label}] the armed confirm survived the refresh: ${JSON.stringify(after.state)} vs a fresh mount ${JSON.stringify(fresh)}`)
+    }
+    const want = fresh.held ? 0 : 1
+    if (sent.length !== want || sent.some(b => b.skip_review)) {
+      fail(`[${label}] a click after the refresh sent ${JSON.stringify(sent.map(b => ({ skip_review: b.skip_review, with_edits: b.with_edits })))}`)
+    }
+  }
+  const unreviewed = (left, extra = {}) => ({ ...PENDING, skills: PENDING.skills.map(s => (s.id === 'aaa11111'
+    ? { ...s, plain: { ...s.plain, ...(extra.plain || {}) },
+        review: { status: 'unassigned', edits: 1, fix_left: left,
+          hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }], ...(extra.review || {}) } } : s)) })
+  const LEFT = 'new-skill: still missing the author line.'
+  await armedCase('card: fix_left appears', 'skills:aaa11111', unreviewed([]), unreviewed([LEFT]), true)
+  await armedCase('card: stale appears', 'skills:aaa11111', unreviewed([]),
+    unreviewed([], { plain: { stale: ['The skill changed on disk after this card was drawn.'] } }))
+  await armedCase('card: review starts', 'skills:aaa11111', unreviewed([]), unreviewed([], { review: { status: 'running' } }))
+  await armedCase('card: review done', 'skills:aaa11111', unreviewed([]),
+    unreviewed([], { review: { status: 'done', verdict: 'fix', summary: 'Checked.' } }))
+  const G_UNREV = { status: 'unassigned', edits: 1, fix_left: [], siblings: 0,
+    hard: [{ change: 1, name: 'alpha-skill', text: REVIEW_HARD, edit: RULE_EDIT }] }
+  const groupStale = d => ({ ...d, groups: { ...d.groups, skills: d.groups.skills.map(g => (g.id === CLEAN_GROUP
+    ? { ...g, stale: [{ change: 2, text: 'GROUP-STALE-LINE' }] } : g)) } })
+  const gKey = `skills:${CLEAN_GROUP}`
+  await armedCase('group: fix_left appears', gKey, groupsWith(G_UNREV, STALE_REVIEW),
+    groupsWith({ ...G_UNREV, fix_left: ['alpha-skill: still missing the author line.'] }, STALE_REVIEW), true)
+  await armedCase('group: stale appears', gKey, groupsWith(G_UNREV, STALE_REVIEW),
+    groupStale(groupsWith(G_UNREV, STALE_REVIEW)))
+  await armedCase('group: review starts', gKey, groupsWith(G_UNREV, STALE_REVIEW),
+    groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
+  REST.pending = null
+
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.'
+  for (const [row, button] of [[null, 'Approve'], ['apply', 'Approve'], ['rejected', 'Approve'], ['apply', 'Reject']]) {
+    const applied = row === 'apply' && button === 'Approve'
+    REST.post = 'latecold'
+    REST.coldRow = row
+    const cold = await mount('en', 'page')
+    const coldReads = cold.flight.total.get('GET /pending') || 0
+    await click(buttons(cellOf(cold, 'skills:aaa11111'), new RegExp(`^${button}$`))[0], applied ? 700 : 200)
+    const coldSaid = lastSaid()
+    const want = applied ? coldSaid?.kind !== 'error' && /applied/i.test(coldSaid?.message || '')
+      : row === null ? coldSaid?.kind === 'error' && coldSaid?.message === UNKNOWN
+        : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied' : 'rejected', 'i').test(coldSaid?.message || '')
+    if (!want) {
+      fail(`a late ${button} with no history baseline, history then showing ${row || 'only an older failed'} row, told: ${JSON.stringify(coldSaid)}`)
+    }
+    if ((cold.flight.total.get('GET /pending') || 0) <= coldReads) fail('a late /decide with no history baseline did not read the list again')
+    REST.post = 'normal'
+    REST.coldRow = null
+    cold.root.unmount()
+    cold.hostEl.remove()
+  }
+
+  REST.history = { entries: [], counts: { total: 0, undoable: 0, applied: 0, failed: 0 } }
+  const empty = await mount('en', 'page')
+  await wait(60)
+  const at = empty.order.length
+  await click(buttons(cellOf(empty, 'skills:aaa11111'), /^Approve$/)[0], 600)
+  const seq = empty.order.slice(at).filter(r => !r.includes('/scan'))
+  const first = seq.indexOf('POST /decide')
+  if (first < 0 || seq.slice(0, first).includes('GET /history?limit=50')) {
+    fail(`an empty history makes a decision read it again before /decide: ${JSON.stringify(seq.slice(0, first + 1))}`)
+  }
+  REST.history = null
+  empty.root.unmount()
+  empty.hostEl.remove()
+
+  REST.gone = new Set()
+  let open = null
+  REST.gate = new Promise(r => { open = r })
+  const away = await mount('en', 'page')
+  await click(buttons(cellOf(away, 'skills:aaa11111'), /^Approve$/)[0], 30)
+  const pageReg = away.registrations.find(r => r.area === 'routes')
+  await act(async () => { away.root.unmount() })
+  const back = { hostEl: document.createElement('div') }
+  document.body.appendChild(back.hostEl)
+  const backRoot = createRoot(back.hostEl)
+  await act(async () => { backRoot.render(React.createElement(pageReg.render)) })
+  await wait(100)
+  const backReads = away.flight.total.get('GET /pending') || 0
+  REST.gate = null
+  await act(async () => { open() })
+  await wait(700)
+  if ((away.flight.total.get('GET /pending') || 0) <= backReads) {
+    fail('a decision answered after the page was left and reopened did not read the list again')
+  }
+  if (cellOf(back, 'skills:aaa11111')) fail('a decision answered after a remount left its card as a hidden gap until the next poll')
+  await act(async () => { backRoot.unmount() })
+  back.hostEl.remove()
+  away.hostEl.remove()
+  REST.gone = null
+
+  const two = { counts: { memory: 1, skills: 1 }, memory: PENDING.memory, skills: [PENDING.skills[1]] }
+  REST.pending = two
+  const pair = await mount('en', 'page')
+  for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
+  if (pair.hostEl.querySelector('.pa-bulk-count')?.textContent !== '2 of 2 selected') fail('setup: two cards could not both be ticked')
+  REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
+  await click(buttons(cellOf(pair, 'skills:aaa11111'), /^Approve$/)[0], 700)
+  REST.pending = { ...two, skills: [PENDING.skills[0]] }
+  await click(pair.hostEl.querySelector('.pa-refresh'), 150)
+  const ticked = [...pair.hostEl.querySelectorAll('input.pa-pick')].filter(b => b.checked).map(b => b.getAttribute('aria-label'))
+  const said = pair.hostEl.querySelector('.pa-bulk-count')?.textContent
+  if (ticked.length || said !== '0 of 2 selected') {
+    fail(`a selection outlived the bulk bar: a new record shows "${said}" with ${JSON.stringify(ticked)} pre-ticked`)
+  }
+  REST.pending = null
+  pair.root.unmount()
+  pair.hostEl.remove()
 }
 
 if (problems.length) {

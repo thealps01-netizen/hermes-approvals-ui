@@ -73,6 +73,20 @@ hermes plugins install thealps01-netizen/hermes-approvals-ui --enable
 The app copies the Desktop UI half (`desktop/plugin.js`) into its desktop plugins folder by itself;
 there is no manual copy step.
 
+**Updating.** In the desktop app, run **Settings → Plugins → Install from Git** again with the same
+address and tick **Force reinstall (replace if already installed)**; your settings and enable state
+stay. From the command line:
+
+```bash
+hermes plugins update pending-approvals
+```
+
+An install pinned to a commit (the optional pin field at install, shown as `pinned @ <sha>`) refuses
+`update`; reinstall it with the new release's commit in the pin field, or with
+`hermes plugins install https://github.com/thealps01-netizen/hermes-approvals-ui --force --ref <sha>`.
+Restart the desktop app after an update: the backend is loaded at start, and the app copies the newer
+Desktop UI half on its next start.
+
 Set the owner name the author rule expects, and assign the review model:
 
 ```yaml
@@ -171,7 +185,8 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   * **Rule checks** (no model, always on) lock Approve outright: a new skill without the owner's
     `author:` line (the name comes from `plugins.entries.pending-approvals.skill_author`), an edit to a
     skill that is hub-installed, bundled or written by someone else, text in a non-Latin script
-    (Cyrillic, Greek, Arabic, CJK, …), and a line or memory note that is already saved. A failed rule
+    (Cyrillic, Greek, Arabic, CJK, …; two letters in a row, three for Greek so that symbols such as
+    `αβ` or `ΔΔG` pass), and a line or memory note that is already saved. A failed rule
     check cannot be skipped. Non-English text written in Latin letters (French, Turkish, …) cannot be
     told from English by its letters; the AI review reports it.
   * **An AI review** reads the write next to the current skill or memory file, the other writes
