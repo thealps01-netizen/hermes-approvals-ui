@@ -844,6 +844,21 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.13.2 — tried in the real app
+
+* **Skill lookup per list.** Core `_find_skill` scans every installed skill and parses each frontmatter
+  before it reports a miss, so a list of N pending new skills cost N × installed parses (300 × 58 took
+  17 s, past the desktop's 30 s IPC timeout once reviews held the lock). Inside one `_memo()` request the
+  backend reads the installed directory names and frontmatter names once, through core's own
+  `_iter_skill_dirs` and `_read_frontmatter_name`, and answers a definite miss itself. A name that is
+  known, or a categorized name with a slash, still goes to core, so hits keep core's precedence and its
+  ambiguity refusal. Outside a memo nothing is cached. Memo blocks only read, so the snapshot cannot
+  miss a skill created in the same block.
+* **Undo of a created file.** `/undo` lists deleted files under `removed`, not `restored`; the notice
+  shows both.
+* **Bulk Approve advice.** The confirmation counts selected records whose finished review says reject.
+  It does not lock Approve: a reject verdict is advice, while rule checks and stale records already lock.
+
 ## 1.13.1 — three more reviews
 
 * **Short quotes.** A quote that squashes to fewer than 8 characters counts when it is a whole word of

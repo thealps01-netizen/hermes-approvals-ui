@@ -674,6 +674,7 @@ async function mount(appLocale, parts = 'both') {
       if (opts?.method === 'POST') {
         stub.calls.posts.push({ path, body: opts.body })
         if (path === '/undo') {
+          if (REST.undoReply) return REST.undoReply
           if (opts.body.id === 'cc33dd44') {
             return { ok: false, error: 'This record has no undo copy (it may have been rejected ' +
               'or the copy cleaned up) — no file was touched.' }
@@ -1160,6 +1161,19 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(forced, 60)
   const after = stub.calls.posts.filter(p => p.path === '/undo')
   if (after.length !== 2 || after[1].body.force !== true) fail(`the forced undo request is wrong: ${JSON.stringify(after)}`)
+  const restoredSaid = lastSaid()?.message || ''
+  if (!restoredSaid.includes('memories/MEMORY.md')) fail(`the undo notice does not name the restored file: ${restoredSaid}`)
+}
+{
+  // An undo of a write that created a file deletes it: the backend lists it under `removed`, not `restored`.
+  REST.undoReply = { ok: true, restored: [], removed: ['skills/e2e-demo/SKILL.md'] }
+  const undoBtn = buttons(en.hostEl, /^Undo$/)[0]
+  await click(undoBtn, 60)
+  REST.undoReply = undefined
+  const said = lastSaid()?.message || ''
+  if (!said.includes('skills/e2e-demo/SKILL.md') || /no changed files/.test(said)) {
+    fail(`an undo that deleted a created file says nothing changed: ${said}`)
+  }
 }
 {
   const cards = () => [...en.hostEl.querySelectorAll('.pa-card')]
@@ -1334,6 +1348,21 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const said = lastSaid()
   if (said?.kind !== 'success' || said?.message !== '3 of 3 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
+
+  const ok = { status: 'done', verdict: 'approve', summary: 'Fine.', findings: [], hard: [] }
+  for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised rejecting 1 of them.']]) {
+    REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict } })
+    const advisedBulk = await mount('en')
+    await click(buttons(barOf(advisedBulk), /^Select all$/)[0])
+    await click(pickOf(advisedBulk, 'skills:def67890'))
+    await click(buttons(barOf(advisedBulk), /^Approve 2$/)[0])
+    const armed = barOf(advisedBulk)?.textContent || ''
+    if (line ? !armed.includes(line) : /advised rejecting/.test(armed)) {
+      fail(`bulk Approve with a ${verdict} verdict selected arms with: ${armed}`)
+    }
+    advisedBulk.hostEl.remove()
+  }
+  REST.pending = null
 
   REST.post = 'bulkfail'
   const partial = await mount('en')

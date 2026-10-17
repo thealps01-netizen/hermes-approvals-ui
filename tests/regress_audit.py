@@ -944,6 +944,37 @@ def zero_width_marks_do_not_hide_other_scripts():
         assert env.pa._foreign_at(text, set()) >= 0, f"zero-width marks hid foreign text: {text!r}"
 
 
+@case
+def new_skills_do_not_rescan_every_skill():
+    """Each staged new skill must not make core re-read every installed SKILL.md: the list stalled at 300."""
+    from tools import skill_manager_tool as sm
+    from tools import write_approval as wa
+
+    env = Env()
+    for n in range(6):
+        env.skill(f"have-{n}", "body\n")
+    env.skill("shown-dir", "body\n", extra="")
+    shown = env.home / "skills" / "cat" / "shown-dir" / "SKILL.md"
+    shown.write_text(shown.read_text(encoding="utf-8").replace("name: shown-dir", "name: Shown Name"),
+                     encoding="utf-8")
+    for n in range(20):
+        env.stage("skills", f"9300{n:04d}", {"action": "create", "name": f"brand-new-{n}",
+                                            "content": f"---\nname: brand-new-{n}\ndescription: x\n---\nbody\n"})
+    reads = []
+    real = sm._read_frontmatter_name
+    sm._read_frontmatter_name = lambda path: reads.append(path) or real(path)
+    try:
+        env.listing()
+    finally:
+        sm._read_frontmatter_name = real
+    assert len(reads) <= 4 * 7, f"/pending read SKILL.md frontmatter {len(reads)} times for 7 skills"
+    with env.pa._memo():
+        for name in ("have-3", "Shown Name", "shown-dir", "cat/have-1", "brand-new-4", "nope"):
+            core = wa._find_skill_path(name)
+            mine = env.pa._skill_dir(name)
+            assert (Path(core) if core else None) == mine, f"lookup of {name!r}: core {core}, panel {mine}"
+
+
 def _run_one(name: str) -> int:
     try:
         CASES[name]()

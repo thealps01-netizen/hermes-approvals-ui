@@ -1,6 +1,6 @@
 name: pending-approvals
 label: Approvals
-version: 1.13.1
+version: 1.13.2
 requires_hermes: ">=0.22.0"
 description: >-
   Approvals — review, approve and undo the memory/skill writes Hermes is holding for approval.

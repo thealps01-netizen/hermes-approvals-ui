@@ -5,6 +5,27 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.13.2
+
+Found by running the released 1.13.1 in the real Hermes desktop app, in a separate test profile with a
+local stand-in for the review model. Each fix has a check that fails on 1.13.1.
+
+### Fixed
+
+* **The Approvals page opens with many skill writes waiting.** For every pending new skill the list
+  asked Hermes to find the skill, and Hermes read every installed skill's file to answer that it does
+  not exist yet. With 300 new skills waiting and 58 installed, building the list took 17 seconds and the
+  page showed "Timed out connecting to Hermes backend". The installed skill names are now read once per
+  list; the page opens in about 2 seconds. Skills that exist are still found by Hermes itself.
+* **Undo names a file it deleted.** Undoing a write that created a file deletes that file, but the
+  notice said "Undone: no changed files". It now names the file, for example
+  "Undone: memories/MEMORY.md (deleted)".
+
+### Changed
+
+* **Bulk Approve says when the AI review advised against a selected record.** The confirmation now adds
+  "The AI review advised rejecting N of them." when it applies.
+
 ## 1.13.1
 
 Four more independent reviews found 15 defects in 1.13.0 and 14 in four earlier 1.13.1 candidates;
