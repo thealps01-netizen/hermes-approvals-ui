@@ -659,6 +659,7 @@ const decided = body => [...decidedGroups(body), ...body.ids.map(id => {
     return { id, ok: false, stale: true, error: STALE_ERR }
   }
   if (body.decision === 'reject') return { id, ok: true, message: 'Rejected.', history_id: `h-${id}` }
+  if (REST.post === 'coremsg') return { id, ok: true, message: 'Approved 1 skill write(s).' }
   return { id, ok: true, message: '1 operation(s) applied.' }
 })]
 let version = 0
@@ -841,7 +842,7 @@ const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'Applied', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
+must(en.text, ['Approvals', 'Pending', 'History', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
   'Looks fine', 'New skill', 'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
 noRawKeys(en.text, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
@@ -880,7 +881,7 @@ for (const mounted of [en, other]) {
       selected[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!now || !/Applied/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
+    if (!now || !/History/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
     if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
     const panel = en.hostEl.querySelector('[role="tabpanel"]')
     if (!panel || panel.getAttribute('aria-labelledby') !== now?.id) fail('the tab panel is not labelled by its tab')
@@ -1093,7 +1094,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
-  must(en.hostEl.textContent, ['About to delete — undoable from the “Applied” tab'], 'delete confirmation copy')
+  must(en.hostEl.textContent, ['About to delete — undoable from the “History” tab'], 'delete confirmation copy')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/memory/delete')
   if (!post || post.body.target !== 'memory' || post.body.text !== 'A note') {
@@ -1126,8 +1127,8 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 }
 
 // --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
-const appliedTab = tab(en.hostEl, /Applied/)
-if (!appliedTab) fail('the Applied tab is missing')
+const appliedTab = tab(en.hostEl, /History/)
+if (!appliedTab) fail('the History tab is missing')
 await click(appliedTab, 60)
 must(en.hostEl.textContent, ['2 files changed outside the pane', 'Approved and applied', 'Rejected',
   'Changed outside the pane', 'Approve failed'], 'applied tab')
@@ -1301,7 +1302,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
-  if (picks.some(p => !/^Select this record #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
+  if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
   must(bar?.textContent, ['0 of 3 selected', 'Select all'], 'bulk bar idle')
@@ -1346,7 +1347,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail(`bulk Reject does not act on every selected record, the flagged one included: ${shape}`)
   }
   const said = lastSaid()
-  if (said?.kind !== 'success' || said?.message !== '3 of 3 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
+  if (said?.kind !== 'success' || said?.message !== '3 of 3 rejected') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
 
   const ok = { status: 'done', verdict: 'approve', summary: 'Fine.', findings: [], hard: [] }
@@ -1383,7 +1384,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(buttons(barOf(partial), /^Approve 2$/)[0])
   await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
   const told = lastSaid()
-  if (told?.kind !== 'error' || told?.message !== '1 of 2 done · 1 record failed: Hermes refused it') {
+  if (told?.kind !== 'error' || told?.message !== '1 of 2 approved · 1 record failed: Hermes refused it') {
     fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
   }
   const versions = posts().slice(from0).map(p => JSON.stringify(p.body.versions)).join(' ')
@@ -1400,7 +1401,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(buttons(barOf(stale), /^Approve 2$/)[0])
   await click(stale.hostEl.querySelector('.pa-bulk-go'), 80)
   const staleSaid = lastSaid()
-  if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 done · 1 record failed: ${STALE_ERR}`) {
+  if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 approved · 1 record failed: ${STALE_ERR}`) {
     fail(`a stale record in a bulk approve is not counted as a failure with its reason: ${JSON.stringify(staleSaid)}`)
   }
   REST.post = 'normal'
@@ -1451,7 +1452,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
   for (const [mode, kind, text, lateKind] of [
-    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
+    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
     ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
     ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
@@ -1477,7 +1478,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
   const toast = lastSaid()
-  if (toast?.kind !== 'success' || !/restore it from the “Applied” tab/.test(toast?.message || '')) {
+  if (toast?.kind !== 'success' || !/restore it from the “History” tab/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
   rej.hostEl.remove()
@@ -1596,7 +1597,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
     fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
   }
-  await click(tab(held.hostEl, /Applied/))
+  await click(tab(held.hostEl, /History/))
   if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
   if (!held.hostEl.querySelector('.pa-root > div:nth-child(3) [data-slot="loader"]')) {
     fail('no kit Loader while the history loads')
@@ -1838,6 +1839,14 @@ REST.scan = 'ok'
       || doubt[0]?.querySelector('[data-slot="badge"]')?.getAttribute('data-variant') !== 'muted') {
     fail('an unverified finding does not carry the muted "Unverified quote" tag')
   }
+  const doubtBadge = doubt[0]?.querySelector('[data-slot="badge"]')
+  if (!/does not count toward the verdict/.test(doubtBadge?.getAttribute('aria-description') || '')
+      || !/does not count toward the verdict/.test(doubtBadge?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
+    fail('the "Unverified quote" tag does not say what it means')
+  }
+  if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
+    fail('an unverified quote is labelled "In the write", next to a tag saying it was not found there')
+  }
   if ((review?.textContent || '').includes('yyy') || buttons(card, /^Approve with the fix$/).length) {
     fail('an unverified finding offers its edit')
   }
@@ -1847,7 +1856,7 @@ REST.scan = 'ok'
   const want = {
     cut: 'The reviewer saw a shortened input; it left out 12,400 characters of the current target, '
       + '1 character of the other pending writes to this file.',
-    carried: 'Approved since this review: #bbb22222.',
+    carried: 'Approved since this review: #bbb22222. It changed the same file',
     siblings: 'Reviewed together with 2 other pending writes to this file.',
     outdated: 'Your rules in USER.md changed after this review'
   }
@@ -1869,7 +1878,7 @@ REST.scan = 'ok'
 
   REST.mode = 'restore'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /Applied/), 60)
+  await click(tab(hist.hostEl, /History/), 60)
   const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
   const rowOf = text => rows.find(c => c.textContent.includes(text))
   const restorable = rowOf('new-skill rejected')
@@ -2034,7 +2043,7 @@ REST.scan = 'ok'
 
   REST.mode = 'grouphist'
   const h = await mount('en', 'page')
-  await click(tab(h.hostEl, /Applied/), 60)
+  await click(tab(h.hostEl, /History/), 60)
   const histRows = [...h.hostEl.querySelectorAll('.pa-card')]
   const applied = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('alpha-skill · 2 changes'))
   const rejected = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('beta-skill · 3 changes'))
@@ -2157,7 +2166,7 @@ REST.scan = 'ok'
 
   REST.mode = 'amendhist'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /Applied/), 60)
+  await click(tab(hist.hostEl, /History/), 60)
   const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
   const rowOf = text => rows.find(c => c.textContent.includes(text))
   const fixedRow = rowOf('patch in user profile')
@@ -2201,7 +2210,7 @@ REST.scan = 'ok'
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the “could not refresh” notice offers no kit Retry')
   if (retry) await click(retry, 80)
   if (kept.hostEl.querySelector('.pa-stale')) fail('the “could not refresh” notice stays after a successful Retry')
-  await click(tab(kept.hostEl, /Applied/), 40)
+  await click(tab(kept.hostEl, /History/), 40)
   REST.mode = 'fail'
   await click(kept.hostEl.querySelector('.pa-refresh'), 80)
   if (kept.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed refresh replaced the loaded history with the error state')
@@ -2261,7 +2270,7 @@ REST.scan = 'ok'
     h.hostEl.remove()
   }
   for (const [mode, kind, text] of [
-    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
     ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
     REST.post = mode
     const h = await mount('en', 'page')
@@ -2292,14 +2301,14 @@ REST.scan = 'ok'
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
   const before = sends()
   await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
-  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /History/), 5)
   await click(tab(h.hostEl, /Pending/), 5)
   const cell0 = cellOf(h, 'skills:aaa11111')
   const during = cell0 ? buttons(cell0, /^Approve$/)[0] : null
   if (during && !during.disabled) fail('switching tabs while a decision is in flight brought its Approve back enabled')
   if (during) await click(during, 5)
   await wait(90)
-  await click(tab(h.hostEl, /Applied/), 5)
+  await click(tab(h.hostEl, /History/), 5)
   await click(tab(h.hostEl, /Pending/), 5)
   const out = cellOf(h, 'skills:aaa11111')
   if (out) {
@@ -2333,7 +2342,7 @@ REST.scan = 'ok'
   let from = reads()
   await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
   grew(from, 'a decision')
-  await click(tab(all.hostEl, /Applied/), 60)
+  await click(tab(all.hostEl, /History/), 60)
   from = reads()
   await click(buttons(all.hostEl, /^Undo$/)[0], 200)
   grew(from, 'an undo')
@@ -2552,7 +2561,7 @@ REST.scan = 'ok'
     groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
   REST.pending = null
 
-  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.'
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “History” tab. The list is read again.'
   for (const [row, button] of [[null, 'Approve'], ['apply', 'Approve'], ['rejected', 'Approve'], ['apply', 'Reject']]) {
     const applied = row === 'apply' && button === 'Approve'
     REST.post = 'latecold'
@@ -2563,7 +2572,7 @@ REST.scan = 'ok'
     const coldSaid = lastSaid()
     const want = applied ? coldSaid?.kind !== 'error' && /applied/i.test(coldSaid?.message || '')
       : row === null ? coldSaid?.kind === 'error' && coldSaid?.message === UNKNOWN
-        : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied' : 'rejected', 'i').test(coldSaid?.message || '')
+        : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied|approved' : 'rejected', 'i').test(coldSaid?.message || '')
     if (!want) {
       fail(`a late ${button} with no history baseline, history then showing ${row || 'only an older failed'} row, told: ${JSON.stringify(coldSaid)}`)
     }
@@ -2630,6 +2639,97 @@ REST.scan = 'ok'
   REST.pending = null
   pair.root.unmount()
   pair.hostEl.remove()
+}
+
+// --- UI review: keyboard, screen reader and plain wording --------------------------------------
+// Found by using the panel in the real app with the keyboard only: no focus ring, a held button
+// whose reason only a mouse hover could show, Esc ignored by the bulk confirm, focus lost to the
+// page top after a decision, every Approve read out with no record name, "5 dk. önce" under an
+// English UI, Hermes' own "Approved 1 skill write(s)." as the toast, and a tab named "Applied"
+// that also lists rejected records.
+{
+  const cellAt = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const barOf = h => h.hostEl.querySelector('.pa-bulk')
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  const doc = dom.window.document
+  const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
+  if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
+  const pid = stub.calls.registered.at(-1).id
+  const say = (key, ...args) => stub.resolveKey(pid, key, args)
+  if (say('pa.hist.clear', 1) !== 'Clear 1 record') fail(`one history row reads ${JSON.stringify(say('pa.hist.clear', 1))}`)
+  if (/Delete button/.test(say('pa.memory.readonlyEmpty'))) fail('an empty Memory tab points at a Delete button that is not there')
+  const ui = await mount('en', 'page')
+  await wait(60)
+  const tabs = [...ui.hostEl.querySelectorAll('[role=tab]')].map(x => x.textContent.trim())
+  if (!tabs.some(x => /^History/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
+    fail(`the decided-records tab is not named History: ${JSON.stringify(tabs)}`)
+  }
+  const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent || ''
+  if (old !== '2 hours ago') fail(`a record staged two hours ago reads ${JSON.stringify(old)}, not "2 hours ago"`)
+  const open = cellAt(ui, 'skills:aaa11111')
+  const title = open?.querySelector('.pa-card-title')?.textContent || ''
+  if (!title || open?.querySelector('.pa-card')?.getAttribute('aria-label') !== title) {
+    fail('a card is not a named group, so a screen reader cannot tell which record its Approve belongs to')
+  }
+  if (!(open?.querySelector('input.pa-pick')?.getAttribute('aria-label') || '').includes(title)) {
+    fail('the selection checkbox does not name its record')
+  }
+  const skillTitles = [...ui.hostEl.querySelectorAll('.pa-cell[data-key^="skills:"] .pa-card-title')].map(x => x.textContent)
+  if (!skillTitles.length || skillTitles.some(x => !/^(New skill|Edit skill): /.test(x))) {
+    fail(`a skill card title does not say whether it creates or edits the skill: ${JSON.stringify(skillTitles)}`)
+  }
+  if (ui.hostEl.querySelector('.pa-alerts')?.getAttribute('aria-label') !== 'Alerts') {
+    fail('the alert switch is read out as "Alerts muted, not pressed": its name changes with its state')
+  }
+  const heldBtn = buttons(cellAt(ui, 'skills:def67890'), /^Approve$/)[0]
+  if (!/long text/.test(heldBtn?.getAttribute('aria-description') || '')) {
+    fail('a held Approve does not tell a screen reader why it is held')
+  }
+  const sends = () => stub.calls.posts.filter(x => x.path === '/decide').length
+  const before = sends()
+  if (heldBtn) await click(heldBtn)
+  const heldSaid = lastSaid()
+  if (heldSaid?.kind !== 'warning' || !/long text/.test(heldSaid?.message || '') || sends() !== before) {
+    fail(`a held Approve pressed from the keyboard does not say why: ${JSON.stringify(heldSaid)}`)
+  }
+  await click(buttons(ui.hostEl, /^Select all$/)[0])
+  const heldBulk = buttons(barOf(ui), /^Approve 3$/)[0]
+  if (!/decision of its own/.test(heldBulk?.getAttribute('aria-description') || '')) {
+    fail('the held bulk Approve does not tell a screen reader why it is held')
+  }
+  if (heldBulk) await click(heldBulk)
+  if (!/decision of its own/.test(lastSaid()?.message || '')) fail('the held bulk Approve pressed does not say why')
+  await click(pickOf(ui, 'skills:def67890'))
+  await click(buttons(barOf(ui), /^Approve 2$/)[0])
+  const armed = barOf(ui)?.querySelector('.pa-alert')
+  if (!armed) fail('bulk Approve did not ask to confirm')
+  if (doc.activeElement !== barOf(ui)?.querySelector('.pa-bulk-cancel')) fail('the bulk confirm does not take focus')
+  armed?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await wait(20)
+  if (/Apply 2 records now\?/.test(barOf(ui)?.textContent || '')) fail('Esc does not close the bulk confirm')
+  if (sends() !== before) fail('Esc on the bulk confirm sent a decision')
+  ui.hostEl.remove()
+
+  REST.post = 'coremsg'
+  REST.gone = new Set()
+  const fo = await mount('en', 'page')
+  await wait(60)
+  const approve = buttons(cellAt(fo, 'skills:aaa11111'), /^Approve$/)[0]
+  approve?.focus()
+  if (approve) await click(approve, 60)
+  const said = lastSaid()
+  if (said?.kind !== 'success' || /write\(s\)/.test(said?.message || '')) {
+    fail(`a single Approve repeats Hermes' internal wording: ${JSON.stringify(said)}`)
+  }
+  await wait(700)
+  const now = doc.activeElement
+  if (!now || now === doc.body || !fo.hostEl.contains(now)) {
+    fail(`after a decision keyboard focus falls to the page top instead of the next record: ${now?.outerHTML?.slice(0, 80)}`)
+  }
+  REST.post = null
+  REST.gone = null
+  fo.hostEl.remove()
 }
 
 if (problems.length) {

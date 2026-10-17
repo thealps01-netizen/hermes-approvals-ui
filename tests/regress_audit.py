@@ -986,6 +986,21 @@ def new_skills_do_not_rescan_every_skill():
             assert (Path(core) if core else None) == mine, f"lookup of {name!r}: core {core}, panel {mine}"
 
 
+@case
+def memory_card_title_names_the_note():
+    """Four cards titled "MEMORY.md: Adds 1 note(s)" could not be told apart without opening each."""
+    env = Env()
+    env.memory("Existing note")
+    env.stage_memory("97100001", {"action": "add", "target": "memory", "content": "User likes short release notes."})
+    env.stage_memory("97100002", {"action": "batch", "target": "memory", "operations": [
+        {"action": "add", "target": "memory", "content": "User reviews diffs first."},
+        {"action": "add", "target": "memory", "content": "User prefers squash merges."}]})
+    one = env.item("memory", "97100001")["plain"]["headline"]
+    two = env.item("memory", "97100002")["plain"]["headline"]
+    assert "User likes short release notes" in one, f"a one-note card does not name its note: {one}"
+    assert "(s)" not in two and "Adds 2 notes" in two, f"a two-note card reads {two!r}"
+
+
 def _run_one(name: str) -> int:
     try:
         CASES[name]()

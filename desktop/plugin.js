@@ -1,6 +1,6 @@
 import {
   Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
-  PanelSectionLabel, Tip, haptic, host, icons, relativeTime, usePluginI18n
+  PanelSectionLabel, Tip, haptic, host, icons, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -54,7 +54,7 @@ const BUNDLES = {
       tab: {
         memory: 'Memory',
         pending: 'Pending',
-        history: 'Applied',
+        history: 'History',
         label: 'Approval views',
       },
       field: {
@@ -79,6 +79,7 @@ const BUNDLES = {
       },
       state: {
         newSkill: 'New skill',
+        editSkill: 'Edit skill',
       },
       group: {
         new: 'New skill',
@@ -134,6 +135,8 @@ const BUNDLES = {
         check: 'Check',
         edit: 'Suggested edit',
         inWrite: 'In the write',
+        quoted: 'The reviewer quoted',
+        unverifiedWhy: 'This quote could not be found in the write (or is too short to check), so the finding does not count toward the verdict.',
         notes: n => `${plural(n, 'minor note', 'minor notes')} under Details`,
         fixHint: 'Writes the change with the suggested edits shown above applied. The rule checks run again on the edited text first.',
         fixLeft: why => `The suggested edits do not clear every problem: ${why}`,
@@ -149,13 +152,17 @@ const BUNDLES = {
           target: 'the current target',
           siblings: 'the other pending writes to this file',
         },
-        carried: ids => `Approved since this review: ${ids}. They changed the same file and the review already saw them as pending writes, so it still stands.`,
+        carried: (ids, n) => `Approved since this review: ${ids}. ${n === 1 ? 'It' : 'They'} changed the same file, and the review already saw ${n === 1 ? 'it' : 'them'} while ${n === 1 ? 'it was' : 'they were'} waiting, so the review still stands.`,
         siblings: n => `Reviewed together with ${plural(n, 'other pending write', 'other pending writes')} to this file.`,
         outdated: {
           model: 'This review was made by another model than the one now set in Settings → Models — “Review again” reads it with the current one.',
           prompt: 'This review was made with an older review prompt — “Review again” reads it with the current one.',
           rules: 'Your rules in USER.md changed after this review — “Review again” reads it against the current ones.',
         },
+      },
+      time: {
+        now: 'just now',
+        ago: (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`
       },
       bulk: {
         select: 'Select this record',
@@ -164,13 +171,14 @@ const BUNDLES = {
         none: 'Clear selection',
         approve: n => `Approve ${n}`,
         reject: n => `Reject ${n}`,
-        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Applied” and can be undone there.`,
+        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “History” and can be undone there.`,
         advisedReject: (n, all) => all === 1 ? 'The AI review advised rejecting it.'
           : `The AI review advised rejecting ${n} of them.`,
-        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Applied” tab.`,
+        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “History” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
-        done: (ok, all) => `${ok} of ${all} done`,
+        approvedDone: (ok, all) => `${ok} of ${all} approved`,
+        rejectedDone: (ok, all) => `${ok} of ${all} rejected`,
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
         held: n => (n === 1
           ? '1 selected record needs a decision of its own: approve it on its card or untick it.'
@@ -204,7 +212,7 @@ const BUNDLES = {
       hist: {
         apply: 'Approved and applied',
         rejected: 'Rejected',
-        clear: n => (n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
+        clear: n => (n === 1 ? 'Clear 1 record' : n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
         clearConfirm: n => `Clearing deletes all ${plural(n, 'record', 'records')} of the history, not only the ones `
           + 'shown, and drops their undo copies — those records can no longer be taken back.',
         clearCancel: 'Cancel',
@@ -241,7 +249,7 @@ const BUNDLES = {
         historyError: 'The history could not be read.',
         memoryError: 'Memory could not be read.',
         scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
-          + 'The pending list is current; an outside change may be missing from “Applied” until a check succeeds.',
+          + 'The pending list is current; an outside change may be missing from “History” until a check succeeds.',
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
         reviewsFailed: why => (why
@@ -256,11 +264,12 @@ const BUNDLES = {
         drafted: 'Merge request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
-        deleteConfirm: 'About to delete — undoable from the “Applied” tab',
+        deleteConfirm: 'About to delete — undoable from the “History” tab',
         deleteCancel: 'Cancel',
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         readonly: 'Add notes by asking in chat (the write lands under Pending); delete one here with the Delete button.',
+        readonlyEmpty: 'Add notes by asking in chat; the write lands under Pending.',
         entries: n => plural(n, 'note', 'notes'),
         files: 'Memory files',
         lastChange: when => `Last change: ${when}`,
@@ -281,21 +290,21 @@ const BUNDLES = {
         awaiting: n => `${plural(n, 'write awaits', 'writes await')} your approval`,
         title: 'Hermes — pending approvals',
         body: (n, m, s) => `${plural(n, 'write awaits', 'writes await')} you (memory ${m}, skill ${s})`,
-        saved: 'Saved — you can undo it from the “Applied” tab',
+        saved: 'Saved — you can undo it from the “History” tab',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
-        lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
+        lateApplied: 'Applied — it took longer than the panel waits. It is in the “History” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
         lateRejectedElsewhere: 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.',
-        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “Applied” tab.',
-        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.',
+        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “History” tab.',
+        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the “History” tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
         deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
-        rejected: 'Rejected — you can restore it from the “Applied” tab',
+        rejected: 'Rejected — you can restore it from the “History” tab',
         stale: 'This record changed since it was shown — the list is read again.',
         restored: id => (id ? `The record is back under Pending as #${id}.` : 'The record is back under Pending.'),
         restoredAll: ids => `The changes are back under Pending as ${ids}.`,
@@ -304,6 +313,7 @@ const BUNDLES = {
       footer: {
         pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
         alertsOn: 'Alerts on',
+        alerts: 'Alerts',
         alertsOff: 'Alerts muted',
         hint: 'Approve → written immediately, undoable',
       },
@@ -403,7 +413,32 @@ const short = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim()
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
-const when = ts => (ts ? relativeTime(Number(ts) * 1000) : '')
+const AGO = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month'], [Infinity, 'year']]
+const when = (t, ts) => {
+  if (!ts) return ''
+  let v = Math.max(0, (Date.now() - Number(ts) * 1000) / 1000)
+  for (const [step, unit] of AGO) {
+    if (v < step) return unit === 'second' ? t('pa.time.now') : t('pa.time.ago', Math.round(v) || 1, unit)
+    v /= step
+  }
+  return ''
+}
+const CORE_SAID = /^Approved \d+ \w+ write\(s\)\.?$/
+const refocus = from => {
+  const root = from?.closest('.pa-root')
+  if (!root) return
+  const own = from.closest('.pa-cell') || from
+  const at = [...root.querySelectorAll('.pa-cell')].findIndex(c => c === own)
+  const move = () => {
+    const now = document.activeElement
+    if (now && now !== document.body && now.isConnected && !own.contains(now)) return
+    const left = [...root.querySelectorAll('.pa-cell')].filter(c => c !== own && !c.querySelector('.pa-leaving'))
+    const next = left[Math.min(Math.max(at, 0), left.length - 1)]
+    const target = next?.querySelector('.pa-pick, button') || root.querySelector('[role="tab"][aria-selected="true"]')
+    target?.focus()
+  }
+  window.setTimeout(move, 450)
+}
 const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).status)
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || [])]
@@ -452,6 +487,8 @@ const STYLE = `
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
+.pa-root button:focus-visible,.pa-root input:focus-visible,.pa-root summary:focus-visible,
+.pa-root [role="button"]:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
@@ -924,7 +961,9 @@ const alertBox = (key, children, danger) =>
   jsx('div', { className: danger ? 'pa-alert pa-alert-danger' : 'pa-alert', children }, key)
 const told = (t, decision, one) => {
   if (one.ok && decision === 'reject' && one.history_id) return { kind: 'success', message: t('pa.notify.rejected') }
-  if (one.ok) return { kind: 'success', message: one.message || t('pa.notify.saved') }
+  if (one.ok) {
+    return { kind: 'success', message: !one.message || CORE_SAID.test(one.message) ? t('pa.notify.saved') : one.message }
+  }
   if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
@@ -1016,10 +1055,14 @@ const heldButton = (busy, t, key, text, variant, blocked, why, onGo) => jsx(Tip,
       variant,
       size: 'sm',
       'aria-disabled': blocked || undefined,
+      'aria-description': blocked ? why : undefined,
       disabled: Boolean(busy) && busy !== key,
       loading: busy === key,
       onClick: () => {
-        if (blocked) return
+        if (blocked) {
+          host.notify({ kind: 'warning', message: why })
+          return
+        }
         haptic('tap')
         void onGo()
       },
@@ -1195,11 +1238,17 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       jsxs('div', {
         className: 'pa-major',
         children: [
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant: 'muted', children: t('pa.review.unverified') }, 'sev'),
+          jsx(Tip, {
+            label: t('pa.review.unverifiedWhy'),
+            children: jsx(Badge, {
+              className: 'pa-tag', style: TAG, variant: 'muted', tabIndex: 0,
+              'aria-description': t('pa.review.unverifiedWhy'), children: t('pa.review.unverified')
+            }, 'badge')
+          }, 'sev'),
           jsx('span', { children: `${tagOf(f)}${f.explain}` }, 'text')
         ]
       }, 'line'),
-      quote('q', t('pa.review.inWrite'), f.quote)
+      quote('q', t('pa.review.quoted'), f.quote)
     ]
   }, `u${i}`)
   const aside = (key, text) => jsx('div', { className: 'pa-aside', 'data-aside': key, children: text }, key)
@@ -1210,7 +1259,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
   const siblings = Number(review.siblings) || 0
   const asides = status !== 'done' ? [] : [
     cut.length ? aside('cut', t('pa.review.cut', cutList.join(', '))) : null,
-    carried.length ? aside('carried', t('pa.review.carried', carried.join(', '))) : null,
+    carried.length ? aside('carried', t('pa.review.carried', carried.join(', '), carried.length)) : null,
     siblings > 0 ? aside('siblings', t('pa.review.siblings', siblings)) : null,
     OUTDATED[review.outdated] ? aside('outdated', t(OUTDATED[review.outdated])) : null
   ]
@@ -1318,7 +1367,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
   const title = subsystem === 'memory' ? (plain.headline || where)
-    : `${isNewSkill ? `${t('pa.state.newSkill')}: ` : ''}${where}`
+    : `${t(isNewSkill ? 'pa.state.newSkill' : 'pa.state.editSkill')}: ${where}`
   const added = tally(ops, '+')
   const removed = tally(ops, '-')
   const [stateKey, stateVariant] = cardState(hard.length > 0, stale.length > 0, Boolean(fix), failedBefore, status,
@@ -1330,7 +1379,10 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
     await run(key, async () => {
       const r = await decideOne(t, subsystem, [item], decision, only, skipReview, withEdits)
-      if (r?.ok) leave()
+      if (r?.ok) {
+        refocus(cardAt.current)
+        leave()
+      }
       else onChanged()
       return r
     })
@@ -1342,6 +1394,8 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
   return jsxs('div', {
     ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
+    role: 'group',
+    'aria-label': title,
     'aria-busy': Boolean(busy) || undefined,
     'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
@@ -1355,13 +1409,13 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
                 className: 'pa-pick',
                 disabled: leaving,
                 checked: Boolean(picked),
-                'aria-label': `${t('pa.bulk.select')} #${item.id}`,
+                'aria-label': `${t('pa.bulk.select')}: ${title} #${item.id}`,
                 onChange: () => onPick()
               }, 'pick')
             : null,
-          jsx('span', { className: 'pa-card-title', children: title }, 'title'),
+          jsx('span', { className: 'pa-card-title', role: 'heading', 'aria-level': 3, children: title }, 'title'),
           ops.length ? jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat') : null,
-          jsx('span', { className: 'pa-card-when', children: when(item.staged_at) }, 'at'),
+          jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
           jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
         ]
       }, 'head'),
@@ -1529,12 +1583,16 @@ function GroupCard({ item, onChanged, picked, onPick }) {
   const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
     status, review.verdict)
   const staleAt = new Set(stale.map(s => s.change))
+  const groupTitle = `${(item.names || []).join(', ')} · ${t('pa.grp.changes', n)}`
 
   const decideGroup = async (decision, skipReview, withEdits) => {
     const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
     await run(key, async () => {
       const r = await decideOne(t, 'skills', [item], decision, [], skipReview, withEdits)
-      if (r?.ok) leave()
+      if (r?.ok) {
+        refocus(cardAt.current)
+        leave()
+      }
       else onChanged()
       return r
     })
@@ -1612,6 +1670,8 @@ function GroupCard({ item, onChanged, picked, onPick }) {
     ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
     'data-group': item.id,
+    role: 'group',
+    'aria-label': groupTitle,
     'aria-busy': Boolean(busy) || undefined,
     'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
@@ -1625,17 +1685,15 @@ function GroupCard({ item, onChanged, picked, onPick }) {
                 className: 'pa-pick',
                 disabled: leaving,
                 checked: picked === true,
-                'aria-label': `${t('pa.grp.select')} #${item.id}`,
+                'aria-label': `${t('pa.grp.select')}: ${groupTitle} #${item.id}`,
                 onChange: () => onPick()
               }, 'pick')
             : null,
-          jsx('span', {
-            className: 'pa-card-title', children: `${(item.names || []).join(', ')} · ${t('pa.grp.changes', n)}`
-          }, 'title'),
+          jsx('span', { className: 'pa-card-title', role: 'heading', 'aria-level': 3, children: groupTitle }, 'title'),
           jsx('span', {
             className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
           }, 'stat'),
-          jsx('span', { className: 'pa-card-when', children: when(item.staged_at) }, 'at'),
+          jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
           jsx(Badge, { className: 'pa-tag', style: TAG, variant: badgeVariant, children: t(badgeKey) }, 'state')
         ]
       }, 'head'),
@@ -1817,7 +1875,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
           jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
           jsx('span', {
             style: { marginLeft: 'auto', fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
-            children: when(entry.ts)
+            children: when(t, entry.ts)
           }, 'at'),
           jsx(Badge, {
             className: 'pa-tag',
@@ -1942,6 +2000,10 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
   const t = usePluginI18n(ID)
   const [arming, setArming] = useState('')
   const [busy, setBusy] = useState(false)
+  const barAt = useRef(null)
+  useEffect(() => {
+    if (arming) barAt.current?.querySelector('.pa-bulk-cancel')?.focus()
+  }, [arming])
   const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
   const held = chosen.filter(({ item }) => !pickable(item)).length
   const advised = chosen.filter(({ item }) => (item.review || {}).status === 'done' && item.review.verdict === 'reject')
@@ -1973,9 +2035,10 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
         }
       }
       host.notify(bad.length
-        ? { kind: 'error', message: `${t('pa.bulk.done', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
-        : { kind: 'success', message: t('pa.bulk.done', ok, n) })
+        ? { kind: 'error', message: `${t(decision === 'reject' ? 'pa.bulk.rejectedDone' : 'pa.bulk.approvedDone', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
+        : { kind: 'success', message: t(decision === 'reject' ? 'pa.bulk.rejectedDone' : 'pa.bulk.approvedDone', ok, n) })
     } finally {
+      refocus(barAt.current)
       setBusy(false)
       setArming('')
       setPicked(new Set())
@@ -1984,6 +2047,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
   }
 
   return jsxs('div', {
+    ref: barAt,
     className: 'pa-bulk',
     role: 'group',
     'aria-label': t('pa.bulk.selected', n, items.length),
@@ -1992,6 +2056,9 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
         ? jsxs('div', {
             className: arming === 'reject' ? 'pa-alert pa-alert-danger' : 'pa-alert',
             role: 'alert',
+            onKeyDown: e => {
+              if (e.key === 'Escape' && !busy) setArming('')
+            },
             style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, width: '100%' },
             children: [
               jsx('span', {
@@ -2001,6 +2068,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
                     : t('pa.bulk.confirmApprove', n)
               }, 'copy'),
               jsx(Button, {
+                className: 'pa-bulk-cancel',
                 variant: 'outline', size: 'sm', disabled: busy,
                 onClick: () => setArming(''), children: t('pa.bulk.cancel')
               }, 'cancel'),
@@ -2038,7 +2106,9 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
                         className: held ? 'pa-held' : undefined,
                         variant: 'default', size: 'sm',
                         'aria-disabled': held > 0 || undefined,
-                        onClick: held ? undefined : () => setArming('approve'),
+                        'aria-description': held ? t('pa.bulk.held', held) : undefined,
+                        onClick: held ? () => host.notify({ kind: 'warning', message: t('pa.bulk.held', held) })
+                          : () => setArming('approve'),
                         children: t('pa.bulk.approve', n)
                       }, 'btn')
                     }, 'wrap')
@@ -2313,7 +2383,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
         style: { display: 'flex', flexWrap: 'wrap', gap: G.sm, fontSize: FS.meta, color: 'var(--ui-text-secondary)' },
         children: [
           jsx('span', { children: t('pa.memory.entries', store.entries.length) }, 'count'),
-          store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(store.updated)) }, 'updated') : null
+          store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(t, store.updated)) }, 'updated') : null
         ]
       }, 'meta'),
       pct >= 90 &&
@@ -2395,7 +2465,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
       }, 'notes'),
       jsx('div', {
         style: { fontSize: FS.meta, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
-        children: t('pa.memory.readonly')
+        children: t(store.entries.length ? 'pa.memory.readonly' : 'pa.memory.readonlyEmpty')
       }, 'readonly')
     ]
   })
@@ -2470,7 +2540,7 @@ function Pane() {
               jsxs('div', {
                 style: { minWidth: 0 },
                 children: [
-                  jsx('div', { className: 'pa-title', children: t('pa.pane.title') }, 'title'),
+                  jsx('div', { className: 'pa-title', role: 'heading', 'aria-level': 1, children: t('pa.pane.title') }, 'title'),
                   jsx('div', { className: 'pa-sub', children: t('pa.pane.subtitle') }, 'subtitle')
                 ]
               }, 'titles'),
@@ -2544,6 +2614,7 @@ function Pane() {
             variant: 'text',
             size: 'sm',
             'aria-pressed': !muted,
+            'aria-label': t('pa.footer.alerts'),
             onClick: () => setAlertsMuted(!muted),
             children: t(muted ? 'pa.footer.alertsOff' : 'pa.footer.alertsOn')
           }, 'alerts'),

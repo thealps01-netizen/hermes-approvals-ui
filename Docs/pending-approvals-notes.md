@@ -844,6 +844,23 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   decisions share it. `render_check` covers the three outcomes; a mutant that reports a landed write as
   failed is caught.
 
+## 1.14.0 — keyboard, screen reader and wording
+
+* **Focus ring.** The kit's ring classes do not render inside the panel (`--tw-ring-shadow` stays
+  transparent), so the panel draws its own `:focus-visible` outline in the accent colour.
+* **Held buttons.** They stay focusable (`aria-disabled`, never `disabled`), carry the reason as
+  `aria-description`, and a press shows it as a warning notice; nothing is sent.
+* **Focus after a decision.** `refocus()` runs after a successful decision, waits for the card to
+  leave, and moves focus to the record now at the same position only when focus was lost or still
+  inside the leaving card. A failed decision keeps focus where it was.
+* **Relative time.** The host's `relativeTime` follows the system locale; the panel is English-only,
+  so `when()` builds the phrase from the `pa.time` keys.
+* **Toast wording.** Core's `Approved N <kind> write(s).` is replaced by the panel's own saved notice;
+  any other message (a fix, a moved remainder) is still shown as the backend wrote it.
+* **Unverified quotes** are often real text shorter than the 8-character proof minimum, so the label
+  says the reviewer quoted it rather than claiming it is in the write.
+* **The KPI tiles keep their full size** on short windows; the owner preferred them to a compact form.
+
 ## 1.13.2 — tried in the real app
 
 * **Skill lookup per list.** Core `_find_skill` scans every installed skill and parses each frontmatter

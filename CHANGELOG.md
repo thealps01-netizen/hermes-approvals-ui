@@ -5,6 +5,38 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.14.0
+
+Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
+and read the way a non-technical owner reads it. Each change has a check that fails on 1.13.2.
+
+### Fixed
+
+* **Keyboard focus is visible.** Buttons, checkboxes and expanders draw a ring when reached with Tab.
+  Before, no card control showed where the focus was.
+* **A held button says why when pressed.** Pressing a held Approve (single or bulk) shows the reason
+  as a notice, and screen readers hear it with the button. Before, the reason was a hover tooltip only.
+* **Focus stays in the list.** After a decision, focus moves to the next record instead of the page top.
+  The bulk confirmation takes focus on Cancel and closes with Esc.
+* **Screen readers know which record a control belongs to.** Each card is a named group with a heading,
+  and its checkbox names the record.
+* **Times are in English.** "5 dk. önce" followed the system language under an English panel; it now
+  reads "5 minutes ago".
+* **Notices speak plainly.** A single approve says "Saved — you can undo it from the “History” tab"
+  instead of Hermes' "Approved 1 memory write(s).", and a bulk result says "3 of 3 approved" or
+  "3 of 3 rejected" instead of "3 of 3 done".
+
+### Changed
+
+* **The "Applied" tab is now "History".** It also lists rejected records, which can be restored there.
+* **Card titles say what they write.** A one-note memory card shows the note ("MEMORY.md: Adds a new
+  note: “…”"); counts read "2 notes", not "2 note(s)". A skill card reads "New skill: …" or
+  "Edit skill: …".
+* **"Unverified quote" explains itself.** Its tooltip says the quote could not be found in the write,
+  so the finding does not count toward the verdict, and the quote is labelled "The reviewer quoted".
+* Smaller wording fixes: "Clear 1 record", "It changed the same file" for one record, an empty Memory
+  tab no longer mentions a Delete button, and the alert switch keeps one name ("Alerts").
+
 ## 1.13.2
 
 Found by running the released 1.13.1 in the real Hermes desktop app, in a separate test profile with a
