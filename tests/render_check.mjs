@@ -820,6 +820,19 @@ async function mount(appLocale, parts = 'both') {
     await act(async () => { await new Promise(r => setTimeout(r, 40)) })
   }
 
+  // A removed mount must stop polling: a leaked poller reads /pending into the shared GETS log and
+  // made the burst count flaky on slow runners.
+  for (const [el, r] of [[hostEl, root], [chipEl, chipRoot]]) {
+    const drop = el.remove.bind(el)
+    let gone = false
+    el.remove = () => {
+      if (!gone) { gone = true; r.unmount() }
+      drop()
+    }
+    const unmount = r.unmount.bind(r)
+    r.unmount = () => { if (!gone) { gone = true; unmount() } }
+  }
+
   const text = hostEl.innerHTML
     .replace(/<style[\s\S]*?<\/style>/g, ' ')
     .replace(/<[^>]+>/g, ' ')
@@ -2234,14 +2247,15 @@ REST.scan = 'ok'
   if (over.length) {
     fail(`polls overlap after 5 rapid Refresh clicks: ${over.map(([r, n]) => `${r} ×${n}`).join(', ')} in flight at once`)
   }
-  const burst = GETS.filter(p => p === '/pending').length
+  const own = () => busy.flight.total.get('GET /pending') || 0
+  const burst = own()
   await act(async () => {
     for (let i = 0; i < 5; i += 1) {
       busy.hostEl.querySelector('.pa-refresh').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     }
   })
   await act(async () => { await new Promise(r => setTimeout(r, 400)) })
-  const folded = GETS.filter(p => p === '/pending').length - burst
+  const folded = own() - burst
   if (folded !== 2) fail(`5 Refresh clicks in one burst read /pending ${folded} times, not one load plus ONE follow-up`)
   if ([...busy.flight.peak].some(([, n]) => n > 1)) fail('a burst of Refresh clicks overlapped a poll')
   REST.delay = 0
@@ -2740,6 +2754,7 @@ REST.scan = 'ok'
   const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-card-title')?.textContent
   if (delTitle !== 'Delete skill: old-skill') fail(`a skill deletion is titled ${JSON.stringify(delTitle)}`)
   REST.pending = null
+  ed.root.unmount()
   ed.hostEl.remove()
 
   REST.post = 'coremsg'
@@ -2776,6 +2791,7 @@ REST.scan = 'ok'
   }
   REST.pending = null
   REST.gone = null
+  two.root.unmount()
   two.hostEl.remove()
 }
 
