@@ -293,7 +293,7 @@ const BUNDLES = {
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
-        deletedFile: file => `${file} (deleted)`,
+        deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
         rejected: 'Rejected — you can restore it from the “Applied” tab',
         stale: 'This record changed since it was shown — the list is read again.',

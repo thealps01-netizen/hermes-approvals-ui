@@ -17,9 +17,9 @@ local stand-in for the review model. Each fix has a check that fails on 1.13.1.
   not exist yet. With 300 new skills waiting and 58 installed, building the list took 17 seconds and the
   page showed "Timed out connecting to Hermes backend". The installed skill names are now read once per
   list; the page opens in about 2 seconds. Skills that exist are still found by Hermes itself.
-* **Undo names a file it deleted.** Undoing a write that created a file deletes that file, but the
-  notice said "Undone: no changed files". It now names the file, for example
-  "Undone: memories/MEMORY.md (deleted)".
+* **Undo names a file it removed.** Undoing a write that created a file removes that file, but the
+  notice said "Undone: no changed files". It now names the file and says why, for example
+  "Undone: memories/MEMORY.md (it did not exist before this write, so it was removed)".
 
 ### Changed
 

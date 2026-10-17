@@ -1171,7 +1171,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(undoBtn, 60)
   REST.undoReply = undefined
   const said = lastSaid()?.message || ''
-  if (!said.includes('skills/e2e-demo/SKILL.md') || /no changed files/.test(said)) {
+  if (!said.includes('skills/e2e-demo/SKILL.md (it did not exist before this write, so it was removed)')) {
     fail(`an undo that deleted a created file says nothing changed: ${said}`)
   }
 }
