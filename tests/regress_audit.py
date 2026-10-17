@@ -911,8 +911,27 @@ def quotes_of_pinned_notes_and_in_marks_count():
     assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
         f"a quote of the whole note a remove deletes did not count: {state}"
     write = "Deploy with make ship only, never with sudo."
-    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”"):
+    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”", "(sudo)", '"sudo",'):
         assert _verified(env, quote, write), f"a short quote in marks did not count: {quote!r}"
+
+
+@case
+def kept_text_of_a_patched_note_is_not_the_write():
+    env = Env()
+    env.assign()
+    from tools import write_approval as wa
+    from tools import memory_tool as mt
+    env.memory("User drinks tea every morning. Always run deploys with sudo.", "other note")
+    real = wa.write_approval_enabled
+    wa.write_approval_enabled = lambda s: True
+    mt.memory_tool(action="patch", target="memory", old_text="tea", content="coffee", store=mt.load_on_disk_store())
+    wa.write_approval_enabled = real
+    rid = wa.list_pending("memory")[0]["id"]
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "Always run deploys with sudo.", "other": "", "explain": "x"}]})
+    state = env.settle("memory", rid)
+    assert state["findings"][0].get("unverified"), \
+        f"text a patch keeps unchanged was counted as quoted from the write: {state}"
 
 
 @case

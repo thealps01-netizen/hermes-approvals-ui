@@ -860,10 +860,11 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   punctuation between them can pass; the AI review reports it, as it does Latin-script languages.
   Combining marks and format characters (zero-width space/joiner) are skipped so decomposed accents
   or invisible separators do not split a word.
-* **Memory proof.** The proof a memory quote is checked against holds `content`, `old_text` and the
-  pinned `matched_entry`: a remove or replace deletes the whole pinned note, so the reviewer may quote it.
-* **Short quote marks.** Backticks, quote marks and a trailing ellipsis around a short quote are
-  stripped before the whole-word match; the model often wraps a command or word that way.
+* **Memory proof.** The proof a memory quote is checked against holds `content`, `old_text` and, for a
+  remove or replace only, the pinned `matched_entry`: those delete the whole pinned note, so the reviewer
+  may quote it. A patch keeps the rest of the note, which is current text, not the write.
+* **Short quote marks.** Backticks, quote marks, brackets, an ellipsis and edge punctuation around a short
+  quote are stripped before the whole-word match; the model often wraps a command or word that way.
 * **Landed writes.** One approve of one id prints `Approved 1` or `Approved 0` in core's `_approve`;
   the count alone decides. The echoed notes can contain any line, including `Failed:`.
 * **Late answers without a baseline.** When the history could not be read before the click, an apply or

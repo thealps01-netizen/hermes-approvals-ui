@@ -7,7 +7,7 @@ look has no version at all.
 
 ## 1.13.1
 
-Four more independent reviews found 15 defects in 1.13.0 and 13 in three earlier 1.13.1 candidates;
+Four more independent reviews found 15 defects in 1.13.0 and 14 in four earlier 1.13.1 candidates;
 all of them are fixed here. One was introduced by 1.13.0 (a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
 did: fabricated quotes, malformed review answers, and writes that landed being reported as failed.
 Each defect has a regression check that failed on the code it was found in (`tests/regress_audit.py`,
@@ -28,9 +28,10 @@ Each defect has a regression check that failed on the code it was found in (`tes
     longer counts as verified.
   * A correct short quote counts again when it is a whole word or command of the write, such as
     "Привет", "Merci", "sudo" or "rm -rf ~". Its suggested translation can be applied. A piece from
-    inside a word, or a short word that is only in the rules, does not count. Quote marks or backticks
+    inside a word, or a short word that is only in the rules, does not count. Quote marks, brackets or backticks
     around a short quote are ignored.
-  * A quote of the whole note that a memory remove or replace deletes counts.
+  * A quote of the whole note that a memory remove or replace deletes counts; the part of a note that
+    a patch keeps does not.
   * Chinese and Japanese quotes with "..." count again.
 * **The language rule no longer locks English with maths or phonetics,** such as ℝⁿ, αβ, ΔΔG, 𝑥𝑦,
   full-width letters or IPA, and not on symbol pairs such as `αβ/γδ` or `αβ γδ`. Greek locks from three
