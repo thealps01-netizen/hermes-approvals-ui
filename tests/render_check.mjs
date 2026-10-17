@@ -524,6 +524,9 @@ const React = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { act } = await import('react-dom/test-utils')
 const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
+// The newest notice that answers an action. The arrival notice ("N writes await your approval") fires on its
+// own poll, so on a slower runner it can land after the answer; it is never the answer to a click.
+const lastSaid = () => stub.calls.notify.filter(m => !(m?.kind === 'info' && /awaits? your approval/.test(m?.message || ''))).at(-1)
 
 const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null,
   history: null }
@@ -1111,12 +1114,12 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   must(put?.text, ['MEMORY.md is 99% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
   if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
   if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
-  if (stub.calls.notify[stub.calls.notify.length - 1]?.message !== 'Merge request is in the chat box — read it, then send.') {
+  if (lastSaid()?.message !== 'Merge request is in the chat box — read it, then send.') {
     fail('placing the draft was not confirmed')
   }
   stub.state.composerLive = false
   await click(draft, 40)
-  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  const told = lastSaid()
   if (told?.kind !== 'warning' || !/No chat box is open/.test(told?.message || '')) fail(`no chat box went unreported: ${JSON.stringify(told)}`)
   stub.state.composerLive = true
 }
@@ -1328,7 +1331,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (shape !== 'memory:reject:abc12345 skills:reject:def67890+aaa11111') {
     fail(`bulk Reject does not act on every selected record, the flagged one included: ${shape}`)
   }
-  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  const said = lastSaid()
   if (said?.kind !== 'success' || said?.message !== '3 of 3 done') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
 
@@ -1339,7 +1342,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(pickOf(partial, 'skills:def67890'))
   await click(buttons(barOf(partial), /^Approve 2$/)[0])
   await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
-  const told = stub.calls.notify[stub.calls.notify.length - 1]
+  const told = lastSaid()
   if (told?.kind !== 'error' || told?.message !== '1 of 2 done · 1 record failed: Hermes refused it') {
     fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
   }
@@ -1356,7 +1359,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(pickOf(stale, 'skills:def67890'))
   await click(buttons(barOf(stale), /^Approve 2$/)[0])
   await click(stale.hostEl.querySelector('.pa-bulk-go'), 80)
-  const staleSaid = stub.calls.notify[stub.calls.notify.length - 1]
+  const staleSaid = lastSaid()
   if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 done · 1 record failed: ${STALE_ERR}`) {
     fail(`a stale record in a bulk approve is not counted as a failure with its reason: ${JSON.stringify(staleSaid)}`)
   }
@@ -1396,7 +1399,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const stale = await mount('en')
   const reads = GETS.filter(p => p === '/pending').length
   await click(buttons(cellOf(stale, 'skills:aaa11111'), /^Approve$/)[0], 120)
-  const warned = stub.calls.notify[stub.calls.notify.length - 1]
+  const warned = lastSaid()
   if (warned?.kind !== 'warning' || warned?.message !== STALE_ERR) {
     fail(`a stale single Approve is not a warning toast with its error: ${JSON.stringify(warned)}`)
   }
@@ -1416,7 +1419,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     REST.lateKind = lateKind
     const late = await mount('en')
     await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
-    const said = stub.calls.notify[stub.calls.notify.length - 1]
+    const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a /decide that outlived the request timeout (${mode}) is reported wrong: ${JSON.stringify(said)}`)
     }
@@ -1433,7 +1436,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (rejected.length !== 1 || rejected[0].body.decision !== 'reject' || rejected[0].body.ids.join() !== 'aaa11111') {
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
-  const toast = stub.calls.notify[stub.calls.notify.length - 1]
+  const toast = lastSaid()
   if (toast?.kind !== 'success' || !/restore it from the “Applied” tab/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
@@ -1849,7 +1852,7 @@ REST.scan = 'ok'
   if (restorePost.length !== 1 || restorePost[0].body.id !== RESTORE_ID) {
     fail(`Restore did not post /restore once with the row id: ${JSON.stringify(restorePost.map(p => p.body))}`)
   }
-  const said = stub.calls.notify[stub.calls.notify.length - 1]
+  const said = lastSaid()
   if (said?.kind !== 'success' || !said.message.includes(`#${RESTORED_AS}`)) fail(`Restore did not toast success: ${JSON.stringify(said)}`)
   if (GETS.filter(p => p === '/pending').length <= pendingReads) fail('Restore does not re-read the pending list')
   if (GETS.filter(p => p === '/history?limit=50').length <= historyReads) fail('Restore does not re-read the history')
@@ -1933,7 +1936,7 @@ REST.scan = 'ok'
   if (body.decision !== 'reject' || !same(body.groups, [STALE_GROUP]) || (body.ids || []).length) {
     fail(`"Reject all 3" did not send groups:[id]: ${JSON.stringify(body)}`)
   }
-  const toast = stub.calls.notify.at(-1)
+  const toast = lastSaid()
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
   // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
   await act(async () => { await new Promise(r => setTimeout(r, 500)) })
@@ -2003,7 +2006,7 @@ REST.scan = 'ok'
   if (postsTo('/undo').at(-1)?.body?.id !== 'abab0101') fail('Undo on a group row did not post the row id')
   await click(buttons(rejected(), /^Restore$/)[0], 80)
   if (postsTo('/restore').at(-1)?.body?.id !== GROUP_REJECTED) fail('Restore on a group row did not post the row id')
-  const back = stub.calls.notify.at(-1)
+  const back = lastSaid()
   if (back?.kind !== 'success' || !GROUP_RESTORED.every(id => back.message.includes(`#${id}`))) {
     fail(`a group Restore does not name every new id: ${JSON.stringify(back)}`)
   }
@@ -2207,7 +2210,7 @@ REST.scan = 'ok'
     const h = await mount('en', 'page')
     const from = reads()
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
-    const said = stub.calls.notify.at(-1)
+    const said = lastSaid()
     if (said?.kind !== 'error' || said?.message !== text) {
       fail(`a failed /decide (${mode}) does not show the backend's own error: ${JSON.stringify(said)}`)
     }
@@ -2223,7 +2226,7 @@ REST.scan = 'ok'
     REST.post = mode
     const h = await mount('en', 'page')
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
-    const said = stub.calls.notify.at(-1)
+    const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a late /decide (${mode}) is judged by the clock or by a row read before the click: ${JSON.stringify(said)}`)
     }
@@ -2517,7 +2520,7 @@ REST.scan = 'ok'
     const cold = await mount('en', 'page')
     const coldReads = cold.flight.total.get('GET /pending') || 0
     await click(buttons(cellOf(cold, 'skills:aaa11111'), new RegExp(`^${button}$`))[0], applied ? 700 : 200)
-    const coldSaid = stub.calls.notify.at(-1)
+    const coldSaid = lastSaid()
     const want = applied ? coldSaid?.kind !== 'error' && /applied/i.test(coldSaid?.message || '')
       : row === null ? coldSaid?.kind === 'error' && coldSaid?.message === UNKNOWN
         : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied' : 'rejected', 'i').test(coldSaid?.message || '')
