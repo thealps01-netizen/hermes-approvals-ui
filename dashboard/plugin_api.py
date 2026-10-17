@@ -2239,12 +2239,33 @@ def _skill_dir(name: str) -> Path | None:
 def _skill_dir_now(name: str) -> Path | None:
     from tools import write_approval as wa
 
+    looked = _remember(("skill-lookups",), list) if _MEMO.get() is not None else []
+    looked.append(name)
+    known = _remember(("skill-names",), _skill_names) if len(looked) > 1 else None
+    if known is not None and "/" not in name and "\\" not in name and name not in known:
+        return None
     try:
         found = wa._find_skill_path(name)
     except Exception as exc:
         _log(f"skill {name} could not be located for the pre-review: {exc!r}")
         return None
     return Path(found) if found else None
+
+
+def _skill_names() -> frozenset | None:
+    try:
+        from agent.skill_utils import get_all_skills_dirs
+        from tools import skill_manager_tool as sm
+
+        names = set()
+        for root in get_all_skills_dirs():
+            if root.exists():
+                for folder in sm._iter_skill_dirs(root):
+                    names.update((folder.name, sm._read_frontmatter_name(folder / "SKILL.md")))
+        return frozenset(names)
+    except Exception as exc:
+        _log(f"the installed skill names could not be listed, each skill is looked up alone: {exc!r}")
+        return None
 
 
 def _bare_skill(name: str) -> str:

@@ -165,6 +165,8 @@ const BUNDLES = {
         approve: n => `Approve ${n}`,
         reject: n => `Reject ${n}`,
         confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Applied” and can be undone there.`,
+        advisedReject: (n, all) => all === 1 ? 'The AI review advised rejecting it.'
+          : `The AI review advised rejecting ${n} of them.`,
         confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Applied” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
@@ -291,6 +293,7 @@ const BUNDLES = {
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
+        deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
         rejected: 'Rejected — you can restore it from the “Applied” tab',
         stale: 'This record changed since it was shown — the list is read again.',
@@ -1776,7 +1779,8 @@ function HistoryCard({ entry, onChanged, onRestored }) {
         host.notify({ kind: 'warning', message: res?.error || t('pa.notify.undoFailed') })
       } else {
         setConflict(null)
-        host.notify({ kind: 'success', message: t('pa.notify.undoOk', (res.restored || []).join(', ') || t('pa.notify.noFiles')) })
+        const files = [...(res.restored || []), ...(res.removed || []).map(f => t('pa.notify.deletedFile', f))]
+        host.notify({ kind: 'success', message: t('pa.notify.undoOk', files.join(', ') || t('pa.notify.noFiles')) })
       }
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.undoError'))
@@ -1940,6 +1944,8 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
   const [busy, setBusy] = useState(false)
   const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
   const held = chosen.filter(({ item }) => !pickable(item)).length
+  const advised = chosen.filter(({ item }) => (item.review || {}).status === 'done' && item.review.verdict === 'reject')
+    .length
   const n = chosen.length
   if (items.length < 2) return null
 
@@ -1990,7 +1996,9 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
             children: [
               jsx('span', {
                 style: { flex: '1 1 240px' },
-                children: t(arming === 'reject' ? 'pa.bulk.confirmReject' : 'pa.bulk.confirmApprove', n)
+                children: arming === 'reject' ? t('pa.bulk.confirmReject', n)
+                  : advised ? `${t('pa.bulk.confirmApprove', n)} ${t('pa.bulk.advisedReject', advised, n)}`
+                    : t('pa.bulk.confirmApprove', n)
               }, 'copy'),
               jsx(Button, {
                 variant: 'outline', size: 'sm', disabled: busy,
