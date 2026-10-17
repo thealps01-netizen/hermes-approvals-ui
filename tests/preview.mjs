@@ -10,7 +10,7 @@
  *      PanelSectionLabel rows, the PanelBlock bodies, the LogView diff, the disabled Approve with the
  *      reason in a themed Tip, and the description-fix block.
  *   2. Pending — a record that touches MORE THAN ONE skill (the group layer + `Apply Only This`).
- *   3. Applied — the history cards with the kit Badge kind, the raw summary LogView and the two-step
+ *   3. History — the history cards with the kit Badge kind, the raw summary LogView and the two-step
  *      `Force undo` (the conflict is reported first).
  *   4. Memory — the note cards and the TWO-STEP delete armed.
  *   5. Pending — a skill GROUP (1.11.0): one card for three changes to one skill, the review lines
@@ -94,7 +94,7 @@ const PENDING = {
       why: LONG,
       notes: [{ label: 'What the note means', text: 'The note keeps the gate and the corrected schedule.' }],
       what: ['Adds one note about the write-approval gate', 'Rewrites the calendar sentence', 'Nothing is deleted'],
-      effect: 'MEMORY.md is rewritten and the previous copy is stored, so the Applied tab can take it back.',
+      effect: 'MEMORY.md is rewritten and the previous copy is stored, so the History tab can take it back.',
       stale: [], groups: [],
       recommendation: { verdict: 'Approve', reason: 'Both changes match what was said in the last session.' }
     }
@@ -311,9 +311,9 @@ frames.push({
 })
 
 frames.push({
-  label: 'Applied — history cards, the raw summary in a LogView, two-step Force undo, Restore on a rejected record',
+  label: 'History — history cards, the raw summary in a LogView, two-step Force undo, Restore on a rejected record',
   html: await frame(async hostEl => {
-    await click(tab(hostEl, /^Applied/), 'the Applied tab')
+    await click(tab(hostEl, /^History/), 'the History tab')
     await click(byText(hostEl, /^Undo$/), 'Undo')
   })
 })
