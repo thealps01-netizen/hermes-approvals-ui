@@ -285,6 +285,8 @@ const BUNDLES = {
         lateApplied: 'Applied — it took longer than the panel waits. It is in the “Applied” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
+        lateRejectedElsewhere: 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.',
+        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “Applied” tab.',
         lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
@@ -923,7 +925,7 @@ const told = (t, decision, one) => {
   if (one.stale || one.late) return { kind: 'warning', message: one.error || t('pa.notify.stale') }
   return { kind: 'error', message: one.error || t('pa.notify.failed') }
 }
-const settled = async (t, items, known) => {
+const settled = async (t, items, known, decision) => {
   let entries
   try {
     entries = (await api.history())?.entries || []
@@ -937,6 +939,9 @@ const settled = async (t, items, known) => {
     const e = entries.find(x => (known ? !known.has(x.id) : x.kind !== 'failed') && ours(x))
     if (!e) return { id: item.id, ok: false, error: t(known ? 'pa.notify.lateNothing' : 'pa.notify.lateUnknown') }
     if (e.kind === 'failed') return { id: item.id, ok: false, error: e.summary || t('pa.notify.failed') }
+    if ((e.kind === 'rejected') !== (decision === 'reject')) {
+      return { id: item.id, ok: false, error: t(e.kind === 'rejected' ? 'pa.notify.lateRejectedElsewhere' : 'pa.notify.lateAppliedElsewhere') }
+    }
     return e.kind === 'rejected' ? { id: item.id, ok: true, history_id: e.id }
       : { id: item.id, ok: true, message: t('pa.notify.lateApplied') }
   })
@@ -948,7 +953,7 @@ const decideAll = async (t, subsystem, items, decision, only, skipReview, withEd
   try {
     return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
   } catch (e) {
-    if (timedOut(e)) return { ok: true, results: await settled(t, items, known) }
+    if (timedOut(e)) return { ok: true, results: await settled(t, items, known, decision) }
     const error = errText(e) || t('pa.notify.failed')
     return { ok: false, error, results: items.map(item => ({ id: item.id, ok: false, error })) }
   }

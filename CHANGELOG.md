@@ -7,8 +7,8 @@ look has no version at all.
 
 ## 1.13.1
 
-Three more independent reviews found 15 defects in 1.13.0 and 8 in two earlier 1.13.1 candidates; all
-of them are fixed here. One was introduced by 1.13.0 (a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
+Four more independent reviews found 15 defects in 1.13.0 and 13 in three earlier 1.13.1 candidates;
+all of them are fixed here. One was introduced by 1.13.0 (a cut-off review answer opened Approve). Three are findings that 1.13.0 said it fixed but only partly
 did: fabricated quotes, malformed review answers, and writes that landed being reported as failed.
 Each defect has a regression check that failed on the code it was found in (`tests/regress_audit.py`,
 `tests/render_check.mjs`).
@@ -28,12 +28,14 @@ Each defect has a regression check that failed on the code it was found in (`tes
     longer counts as verified.
   * A correct short quote counts again when it is a whole word or command of the write, such as
     "Привет", "Merci", "sudo" or "rm -rf ~". Its suggested translation can be applied. A piece from
-    inside a word, or a short word that is only in the rules, does not count.
+    inside a word, or a short word that is only in the rules, does not count. Quote marks or backticks
+    around a short quote are ignored.
+  * A quote of the whole note that a memory remove or replace deletes counts.
   * Chinese and Japanese quotes with "..." count again.
 * **The language rule no longer locks English with maths or phonetics,** such as ℝⁿ, αβ, ΔΔG, 𝑥𝑦,
   full-width letters or IPA, and not on symbol pairs such as `αβ/γδ` or `αβ γδ`. Greek locks from three
   letters in a row or three short Greek words in a row ("Θα το δω"), and accents written as separate
-  marks no longer hide Greek or Arabic text.
+  marks or zero-width characters between letters no longer hide text in another script.
 * **A saved note written again without its final full stop** is caught as already saved.
 
 ### Fixed — data
@@ -53,6 +55,8 @@ Each defect has a regression check that failed on the code it was found in (`tes
   read before the click, the panel reports an apply or reject it then finds for that record, and
   otherwise says it cannot tell whether the change was applied, points to the Applied tab and reads the
   list again.
+* **A record decided somewhere else while the panel waited is reported as such.** If you approved but
+  it was rejected from chat (or the other way round), the panel says so instead of "Saved".
 * **Leaving the Approvals page during a decision** no longer leaves an empty gap for 15 seconds. The
   page you come back to reads the list again.
 * **A lone remaining card drops its hidden tick**, so a later bulk action cannot include it unseen.

@@ -727,7 +727,7 @@ async function mount(appLocale, parts = 'both') {
       // server clock an hour behind the panel's, `lateold` holds an older failed attempt read before the click.
       if (path === '/history?limit=50' && (REST.post === 'late' || REST.post === 'lateskew')) {
         const skew = REST.post === 'lateskew' ? 3600 : 0
-        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: 'apply', subsystem: 'skills',
+        const late = REST.lateDecided ? [{ id: 'la7e0001', ts: Date.now() / 1000 - skew, kind: REST.lateKind || 'apply', subsystem: 'skills',
           record_id: 'aaa11111', summary: 'late', files: [], undoable: true }] : []
         return { entries: [...late, ...HISTORY.entries], counts: HISTORY.counts }
       }
@@ -735,9 +735,9 @@ async function mount(appLocale, parts = 'both') {
       // older failed attempt — there was no baseline before the click to tell old rows from new ones.
       if (path === '/history?limit=50' && REST.post === 'latecold') {
         if (!REST.lateDecided) throw new Error('Request timed out after 30000ms')
-        const row = REST.coldApplied
-          ? { id: 'a0a0a0a0', ts: Date.now() / 1000, kind: 'apply', subsystem: 'skills', record_id: 'aaa11111',
-            summary: 'landed', files: [], undoable: true }
+        const row = REST.coldRow
+          ? { id: 'a0a0a0a0', ts: Date.now() / 1000, kind: REST.coldRow, subsystem: 'skills', record_id: 'aaa11111',
+            summary: 'landed', files: [], undoable: REST.coldRow === 'apply' }
           : { id: 'f0f0f0f0', ts: Date.now() / 1000 - 600, kind: 'failed', subsystem: 'skills',
             record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }
         return { entries: [row, ...HISTORY.entries], counts: HISTORY.counts }
@@ -1407,11 +1407,13 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
-  for (const [mode, kind, text] of [
+  for (const [mode, kind, text, lateKind] of [
     ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Applied” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
-    ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
+    ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
+    ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
     REST.post = mode
+    REST.lateKind = lateKind
     const late = await mount('en')
     await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
     const said = stub.calls.notify[stub.calls.notify.length - 1]
@@ -1419,6 +1421,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
       fail(`a /decide that outlived the request timeout (${mode}) is reported wrong: ${JSON.stringify(said)}`)
     }
     REST.post = 'normal'
+    REST.lateKind = undefined
     late.hostEl.remove()
   }
 
@@ -2507,20 +2510,23 @@ REST.scan = 'ok'
   REST.pending = null
 
   const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the Applied tab. The list is read again.'
-  for (const applied of [false, true]) {
+  for (const [row, button] of [[null, 'Approve'], ['apply', 'Approve'], ['rejected', 'Approve'], ['apply', 'Reject']]) {
+    const applied = row === 'apply' && button === 'Approve'
     REST.post = 'latecold'
-    REST.coldApplied = applied
+    REST.coldRow = row
     const cold = await mount('en', 'page')
     const coldReads = cold.flight.total.get('GET /pending') || 0
-    await click(buttons(cellOf(cold, 'skills:aaa11111'), /^Approve$/)[0], applied ? 700 : 200)
+    await click(buttons(cellOf(cold, 'skills:aaa11111'), new RegExp(`^${button}$`))[0], applied ? 700 : 200)
     const coldSaid = stub.calls.notify.at(-1)
-    if (applied ? coldSaid?.kind === 'error' || !/applied/i.test(coldSaid?.message || '')
-      : coldSaid?.kind !== 'error' || coldSaid?.message !== UNKNOWN) {
-      fail(`a late /decide with no history read before the click (history then shows ${applied ? 'an apply row: it must say so' : 'only an older failed row: the outcome is unknown'}): ${JSON.stringify(coldSaid)}`)
+    const want = applied ? coldSaid?.kind !== 'error' && /applied/i.test(coldSaid?.message || '')
+      : row === null ? coldSaid?.kind === 'error' && coldSaid?.message === UNKNOWN
+        : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied' : 'rejected', 'i').test(coldSaid?.message || '')
+    if (!want) {
+      fail(`a late ${button} with no history baseline, history then showing ${row || 'only an older failed'} row, told: ${JSON.stringify(coldSaid)}`)
     }
     if ((cold.flight.total.get('GET /pending') || 0) <= coldReads) fail('a late /decide with no history baseline did not read the list again')
     REST.post = 'normal'
-    REST.coldApplied = false
+    REST.coldRow = null
     cold.root.unmount()
     cold.hostEl.remove()
   }

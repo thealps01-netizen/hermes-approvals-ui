@@ -2208,7 +2208,7 @@ def _foreign_at(text: str, known: set) -> int:
         if _norm_line(line) not in known:
             run, last, start, words = 0, "", 0, 0
             for i, ch in enumerate(line):
-                if unicodedata.category(ch).startswith("M"):
+                if unicodedata.category(ch) in ("Mn", "Mc", "Me", "Cf"):
                     continue
                 kind = _script_letter(ch)
                 if kind == "ideograph":
@@ -2917,7 +2917,7 @@ def _write_text(subsystem: str, record: dict) -> str:
     else:
         payload = record.get("payload") or {}
         parts += [str(op.get(k) or "") for op in payload.get("operations") or [payload] if isinstance(op, dict)
-                  for k in ("content", "old_text")]
+                  for k in ("content", "old_text", "matched_entry")]
     return "\n".join(parts)
 
 
@@ -2953,7 +2953,7 @@ def _quoted(quote: str, proof: str, short: bool = True) -> bool:
         return True
     if not short or len(pieces) > 1:
         return False
-    word = _proof(quote).strip()
+    word = _proof(quote).strip().strip("`'\"‘’“”«»….").strip()
     if any(_script_letter(ch) == "ideograph" for ch in word):
         return len(pieces[0]) >= 2 and word in proof
     least = 2 if any(_script_letter(ch) for ch in word) else _WORD_MIN

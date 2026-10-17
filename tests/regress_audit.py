@@ -897,6 +897,31 @@ def language_rule_reads_short_greek_words_and_accents():
         assert pa._foreign_at(text, set()) < 0, f"English text was locked: {text!r}"
 
 
+@case
+def quotes_of_pinned_notes_and_in_marks_count():
+    env = Env()
+    env.assign()
+    env.memory("never deploy on Fridays, ask Ana first.", "other note")
+    env.stage_memory("98000050", {"action": "remove", "target": "memory", "old_text": "Fridays",
+                                  "matched_entry": "never deploy on Fridays, ask Ana first."})
+    env.reply = json.dumps({"summary": "s", "findings": [
+        {"severity": "block", "kind": "wrong", "quote": "never deploy on Fridays, ask Ana first.", "other": "",
+         "explain": "x"}]})
+    state = env.settle("memory", "98000050")
+    assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
+        f"a quote of the whole note a remove deletes did not count: {state}"
+    write = "Deploy with make ship only, never with sudo."
+    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”"):
+        assert _verified(env, quote, write), f"a short quote in marks did not count: {quote!r}"
+
+
+@case
+def zero_width_marks_do_not_hide_other_scripts():
+    env = Env()
+    for text in ("В\u200bс\u200bе\u200bг\u200bд\u200bа", "Прове\u200dряй"):
+        assert env.pa._foreign_at(text, set()) >= 0, f"zero-width marks hid foreign text: {text!r}"
+
+
 def _run_one(name: str) -> int:
     try:
         CASES[name]()
