@@ -911,8 +911,11 @@ def quotes_of_pinned_notes_and_in_marks_count():
     assert state["verdict"] == "reject" and not state["findings"][0].get("unverified"), \
         f"a quote of the whole note a remove deletes did not count: {state}"
     write = "Deploy with make ship only, never with sudo."
-    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”", "(sudo)", '"sudo",'):
+    for quote in ("`sudo`", '"sudo"', "sudo…", "“sudo”", "(sudo)", '"sudo",', "...sudo", "…sudo…", "sudo!"):
         assert _verified(env, quote, write), f"a short quote in marks did not count: {quote!r}"
+    flag = "Keep the enabled flag and the force option. Never use sudo."
+    for quote in ("!enabled", "?enabled", "!!force", ":force", "!sudo", "(sudo", "sudo)"):
+        assert not _verified(env, quote, flag), f"a short quote that adds a leading mark counted: {quote!r}"
 
 
 @case

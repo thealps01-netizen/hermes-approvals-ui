@@ -863,8 +863,9 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **Memory proof.** The proof a memory quote is checked against holds `content`, `old_text` and, for a
   remove or replace only, the pinned `matched_entry`: those delete the whole pinned note, so the reviewer
   may quote it. A patch keeps the rest of the note, which is current text, not the write.
-* **Short quote marks.** Backticks, quote marks, brackets, an ellipsis and edge punctuation around a short
-  quote are stripped before the whole-word match; the model often wraps a command or word that way.
+* **Short quote marks.** Before the whole-word match, quote marks, backticks and ellipses are stripped
+  from both ends of a short quote, sentence punctuation (`.,;:!?`) only from its end, and brackets only
+  as a matching pair. A leading `!`, `?` or `:` stays: in code `!enabled` is the opposite of `enabled`.
 * **Landed writes.** One approve of one id prints `Approved 1` or `Approved 0` in core's `_approve`;
   the count alone decides. The echoed notes can contain any line, including `Failed:`.
 * **Late answers without a baseline.** When the history could not be read before the click, an apply or

@@ -2954,7 +2954,10 @@ def _quoted(quote: str, proof: str, short: bool = True) -> bool:
         return True
     if not short or len(pieces) > 1:
         return False
-    word = _proof(quote).strip().strip("`'\"‘’“”«»….,;:!?()[]{}").strip()
+    marks = "`'\"‘’“”«»…"
+    word = re.sub(r"^\.{3}", "", _proof(quote).strip().strip(marks)).rstrip(".,;:!?").strip(marks).strip()
+    while len(word) > 2 and word[0] + word[-1] in ("()", "[]", "{}"):
+        word = word[1:-1].strip()
     if any(_script_letter(ch) == "ideograph" for ch in word):
         return len(pieces[0]) >= 2 and word in proof
     least = 2 if any(_script_letter(ch) for ch in word) else _WORD_MIN
