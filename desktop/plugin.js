@@ -165,7 +165,8 @@ const BUNDLES = {
         approve: n => `Approve ${n}`,
         reject: n => `Reject ${n}`,
         confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Applied” and can be undone there.`,
-        advisedReject: n => `The AI review advised rejecting ${n} of them.`,
+        advisedReject: (n, all) => all === 1 ? 'The AI review advised rejecting it.'
+          : `The AI review advised rejecting ${n} of them.`,
         confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Applied” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
@@ -1996,7 +1997,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
               jsx('span', {
                 style: { flex: '1 1 240px' },
                 children: arming === 'reject' ? t('pa.bulk.confirmReject', n)
-                  : advised ? `${t('pa.bulk.confirmApprove', n)} ${t('pa.bulk.advisedReject', advised)}`
+                  : advised ? `${t('pa.bulk.confirmApprove', n)} ${t('pa.bulk.advisedReject', advised, n)}`
                     : t('pa.bulk.confirmApprove', n)
               }, 'copy'),
               jsx(Button, {

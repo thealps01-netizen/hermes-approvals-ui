@@ -968,6 +968,17 @@ def new_skills_do_not_rescan_every_skill():
     finally:
         sm._read_frontmatter_name = real
     assert len(reads) <= 4 * 7, f"/pending read SKILL.md frontmatter {len(reads)} times for 7 skills"
+    reads.clear()
+    sm._read_frontmatter_name = lambda path: reads.append(path) or real(path)
+    try:
+        wa._find_skill_path("have-3")
+        alone = len(reads)
+        reads.clear()
+        with env.pa._memo():
+            env.pa._skill_dir("have-3")
+    finally:
+        sm._read_frontmatter_name = real
+    assert len(reads) <= alone, f"one lookup in a request read {len(reads)} frontmatters, core alone reads {alone}"
     with env.pa._memo():
         for name in ("have-3", "Shown Name", "shown-dir", "cat/have-1", "brand-new-4", "nope"):
             core = wa._find_skill_path(name)

@@ -24,7 +24,7 @@ local stand-in for the review model. Each fix has a check that fails on 1.13.1.
 ### Changed
 
 * **Bulk Approve says when the AI review advised against a selected record.** The confirmation now adds
-  "The AI review advised rejecting N of them." when it applies.
+  "The AI review advised rejecting N of them." (or "rejecting it." for one record) when it applies.
 
 ## 1.13.1
 

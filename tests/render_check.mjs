@@ -1362,6 +1362,17 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     }
     advisedBulk.hostEl.remove()
   }
+  {
+    REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict: 'reject' } })
+    const single = await mount('en')
+    await click(pickOf(single, 'skills:aaa11111'))
+    await click(buttons(barOf(single), /^Approve 1$/)[0])
+    const armed = barOf(single)?.textContent || ''
+    if (!armed.includes('The AI review advised rejecting it.') || /of them/.test(armed)) {
+      fail(`bulk Approve of one advised record arms with: ${armed}`)
+    }
+    single.hostEl.remove()
+  }
   REST.pending = null
 
   REST.post = 'bulkfail'

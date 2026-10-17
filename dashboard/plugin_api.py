@@ -2239,7 +2239,9 @@ def _skill_dir(name: str) -> Path | None:
 def _skill_dir_now(name: str) -> Path | None:
     from tools import write_approval as wa
 
-    known = _remember(("skill-names",), _skill_names) if _MEMO.get() is not None else None
+    looked = _remember(("skill-lookups",), list) if _MEMO.get() is not None else []
+    looked.append(name)
+    known = _remember(("skill-names",), _skill_names) if len(looked) > 1 else None
     if known is not None and "/" not in name and "\\" not in name and name not in known:
         return None
     try:
