@@ -188,7 +188,8 @@ why they are drawn whole with their size in the label (§6).
   (`variant` + `size` only — no `h-*`/`px-*`/radius override), the state and history-kind chips are
   `Badge`, the Inspector-style key/value grid is `PanelMeta`, every field label is a
   `PanelSectionLabel`, the record's own text sits in `PanelBlock`, raw backend text and the diffs are
-  `LogView`, the empty queue/history are `PanelEmpty`/`EmptyState`, the memory read is a `Loader` and a
+  `LogView` (except the History summary, drawn as prose since 1.14.0: it is read, not inspected), the
+  empty queue/history are `PanelEmpty`/`EmptyState`, the memory read is a `Loader` and a
   failed read an `ErrorState`. The kit's OWN classes are compiled (the kit components are application
   source), which is why the panel can wear them while its own layout stays in the `<style>` block.
   The panel's `<style>` block therefore holds only its own LAYOUT: the card grid (`.pa-cols`/`.pa-cell`),
@@ -860,7 +861,27 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
 * **Focus target.** `refocus()` focuses the `.pa-card` itself (`tabIndex: -1`), not a control inside it:
   a lone record has no checkbox, so a checkbox target vanished ~120 ms after it was focused. It
   retries at 450, 900 and 1500 ms and acts only while focus is lost or inside a leaving card.
-* **Repeated warnings.** A held button pressed again within 5 s with the same reason adds no notice.
+* **Repeated warnings.** `warnOnce` names its notice (`id` = the plugin id + the message), and core's
+  `showNotification` (`apps/desktop/src/store/notifications.ts`) replaces a notice whose `id` is already
+  on screen. A warning never auto-dismisses there (`defaultDuration` 0), so the old 5 s window let a
+  later press stack a second copy; the id needs no timer and follows the owner dismissing it. The
+  render check's stub keeps the same on-screen list.
+* **Unverified explanation inline.** What "Unverified quote" means is a `pa-aside` line under the tag
+  (on the card and in Details), not a hover `Tip` plus `aria-description`: keyboard and screen-reader
+  users reach it, it is read once, and the tag adds no Tab stop.
+* **Focus after Undo / Restore.** A history card is `tabIndex: -1` with `data-entry`. When an Undo,
+  Force undo or Restore finishes (either way), the card is found again by its entry id after the
+  re-read and focused at 450/900/1500 ms, only while focus is lost (the same `lost()` as `refocus()`).
+  Never the button: a conflict turns it into "Force undo", and a double Enter would discard work.
+* **Plain History summaries.** The summary is core's one-line gist (`skill_gist()` in core
+  `tools/write_approval.py`: `create '<n>' — <d> (<size>)`, `rewrite …`, `patch '<n>' <f> (+a/-r
+  lines)`, `write <f> in '<n>'`, `remove <f> from '<n>'`, `delete skill '<n>'`). `plainGist()` maps
+  those forms when they start the summary to the card-title words ("New skill", "Edit skill",
+  "Delete skill") and keeps any backend suffix; anything else is shown unchanged. It feeds the summary
+  box, the group change rows and the Undo/Restore names. Core's own text stays reachable in a `Tip`
+  ("Hermes recorded it as: …") on the summary box, since it is diagnostic, not needed to read the row.
+  The `from '` of the remove form is written `from [']` in the pattern: the desktop loader reads
+  `from '<x>'` as an import and drops the plugin.
 * **Relative time.** The host's `relativeTime` follows the system locale; the panel is English-only,
   so `when()` builds the phrase from the `pa.time` keys.
 * **Toast wording.** Core's `Approved N <kind> write(s).` is replaced by the panel's own saved notice;

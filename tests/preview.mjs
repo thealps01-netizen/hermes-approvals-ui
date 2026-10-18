@@ -10,8 +10,8 @@
  *      PanelSectionLabel rows, the PanelBlock bodies, the LogView diff, the disabled Approve with the
  *      reason in a themed Tip, and the description-fix block.
  *   2. Pending — a record that touches MORE THAN ONE skill (the group layer + `Apply Only This`).
- *   3. History — the history cards with the kit Badge kind, the raw summary LogView and the two-step
- *      `Force undo` (the conflict is reported first).
+ *   3. History — the history cards with the kit Badge kind, the summary in plain words (Hermes' own
+ *      text kept in a Tip) and the two-step `Force undo` (the conflict is reported first).
  *   4. Memory — the note cards and the TWO-STEP delete armed.
  *   5. Pending — a skill GROUP (1.11.0): one card for three changes to one skill, the review lines
  *      tagged #n, the stale change, the combined Result open, one member's own lines unfolded and
@@ -197,6 +197,9 @@ const GROUPED = {
 
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated — 2 notes', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+  { id: 'e2e0d001', ts: NOW - 1800, kind: 'apply', subsystem: 'skills',
+    summary: "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)",
+    files: [{ path: 'skills/e2e-demo/SKILL.md' }], undoable: true },
   { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', summary: "batch(3 ops) on hermes-desktop-plugin-dev", files: [], undoable: false, restorable: true },
   { id: 'ee55ff66', ts: NOW - 5400, kind: 'rejected', subsystem: 'memory', summary: 'MEMORY.md: a note about the old calendar schedule', files: [], undoable: false, restored: '9a8b7c6d' },
   { id: 'cc33dd44', ts: NOW - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: the file was written by another bot while the record was waiting', files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
@@ -311,7 +314,8 @@ frames.push({
 })
 
 frames.push({
-  label: 'History — history cards, the raw summary in a LogView, two-step Force undo, Restore on a rejected record',
+  label: 'History — history cards, the summary in plain words (Hermes\' own text in a Tip), two-step Force undo, ' +
+    'Restore on a rejected record',
   html: await frame(async hostEl => {
     await click(tab(hostEl, /^History/), 'the History tab')
     await click(byText(hostEl, /^Undo$/), 'Undo')

@@ -25,7 +25,11 @@ and read the way a non-technical owner reads it. Each change has a check that fa
   reads "5 minutes ago".
 * **Notices speak plainly.** A single approve says "Saved — you can undo it from the “History” tab"
   instead of Hermes' "Approved 1 memory write(s).", and a bulk result says "3 of 3 approved" or
-  "3 of 3 rejected" instead of "3 of 3 done". Pressing a held button again does not stack the same notice.
+  "3 of 3 rejected" instead of "3 of 3 done".
+* **One warning per reason.** Pressing a held Approve again replaces the warning already on screen
+  instead of adding a second copy, however long you wait between presses.
+* **Focus stays in the History list.** After Undo, Force undo or Restore, focus moves to that History
+  entry instead of the page top.
 
 ### Changed
 
@@ -37,8 +41,12 @@ and read the way a non-technical owner reads it. Each change has a check that fa
 * **A deletion reads as one.** Its change says "whole skill" and "Deletes the whole skill folder. You can
   bring it back from the “History” tab." instead of "+0 −0" and "No text recorded for this operation.",
   and a set of changes to one skill that deletes it is titled "… · includes deleting the skill".
-* **"Unverified quote" explains itself.** Its tooltip says the quote could not be found in the write,
-  so the finding does not count toward the verdict, and the quote is labelled "The reviewer quoted".
+* **"Unverified quote" explains itself.** A line under the tag says the quote could not be found in the
+  write, so the finding does not count toward the verdict; keyboard and screen-reader users get it too.
+  The quote is labelled "The reviewer quoted".
+* **History entries read plainly.** A summary like `create 'e2e-demo' — … (158 chars)` in a code box
+  now reads "New skill: e2e-demo — … (158 characters)" in normal text; hovering it shows what Hermes
+  recorded.
 * Smaller wording fixes: "Clear 1 record", "It changed the same file" for one record, an empty Memory
   tab no longer mentions a Delete button, and the alert switch keeps one name ("Alerts").
 
