@@ -240,6 +240,15 @@ const BUNDLES = {
         applied: n => `Applied (${grouped(n)} characters)`,
         why: text => `Reviewer: ${text}`,
         noCopy: 'The as-written copy is no longer kept.',
+        gistCreate: (n, d, s) => (d ? `New skill: ${n} — ${d} (${s})` : `New skill: ${n} (${s})`),
+        gistRewrite: (n, d, s) => (d ? `Edit skill: ${n}, whole file rewritten — ${d} (${s})`
+          : `Edit skill: ${n}, whole file rewritten (${s})`),
+        gistPatch: (n, f, a, r) => `Edit skill: ${n} — ${f}: ${plural(a, 'line', 'lines')} added, ${r} removed`,
+        gistWrite: (n, f) => `Edit skill: ${n} — writes ${f}`,
+        gistRemove: (n, f) => `Edit skill: ${n} — removes ${f}`,
+        gistDelete: n => `Delete skill: ${n}`,
+        gistChars: n => plural(grouped(n), 'character', 'characters'),
+        rawAs: text => `Hermes recorded it as: ${text}`,
       },
       empty: {
         errorTitle: 'The pane could not read its data',
@@ -418,13 +427,7 @@ const short = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim()
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
-let lastWarn = { message: '', at: 0 }
-const warnOnce = message => {
-  const now = Date.now()
-  if (lastWarn.message === message && now - lastWarn.at < 5000) return
-  lastWarn = { message, at: now }
-  host.notify({ kind: 'warning', message })
-}
+const warnOnce = message => host.notify({ id: `${ID}:warn:${message}`, kind: 'warning', message })
 const AGO = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month'], [Infinity, 'year']]
 const when = (t, ts) => {
   if (!ts) return ''
@@ -436,15 +439,15 @@ const when = (t, ts) => {
   return ''
 }
 const CORE_SAID = /^Approved \d+ \w+ write\(s\)\.?$/
+const lost = () => {
+  const now = document.activeElement
+  return !now || now === document.body || !now.isConnected || Boolean(now.closest('.pa-leaving'))
+}
 const refocus = from => {
   const root = from?.closest('.pa-root')
   if (!root) return
   const own = from.closest('.pa-cell') || from
   const at = [...root.querySelectorAll('.pa-cell')].findIndex(c => c === own)
-  const lost = () => {
-    const now = document.activeElement
-    return !now || now === document.body || !now.isConnected || Boolean(now.closest('.pa-leaving'))
-  }
   const move = () => {
     if (!lost()) return
     const left = [...root.querySelectorAll('.pa-cell')].filter(c => !c.querySelector('.pa-leaving'))
@@ -459,6 +462,25 @@ const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).s
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || [])]
 
 const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
+const GIST_END = '(?=$| — | → |; )'
+const GIST = [
+  [new RegExp(`^(create|rewrite) '([^']+)'(?: — (.*?))? \\((\\d+) (chars|KB)\\)${GIST_END}`),
+    (t, m) => t(m[1] === 'create' ? 'pa.hist.gistCreate' : 'pa.hist.gistRewrite', m[2], m[3] || '',
+      m[5] === 'KB' ? `${m[4]} KB` : t('pa.hist.gistChars', m[4]))],
+  [new RegExp(`^patch '([^']+)' (.+?) \\(\\+(\\d+)/-(\\d+) lines\\)${GIST_END}`),
+    (t, m) => t('pa.hist.gistPatch', m[1], m[2], Number(m[3]), Number(m[4]))],
+  [new RegExp(`^write (.+?) in '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistWrite', m[2], m[1])],
+  [new RegExp(`^remove (.+?) from [']([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistRemove', m[2], m[1])],
+  [new RegExp(`^delete skill '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistDelete', m[1])]
+]
+const plainGist = (t, raw) => {
+  const text = String(raw || '')
+  for (const [re, say] of GIST) {
+    const m = text.match(re)
+    if (m) return say(t, m) + text.slice(m[0].length)
+  }
+  return text
+}
 const TAB_KEY = { pending: 'pa.tab.pending', history: 'pa.tab.history', memory: 'pa.tab.memory' }
 const KIND_VARIANT = { apply: 'success', rejected: 'muted', external: 'warn', failed: 'destructive' }
 const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
@@ -736,6 +758,23 @@ function Raw({ children, height, tone, className }) {
       children
     }, 'raw')
   }, 'fade')
+}
+
+function Summary({ text, raw, height }) {
+  const t = usePluginI18n(ID)
+  const fade = useFade(true)
+  const box = jsx('div', {
+    ref: fade.ref,
+    className: 'pa-fade',
+    'data-more': fade.more,
+    children: jsx('div', {
+      className: 'pa-scroll pa-summary',
+      onScroll: fade.sync,
+      style: fieldBox(height),
+      children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: text }, 'text')
+    }, 'scroll')
+  }, 'fade')
+  return text === raw ? box : jsx(Tip, { label: t('pa.hist.rawAs', raw), children: box }, 'tip')
 }
 
 function Field({ label: title, children }) {
@@ -1128,6 +1167,7 @@ function Finding({ finding }) {
           jsx('span', { className: 'pa-pill', children: t(FINDING_KIND[finding.kind] || FINDING_KIND.rule) }, 'kind')
         ]
       }, 'head'),
+      finding.unverified ? jsx('div', { className: 'pa-aside', children: t('pa.review.unverifiedWhy') }, 'why') : null,
       finding.explain ? jsx(PanelBlock, {
         className: 'pa-free pa-prose', children: `${tagOf(finding)}${finding.explain}`
       }, 'explain') : null,
@@ -1257,16 +1297,13 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       jsxs('div', {
         className: 'pa-major',
         children: [
-          jsx(Tip, {
-            label: t('pa.review.unverifiedWhy'),
-            children: jsx(Badge, {
-              className: 'pa-tag', style: TAG, variant: 'muted',
-              'aria-description': t('pa.review.unverifiedWhy'), children: t('pa.review.unverified')
-            }, 'badge')
+          jsx(Badge, {
+            className: 'pa-tag', style: TAG, variant: 'muted', children: t('pa.review.unverified')
           }, 'sev'),
           jsx('span', { children: `${tagOf(f)}${f.explain}` }, 'text')
         ]
       }, 'line'),
+      jsx('div', { className: 'pa-aside', children: t('pa.review.unverifiedWhy') }, 'why'),
       quote('q', t('pa.review.quoted'), f.quote)
     ]
   }, `u${i}`)
@@ -1861,8 +1898,22 @@ function HistoryCard({ entry, onChanged, onRestored }) {
     ]
   }, `p${i}`)
   const restorable = entry.kind === 'rejected' && entry.restorable === true && !entry.restored
+  const own = useRef(null)
+  const said = entry.kind === 'external' && files.length ? t('pa.hist.externalDetail', files.length)
+    : String(entry.summary || '')
+  const named = plainGist(t, entry.summary).slice(0, 80)
+  const settle = from => {
+    for (const ms of [450, 900, 1500]) {
+      window.setTimeout(() => {
+        if (!lost()) return
+        const card = [...(from?.querySelectorAll('.pa-card[data-entry]') || [])].find(c => c.dataset.entry === entry.id)
+        card?.focus()
+      }, ms)
+    }
+  }
 
   const undo = async force => {
+    const from = own.current?.closest('.pa-root')
     setBusy(true)
     try {
       const res = await api.undo(entry.id, force)
@@ -1879,10 +1930,12 @@ function HistoryCard({ entry, onChanged, onRestored }) {
     } finally {
       setBusy(false)
       onChanged()
+      settle(from)
     }
   }
 
   const restore = async () => {
+    const from = own.current?.closest('.pa-root')
     setBusy(true)
     try {
       const res = await api.restore(entry.id)
@@ -1896,11 +1949,15 @@ function HistoryCard({ entry, onChanged, onRestored }) {
     } finally {
       setBusy(false)
       onRestored()
+      settle(from)
     }
   }
 
   return jsxs('div', {
+    ref: own,
     className: 'pa-card',
+    tabIndex: -1,
+    'data-entry': entry.id,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm, height: '100%' },
     children: [
       jsxs('div', {
@@ -1920,13 +1977,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
         ]
       }, 'head'),
 
-      jsx(Raw, {
-        className: 'pa-summary',
-        height: H.histSummary,
-        children: entry.kind === 'external' && files.length
-          ? t('pa.hist.externalDetail', files.length)
-          : String(entry.summary || '')
-      }, 'summary'),
+      jsx(Summary, { height: H.histSummary, text: plainGist(t, said), raw: said }, 'summary'),
 
       changes.length
         ? jsxs('div', {
@@ -1941,7 +1992,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
                 children: fold ? t('pa.hist.changesHide') : t('pa.grp.list', changes.length)
               }, 'fold'),
               ...(fold ? changes.map((c, i) => jsx('div', {
-                className: 'pa-aside', children: `#${i + 1} · ${c}`
+                className: 'pa-aside', children: `#${i + 1} · ${plainGist(t, c)}`
               }, `c${i}`)) : [])
             ]
           }, 'changes')
@@ -2009,7 +2060,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
               size: 'sm',
               loading: busy,
               onClick: () => void undo(Boolean(conflict)),
-              'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${String(entry.summary || '').slice(0, 80)}`,
+              'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${named}`,
               children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
             }, 'undo')
           : restorable
@@ -2019,7 +2070,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
                 size: 'sm',
                 loading: busy,
                 onClick: () => void restore(),
-                'aria-label': `${t('pa.btn.restore')}: ${String(entry.summary || '').slice(0, 80)}`,
+                'aria-label': `${t('pa.btn.restore')}: ${named}`,
                 children: t('pa.btn.restore')
               }, 'restore')
             : jsx('div', {

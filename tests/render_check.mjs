@@ -97,9 +97,25 @@ export function useI18n() {
   return { t: key => key }
 }
 
+// The notices on screen, as core's apps/desktop/src/store/notifications.ts keeps them: a call without an
+// id adds one, a call whose id is already on screen replaces it, and notify returns the id.
+export const screen = []
+let noticeSeq = 0
+const show = m => {
+  const id = m?.id ?? \`n\${noticeSeq++}\`
+  const at = screen.findIndex(x => x.id === id)
+  if (at >= 0) screen.splice(at, 1)
+  screen.unshift({ ...m, id })
+  return id
+}
+
 export const host = {
-  notify: m => calls.notify.push(m),
-  notifyError: (e, t) => calls.notify.push({ kind: 'error', message: String(t || e) }),
+  notify: m => { calls.notify.push(m); return show(m) },
+  notifyError: (e, t) => {
+    const m = { kind: 'error', message: String(t || e) }
+    calls.notify.push(m)
+    return show(m)
+  },
   navigate: r => calls.navigate.push(r),
   composer: {
     insertText: async (sessionId, text, opts) => {
@@ -1857,9 +1873,16 @@ REST.scan = 'ok'
   }
   const doubtBadge = doubt[0]?.querySelector('[data-slot="badge"]')
   if (doubtBadge?.hasAttribute('tabindex')) fail('the "Unverified quote" tag is an extra Tab stop on every card')
-  if (!/does not count toward the verdict/.test(doubtBadge?.getAttribute('aria-description') || '')
-      || !/does not count toward the verdict/.test(doubtBadge?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
-    fail('the "Unverified quote" tag does not say what it means')
+  const FOCUSABLE = 'button, input, select, textarea, a[href], [tabindex]'
+  if (!/does not count toward the verdict/.test(doubt[0]?.textContent || '')
+      || doubt[0]?.querySelector(FOCUSABLE)) {
+    fail('the "Unverified quote" explanation is not on screen as text (row on the card)')
+  }
+  {
+    const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
+      .map(el => (el.tagName === 'INPUT' ? 'checkbox' : el.textContent.trim()))
+    const want = ['checkbox', 'Review again', 'Details and changes', 'Reject', 'Approve']
+    if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
     fail('an unverified quote is labelled "In the write", next to a tag saying it was not found there')
@@ -1888,6 +1911,13 @@ REST.scan = 'ok'
   if (details) await click(details)
   must(cell(integ.hostEl, 'skills:aaa11111')?.textContent, ['UNVERIFIED-NOTE-3c1', 'Unverified quote'],
     'an unverified note in Details')
+  {
+    const note = [...(cell(integ.hostEl, 'skills:aaa11111')?.querySelectorAll('.pa-finding') || [])]
+      .find(f => f.textContent.includes('UNVERIFIED-NOTE-3c1'))
+    if (!/does not count toward the verdict/.test(note?.textContent || '') || note?.querySelector(FOCUSABLE)) {
+      fail('the "Unverified quote" explanation is not on screen as text (note in Details)')
+    }
+  }
   if ((cell(integ.hostEl, 'skills:aaa11111')?.textContent || '').includes('yyy')) fail('an unverified note offers its edit')
   noRawKeys(card?.textContent || '', 'integrity card')
   integ.root.unmount()
@@ -1913,6 +1943,9 @@ REST.scan = 'ok'
   if (new Set(layers).size !== 1) fail(`a history card with Restore has other layers: ${JSON.stringify([...new Set(layers)])}`)
   const pendingReads = GETS.filter(p => p === '/pending').length
   const historyReads = GETS.filter(p => p === '/history?limit=50').length
+  REST.history = { ...HISTORY_RESTORE, entries: HISTORY_RESTORE.entries.map(e => (e.id === RESTORE_ID
+    ? { ...e, restorable: false, restored: RESTORED_AS } : e)) }
+  restoreBtn?.focus()
   if (restoreBtn) await click(restoreBtn, 80)
   const restorePost = stub.calls.posts.filter(p => p.path === '/restore')
   if (restorePost.length !== 1 || restorePost[0].body.id !== RESTORE_ID) {
@@ -1923,6 +1956,14 @@ REST.scan = 'ok'
   if (GETS.filter(p => p === '/pending').length <= pendingReads) fail('Restore does not re-read the pending list')
   if (GETS.filter(p => p === '/history?limit=50').length <= historyReads) fail('Restore does not re-read the history')
   noRawKeys(hist.hostEl.textContent, 'history with Restore')
+  await act(async () => { await new Promise(r => setTimeout(r, 1600)) })
+  {
+    const now = document.activeElement
+    if (!now?.classList.contains('pa-card') || !now.textContent.includes(`#${RESTORE_ID}`)) {
+      fail(`after Restore keyboard focus falls to the page top instead of the row: ${now?.outerHTML?.slice(0, 80)}`)
+    }
+  }
+  REST.history = null
   hist.root.unmount()
   hist.hostEl.remove()
   REST.mode = 'normal'
@@ -2736,11 +2777,96 @@ REST.scan = 'ok'
   if (sends() !== before) fail('Esc on the bulk confirm sent a decision')
   ui.hostEl.remove()
 
-  if (heldBtn) await click(heldBtn)
-  const firstWarn = stub.calls.notify.filter(m => m?.kind === 'warning').length
-  if (heldBtn) await click(heldBtn)
-  if (stub.calls.notify.filter(m => m?.kind === 'warning').length !== firstWarn) {
-    fail('pressing a held Approve again stacks another identical notice')
+  {
+    const realNow = Date.now
+    const hw = await mount('en', 'page')
+    await wait(60)
+    const onScreen = re => stub.screen.filter(m => m?.kind === 'warning' && re.test(m?.message || '')).length
+    const twice = async (btn, re, what) => {
+      if (!btn) fail(`the held ${what} Approve is missing from the fixture`)
+      stub.screen.length = 0
+      if (btn) await click(btn)
+      Date.now = () => realNow.call(Date) + 6000
+      try {
+        if (btn) await click(btn)
+      } finally {
+        Date.now = realNow
+      }
+      if (onScreen(re) !== 1) {
+        fail(`a held Approve pressed again after 5 s stacks a second identical warning (${what}): ` +
+          `${onScreen(re)} on screen`)
+      }
+    }
+    await twice(buttons(cellAt(hw, 'skills:def67890'), /^Approve$/)[0], /long text/, 'single')
+    await click(buttons(hw.hostEl, /^Select all$/)[0])
+    await twice(buttons(barOf(hw), /^Approve 3$/)[0], /decision of its own/, 'bulk')
+    hw.hostEl.remove()
+  }
+  {
+    const PLAIN_CREATE = 'New skill: e2e-demo — Use when the owner asks for a demo of the approval flow. (158 characters)'
+    const PLAIN_PATCH = 'Edit skill: release-notes — SKILL.md: 3 lines added, 2 removed — approved without pre-review'
+    const RAW_CREATE = "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)"
+    const RAW_PATCH = "patch 'release-notes' SKILL.md (+3/-2 lines) — approved without pre-review"
+    const rows = [
+      { id: 'e2e0d001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'skills', summary: RAW_CREATE,
+        files: [{ path: 'skills/e2e-demo/SKILL.md' }], undoable: true },
+      { id: 'e2e0d002', ts: Date.now() / 1000 - 120, kind: 'apply', subsystem: 'skills', summary: RAW_PATCH,
+        files: [{ path: 'skills/release-notes/SKILL.md' }], undoable: true },
+      HISTORY.entries[0]
+    ]
+    const done = new Set()
+    const undone = id => {
+      done.add(id)
+      return { ...HISTORY, entries: rows.map(e => (done.has(e.id) ? { ...e, undone: true, undoable: false } : e)) }
+    }
+    REST.history = { ...HISTORY, entries: rows }
+    REST.undoReply = { ok: true, restored: ['skills/e2e-demo/SKILL.md'] }
+    const ph = await mount('en', 'page')
+    await wait(60)
+    await click(tab(ph.hostEl, /History/), 60)
+    const cardOf = id => [...ph.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes(`#${id}`))
+    const plainBad = why => fail(`a History summary still reads like code: ${why}`)
+    for (const [id, text, raw] of [['e2e0d001', PLAIN_CREATE, RAW_CREATE], ['e2e0d002', PLAIN_PATCH, RAW_PATCH]]) {
+      const card = cardOf(id)
+      const box = card?.querySelector('.pa-summary')
+      if (!box?.textContent.includes(text)) plainBad(`#${id} reads ${JSON.stringify(box?.textContent)}`)
+      if (box?.closest('[data-slot="log-view"]') || box?.querySelector('[data-slot="log-view"]')) {
+        plainBad(`#${id} sits in a monospace LogView`)
+      }
+      if (box?.querySelector('[data-slot="panel-block"].pa-prose')?.textContent !== text) {
+        plainBad(`#${id} is not drawn as prose (PanelBlock .pa-prose)`)
+      }
+      if (box?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${raw}`) {
+        plainBad(`#${id} does not keep Hermes' own text in its Tip`)
+      }
+      const label = buttons(card || ph.hostEl, /^Undo$/)[0]?.getAttribute('aria-label') || ''
+      if (!label.startsWith(`Undo: ${text.slice(0, 40)}`)) plainBad(`#${id} Undo is read out as ${JSON.stringify(label)}`)
+    }
+    const memory = cardOf('aa11bb22')?.querySelector('.pa-summary')
+    if (memory?.textContent !== 'MEMORY.md updated' || memory?.closest('[data-tip]')) {
+      plainBad('an unmapped summary is not shown unchanged without a Tip')
+    }
+
+    const first = buttons(cardOf('e2e0d001') || ph.hostEl, /^Undo$/)[0]
+    REST.history = undone('e2e0d001')
+    first?.focus()
+    if (first) await click(first, 40)
+    await wait(1600)
+    const now = doc.activeElement
+    if (!now?.classList.contains('pa-card') || now.getAttribute('data-entry') !== 'e2e0d001') {
+      fail(`after Undo keyboard focus falls to the page top instead of the row: ${now?.outerHTML?.slice(0, 80)}`)
+    }
+    const second = buttons(cardOf('e2e0d002') || ph.hostEl, /^Undo$/)[0]
+    REST.history = undone('e2e0d002')
+    second?.focus()
+    if (second) await click(second, 40)
+    const moved = tab(ph.hostEl, /Pending/)
+    moved?.focus()
+    await wait(1600)
+    if (doc.activeElement !== moved) fail('after Undo focus is pulled away from where the user moved it')
+    REST.history = null
+    REST.undoReply = null
+    ph.hostEl.remove()
   }
   const edge = { ...PENDING, memory: [{ ...PENDING.memory[0], staged_at: Date.now() / 1000 - 3590 }],
     skills: [{ ...PENDING.skills[1], ops: [{ action: 'delete', name: 'old-skill', added: 0, removed: 0 }],

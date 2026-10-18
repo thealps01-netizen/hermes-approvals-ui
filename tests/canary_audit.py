@@ -82,7 +82,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      1, "`translateNow` is used"),
     ("register-time label through ctx.i18n.t", JS,
      "ctxRef?.i18n?.t?.('pa.pane.title')", "'pa.pane.title'", 1, "`ctx.i18n.t(...)` is not used"),
-    ("React text through usePluginI18n", JS, "usePluginI18n(ID)", "useI18n()", 12,
+    ("React text through usePluginI18n", JS, "usePluginI18n(ID)", "useI18n()", 13,
      "`usePluginI18n(ID)` is not used"),
     ("jsx third argument is a key", JS, "jsx(Chip, {}, 'chip')", "jsx(Chip, {}, jsx('span', {}))", 1,
      "the third jsx() argument is not a key"),
