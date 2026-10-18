@@ -45,8 +45,9 @@ and read the way a non-technical owner reads it. Each change has a check that fa
   write, so the finding does not count toward the verdict; keyboard and screen-reader users get it too.
   The quote is labelled "The reviewer quoted".
 * **History entries read plainly.** A summary like `create 'e2e-demo' — … (158 chars)` in a code box
-  now reads "New skill: e2e-demo — … (158 characters)" in normal text; hovering it shows what Hermes
-  recorded.
+  now reads "New skill: e2e-demo — … (158 characters)" in normal text, and a set of skill changes
+  reads "Skill changes on alpha, beta — 1 new skill, 2 edits, 1 deletion"; hovering it shows what
+  Hermes recorded.
 * Smaller wording fixes: "Clear 1 record", "It changed the same file" for one record, an empty Memory
   tab no longer mentions a Delete button, and the alert switch keeps one name ("Alerts").
 

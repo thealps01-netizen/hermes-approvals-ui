@@ -247,6 +247,10 @@ const BUNDLES = {
         gistWrite: (n, f) => `Edit skill: ${n} — writes ${f}`,
         gistRemove: (n, f) => `Edit skill: ${n} — removes ${f}`,
         gistDelete: n => `Delete skill: ${n}`,
+        gistBatch: (names, parts) => `Skill changes on ${names} — ${parts}`,
+        gistBatchNew: n => plural(n, 'new skill', 'new skills'),
+        gistBatchEdit: n => plural(n, 'edit', 'edits'),
+        gistBatchDelete: n => plural(n, 'deletion', 'deletions'),
         gistChars: n => plural(grouped(n), 'character', 'characters'),
         rawAs: text => `Hermes recorded it as: ${text}`,
       },
@@ -463,6 +467,8 @@ const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.gr
 
 const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
 const GIST_END = '(?=$| — | → |; )'
+const BATCH_KIND = { create: 'pa.hist.gistBatchNew', edit: 'pa.hist.gistBatchEdit', patch: 'pa.hist.gistBatchEdit',
+  write_file: 'pa.hist.gistBatchEdit', remove_file: 'pa.hist.gistBatchEdit', delete: 'pa.hist.gistBatchDelete' }
 const GIST = [
   [new RegExp(`^(create|rewrite) '([^']+)'(?: — (.*?))? \\((\\d+) (chars|KB)\\)${GIST_END}`),
     (t, m) => t(m[1] === 'create' ? 'pa.hist.gistCreate' : 'pa.hist.gistRewrite', m[2], m[3] || '',
@@ -471,7 +477,15 @@ const GIST = [
     (t, m) => t('pa.hist.gistPatch', m[1], m[2], Number(m[3]), Number(m[4]))],
   [new RegExp(`^write (.+?) in '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistWrite', m[2], m[1])],
   [new RegExp(`^remove (.+?) from [']([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistRemove', m[2], m[1])],
-  [new RegExp(`^delete skill '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistDelete', m[1])]
+  [new RegExp(`^delete skill '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistDelete', m[1])],
+  [new RegExp(`^batch\\(\\d+ ops: ([a-z_, ]+)\\) on (.+?)${GIST_END}`), (t, m) => {
+    const acts = m[1].split(', ')
+    const kinds = acts.map(a => BATCH_KIND[a])
+    if (kinds.some(k => !k)) return m[0]
+    const parts = [...new Set(Object.values(BATCH_KIND))].map(k => [k, kinds.filter(x => x === k).length])
+      .filter(([, n]) => n).map(([k, n]) => t(k, n))
+    return t('pa.hist.gistBatch', m[2], parts.join(', '))
+  }]
 ]
 const plainGist = (t, raw) => {
   const text = String(raw || '')

@@ -877,7 +877,10 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   `tools/write_approval.py`: `create '<n>' — <d> (<size>)`, `rewrite …`, `patch '<n>' <f> (+a/-r
   lines)`, `write <f> in '<n>'`, `remove <f> from '<n>'`, `delete skill '<n>'`). `plainGist()` maps
   those forms when they start the summary to the card-title words ("New skill", "Edit skill",
-  "Delete skill") and keeps any backend suffix; anything else is shown unchanged. It feeds the summary
+  "Delete skill") and keeps any backend suffix; anything else is shown unchanged. A staged batch is
+  core's `batch(<n> ops: <actions>) on <names>` (`tools/skill_manager_batch.py`); its actions are
+  counted as new skills, edits (`edit`, `patch`, `write_file`, `remove_file`) and deletions. A batch
+  with an action outside that list stays unchanged rather than miscounted. It feeds the summary
   box, the group change rows and the Undo/Restore names. Core's own text stays reachable in a `Tip`
   ("Hermes recorded it as: …") on the summary box, since it is diagnostic, not needed to read the row.
   The `from '` of the remove form is written `from [']` in the pattern: the desktop loader reads

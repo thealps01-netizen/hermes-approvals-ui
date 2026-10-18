@@ -2807,12 +2807,19 @@ REST.scan = 'ok'
     const PLAIN_PATCH = 'Edit skill: release-notes — SKILL.md: 3 lines added, 2 removed — approved without pre-review'
     const RAW_CREATE = "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)"
     const RAW_PATCH = "patch 'release-notes' SKILL.md (+3/-2 lines) — approved without pre-review"
+    const RAW_BATCH = 'batch(4 ops: create, patch, write_file, delete) on alpha, beta'
+    const PLAIN_BATCH = 'Skill changes on alpha, beta — 1 new skill, 2 edits, 1 deletion'
+    const RAW_ODD = 'batch(2 ops: create, frobnicate) on gamma'
     const rows = [
       { id: 'e2e0d001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'skills', summary: RAW_CREATE,
         files: [{ path: 'skills/e2e-demo/SKILL.md' }], undoable: true },
       { id: 'e2e0d002', ts: Date.now() / 1000 - 120, kind: 'apply', subsystem: 'skills', summary: RAW_PATCH,
         files: [{ path: 'skills/release-notes/SKILL.md' }], undoable: true },
-      HISTORY.entries[0]
+      HISTORY.entries[0],
+      { id: 'e2e0d003', ts: Date.now() / 1000 - 180, kind: 'rejected', subsystem: 'skills', summary: RAW_BATCH,
+        files: [] },
+      { id: 'e2e0d004', ts: Date.now() / 1000 - 240, kind: 'rejected', subsystem: 'skills', summary: RAW_ODD,
+        files: [] }
     ]
     const done = new Set()
     const undone = id => {
@@ -2842,6 +2849,13 @@ REST.scan = 'ok'
       const label = buttons(card || ph.hostEl, /^Undo$/)[0]?.getAttribute('aria-label') || ''
       if (!label.startsWith(`Undo: ${text.slice(0, 40)}`)) plainBad(`#${id} Undo is read out as ${JSON.stringify(label)}`)
     }
+    const batch = cardOf('e2e0d003')?.querySelector('.pa-summary')
+    if (batch?.textContent !== PLAIN_BATCH) plainBad(`a batch record reads ${JSON.stringify(batch?.textContent)}`)
+    if (batch?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${RAW_BATCH}`) {
+      plainBad('a batch record does not keep the text Hermes recorded in its Tip')
+    }
+    const odd = cardOf('e2e0d004')?.querySelector('.pa-summary')
+    if (odd?.textContent !== RAW_ODD) plainBad(`a batch with an unknown action is guessed: ${odd?.textContent}`)
     const memory = cardOf('aa11bb22')?.querySelector('.pa-summary')
     if (memory?.textContent !== 'MEMORY.md updated' || memory?.closest('[data-tip]')) {
       plainBad('an unmapped summary is not shown unchanged without a Tip')
