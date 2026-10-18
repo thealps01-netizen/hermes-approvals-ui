@@ -16,7 +16,7 @@ chat tells you a write is waiting; this panel is where you inspect it and decide
   budget) the shortened alternative with a "Shorten and create" action. Several writes waiting for
   the same skill are one card: the combined result, the changes in order, one review and one
   **Approve N changes** (all or none); each change keeps its own **Reject #n**.
-* **Applied** — every approve, reject, outside change and failed attempt, with per-record **Undo**;
+* **History** — every approve, reject, outside change and failed attempt, with per-record **Undo**;
   a rejected record can be **Restored** to the queue.
 * **Memory** — the live `MEMORY.md` / `USER.md` entries with the budget they consume, and a two-step
   delete (adding a note stays a chat action — the panel does not invent a second write path). Past 90%
@@ -38,7 +38,7 @@ gates enforce.
 
 ## Screenshots
 
-The six-frame preview (blocked record + long op bodies, the multi-skill record, the Applied tab after
+The six-frame preview (blocked record + long op bodies, the multi-skill record, the History tab after
 a conflict, the Memory tab with a delete armed, a skill group of three changes with one of them
 blocked, the same pending list in a 420 px pane), drawn from the panel's real React output — dark
 mode, then the same frames in light mode:

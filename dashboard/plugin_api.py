@@ -626,10 +626,10 @@ _TEXT = {
     'what_unknown_note': 'An operation Hermes does not know: {action}',
     'stale_mem_refused': '{what} → cannot be applied: {problem}',
     'stale_mem_unpinned': 'this edit was staged without the note it targets, so Hermes refuses it; reject it and let the agent write it again',
-    'count_add': 'Adds {n} note(s)',
-    'count_rep': 'updates {n} note(s)',
-    'count_rem': 'deletes {n} note(s)',
-    'effect_memory': 'If you approve, the write lands in {file} and is remembered automatically in later sessions. You can take it back from the "Applied" tab.',
+    'count_add': 'Adds {n} {notes}',
+    'count_rep': 'updates {n} {notes}',
+    'count_rem': 'deletes {n} {notes}',
+    'effect_memory': 'If you approve, the write lands in {file} and is remembered automatically in later sessions. You can take it back from the "History" tab.',
     'what_create': 'creates a new skill named {name}',
     'what_delete': 'deletes the skill {name}',
     'what_write': 'writes the file {where}',
@@ -644,8 +644,9 @@ _TEXT = {
     'stale_path': '{what} → cannot be applied: Hermes refuses this file path — {problem}.',
     'stale_frontmatter': '{what} → cannot be applied: the validator rejects it — {problem}.',
     'head_new': 'New skill: {names}',
-    'head_upd': 'Update: {names}',
-    'effect_skills': 'If you approve, those files are written and the assistant reads the new version the next time it loads this skill. When a record touches more than one skill, the "only this" button inside the card applies just one — the remaining operations stay queued as a new pending record. You can take it back from the "Applied" tab.',
+    'head_upd': 'Edit skill: {names}',
+    'head_del': 'Delete skill: {names}',
+    'effect_skills': 'If you approve, those files are written and the assistant reads the new version the next time it loads this skill. When a record touches more than one skill, the "only this" button inside the card applies just one — the remaining operations stay queued as a new pending record. You can take it back from the "History" tab.',
     'note_what': 'What it does',
     'why_background': 'The background review that runs after a session wanted to save this.',
     'why_assistant': 'The assistant wanted to save this during a task.',
@@ -928,10 +929,12 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             if step["error"]:
                 stale.append(_tx("stale_mem_refused", what=what[-1], problem=step["error"].rstrip(".")))
         tally = {a: sum(1 for s in steps if s["action"] == a) for a in ("add", "patch", "replace", "remove")}
-        headline = file_label + ": " + ", ".join(p for p in (
-            _tx("count_add", n=tally["add"]) if tally["add"] else "",
-            _tx("count_rep", n=tally["patch"] + tally["replace"]) if tally["patch"] + tally["replace"] else "",
-            _tx("count_rem", n=tally["remove"]) if tally["remove"] else "") if p)
+        changed = tally["patch"] + tally["replace"]
+        noun = {n: "note" if n == 1 else "notes" for n in (tally["add"], changed, tally["remove"])}
+        headline = file_label + ": " + (what[0] if len(steps) == 1 else ", ".join(p for p in (
+            _tx("count_add", n=tally["add"], notes=noun[tally["add"]]) if tally["add"] else "",
+            _tx("count_rep", n=changed, notes=noun[changed]) if changed else "",
+            _tx("count_rem", n=tally["remove"], notes=noun[tally["remove"]]) if tally["remove"] else "") if p))
         groups = [{"name": file_label, "kind": "update", "ops": what, "files": [file_label]}]
         effect = _tx("effect_memory", file=file_label)
         target_label = file_label
@@ -992,14 +995,20 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             group = per_name.setdefault(name, {"name": name, "kind": "update", "ops": [], "files": []})
             group["ops"].append(what[-1])
             group["files"].append(where)
-            if action == "create":
+            if action == "create" and group["kind"] != "delete":
                 group["kind"] = "new"
+            elif action == "create":
+                group["kind"] = "update"
+            elif action == "delete":
+                group["kind"] = "delete"
         groups = list(per_name.values())
         target_label = ", ".join(per_name) or "?"
         new = [g["name"] for g in groups if g["kind"] == "new"]
-        upd = [g["name"] for g in groups if g["kind"] != "new"]
+        upd = [g["name"] for g in groups if g["kind"] == "update"]
+        gone = [g["name"] for g in groups if g["kind"] == "delete"]
         headline = " + ".join(p for p in (_tx("head_new", names=", ".join(new)) if new else "",
-                                          _tx("head_upd", names=", ".join(upd)) if upd else "") if p)
+                                          _tx("head_upd", names=", ".join(upd)) if upd else "",
+                                          _tx("head_del", names=", ".join(gone)) if gone else "") if p)
         effect = _tx("effect_skills")
 
     if subsystem == wa.MEMORY:
