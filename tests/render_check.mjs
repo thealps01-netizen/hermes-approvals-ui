@@ -846,16 +846,18 @@ async function mount(appLocale, parts = 'both') {
   }
 
   // A removed mount must stop polling: a leaked poller reads /pending into the shared GETS log and
-  // made the burst count flaky on slow runners.
+  // made the burst count flaky on slow runners. Both paths call the ONE real unmount: the remove path
+  // used to set `gone` and then call the guarded unmount, which saw `gone` and did nothing.
   for (const [el, r] of [[hostEl, root], [chipEl, chipRoot]]) {
     const drop = el.remove.bind(el)
+    const unmount = r.unmount.bind(r)
     let gone = false
+    const stop = () => { if (!gone) { gone = true; act(() => { unmount() }) } }
     el.remove = () => {
-      if (!gone) { gone = true; r.unmount() }
+      stop()
       drop()
     }
-    const unmount = r.unmount.bind(r)
-    r.unmount = () => { if (!gone) { gone = true; unmount() } }
+    r.unmount = stop
   }
 
   const text = hostEl.innerHTML
@@ -1825,6 +1827,7 @@ REST.scan = 'ok'
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
   const reviewsPosts = () => stub.calls.posts.filter(p => p.path === '/reviews').length
 
+  await stopLeftMounts()
   const calm = reviewsPosts()
   const plain = await mount('en', 'page')
   if (reviewsPosts() !== calm) fail('a /pending load without a queued review still posted /reviews')
@@ -2150,6 +2153,8 @@ REST.scan = 'ok'
   globalThis.setTimeout = realTimeout
   const poll = ticks.filter(x => x.ms === 15000).at(-1)
   if (!poll) fail('the chip scheduled no next /count poll after its first answer')
+  const polls = ticks.filter(x => x.ms === 15000).length
+  if (polls > 1) fail(`${polls} pollers scheduled while only the chip was mounted — an earlier mount still polls`)
   const chipSent = () => postsTo('/reviews').length - c0
   if (chipSent() !== 1) fail(`the chip's first poll with records posted /reviews ${chipSent()} times, not once`)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
