@@ -679,6 +679,13 @@ const decided = body => [...decidedGroups(body), ...body.ids.map(id => {
   return { id, ok: true, message: '1 operation(s) applied.' }
 })]
 let version = 0
+// Every mount's roots, so a check that counts posts across the whole stub can stop the ones earlier
+// blocks left running: a forgotten chip still polls /count and posts /reviews when the shared count changes.
+const LIVE_ROOTS = []
+async function stopLeftMounts() {
+  for (const r of LIVE_ROOTS.splice(0)) await act(async () => { r.unmount() })
+  await act(async () => { await new Promise(r => setTimeout(r, 100)) })
+}
 async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
   REST.lateDecided = false
@@ -823,6 +830,7 @@ async function mount(appLocale, parts = 'both') {
   const hostEl = document.createElement('div')
   document.body.appendChild(hostEl)
   const root = createRoot(hostEl)
+  LIVE_ROOTS.push(root)
   if (parts !== 'chip') {
     await act(async () => { root.render(React.createElement(pageReg.render)) })
     await act(async () => { await new Promise(r => setTimeout(r, 60)) })
@@ -831,6 +839,7 @@ async function mount(appLocale, parts = 'both') {
   const chipEl = document.createElement('div')
   document.body.appendChild(chipEl)
   const chipRoot = createRoot(chipEl)
+  LIVE_ROOTS.push(chipRoot)
   if (parts !== 'page') {
     await act(async () => { chipRoot.render(React.createElement(chipReg.render)) })
     await act(async () => { await new Promise(r => setTimeout(r, 40)) })
@@ -2089,10 +2098,16 @@ REST.scan = 'ok'
   f.root.unmount()
   f.hostEl.remove()
 
+  await stopLeftMounts()
   REST.mode = 'groupsqueued'
   const qPosts = postsTo('/reviews').length
   const q = await mount('en', 'page')
-  if (postsTo('/reviews').length - qPosts !== 1) fail('a queued group review did not start the reviews once')
+  for (let w = 0; w < 100 && postsTo('/reviews').length === qPosts; w++) {
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  }
+  await act(async () => { await new Promise(r => setTimeout(r, 60)) })
+  const qGot = postsTo('/reviews').length - qPosts
+  if (qGot !== 1) fail(`a queued group review posted /reviews ${qGot} times, not once`)
   if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Approve 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
     fail('a group whose review runs leaves Approve open')
   }
@@ -2122,6 +2137,7 @@ REST.scan = 'ok'
   h.hostEl.remove()
   REST.mode = 'normal'
 
+  await stopLeftMounts()
   const ticks = []
   const realTimeout = globalThis.setTimeout
   globalThis.setTimeout = (fn, ms, ...rest) => {
@@ -2134,12 +2150,15 @@ REST.scan = 'ok'
   globalThis.setTimeout = realTimeout
   const poll = ticks.filter(x => x.ms === 15000).at(-1)
   if (!poll) fail('the chip scheduled no next /count poll after its first answer')
-  if (postsTo('/reviews').length - c0 !== 1) fail('the chip\'s first poll with records did not post /reviews once')
+  const chipSent = () => postsTo('/reviews').length - c0
+  if (chipSent() !== 1) fail(`the chip's first poll with records posted /reviews ${chipSent()} times, not once`)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (postsTo('/reviews').length - c0 !== 1) fail('an unchanged /count posted /reviews again')
+  if (chipSent() !== 1) fail(`after an unchanged /count the chip has posted /reviews ${chipSent()} times, not once`)
   REST.count = CHIP_RECORDS(3)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (postsTo('/reviews').length - c0 !== 2) fail('the chip did not post /reviews when only `records` changed')
+  if (chipSent() !== 2) {
+    fail(`after only \`records\` changed the chip has posted /reviews ${chipSent()} times, not twice`)
+  }
   if (!/3 awaiting approval/.test(chip.chipEl.textContent)) fail(`the chip total is not the counts total: ${chip.chipEl.textContent}`)
   chip.chipRoot.unmount()
   chip.chipEl.remove()
@@ -2712,14 +2731,14 @@ REST.scan = 'ok'
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const doc = dom.window.document
-  const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
-  if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
   const pid = stub.calls.registered.at(-1).id
   const say = (key, ...args) => stub.resolveKey(pid, key, args)
   if (say('pa.hist.clear', 1) !== 'Clear 1 record') fail(`one history row reads ${JSON.stringify(say('pa.hist.clear', 1))}`)
   if (/Delete button/.test(say('pa.memory.readonlyEmpty'))) fail('an empty Memory tab points at a Delete button that is not there')
   const ui = await mount('en', 'page')
   await wait(60)
+  const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
+  if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
   const tabs = [...ui.hostEl.querySelectorAll('[role=tab]')].map(x => x.textContent.trim())
   if (!tabs.some(x => /^History/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
     fail(`the decided-records tab is not named History: ${JSON.stringify(tabs)}`)
