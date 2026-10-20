@@ -634,13 +634,13 @@ def check_skill_groups_panel() -> None:
     """
     src = JS.read_text(encoding="utf-8")
     units = _function_body(src, "units")
-    listing = _function_body(src, "PendingList")
+    listing = _function_body(src, "NeedsYou")
     group = _function_body(src, "GroupCard")
     chip = _function_body(src, "Chip")
     for needle in ("if (drawn.has(group.id)) continue", "parts, plain: { stale: group.stale || [], fix }"):
         if needle not in units:
             _report(f"plugin.js: units() lost {needle!r} — a skill group is not folded into one card")
-    if "const items = units(data)" not in listing or "jsx(item.parts ? GroupCard : PendingCard, {" not in listing:
+    if "units(data)" not in listing or "item.parts ? GroupCard : PendingCard" not in listing:
         _report("plugin.js: the pending list does not draw ONE group card per skill group — its members "
                 "would be cards of their own")
     if "const groupBlocked = !pickable(item)" not in group or "groupBlocked, heldWhy, () => decideGroup('approve'))" \

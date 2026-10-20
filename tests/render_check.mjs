@@ -879,12 +879,34 @@ const buttons = (hostEl, re) => [...hostEl.querySelectorAll('button')].filter(b 
 const byText = (hostEl, text) => [...hostEl.querySelectorAll('div')].find(d => d.textContent === text)
 const tab = (hostEl, re) => [...hostEl.querySelectorAll('.pa-tab')].find(b => re.test(b.textContent || ''))
 const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
+const toFront = async (hostEl, key) => {
+  if (hostEl.querySelector(`.pa-cell[data-key="${key}"]`)) return
+  const row = hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] button`)
+  if (!row) fail(`"${key}" is reachable from neither the front card nor the Up next list`)
+  await click(row)
+}
+const frontCell = hostEl => hostEl.querySelector('.pa-cell')
+const reachableKeys = hostEl => new Set([
+  ...[...hostEl.querySelectorAll('.pa-cell[data-key]')].map(c => c.getAttribute('data-key')),
+  ...[...hostEl.querySelectorAll('.pa-upnext-row[data-key]')].map(c => c.getAttribute('data-key'))
+])
+const liveText = hostEl => hostEl.innerHTML
+  .replace(/<style[\s\S]*?<\/style>/g, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Needs you', 'Activity', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
+let sweepText = liveText(en.hostEl)
+for (const key of ['skills:def67890', 'skills:aaa11111']) {
+  await toFront(en.hostEl, key)
+  sweepText += ' ' + liveText(en.hostEl)
+}
+await toFront(en.hostEl, 'memory:abc12345')
+must(sweepText, ['Needs you', 'Activity', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
   'Looks fine', 'New skill', 'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
-noRawKeys(en.text, 'en')
+noRawKeys(sweepText, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
 if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, got ${locales}`)
@@ -892,8 +914,10 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
-must(other.text, ['Needs you', 'Approve failed', 'New skill'], 'app locale tr')
-noRawKeys(other.text, 'app locale tr')
+await toFront(other.hostEl, 'skills:aaa11111')
+const otherSwept = liveText(other.hostEl)
+must(otherSwept, ['Needs you', 'Approve failed', 'New skill'], 'app locale tr')
+noRawKeys(otherSwept, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
 for (const mounted of [en, other]) {
@@ -974,9 +998,14 @@ for (const mounted of [en, other]) {
 
 // --- 5) Cards: one head line, the one message that decides it, no repeated boilerplate -------------
 {
-  const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
-  if (cells.length !== 3) fail(`expected 3 pending cards, found ${cells.length}`)
-  if (!cells.every(c => c.getAttribute('data-key'))) fail('a card cell carries no data-key (FLIP)')
+  // The stage shows one full card at a time now; walk all 3 reachable records through the front
+  // slot instead of expecting 3 simultaneous `.pa-cell`s (today's grid assumption no longer holds).
+  const keys = ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']
+  const reachable = () => new Set([
+    ...[...en.hostEl.querySelectorAll('.pa-cell[data-key]')].map(c => c.getAttribute('data-key')),
+    ...[...en.hostEl.querySelectorAll('.pa-upnext-row[data-key]')].map(c => c.getAttribute('data-key'))
+  ])
+  if (reachable().size !== 3) fail(`expected 3 reachable pending records, found ${reachable().size}`)
   const html = en.hostEl.innerHTML
   if (!html.includes('.pa-leaving{opacity:0')) fail('the leaving animation class is not defined')
   must(html, [
@@ -987,12 +1016,16 @@ for (const mounted of [en, other]) {
     'transition:none !important;animation:none !important'
   ], 'the motion table, the lit card edge and the themed scrollbars')
   if (!en.hostEl.querySelector('.pa-pane')) fail('the pane root lost its pa-pane class')
-  if (!en.hostEl.querySelector('.pa-card')) fail('no .pa-card in the render — the class the motion rules target is gone')
-  for (const card of en.hostEl.querySelectorAll('.pa-cell .pa-card')) {
+  for (const key of keys) {
+    await toFront(en.hostEl, key)
+    const cell = en.hostEl.querySelector('.pa-cell')
+    if (!cell || cell.getAttribute('data-key') !== key) fail(`"${key}" did not become the one front .pa-cell`)
+    const card = cell.querySelector('.pa-card')
+    if (!card) fail(`no .pa-card in the render for "${key}" — the class the motion rules target is gone`)
     if ([...card.querySelectorAll('*')].some(el => el.style.overflowY === 'auto')) {
-      fail('a pending card holds its own scroll box again — the pane scrolls, the card grows')
+      fail(`"${key}" holds its own scroll box again — the pane scrolls, the card grows`)
     }
-    if (card.querySelectorAll('.pa-card-head').length !== 1) fail('a card has no single head line')
+    if (card.querySelectorAll('.pa-card-head').length !== 1) fail(`"${key}" has no single head line`)
   }
   for (const gone of ['Why it arrived', 'If you approve', 'What it does', 'Applicability check', 'Source',
     'Operations', 'Agent suggestion']) {
@@ -1001,10 +1034,12 @@ for (const mounted of [en, other]) {
   if (en.hostEl.querySelector('.pa-cols.pa-two')) fail('the pending list is a two-column grid again (cards stretch to their neighbour)')
   const footer = en.hostEl.querySelector('.pa-footer')
   if (!footer || footer.style.flexWrap !== 'wrap') fail('the footer row cannot wrap')
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
 // --- 6) The blocked record keeps Approve disabled, an open record does not ----------------------
 {
+  await toFront(en.hostEl, 'skills:def67890')
   const blocked = en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
   const approve = [...(blocked?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
   if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('the blocked record still offers a clickable “Approve”')
@@ -1019,16 +1054,19 @@ for (const mounted of [en, other]) {
     fail('the blocked Approve carries no themed Tip with the reason')
   }
   if (approve?.getAttribute('title')) fail('the blocked Approve still carries a native title')
+  await toFront(en.hostEl, 'skills:aaa11111')
   const open = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
   const openApprove = [...(open?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
   if (!openApprove || openApprove.disabled || openApprove.getAttribute('aria-disabled') === 'true') fail('a record that needs no fix has Approve disabled')
   if (openApprove?.closest('[data-tip]')) fail('a record that needs no fix carries a tooltip on Approve')
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
 // --- 6c) A path Hermes refuses holds Approve and the per-skill button --------------------------
 {
   REST.mode = 'refused'
   const ref = await mount('en')
+  await toFront(ref.hostEl, 'skills:aaa11111')
   const cell = ref.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
   const approve = [...(cell?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
   if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('a refused path still offers a clickable Approve')
@@ -1060,10 +1098,11 @@ for (const mounted of [en, other]) {
   }
   must(en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')?.textContent,
     ['Approving was attempted: Approving was already attempted and Hermes refused'], 'the refused attempt')
-  const fixable = badgeOf('skills:def67890')
+  const fixable = badgeOf(await toFront(en.hostEl, 'skills:def67890').then(() => 'skills:def67890'))
   if (fixable?.textContent !== 'Shorten first' || fixable?.getAttribute('data-variant') !== 'warn') {
     fail(`a record with a description fix is not marked “Shorten first”: ${fixable?.textContent}`)
   }
+  await toFront(en.hostEl, 'skills:aaa11111')
   const clean = badgeOf('skills:aaa11111')
   if (clean?.textContent !== 'Looks fine' || clean?.getAttribute('data-variant') !== 'success') {
     fail(`a clean record is not drawn as approvable: ${clean?.textContent}`)
@@ -1077,17 +1116,30 @@ for (const mounted of [en, other]) {
 
 // --- 7) Details: one change view, only the changed lines, nothing cut by characters ---------------
 {
-  for (const b of buttons(en.hostEl, /^Details and changes$/)) await click(b)
-  const logs = [...en.hostEl.querySelectorAll('.pa-details [data-slot="log-view"]')]
-  if (!logs.length || !logs.every(r => r.getAttribute('data-selectable-text') === 'true')) {
-    fail('the change is not drawn in the kit LogView')
+  let sweep = ''
+  for (const key of ['skills:def67890', 'skills:aaa11111', 'memory:abc12345']) {
+    await toFront(en.hostEl, key)
+    const btn = buttons(en.hostEl, /^Details and changes$/)[0]
+    if (btn) await click(btn)
+    sweep += ' ' + en.hostEl.textContent
+    if (key === 'memory:abc12345') {
+      const logs = [...en.hostEl.querySelectorAll('.pa-details [data-slot="log-view"]')]
+      if (!logs.length || !logs.every(r => r.getAttribute('data-selectable-text') === 'true')) {
+        fail('the change is not drawn in the kit LogView')
+      }
+      if (!buttons(en.hostEl, /^Hide details$/).length) fail('the details toggle does not flip to “Hide details”')
+      const mem = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"] .pa-details')
+      const marks = [...(mem?.querySelectorAll('.pa-ln') || [])].map(l => l.getAttribute('data-k'))
+      if (!marks.includes('-') || !marks.includes('+')) fail(`a replaced note is not drawn as removed + added lines: ${marks}`)
+      if (!(mem?.textContent || '').includes(OP_TAIL)) fail('the replaced text is cut by characters — its tail is missing')
+    }
   }
-  must(en.hostEl.textContent, ['# New file', 'The text', 'A note to add'], 'the change lines')
-  if (!buttons(en.hostEl, /^Hide details$/).length) fail('the details toggle does not flip to “Hide details”')
-  const mem = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"] .pa-details')
-  const marks = [...(mem?.querySelectorAll('.pa-ln') || [])].map(l => l.getAttribute('data-k'))
-  if (!marks.includes('-') || !marks.includes('+')) fail(`a replaced note is not drawn as removed + added lines: ${marks}`)
-  if (!(mem?.textContent || '').includes(OP_TAIL)) fail('the replaced text is cut by characters — its tail is missing')
+  must(sweep, ['# New file', 'The text', 'A note to add'], 'the change lines')
+  await toFront(en.hostEl, 'skills:def67890')
+  if (!buttons(en.hostEl, /^Hide details$/).length) {
+    const btn = buttons(en.hostEl, /^Details and changes$/)[0]
+    if (btn) await click(btn)
+  }
   if ((en.hostEl.textContent.match(/# New file/g) || []).length !== 1) fail('the change is drawn more than once')
   if (en.hostEl.innerHTML.includes('(batch on')) fail('the meaningless "(batch on \'\')" text is back')
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
@@ -1103,7 +1155,8 @@ for (const mounted of [en, other]) {
   const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
   if (!actions) fail('a card lost its action row')
   const variants = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.getAttribute('data-variant'))
-  if (JSON.stringify(variants) !== JSON.stringify(['destructive', 'default'])) {
+  const decisionVariants = variants.slice(-2)
+  if (JSON.stringify(decisionVariants) !== JSON.stringify(['destructive', 'default'])) {
     fail(`the action pair is not the kit destructive/default pair: ${JSON.stringify(variants)}`)
   }
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
@@ -1436,6 +1489,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
+    || h.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] input.pa-pick`)
   if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
@@ -1562,6 +1616,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const one = await mount('en')
+  await toFront(one.hostEl, 'skills:aaa11111')
   const from = posts().length
   await click(buttons(cellOf(one, 'skills:aaa11111'), /^Approve$/)[0], 80)
   const sent = posts().slice(from)
@@ -1572,6 +1627,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'stale'
   const stale = await mount('en')
+  await toFront(stale.hostEl, 'skills:aaa11111')
   const reads = GETS.filter(p => p === '/pending').length
   await click(buttons(cellOf(stale, 'skills:aaa11111'), /^Approve$/)[0], 120)
   const warned = lastSaid()
@@ -1593,6 +1649,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     REST.post = mode
     REST.lateKind = lateKind
     const late = await mount('en')
+    await toFront(late.hostEl, 'skills:aaa11111')
     await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
     const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
@@ -1604,6 +1661,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
 
   const rej = await mount('en')
+  await toFront(rej.hostEl, 'skills:aaa11111')
   const cell = cellOf(rej, 'skills:aaa11111')
   const before = posts().length
   await click(buttons(cell, /^Reject$/)[0], 80)
@@ -1618,52 +1676,38 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   rej.hostEl.remove()
 }
 
-// --- 13) FLIP: unchanged positions animate nothing, changed ones animate then settle ------------
+// --- 13) Rise: the new front record animates in; an unchanged front animates nothing ------------
+// The stage holds one full card at a time now, so the FLIP-across-three-cells check this used to be
+// no longer has anything to measure; it is replaced by the rise-in motion the new front record gets.
 {
-  const offsets = new Map()
-  for (const prop of ['offsetTop', 'offsetLeft']) {
-    Object.defineProperty(dom.window.HTMLElement.prototype, prop, {
-      configurable: true,
-      get() {
-        const key = this.getAttribute && this.getAttribute('data-key')
-        return offsets.get(key)?.[prop === 'offsetTop' ? 'top' : 'left'] ?? 0
-      }
-    })
-  }
   const pendingTab = tab(en.hostEl, /Needs you/)
   await click(pendingTab)
-  const setOffsets = tops => {
-    const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
-    cells.forEach((cell, i) => offsets.set(cell.getAttribute('data-key'), { top: tops[i] ?? 0, left: 0 }))
-    return cells
-  }
+  await toFront(en.hostEl, 'memory:abc12345')
   const styleLog = []
-  const grid = en.hostEl.querySelector('.pa-list')
+  const stage = en.hostEl.querySelector('.pa-stage-main')
   const observer = new dom.window.MutationObserver(records => {
     for (const r of records) {
       styleLog.push({ transition: r.target.style.transition || '', transform: r.target.style.transform || '' })
     }
   })
-  observer.observe(grid, { attributes: true, subtree: true, attributeFilter: ['style'] })
+  observer.observe(stage, { attributes: true, subtree: true, attributeFilter: ['style'] })
   const refresh = async () => {
     await click(en.hostEl.querySelector('.pa-refresh'))
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
   }
   const animated = () => styleLog.filter(m => m.transform.includes('translate') || m.transition.includes('transform')).length
-  const cells = setOffsets([0, 400, 800])
-  if (cells.length < 3) fail(`FLIP needs 3 cells, found ${cells.length}`)
   await refresh()
   styleLog.length = 0
   await refresh()
-  if (animated()) fail(`cards animated although the positions did not change: ${animated()}`)
+  if (animated()) fail(`the front card animated although it did not change: ${animated()}`)
   styleLog.length = 0
-  setOffsets([0, 300, 600])
-  await refresh()
+  await toFront(en.hostEl, 'skills:def67890')
   const moved = animated()
-  if (moved < 2) fail(`cards that moved must animate, saw ${moved} style records`)
+  if (!moved) fail(`the new front record does not rise in, saw ${moved} style records`)
   const stuck = [...en.hostEl.querySelectorAll('.pa-cell')].filter(c => (c.style.transform || '').includes('translate'))
   if (stuck.length) fail(`a permanent transform was left behind on ${stuck.length} card(s)`)
   observer.disconnect()
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
 // --- 13b) A running action shows progress; a failed /fix keeps the card; leave timers die with the pane
@@ -1682,6 +1726,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     return realClear(id)
   }
   const fresh = await mount('en')
+  await toFront(fresh.hostEl, 'skills:def67890')
   REST.post = 'fixfail'
   const fixBtn = buttons(fresh.hostEl, /Shorten description/)[0]
   if (fixBtn) await click(fixBtn, 60)
@@ -1690,6 +1735,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const said = stub.calls.notify.map(n => n.message || '').join(' | ')
   if (!said.includes('left exactly as it was staged')) fail(`a failed /fix was not reported: ${said}`)
   REST.post = 'normal'
+  await toFront(fresh.hostEl, 'skills:aaa11111')
   const rejectBtn = buttons(fresh.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Reject$/)[0]
   if (rejectBtn) await click(rejectBtn, 0)
   const leaveIds = [...timers].filter(([, ms]) => ms === 340).map(([id]) => id)
@@ -1701,6 +1747,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   fresh.hostEl.remove()
 
   const busy = await mount('en')
+  await toFront(busy.hostEl, 'skills:aaa11111')
   REST.post = 'hold'
   const approve = buttons(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Approve$/)[0]
   if (approve) await click(approve, 20)
@@ -1708,6 +1755,141 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (running?.getAttribute('aria-busy') !== 'true') fail('a running approve shows no progress (aria-busy/loading)')
   REST.post = 'normal'
   busy.hostEl.remove()
+}
+
+// --- 13c) queue-order: later/pick reorder the stage, new records append, front holds across refresh --
+{
+  const h = await mount('en', 'page')
+  const upNextKeys = () => [...h.hostEl.querySelectorAll('.pa-upnext-row[data-key]')].map(c => c.getAttribute('data-key'))
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'memory:abc12345') {
+    fail(`queue-order: front did not start on A: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'skills:def67890') {
+    fail(`queue-order: later(A) did not bring B forward: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  if (JSON.stringify(upNextKeys()) !== JSON.stringify(['skills:aaa11111', 'memory:abc12345'])) {
+    fail(`queue-order: later(A) did not give B,C,A: front=B, up next ${JSON.stringify(upNextKeys())}`)
+  }
+  await toFront(h.hostEl, 'skills:aaa11111')
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'skills:aaa11111') {
+    fail(`queue-order: pick(C) did not bring C forward: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  if (JSON.stringify(upNextKeys()) !== JSON.stringify(['skills:def67890', 'memory:abc12345'])) {
+    fail(`queue-order: pick(C) did not give C,B,A: front=C, up next ${JSON.stringify(upNextKeys())}`)
+  }
+  REST.mode = 'twomem'
+  await click(h.hostEl.querySelector('.pa-refresh'), 80)
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'skills:aaa11111') {
+    fail(`queue-order: the front changed on refresh even though it is still there: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  if (JSON.stringify(upNextKeys()) !== JSON.stringify(['skills:def67890', 'memory:abc12345', 'memory:abc99999'])) {
+    fail(`queue-order: a new record (D) did not append at the end: ${JSON.stringify(upNextKeys())}`)
+  }
+  REST.mode = 'normal'
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13d) later-button: Later moves the front record to the end and posts nothing -----------------
+{
+  const h = await mount('en', 'page')
+  const postsBefore = stub.calls.posts.length
+  const from = frontCell(h.hostEl)?.getAttribute('data-key')
+  await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
+  const to = frontCell(h.hostEl)?.getAttribute('data-key')
+  if (from === to) fail('later-button: Later did not move the record out of front')
+  if (!reachableKeys(h.hostEl).has(from)) fail('later-button: the record Later moved is no longer reachable')
+  if (stub.calls.posts.length !== postsBefore) fail('later-button: Later posted something, it must decide nothing')
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13e) front-gone: the front record leaves the queue while the user was elsewhere ----------------
+{
+  const h = await mount('en', 'page')
+  const outside = h.hostEl.querySelector('.pa-refresh')
+  outside.focus()
+  REST.gone = new Set(['abc12345'])
+  await click(outside, 80)
+  const said = lastSaid()
+  const wantMsg = 'It left the queue while you were away from it — it may have been decided elsewhere. ' +
+    'The next record is now in front.'
+  if (said?.message !== wantMsg) fail(`front-gone: wrong notice: ${JSON.stringify(said)}`)
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'skills:def67890') {
+    fail(`front-gone: the next record did not come to the front: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  if (h.hostEl.ownerDocument.activeElement !== outside) {
+    fail('front-gone: focus moved into the card although the user had put it outside')
+  }
+  REST.gone = null
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13f) just-done: Just done rows, Undo only where undoable && !undone, POST /undo with the id ----
+{
+  const JUST_DONE_HISTORY = { entries: [
+    { id: 'jd000001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory',
+      summary: 'JUST-DONE-UNDOABLE', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'jd000002', ts: Date.now() / 1000 - 120, kind: 'rejected', subsystem: 'skills',
+      summary: 'JUST-DONE-NOT-UNDOABLE', files: [], undoable: false },
+    { id: 'jd000003', ts: Date.now() / 1000 - 180, kind: 'apply', subsystem: 'memory',
+      summary: 'JUST-DONE-ALREADY-UNDONE', files: [{ path: 'memories/USER.md' }], undoable: true, undone: true }
+  ], counts: { applied: 3, failed: 0, undoable: 1 } }
+  REST.history = JUST_DONE_HISTORY
+  const h = await mount('en', 'page')
+  const rows = [...h.hostEl.querySelectorAll('.pa-justdone-row')]
+  if (rows.length !== 3) fail(`just-done: wrong row count: ${rows.length}`)
+  const undoCounts = rows.map(r => buttons(r, /^Undo$/).length)
+  if (JSON.stringify(undoCounts) !== JSON.stringify([1, 0, 0])) {
+    fail(`just-done: Undo shown where it should not be (undoable && !undone only): ${JSON.stringify(undoCounts)}`)
+  }
+  await click(buttons(rows[0], /^Undo$/)[0], 60)
+  const sent = stub.calls.posts.filter(p => p.path === '/undo').at(-1)
+  if (sent?.body?.id !== 'jd000001') fail(`just-done: Undo did not POST /undo with the entry id: ${JSON.stringify(sent)}`)
+  REST.history = null
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13g) all-clear: 0 pending draws All clear with no front card, and Just done still shows --------
+{
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  REST.history = HISTORY
+  const h = await mount('en', 'page')
+  if (h.hostEl.querySelector('.pa-cell')) fail('all-clear: a front card is drawn with 0 pending')
+  const empty = h.hostEl.querySelector('.pa-stage [data-slot="panel-empty"]')
+  if (!empty?.textContent.includes('All clear')) fail('all-clear: the title is missing')
+  if (!empty?.textContent.includes('Nothing is waiting. Hermes will ask here before it writes again.')) {
+    fail('all-clear: the spec sentence is missing')
+  }
+  if (!h.hostEl.querySelector('.pa-justdone-row')) fail('all-clear: Just done is gone although history has entries')
+  REST.pending = null
+  REST.history = null
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13h) motion-reduced: under prefers-reduced-motion the rise/leave animation never runs ----------
+{
+  const realMM = global.window.matchMedia
+  global.window.matchMedia = q => ({ matches: /reduce/.test(q), media: q, addEventListener() {}, removeEventListener() {} })
+  const h = await mount('en', 'page')
+  await toFront(h.hostEl, 'memory:abc12345')
+  const stage = h.hostEl.querySelector('.pa-stage-main')
+  const styleLog = []
+  const observer = new dom.window.MutationObserver(records => {
+    for (const r of records) styleLog.push({ transition: r.target.style.transition || '', transform: r.target.style.transform || '' })
+  })
+  observer.observe(stage, { attributes: true, subtree: true, attributeFilter: ['style'] })
+  await toFront(h.hostEl, 'skills:def67890')
+  const animated = styleLog.filter(m => m.transform.includes('translate') || m.transition.includes('transform')).length
+  if (animated) fail(`motion-reduced: the new front record still animated: ${animated} style change(s)`)
+  observer.disconnect()
+  global.window.matchMedia = realMM
+  h.root.unmount()
+  h.hostEl.remove()
 }
 
 // --- 14) The panel never touches the removed language route ------------------------------------
@@ -1754,7 +1936,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (retry) await click(retry, 80)
   if (REST.gets <= before) fail('Retry did not reload the data')
   if (broken.hostEl.querySelector('[data-slot="error-state"]')) fail('the error stays after a successful Retry')
-  if (broken.hostEl.querySelectorAll('.pa-cell').length !== 3) fail('Retry did not bring the records back')
+  if (reachableKeys(broken.hostEl).size !== 3) fail('Retry did not bring the records back')
   if (!broken.hostEl.textContent.includes(ISSUE)) fail('an issue the backend reported is not shown')
   broken.hostEl.remove()
   REST.mode = 'normal'
@@ -1768,7 +1950,7 @@ for (const how of ['throw', 'refused']) {
   const scanned = await mount('en')
   const why = how === 'throw' ? 'scan exploded' : 'scan refused'
   if (scanned.hostEl.querySelector('[data-slot="error-state"]')) fail(`a ${how} /scan replaced the pending list with an error state`)
-  if (scanned.hostEl.querySelectorAll('.pa-cell').length !== 3) fail(`a ${how} /scan hid the pending records`)
+  if (reachableKeys(scanned.hostEl).size !== 3) fail(`a ${how} /scan hid the pending records`)
   if (!scanned.hostEl.textContent.includes(why)) fail(`a ${how} /scan is not reported: “${why}” is missing`)
   scanned.hostEl.remove()
 }
@@ -1781,13 +1963,17 @@ REST.scan = 'ok'
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const pickDisabled = (host, key) => (cell(host, key)?.querySelector('input.pa-pick')
+    || host.querySelector(`.pa-upnext-row[data-key="${key}"] input.pa-pick`))?.disabled
   REST.mode = 'reviewing'
   const gate = await mount('en')
   const approveIn = key => buttons(cell(gate.hostEl, key), /^Approve$/)[0]
   for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
+    await toFront(gate.hostEl, key)
     if (approveIn(key)?.getAttribute('aria-disabled') !== 'true') fail(`${key}: Approve is not locked before the review`)
-    if (cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
+    if (pickDisabled(gate.hostEl, key)) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
   }
+  await toFront(gate.hostEl, 'memory:abc12345')
   const gateBar = gate.hostEl.querySelector('.pa-bulk')
   if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
   if (gateBar) await click(buttons(gateBar, /^Select all$/)[0])
@@ -1799,10 +1985,12 @@ REST.scan = 'ok'
   if (gateBar) await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
     .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
+  await toFront(gate.hostEl, 'skills:def67890')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
   if (buttons(cell(gate.hostEl, 'skills:def67890'), /Approve without review/).length) {
     fail('a failed rule check offers "Approve without review"')
   }
+  await toFront(gate.hostEl, 'skills:aaa11111')
   const open = cell(gate.hostEl, 'skills:aaa11111')
   must(open?.textContent, ['No pre-review model is set', 'Approvals review'], 'unassigned review')
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
@@ -1825,6 +2013,7 @@ REST.scan = 'ok'
 
   REST.mode = 'reviewed'
   const done = await mount('en')
+  await toFront(done.hostEl, 'skills:aaa11111')
   const card = cell(done.hostEl, 'skills:aaa11111')
   must(card?.textContent, ['Reject advised', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
   must(card?.querySelector('.pa-review')?.textContent, ['Pre-review', `In the write: “${FINDING.quote}”`,
@@ -1855,16 +2044,19 @@ REST.scan = 'ok'
   const drafts = stub.calls.composer.length
   REST.mode = 'remedy'
   const fixHost = await mount('en')
+  await toFront(fixHost.hostEl, 'skills:def67890')
   const rule = cell(fixHost.hostEl, 'skills:def67890')
   must(rule?.textContent, ['Suggested edit — adds "author: Selftest Owner" to the header', 'author: Selftest Owner'],
     'rule edit shown')
   if (!live(buttons(rule, /^Approve with the fix$/)[0])) fail('a rule check with a fixing edit offers no way to approve the fixed write')
   if (live(buttons(rule, /^Approve as written$/)[0])) fail('a failed rule check lets the write through as written')
+  await toFront(fixHost.hostEl, 'memory:abc12345')
   const left = cell(fixHost.hostEl, 'memory:abc12345')
   must(left?.textContent, [`The suggested edits do not clear every problem: ${FIX_LEFT}`], 'a fix that leaves a problem')
   const held = buttons(left, /^Approve with the fix$/)[0]
   if (live(held)) fail('a fix that leaves a problem is still clickable')
   if (!String(held?.closest('[data-tip]')?.getAttribute('data-tip')).includes(FIX_LEFT)) fail('a held fix does not say why')
+  await toFront(fixHost.hostEl, 'skills:aaa11111')
   const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
   must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x',
     'The fix covers 1 of 2 problems'], 'suggested edit shown')
@@ -1890,7 +2082,9 @@ REST.scan = 'ok'
   for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
     REST.mode = mode
     const host = await mount('en')
-    for (const c of host.hostEl.querySelectorAll('.pa-cell')) {
+    for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
+      await toFront(host.hostEl, key)
+      const c = host.hostEl.querySelector('.pa-cell')
       const badge = c.querySelector('.pa-card-head [data-slot="badge"]')
       const variant = badge?.getAttribute('data-variant')
       if (variant !== 'warn' && variant !== 'destructive') continue
@@ -1966,6 +2160,7 @@ REST.scan = 'ok'
 
   REST.mode = 'integrity'
   const integ = await mount('en', 'page')
+  await toFront(integ.hostEl, 'skills:aaa11111')
   const card = cell(integ.hostEl, 'skills:aaa11111')
   const review = card?.querySelector('.pa-review')
   const doubt = [...(review?.querySelectorAll('[data-unverified="true"]') || [])]
@@ -1984,7 +2179,7 @@ REST.scan = 'ok'
   {
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .map(el => (el.tagName === 'INPUT' ? 'checkbox' : el.textContent.trim()))
-    const want = ['checkbox', 'Review again', 'Details and changes', 'Reject', 'Approve']
+    const want = ['checkbox', 'Review again', 'Details and changes', 'Later', 'Reject', 'Approve']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -2088,22 +2283,34 @@ REST.scan = 'ok'
 
   REST.mode = 'groups'
   const g = await mount('en', 'page')
-  const keys = [...g.hostEl.querySelectorAll('.pa-cell')].map(c => c.getAttribute('data-key'))
-  if (!same(keys, ['memory:abc12345', ck(CLEAN_GROUP), 'skills:c3000003', ck(STALE_GROUP)])) {
+  const expectKeys = ['memory:abc12345', ck(CLEAN_GROUP), 'skills:c3000003', ck(STALE_GROUP)]
+  const keys = [...reachableKeys(g.hostEl)]
+  if (!same([...keys].sort(), [...expectKeys].sort())) {
     fail(`a group is not one card at its first member: ${JSON.stringify(keys)}`)
   }
   for (const id of [...CLEAN_MEMBERS, ...STALE_MEMBERS]) {
-    if (cell(g.hostEl, ck(id))) fail(`member ${id} is drawn as a card of its own`)
+    if (reachableKeys(g.hostEl).has(ck(id))) fail(`member ${id} is drawn as a card of its own`)
   }
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
   const clean = () => cell(g.hostEl, ck(CLEAN_GROUP))
-  const stale = () => cell(g.hostEl, ck(STALE_GROUP))
   const cleanHead = clean()?.querySelector('.pa-card-head')
   must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1', 'Looks fine'], 'clean group header')
   if (cleanHead?.querySelectorAll('[data-slot="badge"]').length !== 1) fail('a group header wears more than one badge')
   if (!cleanHead?.querySelector('input[type="checkbox"]')) fail('a group header has no checkbox')
+
+  await toFront(g.hostEl, ck(STALE_GROUP))
+  const stale = () => cell(g.hostEl, ck(STALE_GROUP))
   must(stale()?.querySelector('.pa-card-head')?.textContent, ['beta-skill, gamma-skill · 3 changes', '+5 −2',
     'Cannot be applied'], 'stale group header')
-  if (g.hostEl.querySelectorAll('.pa-review').length !== 4) fail('a group does not have exactly one review section')
+
+  // Each reachable record still carries exactly one review section (the stage shows one at a time now,
+  // so the panel-wide "4 review sections at once" count is replaced by a per-card sweep of the same 4 keys).
+  for (const key of expectKeys) {
+    await toFront(g.hostEl, key)
+    const n = g.hostEl.querySelectorAll('.pa-review').length
+    if (n !== 1) fail(`"${key}" does not have exactly one review section: ${n}`)
+  }
+  await toFront(g.hostEl, ck(STALE_GROUP))
   const sReview = stale()?.querySelector('.pa-review')?.textContent || ''
   must(sReview, ['GROUP-SUMMARY-STALE', '#2 · FINDING-FOR-TWO', 'FINDING-UNATTRIBUTED'], 'group review')
   if (/#\d+ · FINDING-UNATTRIBUTED/.test(sReview)) fail('a finding without `change` still starts with #n')
@@ -2125,6 +2332,7 @@ REST.scan = 'ok'
   if (sApprove) await click(sApprove)
   if (postsTo('/decide').length !== sent) fail('a held group Approve sent /decide')
 
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
   if (clean()?.textContent.includes('RESULT-CHANGED-LINE')) fail('the Result is drawn before Details is opened')
   await click(buttons(clean(), /^Details and changes$/)[0])
   must(clean()?.querySelector('.pa-details')?.textContent, ['Result', 'alpha-skill/SKILL.md', 'Changed',
@@ -2141,6 +2349,7 @@ REST.scan = 'ok'
       || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
     fail(`group Approve did not send groups + versions[groupId]: ${JSON.stringify(body)}`)
   }
+  await toFront(g.hostEl, ck(STALE_GROUP))
   await click(buttons(stale(), /^Reject all 3$/)[0], 80)
   body = lastDecide()
   if (body.decision !== 'reject' || !same(body.groups, [STALE_GROUP]) || (body.ids || []).length) {
@@ -2150,12 +2359,14 @@ REST.scan = 'ok'
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
   // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
   await act(async () => { await new Promise(r => setTimeout(r, 500)) })
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
   await click(buttons(clean(), /^Review again$/)[0], 60)
   const again = postsTo('/review').at(-1)?.body || {}
   if (again.id !== CLEAN_GROUP || again.subsystem !== 'skills') fail(`"Review again" on a group: ${JSON.stringify(again)}`)
   noRawKeys(g.hostEl.textContent, 'group cards')
 
   const pick = key => cell(g.hostEl, key)?.querySelector('.pa-card-head input[type="checkbox"]')
+    || g.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] input[type="checkbox"]`)
   for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) await click(pick(key))
   const bar = () => g.hostEl.querySelector('.pa-bulk')
   must(bar()?.textContent, ['2 of 4 selected', 'Approve 2'], 'a group is one selectable unit')
@@ -2175,15 +2386,17 @@ REST.scan = 'ok'
 
   REST.mode = 'groupsfix'
   const f = await mount('en', 'page')
-  const fClean = () => cell(f.hostEl, ck(CLEAN_GROUP))
+  await toFront(f.hostEl, ck(STALE_GROUP))
   const fStale = () => cell(f.hostEl, ck(STALE_GROUP))
   must(fStale()?.querySelector('.pa-card-head')?.textContent, ['Rule check failed'], 'a hard rule badge on a group')
   must(fStale()?.querySelector('.pa-review')?.textContent, ['#3 · HARD-FOR-THREE'], 'a rule check names its change')
-  must(fClean()?.querySelector('.pa-review')?.textContent, ['#1 · FIX-FOR-ONE'], 'an edit finding names its change')
   const shorten = buttons(fStale(), /^Shorten description$/)
   if (shorten.length !== 1) fail(`the member with plain.fix offers ${shorten.length} description fixes, not 1`)
   if (shorten[0]) await click(shorten[0], 60)
   if (postsTo('/fix').at(-1)?.body?.id !== STALE_MEMBERS[1]) fail('the member description fix did not post /fix for #2')
+  await toFront(f.hostEl, ck(CLEAN_GROUP))
+  const fClean = () => cell(f.hostEl, ck(CLEAN_GROUP))
+  must(fClean()?.querySelector('.pa-review')?.textContent, ['#1 · FIX-FOR-ONE'], 'an edit finding names its change')
   await click(buttons(fClean(), /^Approve with the fix$/)[0], 80)
   body = lastDecide()
   if (!body.with_edits || !same(body.groups, [CLEAN_GROUP]) || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
@@ -2202,6 +2415,7 @@ REST.scan = 'ok'
   await act(async () => { await new Promise(r => setTimeout(r, 60)) })
   const qGot = postsTo('/reviews').length - qPosts
   if (qGot !== 1) fail(`a queued group review posted /reviews ${qGot} times, not once`)
+  await toFront(q.hostEl, ck(CLEAN_GROUP))
   if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Approve 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
     fail('a group whose review runs leaves Approve open')
   }
@@ -2297,8 +2511,8 @@ REST.scan = 'ok'
   const variant = (c, re) => buttons(c, re)[0]?.getAttribute('data-variant')
   REST.mode = 'fixloss'
   const host = await mount('en')
+  await toFront(host.hostEl, 'skills:aaa11111')
   const heavy = cell(host.hostEl, 'skills:aaa11111')
-  const light = cell(host.hostEl, 'memory:abc12345')
   must(heavy?.textContent, ['The suggested fix deletes 51 of the 54 new words in the text it edits (94%).',
     'Approve as written keeps the write.'], 'a heavy fix is stated with its number')
   if (!heavy?.querySelector('.pa-alert-danger')) {
@@ -2309,6 +2523,8 @@ REST.scan = 'ok'
       + `fix=${variant(heavy, /^Approve with the fix$/)}`)
   }
   if (!live(buttons(heavy, /^Approve with the fix$/)[0])) fail('a heavy fix is no longer clickable (1.9.3 dead end)')
+  await toFront(host.hostEl, 'memory:abc12345')
+  const light = cell(host.hostEl, 'memory:abc12345')
   must(light?.textContent, ['With the fix, 53 of the 54 new words in the text it edits remain.'],
     'a light fix states what it keeps')
   if ((light?.textContent || '').includes('deletes')) fail('a light fix reads as an alert')
@@ -2319,6 +2535,7 @@ REST.scan = 'ok'
 
   REST.mode = 'remedy'
   const plain = await mount('en')
+  await toFront(plain.hostEl, 'skills:aaa11111')
   if (/new words in the text it edit/.test(cell(plain.hostEl, 'skills:aaa11111')?.textContent || '')) {
     fail('a review without fix_effect shows an effect line')
   }
@@ -2329,6 +2546,7 @@ REST.scan = 'ok'
 
   REST.mode = 'groupsloss'
   const g = await mount('en', 'page')
+  await toFront(g.hostEl, `skills:${CLEAN_GROUP}`)
   const gc = cell(g.hostEl, `skills:${CLEAN_GROUP}`)
   must(gc?.textContent, ['The suggested fix deletes 5 of the 10 new words in the text it edits (50%).'],
     'a group heavy fix at exactly half')
@@ -2366,7 +2584,7 @@ REST.scan = 'ok'
 // new request while the last was still open: a refresh during a load is folded into ONE follow-up load
 // after it, so no poll ever has two requests in flight.
 {
-  const cells = h => h.hostEl.querySelectorAll('.pa-cell').length
+  const cells = h => reachableKeys(h.hostEl).size
   const kept = await mount('en', 'page')
   REST.mode = 'fail'
   await click(kept.hostEl.querySelector('.pa-refresh'), 80)
@@ -2431,6 +2649,7 @@ REST.scan = 'ok'
   for (const [mode, text] of [['decide500', 'Could not run /decide: disk full'], ['notok', 'BACKEND-REASON-xyz']]) {
     REST.post = mode
     const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:aaa11111')
     const from = reads()
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
     const said = lastSaid()
@@ -2448,6 +2667,7 @@ REST.scan = 'ok'
     ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
     REST.post = mode
     const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:aaa11111')
     await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
     const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
@@ -2472,6 +2692,7 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const h = await mount('en', 'page')
   await wait(400)
+  await toFront(h.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
   const before = sends()
   await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
@@ -2513,6 +2734,7 @@ REST.scan = 'ok'
   }
   all = await mount('en')
   await wait(100)
+  await toFront(all.hostEl, 'skills:aaa11111')
   let from = reads()
   await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
   grew(from, 'a decision')
@@ -2560,15 +2782,17 @@ REST.scan = 'ok'
   REST.pending = null
   REST.gone = new Set()
   const pick = await mount('en', 'page')
+  const pickBoxOf = (h, key) => cellOf(h, key)?.querySelector('.pa-pick')
+    || h.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] .pa-pick`)
   for (const key of ['skills:aaa11111', 'skills:def67890']) {
-    const box = cellOf(pick, key)?.querySelector('.pa-pick')
+    const box = pickBoxOf(pick, key)
     if (box) await click(box, 10)
   }
   REST.gone.add('aaa11111')
   await click(pick.hostEl.querySelector('.pa-refresh'), 150)
   REST.gone.delete('aaa11111')
   await click(pick.hostEl.querySelector('.pa-refresh'), 150)
-  if (cellOf(pick, 'skills:aaa11111')?.querySelector('.pa-pick')?.checked) {
+  if (pickBoxOf(pick, 'skills:aaa11111')?.checked) {
     fail('a selection outlives its record: the record came back still ticked')
   }
   REST.gone = null
@@ -2578,6 +2802,7 @@ REST.scan = 'ok'
   REST.pending = { ...PENDING, skills: PENDING.skills.map(s => (s.id === 'def67890'
     ? { ...s, review: { status: 'unassigned', hard: [] } } : s)) }
   const short = await mount('en', 'page')
+  await toFront(short.hostEl, 'skills:def67890')
   if (buttons(cellOf(short, 'skills:def67890'), /Approve without review/).length) {
     fail('"Approve without review" is offered on a card held by "Shorten first"')
   }
@@ -2591,6 +2816,7 @@ REST.scan = 'ok'
   if (keyWarnings.length) fail(`duplicate React keys: ${[...new Set(keyWarnings)].join(', ')}`)
   REST.pending = null
   for (const key of ['memory:abc12345', 'skills:aaa11111']) {
+    await toFront(dup.hostEl, key)
     const toggle = buttons(cellOf(dup, key), /^Details and changes$/)[0]
     const panel = toggle?.getAttribute('aria-controls')
     if (toggle?.getAttribute('aria-expanded') !== 'false' || !panel) fail(`the ${key} Details toggle has no aria-expanded/aria-controls`)
@@ -2619,6 +2845,7 @@ REST.scan = 'ok'
         hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }] } } : s)) })
   REST.pending = unreviewed([])
   const fixable = await mount('en', 'page')
+  await toFront(fixable.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = sends().length
   const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0]
@@ -2640,6 +2867,7 @@ REST.scan = 'ok'
 
   REST.pending = unreviewed(['new-skill: still missing the author line.'])
   const partial = await mount('en', 'page')
+  await toFront(partial.hostEl, 'skills:aaa11111')
   const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
   const from = sends().length
   if (held) {
@@ -2677,6 +2905,7 @@ REST.scan = 'ok'
   const armedCase = async (label, key, first, next, back) => {
     REST.pending = first
     const h = await mount('en', 'page')
+    await toFront(h.hostEl, key)
     if (look(h, key).b) await click(look(h, key).b, 30)
     if (look(h, key).state.text !== 'Apply unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
     REST.pending = next
@@ -2700,6 +2929,7 @@ REST.scan = 'ok'
     h.hostEl.remove()
     REST.pending = next
     const c = await mount('en', 'page')
+    await toFront(c.hostEl, key)
     const fresh = look(c, key).state
     c.root.unmount()
     c.hostEl.remove()
@@ -2741,6 +2971,7 @@ REST.scan = 'ok'
     REST.post = 'latecold'
     REST.coldRow = row
     const cold = await mount('en', 'page')
+    await toFront(cold.hostEl, 'skills:aaa11111')
     const coldReads = cold.flight.total.get('GET /pending') || 0
     await click(buttons(cellOf(cold, 'skills:aaa11111'), new RegExp(`^${button}$`))[0], applied ? 700 : 200)
     const coldSaid = lastSaid()
@@ -2760,6 +2991,7 @@ REST.scan = 'ok'
   REST.history = { entries: [], counts: { total: 0, undoable: 0, applied: 0, failed: 0 } }
   const empty = await mount('en', 'page')
   await wait(60)
+  await toFront(empty.hostEl, 'skills:aaa11111')
   const at = empty.order.length
   await click(buttons(cellOf(empty, 'skills:aaa11111'), /^Approve$/)[0], 600)
   const seq = empty.order.slice(at).filter(r => !r.includes('/scan'))
@@ -2775,6 +3007,7 @@ REST.scan = 'ok'
   let open = null
   REST.gate = new Promise(r => { open = r })
   const away = await mount('en', 'page')
+  await toFront(away.hostEl, 'skills:aaa11111')
   await click(buttons(cellOf(away, 'skills:aaa11111'), /^Approve$/)[0], 30)
   const pageReg = away.registrations.find(r => r.area === 'routes')
   await act(async () => { away.root.unmount() })
@@ -2802,6 +3035,7 @@ REST.scan = 'ok'
   for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
   if (pair.hostEl.querySelector('.pa-bulk-count')?.textContent !== '2 of 2 selected') fail('setup: two cards could not both be ticked')
   REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
+  await toFront(pair.hostEl, 'skills:aaa11111')
   await click(buttons(cellOf(pair, 'skills:aaa11111'), /^Approve$/)[0], 700)
   REST.pending = { ...two, skills: [PENDING.skills[0]] }
   await click(pair.hostEl.querySelector('.pa-refresh'), 150)
@@ -2825,6 +3059,7 @@ REST.scan = 'ok'
   const cellAt = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const barOf = h => h.hostEl.querySelector('.pa-bulk')
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
+    || h.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] input.pa-pick`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const doc = dom.window.document
   const pid = stub.calls.registered.at(-1).id
@@ -2841,6 +3076,7 @@ REST.scan = 'ok'
   }
   const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent || ''
   if (old !== '2 hours ago') fail(`a record staged two hours ago reads ${JSON.stringify(old)}, not "2 hours ago"`)
+  await toFront(ui.hostEl, 'skills:aaa11111')
   const open = cellAt(ui, 'skills:aaa11111')
   const title = open?.querySelector('.pa-card-title')?.textContent || ''
   const named = open?.querySelector('.pa-card')
@@ -2853,13 +3089,18 @@ REST.scan = 'ok'
   if (!(open?.querySelector('input.pa-pick')?.getAttribute('aria-label') || '').includes(title)) {
     fail('the selection checkbox does not name its record')
   }
-  const skillTitles = [...ui.hostEl.querySelectorAll('.pa-cell[data-key^="skills:"] .pa-card-title')].map(x => x.textContent)
-  if (!skillTitles.length || skillTitles.some(x => !/^(New skill|Edit skill): /.test(x))) {
+  const skillTitles = []
+  for (const key of ['skills:def67890', 'skills:aaa11111']) {
+    await toFront(ui.hostEl, key)
+    skillTitles.push(cellAt(ui, key)?.querySelector('.pa-card-title')?.textContent)
+  }
+  if (!skillTitles.length || skillTitles.some(x => !/^(New skill|Edit skill): /.test(x || ''))) {
     fail(`a skill card title does not say whether it creates or edits the skill: ${JSON.stringify(skillTitles)}`)
   }
   if (ui.hostEl.querySelector('.pa-alerts')?.getAttribute('aria-label') !== 'Alerts') {
     fail('the alert switch is read out as "Alerts muted, not pressed": its name changes with its state')
   }
+  await toFront(ui.hostEl, 'skills:def67890')
   const heldBtn = buttons(cellAt(ui, 'skills:def67890'), /^Approve$/)[0]
   if (!/long text/.test(heldBtn?.getAttribute('aria-description') || '')) {
     fail('a held Approve does not tell a screen reader why it is held')
@@ -2896,6 +3137,7 @@ REST.scan = 'ok'
     const realNow = Date.now
     const hw = await mount('en', 'page')
     await wait(60)
+    await toFront(hw.hostEl, 'skills:def67890')
     const onScreen = re => stub.screen.filter(m => m?.kind === 'warning' && re.test(m?.message || '')).length
     const twice = async (btn, re, what) => {
       if (!btn) fail(`the held ${what} Approve is missing from the fixture`)
@@ -3007,6 +3249,7 @@ REST.scan = 'ok'
   await wait(60)
   const edgeWhen = cellAt(ed, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent
   if (edgeWhen !== '1 hour ago') fail(`a record 59.8 minutes old reads ${JSON.stringify(edgeWhen)}, not "1 hour ago"`)
+  await toFront(ed.hostEl, 'skills:aaa11111')
   const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-card-title')?.textContent
   if (delTitle !== 'Delete skill: old-skill') fail(`a skill deletion is titled ${JSON.stringify(delTitle)}`)
   const delCell = cellAt(ed, 'skills:aaa11111')
@@ -3028,6 +3271,7 @@ REST.scan = 'ok'
   REST.pending = gd
   const gm = await mount('en', 'page')
   await wait(60)
+  await toFront(gm.hostEl, `skills:${CLEAN_GROUP}`)
   const gCell = cellAt(gm, `skills:${CLEAN_GROUP}`)
   const gTitle = gCell?.querySelector('.pa-card-title')?.textContent
   if (gTitle !== 'alpha-skill · 2 changes · includes deleting the skill') {
@@ -3045,6 +3289,7 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const fo = await mount('en', 'page')
   await wait(60)
+  await toFront(fo.hostEl, 'skills:aaa11111')
   const approve = buttons(cellAt(fo, 'skills:aaa11111'), /^Approve$/)[0]
   approve?.focus()
   if (approve) await click(approve, 60)
@@ -3064,6 +3309,7 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const two = await mount('en', 'page')
   await wait(60)
+  await toFront(two.hostEl, 'skills:aaa11111')
   const last = buttons(cellAt(two, 'skills:aaa11111'), /^Approve$/)[0]
   last?.focus()
   if (last) await click(last, 60)

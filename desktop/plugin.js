@@ -42,6 +42,14 @@ const BUNDLES = {
       action: {
         refresh: 'Refresh',
       },
+      stage: {
+        upNext: 'Up next',
+        justDone: 'Just done',
+        typeMemory: 'Memory',
+        typeSkill: 'Skill',
+        allClearTitle: 'All clear',
+        allClearBody: 'Nothing is waiting. Hermes will ask here before it writes again.',
+      },
       kpi: {
         chars: (c, l) => `${c} / ${l} characters`,
         memoryLabel: 'Memory',
@@ -200,6 +208,7 @@ const BUNDLES = {
         skipConfirm: 'Apply unreviewed',
         skipCancel: 'Cancel',
         restore: 'Restore',
+        later: 'Later',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -255,8 +264,6 @@ const BUNDLES = {
         errorBody: 'Retry reads it again; if it keeps failing, the Hermes log names the reason.',
         retry: 'Retry',
         loadingData: 'Reading…',
-        pendingTitle: 'Nothing awaits approval',
-        pendingBody: 'When Hermes wants to save something it appears here: what it is, why it arrived, what approving does, and the agent\'s suggestion.',
         historyTitle: 'No records yet',
         historyBody: 'Everything you approve or reject, and every change made outside this pane, collects here; undo lives here too.',
         loading: 'Reading memory…',
@@ -323,6 +330,7 @@ const BUNDLES = {
         restored: id => (id ? `The record is back under Pending as #${id}.` : 'The record is back under Pending.'),
         restoredAll: ids => `The changes are back under Pending as ${ids}.`,
         restoreFailed: 'Could not restore the record',
+        frontGone: 'It left the queue while you were away from it — it may have been decided elsewhere. The next record is now in front.',
       },
       footer: {
         alertsOn: 'Alerts on',
@@ -636,6 +644,32 @@ const STYLE = `
 .pa-ln-text{min-width:0;flex:1}
 .pa-ln[data-k="…"]{color:var(--ui-text-tertiary)}
 .pa-list{display:flex;flex-direction:column;gap:12px}
+.pa-stage{display:flex;gap:${G.base}px;align-items:flex-start;padding:12px;min-width:0}
+.pa-stage-main{position:relative;flex:1 1 0;min-width:0}
+.pa-stage-main>.pa-cell{position:relative;z-index:1}
+.pa-cell.pa-cell-stacked .pa-card{position:relative}
+.pa-cell.pa-cell-stacked .pa-card::after{content:'';position:absolute;inset:8px -8px -8px 8px;z-index:-1;
+  border:${HAIRLINE};border-radius:inherit;background:var(--hx-card);opacity:.55;pointer-events:none}
+.pa-side{display:flex;flex-direction:column;gap:${G.sm}px;width:260px;flex:none;min-width:0}
+.pa-side-section{display:flex;flex-direction:column;gap:${G.xs}px}
+.pa-side-title{font-size:${FS.micro}px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ui-text-secondary)}
+.pa-upnext{display:flex;flex-direction:column;gap:6px}
+.pa-upnext-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:${HAIRLINE};
+  border-radius:${R.box}px;background:var(--hx-card);text-align:left;cursor:pointer;min-width:0;width:100%}
+.pa-upnext-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ui-text-tertiary)}
+.pa-upnext-text{display:flex;flex-direction:column;min-width:0;gap:1px}
+.pa-upnext-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-upnext-state{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.pa-justdone{display:flex;flex-direction:column}
+.pa-justdone-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:${HAIRLINE}}
+.pa-justdone-row:last-child{border-bottom:none}
+.pa-justdone-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pa-justdone-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-justdone-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
+@container (max-width:560px){.pa-stage{flex-direction:column}.pa-side{width:100%}
+  .pa-cell.pa-cell-stacked .pa-card::after{display:none}}
 .pa-note{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
 .pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
   background:color-mix(in srgb,var(--ui-orange) 12%,transparent);
@@ -1424,7 +1458,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
   })
 }
 
-function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
+function PendingCard({ subsystem, item, onChanged, picked, onPick, onLater }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
@@ -1622,6 +1656,11 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
           jsxs('div', {
             className: 'pa-actions',
             children: [
+              onLater
+                ? jsx(Button, {
+                    variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
+                  }, 'later')
+                : null,
               jsx(Button, {
                 variant: 'destructive',
                 size: 'sm',
@@ -1648,7 +1687,7 @@ function PendingCard({ subsystem, item, onChanged, picked, onPick }) {
 
 const RESULT_KEY = { changed: 'pa.grp.status.changed', new: 'pa.grp.status.new', deleted: 'pa.grp.status.deleted' }
 
-function GroupCard({ item, onChanged, picked, onPick }) {
+function GroupCard({ item, onChanged, picked, onPick, onLater }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
@@ -1888,6 +1927,11 @@ function GroupCard({ item, onChanged, picked, onPick }) {
           jsxs('div', {
             className: 'pa-actions',
             children: [
+              onLater
+                ? jsx(Button, {
+                    variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
+                  }, 'later')
+                : null,
               jsx(Button, {
                 variant: 'destructive',
                 size: 'sm',
@@ -2281,13 +2325,184 @@ function units(data) {
   return [...(data?.memory || []).map(item => ({ subsystem: 'memory', item })), ...out]
 }
 
-function PendingList({ data, error, refresh, onChanged }) {
+const queueKey = u => `${u.subsystem}:${u.item.id}`
+
+function useQueue(list) {
+  const keys = list.map(queueKey)
+  const sig = keys.join('\n')
+  const [order, setOrder] = useState(keys)
+  useEffect(() => {
+    setOrder(prev => {
+      const here = new Set(keys)
+      const kept = prev.filter(k => here.has(k))
+      const added = keys.filter(k => !kept.includes(k))
+      const next = [...kept, ...added]
+      return next.length === prev.length && next.every((k, i) => k === prev[i]) ? prev : next
+    })
+  }, [sig])
+  const later = key => setOrder(prev => {
+    const i = prev.indexOf(key)
+    if (i < 0) return prev
+    return [...prev.slice(0, i), ...prev.slice(i + 1), key]
+  })
+  const pick = key => setOrder(prev => {
+    const i = prev.indexOf(key)
+    if (i <= 0) return prev
+    return [key, ...prev.slice(0, i), ...prev.slice(i + 1)]
+  })
+  const byKey = new Map(list.map(u => [queueKey(u), u]))
+  const resolved = order.map(k => byKey.get(k)).filter(Boolean)
+  return { order: resolved, front: resolved[0] || null, later, pick }
+}
+
+const upNextTitle = (subsystem, item) => {
+  if (subsystem === 'memory') {
+    const plain = item.plain || {}
+    return plain.headline || plain.target || ''
+  }
+  if (item.parts) return (item.names || []).join(', ')
+  const plain = item.plain || {}
+  const groups = plain.groups || []
+  return plain.target || groups.map(g => g.name).join(', ')
+}
+const upNextFacts = item => {
+  const review = item.review || {}
+  const facts = reviewFacts(review)
+  const plain = item.plain || {}
+  const stale = item.parts ? (item.stale || []) : (plain.stale || [])
+  const fix = item.parts ? (plain.fix || null) : (plain.fix || null)
+  const failedBefore = item.parts
+    ? (item.parts || []).some(p => (p.plain || {}).last_error)
+    : Boolean(plain.last_error)
+  return cardState(facts.hard.length > 0, stale.length > 0, Boolean(fix), failedBefore, facts.status, review.verdict)
+}
+const upNextState = (t, item) => t(upNextFacts(item)[0])
+const upNextTone = item => toneOf(upNextFacts(item)[1])
+
+function UpNextRow({ subsystem, item, t, onPick, picked, onTogglePick }) {
+  const key = `${subsystem}:${item.id}`
+  const title = upNextTitle(subsystem, item)
+  const typeLabel = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
+  const selectLabel = `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title || typeLabel} #${item.id}`
+  return jsxs('span', {
+    className: 'pa-upnext-row',
+    'data-key': key,
+    style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' },
+    children: [
+      onTogglePick
+        ? jsx('input', {
+            type: 'checkbox', className: 'pa-pick', checked: picked === true,
+            'aria-label': selectLabel, onChange: () => onTogglePick(key)
+          }, 'pick')
+        : null,
+      jsx('button', {
+        type: 'button',
+        style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, textAlign: 'left' },
+        'aria-label': `${typeLabel}: ${title || key}`,
+        onClick: onPick,
+        children: jsxs('span', {
+          style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, width: '100%' },
+          children: [
+            jsx('span', { className: 'pa-upnext-dot', style: { background: upNextTone(item) }, 'aria-hidden': true }, 'dot'),
+            jsxs('span', {
+              className: 'pa-upnext-text',
+              children: [
+                jsx('span', { className: 'pa-upnext-title', children: title || typeLabel }, 'title'),
+                jsx('span', { className: 'pa-upnext-state', children: `${typeLabel} · ${upNextState(t, item)}` }, 'state')
+              ]
+            }, 'text')
+          ]
+        }, 'inner')
+      }, 'row')
+    ]
+  }, key)
+}
+
+function UpNext({ units: upcoming, t, onPick, picked, onTogglePick }) {
+  if (!upcoming.length) return null
+  return jsxs('div', {
+    className: 'pa-side-section pa-upnext',
+    children: [
+      jsx('div', { className: 'pa-side-title', children: t('pa.stage.upNext') }, 'title'),
+      ...upcoming.map(u => jsx(UpNextRow, {
+        subsystem: u.subsystem, item: u.item, t, onPick: () => onPick(queueKey(u)),
+        picked: picked?.has(queueKey(u)), onTogglePick
+      }, queueKey(u)))
+    ]
+  }, 'upnext')
+}
+
+function JustDoneRow({ entry, t, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const said = entry.kind === 'external' && (entry.files || []).length
+    ? t('pa.hist.externalDetail', entry.files.length)
+    : String(entry.summary || '')
+  const canUndo = Boolean(entry.undoable) && !entry.undone
+  const undo = async () => {
+    setBusy(true)
+    try {
+      const res = await api.undo(entry.id, false)
+      const files = [...(res?.restored || []), ...(res?.removed || []).map(f => t('pa.notify.deletedFile', f))]
+      host.notify(res?.ok
+        ? { kind: 'success', message: t('pa.notify.undoOk', files.join(', ') || t('pa.notify.noFiles')) }
+        : { kind: 'warning', message: res?.error || t('pa.notify.undoFailed') })
+    } catch (e) {
+      host.notifyError?.(e, t('pa.notify.undoError'))
+    } finally {
+      setBusy(false)
+      onChanged()
+    }
+  }
+  return jsxs('div', {
+    className: 'pa-justdone-row',
+    children: [
+      jsxs('div', {
+        className: 'pa-justdone-text',
+        children: [
+          jsx('span', { className: 'pa-justdone-title', children: plainGist(t, said) }, 'title'),
+          jsx('span', { className: 'pa-justdone-meta', children: when(t, entry.ts) }, 'meta')
+        ]
+      }, 'text'),
+      canUndo
+        ? jsx(Button, {
+            variant: 'text', size: 'xs', loading: busy, onClick: () => void undo(),
+            children: t('pa.btn.undo')
+          }, 'undo')
+        : null
+    ]
+  }, entry.id)
+}
+
+function JustDone({ entries, t, onChanged }) {
+  const list = entries.slice(0, 5)
+  return jsxs('div', {
+    className: 'pa-side-section pa-justdone',
+    children: [
+      jsx('div', { className: 'pa-side-title', children: t('pa.stage.justDone') }, 'title'),
+      jsx('div', {
+        className: 'pa-justdone',
+        children: list.map(e => jsx(JustDoneRow, { entry: e, t, onChanged }, e.id))
+      }, 'rows')
+    ]
+  }, 'justdone')
+}
+
+function AllClear({ t }) {
+  return jsx(PanelEmpty, {
+    icon: 'check',
+    title: t('pa.stage.allClearTitle'),
+    description: t('pa.stage.allClearBody')
+  }, 'all-clear')
+}
+
+function NeedsYou({ data, error, refresh, onChanged, hist }) {
   const t = usePluginI18n(ID)
-  const gridRef = useRef(null)
-  const seen = useRef(new Map())
+  const stageRef = useRef(null)
+  const prevFrontKey = useRef(null)
   const [picked, setPicked] = useState(() => new Set())
-  const items = units(data)
-  const keys = items.map(({ subsystem, item }) => `${subsystem}:${item.id}`).join('\n')
+  const items = data ? units(data) : []
+  const queue = useQueue(items)
+  const keys = items.map(queueKey).join('\n')
   useEffect(() => {
     const here = new Set(keys.split('\n'))
     setPicked(prev => {
@@ -2302,35 +2517,36 @@ function PendingList({ data, error, refresh, onChanged }) {
     return next
   })
 
-  useLayoutEffect(() => {
-    const grid = gridRef.current
-    if (!grid) return
-    const cells = [...grid.children].filter(c => c.getAttribute('data-key'))
-    const still = typeof window !== 'undefined' && window.matchMedia
-      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : false
+  const frontKey = queue.front ? queueKey(queue.front) : null
+  const reduced = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false
 
-    for (const cell of cells) {
-      cell.style.transition = 'none'
-      cell.style.transform = ''
+  useEffect(() => {
+    const prevKey = prevFrontKey.current
+    if (prevKey && prevKey !== frontKey) {
+      const stillThere = queue.order.some(u => queueKey(u) === prevKey)
+      const decidedHere = Boolean(held.get(prevKey)?.leaving || held.get(prevKey)?.busy)
+      if (!stillThere && !decidedHere) {
+        host.notify({ kind: 'info', message: t('pa.notify.frontGone') })
+        if (lost()) stageRef.current?.querySelector('.pa-cell .pa-card')?.focus()
+      }
     }
-    const next = new Map()
-    for (const cell of cells) {
-      const key = cell.getAttribute('data-key')
-      const pos = { left: cell.offsetLeft, top: cell.offsetTop }
-      next.set(key, pos)
-      const before = seen.current.get(key)
-      if (!before || still) continue
-      const dx = before.left - pos.left
-      const dy = before.top - pos.top
-      if (!dx && !dy) continue
-      cell.style.transform = `translate(${dx}px, ${dy}px)`
-      void cell.offsetWidth
-      cell.style.transition = move('enter', 'transform')
-      cell.style.transform = ''
-    }
-    seen.current = next
-  })
+    prevFrontKey.current = frontKey
+  }, [frontKey])
+
+  useLayoutEffect(() => {
+    if (reduced) return
+    const cell = stageRef.current?.querySelector('.pa-cell')
+    if (!cell || !prevFrontKey.current) return
+    cell.style.transition = 'none'
+    cell.style.opacity = '0'
+    cell.style.transform = 'translateY(8px)'
+    void cell.offsetWidth
+    cell.style.transition = move('enter', 'opacity, transform')
+    cell.style.opacity = ''
+    cell.style.transform = ''
+  }, [frontKey])
 
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
@@ -2344,27 +2560,45 @@ function PendingList({ data, error, refresh, onChanged }) {
         children: issues.map((text, i) => jsx('div', { children: text }, `${i}:${text}`))
       }, 'issues')
     : null
-  const body = !total(data.counts)
-    ? jsx(PanelEmpty, {
-        icon: 'inbox',
-        title: t('pa.empty.pendingTitle'),
-        description: t('pa.empty.pendingBody')
-      }, 'empty')
-    : jsx('div', {
-    ref: gridRef,
-    className: 'pa-list',
+  const entries = hist?.data?.entries || []
+  const front = queue.front
+  const item = front ? front.item : null
+  const stacked = queue.order.length > 1
+  const main = front
+    ? [
+        jsx('div', {
+          className: stacked ? 'pa-cell pa-cell-stacked' : 'pa-cell',
+          'data-key': frontKey,
+          children: jsx(item.parts ? GroupCard : PendingCard, {
+            subsystem: front.subsystem, item, onChanged,
+            picked: picked.has(frontKey),
+            onPick: items.length > 1 ? () => togglePick(frontKey) : null,
+            onLater: () => queue.later(frontKey)
+          }, 'card')
+        }, frontKey)
+      ]
+    : [jsx(AllClear, { t }, 'empty')]
+  const body = jsxs('div', {
+    ref: stageRef,
+    className: 'pa-stage',
     style: { padding: 12 },
-    children: items.map(({ subsystem, item }) =>
-      jsx('div', {
-        className: 'pa-cell',
-        'data-key': `${subsystem}:${item.id}`,
-        children: jsx(item.parts ? GroupCard : PendingCard, {
-          subsystem, item, onChanged,
-          picked: picked.has(`${subsystem}:${item.id}`),
-          onPick: items.length > 1 ? () => togglePick(`${subsystem}:${item.id}`) : null
-        }, 'card')
-      }, `${subsystem}:${item.id}`))
-  }, 'grid')
+    children: [
+      jsxs('div', {
+        className: 'pa-stage-main',
+        children: main
+      }, 'main'),
+      jsxs('div', {
+        className: 'pa-side',
+        children: [
+          jsx(UpNext, {
+            units: queue.order.slice(1), t, onPick: queue.pick,
+            picked, onTogglePick: items.length > 1 ? togglePick : null
+          }, 'upnext'),
+          jsx(JustDone, { entries, t, onChanged }, 'justdone')
+        ]
+      }, 'side')
+    ]
+  }, 'stage')
   const bar = total(data.counts)
     ? jsx(BulkBar, { items, picked, setPicked, onChanged }, 'bulk')
     : null
@@ -2725,7 +2959,7 @@ function Pane() {
             ? jsx(HistoryList, {
               data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
             }, 'history')
-            : jsx(PendingList, { data, error, refresh, onChanged: refreshPane }, 'pending')
+            : jsx(NeedsYou, { data, error, refresh, onChanged: refreshPane, hist }, 'pending')
       }, 'body'),
 
       jsxs('div', {

@@ -28,6 +28,24 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   4 px wide (it measured correctly but the percent text sat right at its inner edge with no room),
   and the percent text is a smaller size with a clear margin inside the hole, in both themes.
 
+* **The waiting list is now one card at a time, with the rest in an "Up next" sidebar.** Where
+  "Needs you" used to show every pending record as its own card in a grid, it now shows one full
+  card up front and lists the others by type and title in a compact sidebar list; clicking an
+  item there brings it to the front. The sidebar also carries a "Just done" section and the
+  panel's all-clear state ("All clear" / "Nothing is waiting. Hermes will ask here before it
+  writes again."). Bulk selection still works from the sidebar: each Up-next row carries its own
+  checkbox alongside the front card's, so "Select all" and group Approve/Reject still act on every
+  waiting record, not just the one on screen.
+
+* **Later moved into the card's own action row, the faint second-card edge no longer doubles the
+  card's own corner radius, and the Up-next dots now carry the record's own state colour** (the
+  same colour the state text already uses — red for "needs a fix", grey while a review is still
+  running, the kit's warn/success colours otherwise) instead of a flat grey that meant nothing.
+
+* **Up next and Just done titles no longer get cut off mid-word.** They used to be a single
+  truncated line with a trailing ellipsis; now they wrap onto as many lines as the title needs,
+  so a long skill name or memory note is never hidden.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

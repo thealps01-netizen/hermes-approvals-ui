@@ -196,7 +196,12 @@ const GROUPED = {
 }
 
 const HISTORY = { entries: [
-  { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated — 2 notes', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+  { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated — 2 notes', files: [{ path: 'memories/MEMORY.md' }], undoable: true,
+    amended: {
+      written: ['The write-approval gate is on: a memory or skill write waits for a click in the Approvals panel. Calendar reminders run hourly, not weekly (corrected after the tool change).'],
+      applied: ['The write-approval gate is on: a memory or skill write waits for a click. Calendar reminders run hourly.'],
+      why: ['The reviewer trimmed a duplicate clause before it applied this note.']
+    } },
   { id: 'e2e0d001', ts: NOW - 1800, kind: 'apply', subsystem: 'skills',
     summary: "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)",
     files: [{ path: 'skills/e2e-demo/SKILL.md' }], undoable: true },
@@ -295,6 +300,10 @@ const byText = (hostEl, text) => [...(hostEl?.querySelectorAll('button') || [])]
 const tab = (hostEl, text) => [...hostEl.querySelectorAll('.pa-tab')].find(b => text.test(b.textContent || ''))
 const openDetails = async hostEl => {
   for (const key of ['skills:def67890', 'memory:abc12345']) {
+    if (!hostEl.querySelector(`.pa-cell[data-key="${key}"]`)) {
+      const row = hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] button`)
+      await click(row, `Up next row for ${key}`)
+    }
     const card = hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
     await click(byText(card, /^Details and changes$/i), `Details and changes on ${key}`)
     if (!byText(card, /^Hide details$/i)) problems.push(`the details of ${key} did not open`)
@@ -318,6 +327,7 @@ frames.push({
     'Restore on a rejected record',
   html: await frame(async hostEl => {
     await click(tab(hostEl, /^Activity/), 'the Activity tab')
+    await click(byText(hostEl, /^Compare with the write as staged$/), 'Compare with the write as staged')
     await click(byText(hostEl, /^Undo$/), 'Undo')
   })
 })
@@ -349,6 +359,16 @@ frames.push({
       problems.push('Approve as written is not the primary button under a heavy fix')
     }
   }, FIXLOSS)
+})
+
+frames.push({
+  label: 'Pending — a skill description fix shortens it under the limit: as-written vs. shortened comparison',
+  html: await frame(async hostEl => {
+    const row = hostEl.querySelector('.pa-upnext-row[data-key="skills:def67890"] button')
+    await click(row, 'Up next row for skills:def67890')
+    const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
+    if (!card?.querySelector('.pa-cmp')) problems.push('the fix as-written/shortened comparison grid is not drawn')
+  })
 })
 
 frames.push({
