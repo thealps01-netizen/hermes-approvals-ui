@@ -1254,12 +1254,25 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   stub.state.composerLive = true
 }
 
+// --- 10c) memory-ring: a big ring per file, "<File> is nearly full · N notes · C / L characters" ----
+{
+  must(en.hostEl.textContent, ['Memory is nearly full · 2 notes · 2189 / 2200 characters'],
+    'the Memory tab\u2019s big ring sentence (state word from the fill rule, note count, chars/limit)')
+  const rings = [...en.hostEl.querySelectorAll('.pa-mem-rings > *')]
+  if (rings.length !== 2) fail(`expected 2 big rings (Memory, Profile), found ${rings.length}`)
+  if (!rings.every(r => r.querySelector('.pa-gauge-ring-lg'))) fail('the Memory tab rings are not the bigger ring variant')
+  const profileText = rings[1]?.textContent || ''
+  if (!/Profile (has room|is nearly full|is full) · 1 note · 1158 \/ 1375 characters/.test(profileText)) {
+    fail(`the Profile ring does not read \u2018likewise\u2019: ${profileText}`)
+  }
+}
+
 // --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
 const appliedTab = tab(en.hostEl, /Activity/)
 if (!appliedTab) fail('the History tab is missing')
 await click(appliedTab, 60)
-must(en.hostEl.textContent, ['2 files changed outside the pane', 'Approved and applied', 'Rejected',
-  'Changed outside the pane', 'Approve failed'], 'applied tab')
+must(en.hostEl.textContent, ['2 files changed outside the pane', 'Saved to memory', 'Not saved',
+  'Changed outside the pane', 'Couldn’t save — approving was attempted, Hermes refused'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 {
   const cards = [...en.hostEl.querySelectorAll('.pa-card')]
@@ -1343,6 +1356,75 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/history/clear')
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
+}
+
+// --- 11b) activity-head: "Today · N saved · N not saved · N failed", zero parts left out ---------
+{
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act00001', ts: ACT_NOW - 100, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act00002', ts: ACT_NOW - 200, kind: 'apply', subsystem: 'memory', summary: 'USER.md updated',
+      files: [{ path: 'memories/USER.md' }], undoable: true },
+    { id: 'act00003', ts: ACT_NOW - 300, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act00004', ts: ACT_NOW - 400, kind: 'rejected', subsystem: 'skills', summary: 'batch rejected',
+      files: [], undoable: false },
+    { id: 'act00005', ts: ACT_NOW - 500, kind: 'failed', subsystem: 'skills',
+      summary: 'applying beta-skill → skill rules forbid this edit', files: [], undoable: false }
+  ], counts: { applied: 2, failed: 1, undoable: 2, total: 5 } }
+  const act = await mount('en', 'page')
+  await click(tab(act.hostEl, /Activity/), 60)
+  must(act.hostEl.textContent, ['Today · 3 saved · 1 not saved · 1 failed'],
+    'activity header: today\u2019s counts in words, no count left out')
+  if (!act.hostEl.textContent.includes('2 saved overall · 1 failed · 2 still undoable')) {
+    fail('the old KPI boxes\u2019 applied/failed/undoable counts are not shown on the Activity tab')
+  }
+  act.root.unmount()
+  act.hostEl.remove()
+  REST.history = null
+}
+
+// --- 11c) activity-words: each row says what happened, in words ----------------------------------
+{
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act10001', ts: ACT_NOW - 100, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act10002', ts: ACT_NOW - 200, kind: 'apply', subsystem: 'memory', summary: 'USER.md updated',
+      files: [{ path: 'memories/USER.md' }], undoable: true },
+    { id: 'act10003', ts: ACT_NOW - 300, kind: 'apply', subsystem: 'skills', summary: 'new-skill created',
+      files: [{ path: 'skills/new-skill/SKILL.md' }], undoable: true },
+    { id: 'act10004', ts: ACT_NOW - 400, kind: 'rejected', subsystem: 'skills', summary: 'batch rejected',
+      files: [], undoable: false },
+    { id: 'act10005', ts: ACT_NOW - 500, kind: 'failed', subsystem: 'skills',
+      summary: 'applying beta-skill → skill rules forbid this edit', files: [], undoable: false }
+  ], counts: { applied: 3, failed: 1, undoable: 2, total: 5 } }
+  const act = await mount('en', 'page')
+  await click(tab(act.hostEl, /Activity/), 60)
+  must(act.hostEl.textContent, [
+    'Saved to memory', 'Saved to Profile', 'Saved skill', 'Not saved',
+    'Couldn\u2019t save \u2014 skill rules forbid this edit'
+  ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save \u2014 <reason family>')
+  act.root.unmount()
+  act.hostEl.remove()
+  REST.history = null
+}
+
+// --- 11d) front-fix-loss: a heavy-fix alert (FIXLOSS) is drawn even with the card closed ---------
+{
+  REST.pending = FIXLOSS
+  const loss = await mount('en', 'page')
+  await toFront(loss.hostEl, 'skills:aaa11111')
+  const card = loss.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+  if (buttons(card, /^Hide the full change$/).length) fail('front-fix-loss: the card opened by itself')
+  if (!/deletes 51 of the 54 new words/.test(card?.textContent || '')) {
+    fail('front-fix-loss: the heavy-fix alert (count of deleted new words) is not drawn on the closed front card')
+  }
+  if (!card?.querySelector('.pa-alert.pa-alert-danger')) fail('front-fix-loss: the alert is not a danger alert box')
+  REST.pending = null
+  loss.root.unmount()
+  loss.hostEl.remove()
 }
 
 // --- 12) top-gauges: two Gauges (Memory, Profile), the refresh ICON, and the status-bar chip ----
@@ -2922,9 +3004,8 @@ REST.scan = 'ok'
   const mem = await mount('en', 'page')
   const kpi = (mem.hostEl.querySelector('.pa-gauges')?.textContent || '')
   await click(tab(mem.hostEl, /^Memory/), 60)
-  const said = mem.hostEl.querySelector('[role="tabpanel"]')?.textContent || ''
   const kpiPct = (mem.hostEl.querySelector('.pa-gauges')?.textContent.match(/(\d+)%/) || [])[1]
-  const tabPct = (said.match(/(\d+)% full/) || [])[1]
+  const tabPct = (mem.hostEl.querySelector('.pa-mem-rings')?.textContent.match(/(\d+)%/) || [])[1]
   if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
   mem.root.unmount()
   mem.hostEl.remove()

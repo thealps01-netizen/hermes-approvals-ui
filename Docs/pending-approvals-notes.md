@@ -1204,3 +1204,24 @@ to seven with the contrast negative control.
   the only inner scroll boxes.
 - **Backend English strings (CP1).** Backend messages all come from the single `_tx` English table;
   the panel shows them as they are because the panel is English-only (one bundle) — not changed.
+
+## Task 5 — Activity and Memory speak the "Needs you" language
+
+- **`reasonFamily()`'s arrow split.** A `kind:"failed"` history entry's `summary` is written by the
+  backend as `"<record summary> → <error>"` (`dashboard/plugin_api.py`'s `_append` calls for failed
+  group/single applies both build it that way). The row's first line — `Couldn't save — <reason
+  family>` — takes whatever follows the last arrow, short()'d to a row-sized phrase, since that is
+  already the backend's own explanation of what went wrong; a synthetic/older entry with no arrow
+  falls back to its whole summary, trimmed the same way, rather than showing nothing.
+- **`historyWords()`'s Profile/memory split.** There is no backend field saying which memory file a
+  write targeted; the entry's own `files[].path` already names it (`memories/USER.md` vs
+  `memories/MEMORY.md`), so that is what decides "Saved to Profile" vs "Saved to memory" — no new
+  backend data, just reading what the entry already carries.
+- **The restored front-card fix-loss alert.** Before this task, `ReviewSection`'s heavy-fix-loss
+  alert (`pa.review.fixRemoves`, "the suggested fix deletes N of M new words") only rendered inside
+  "Show the full change" — a regression from the Task 2+3 front-card rewrite, which moved
+  `ReviewSection` behind that toggle along with everything else it carries. A safety-relevant count
+  that used to be visible without expanding anything should not need a click to see, so `FrontCard`
+  now also draws it directly (next to the effect line, always visible when the card is closed) in
+  addition to the copy inside "Show the full change" — the duplication when expanded is accepted as
+  the smaller cost against hiding it by default.

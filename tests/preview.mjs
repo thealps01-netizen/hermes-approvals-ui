@@ -3,9 +3,9 @@
  *
  * Run: cd tests && node preview.mjs   (writes preview.html, exit 0 = ok)
  *
- * It draws SEVEN FRAMES of the "Needs you" stage in jsdom with the real React — the panel's REAL
- * output, never a hand-drawn mock — and embeds the application's own theme block
- * (`_theme_preview.css`), so the colors are the app's:
+ * It draws TEN FRAMES of the "Needs you" stage (plus its Activity and Memory tabs) in jsdom with the
+ * real React — the panel's REAL output, never a hand-drawn mock — and embeds the application's own
+ * theme block (`_theme_preview.css`), so the colors are the app's:
  *   1. The stage with 3 things waiting: the memory record in front (hero, Why, "Checked for you"
  *      with its meta line, Later / Don't save / Save to memory), Up next and Just done at the side.
  *   2. A fix record in front: the as-written vs. shortened comparison and "Use the short version"
@@ -17,6 +17,12 @@
  *   6. The narrow 420 px pane.
  *   7. A record whose second opinion is still running, brought to the front from Up next: the
  *      "Not checked yet" / "the second opinion is still reading this" state.
+ *   8. Activity: the "Today · N saved · N not saved · N failed" header, each row's words (Saved to
+ *      Profile/memory, Not saved, Couldn't save — <reason>), Undo turning into Force undo on a
+ *      conflict, a Restore row and the as-written Compare toggle open.
+ *   9. Memory: a big ring per file, the notes list, and a note's two-step delete armed.
+ *  10. A heavy-fix-loss record in front (FIXLOSS): the deletes-most-of-the-new-text alert and its
+ *      count, drawn without opening "Show the full change".
  *
  * The text resolves exactly like the app does: ONE English bundle registered through
  * `ctx.i18n.register` and read through `usePluginI18n` / `ctx.i18n.t`; there is no picker. The SDK and
@@ -237,6 +243,19 @@ const FIXREADY = {
   ]
 }
 
+// A fix whose suggested edit deletes most of the new text (Docs/pending-approvals-notes.md's "Task 5"
+// section) — the front card must draw the heavy-fix-loss alert without the card being opened.
+const FIXLOSS = {
+  ...PENDING,
+  skills: [
+    PENDING.skills[0],
+    {
+      ...PENDING.skills[1],
+      review: { ...PENDING.skills[1].review, status: 'done', verdict: 'fix', edits: 1, fix_effect: { added: 54, kept: 3 } }
+    }
+  ]
+}
+
 let version = 0
 async function frame(actions, pending = PENDING) {
   const registrations = []
@@ -291,6 +310,7 @@ const click = async (el, what, wait = 60) => {
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
 const byText = (hostEl, text) => [...(hostEl?.querySelectorAll('button') || [])].find(b => text.test(b.textContent || ''))
+const findTab = (hostEl, text) => [...(hostEl?.querySelectorAll('.pa-tab') || [])].find(b => text.test(b.textContent || ''))
 
 const frames = []
 
@@ -353,6 +373,46 @@ frames.push({
       problems.push('the running-review state is not drawn on the front card')
     }
   })
+})
+
+frames.push({
+  label: 'Activity — words, Undo, two-step Force undo, Restore, Compare',
+  html: await frame(async hostEl => {
+    await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+    const cmp = byText(hostEl, /^Compare with the write as staged$/)
+    await click(cmp, 'Compare with the write as staged (aa11bb22)')
+    if (!byText(hostEl, /^Hide the comparison$/)) problems.push('the as-written comparison did not open')
+    const undo = byText(hostEl, /^Undo$/)
+    await click(undo, 'Undo (reports a conflict, arms Force undo)')
+    if (!byText(hostEl, /^Force undo$/)) problems.push('a reported conflict did not turn Undo into Force undo')
+    if (!byText(hostEl, /^Restore$/)) problems.push('a restorable rejected record lost its Restore button')
+  })
+})
+
+frames.push({
+  label: 'Memory — rings, notes, delete armed (two-step)',
+  html: await frame(async hostEl => {
+    await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+    if (hostEl.querySelectorAll('.pa-mem-rings > *').length !== 2) problems.push('the Memory tab does not draw both big rings')
+    const del = byText(hostEl, /^Delete$/)
+    await click(del, 'arm a note delete')
+    if (!byText(hostEl, /^Delete$/) && !hostEl.textContent.includes('About to delete')) {
+      problems.push('the note delete did not arm its two-step confirmation')
+    }
+  })
+})
+
+frames.push({
+  label: 'Needs you — a suggested fix that deletes most of the new text: the alert with its count',
+  html: await frame(async hostEl => {
+    const row = hostEl.querySelector('.pa-upnext-row[data-key="skills:aaa11111"] button')
+    await click(row, 'Up next row for skills:aaa11111')
+    const card = hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+    if (byText(card, /^Hide the full change$/)) problems.push('the fix-loss card opened by itself')
+    if (!/deletes 51 of the 54 new words/.test(card?.textContent || '')) {
+      problems.push('the heavy-fix-loss alert (count of deleted new words) is not drawn on the closed front card')
+    }
+  }, FIXLOSS)
 })
 
 for (const f of frames) {

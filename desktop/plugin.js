@@ -249,6 +249,18 @@ const BUNDLES = {
         applied: n => `Applied (${grouped(n)} characters)`,
         why: text => `Reviewer: ${text}`,
         noCopy: 'The as-written copy is no longer kept.',
+        wordsProfile: 'Saved to Profile',
+        wordsMemory: 'Saved to memory',
+        wordsSkill: 'Saved skill',
+        wordsNotSaved: 'Not saved',
+        wordsFailed: reason => `Couldn’t save — ${reason}`,
+        dayToday: 'Today',
+        dayYesterday: 'Yesterday',
+        headSaved: n => `${n} saved`,
+        headNotSaved: n => `${n} not saved`,
+        headFailed: n => `${n} failed`,
+        totals: (applied, failed, undoable) =>
+          `${applied} saved overall · ${failed} failed · ${undoable} still undoable`,
         gistCreate: (n, d, s) => (d ? `New skill: ${n} — ${d} (${s})` : `New skill: ${n} (${s})`),
         gistRewrite: (n, d, s) => (d ? `Edit skill: ${n}, whole file rewritten — ${d} (${s})`
           : `Edit skill: ${n}, whole file rewritten (${s})`),
@@ -283,7 +295,12 @@ const BUNDLES = {
       },
       memory: {
         warnTitle: 'Memory is nearly full',
-        warnBody: p => `${p}% full: a new note fits only if an older one is shortened or merged.`,
+        warnBody: 'A new note fits only if an older one is shortened or merged. Hermes can propose which.',
+        ringOk: 'has room',
+        ringWarn: 'is nearly full',
+        ringBad: 'is full',
+        ringLine: (label, state, notes, chars, limit) =>
+          `${label} ${state} · ${plural(notes, 'note', 'notes')} · ${chars} / ${limit} characters`,
         draftMerge: 'Draft a merge request',
         draftHint: 'Writes a request into the chat box without sending it. The proposal still lands here for your approval.',
         drafted: 'Merge request is in the chat box — read it, then send.',
@@ -502,6 +519,38 @@ const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).s
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || [])]
 
 const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
+const reasonFamily = summary => short(String(summary || '').split(' → ').pop().trim(), 48)
+const historyWords = (t, entry) => {
+  if (entry.kind === 'apply') {
+    if (entry.subsystem === 'skills') return t('pa.hist.wordsSkill')
+    const toProfile = (entry.files || []).some(f => /USER\.md$/.test(f.path || ''))
+    return t(toProfile ? 'pa.hist.wordsProfile' : 'pa.hist.wordsMemory')
+  }
+  if (entry.kind === 'rejected') return t('pa.hist.wordsNotSaved')
+  if (entry.kind === 'failed') return t('pa.hist.wordsFailed', reasonFamily(entry.summary))
+  const key = HIST_KEY[entry.kind]
+  return key ? t(key) : entry.kind
+}
+const dayKey = ts => new Date(ts * 1000).toDateString()
+const dayHeading = (t, ts) => {
+  const d = new Date(ts * 1000)
+  const now = new Date()
+  if (dayKey(ts) === dayKey(now.getTime() / 1000)) return t('pa.hist.dayToday')
+  const y = new Date(now)
+  y.setDate(now.getDate() - 1)
+  if (dayKey(ts) === dayKey(y.getTime() / 1000)) return t('pa.hist.dayYesterday')
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+}
+const groupByDay = entries => {
+  const groups = []
+  const at = new Map()
+  for (const e of entries) {
+    const k = dayKey(e.ts)
+    if (!at.has(k)) { at.set(k, { key: k, ts: e.ts, entries: [] }); groups.push(at.get(k)) }
+    at.get(k).entries.push(e)
+  }
+  return groups
+}
 const GIST_END = '(?=$| — | → |; )'
 const BATCH_KIND = { create: 'pa.hist.gistBatchNew', edit: 'pa.hist.gistBatchEdit', patch: 'pa.hist.gistBatchEdit',
   write_file: 'pa.hist.gistBatchEdit', remove_file: 'pa.hist.gistBatchEdit', delete: 'pa.hist.gistBatchDelete' }
@@ -604,6 +653,18 @@ const STYLE = `
 .pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
 .pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pa-mem-rings{display:flex;gap:${G.base}px;flex-wrap:wrap}
+.pa-gauge-lg{gap:${G.sm}px;padding:${G.sm}px ${G.base}px}
+.pa-gauge-ring-lg{width:64px;height:64px}
+.pa-gauge-ring-lg::before{-webkit-mask:radial-gradient(circle,transparent calc(50% - 7px),#000 calc(50% - 7px));
+  mask:radial-gradient(circle,transparent calc(50% - 7px),#000 calc(50% - 7px))}
+.pa-gauge-pct-lg{width:40px;height:40px;font-size:${FS.title}px}
+.pa-gauge-line{font-size:${FS.body}px;color:var(--ui-text-primary);max-width:260px}
+.pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xs}px}
+.pa-activity-today{font-size:${FS.lead}px;font-weight:650;color:var(--ui-text-primary)}
+.pa-activity-totals{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-day-heading{grid-column:1/-1;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
+  margin-top:${G.xs}px}
 .pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
   color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -917,6 +978,29 @@ function Gauge({ file, label, f }) {
           }, 'file')
         ]
       }, 'meta')
+    ]
+  })
+}
+
+const FILL_WORD_KEY = { ok: 'pa.memory.ringOk', warn: 'pa.memory.ringWarn', bad: 'pa.memory.ringBad' }
+function MemoryRing({ label, store }) {
+  const t = usePluginI18n(ID)
+  const { pct, tone } = store ? fill(store) : { pct: null, tone: 'off' }
+  const stateWord = t(FILL_WORD_KEY[tone] || 'pa.memory.ringOk')
+  const line = store
+    ? t('pa.memory.ringLine', label, stateWord, store.entries?.length || 0, store.chars ?? 0, store.limit ?? 0)
+    : label
+  return jsxs('div', {
+    className: 'pa-gauge pa-gauge-lg',
+    'data-tone': tone,
+    children: [
+      jsx('div', {
+        className: 'pa-gauge-ring pa-gauge-ring-lg',
+        style: { '--pa-tone': TONE_COLOR[tone], '--pa-pct': `${pct ?? 0}%` },
+        'aria-hidden': true,
+        children: jsx('span', { className: 'pa-gauge-pct pa-gauge-pct-lg', children: pct === null ? '—' : `${pct}%` }, 'pct')
+      }, 'ring'),
+      jsx('span', { className: 'pa-gauge-line', children: line }, 'line')
     ]
   })
 }
@@ -1961,6 +2045,10 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
       }, 'hero'),
       plain.why ? jsx('div', { className: 'pa-why', children: t('pa.hero.why', plain.why) }, 'why') : null,
       effectText ? jsx('div', { className: 'pa-effect', children: effectText }, 'effect') : null,
+      edits > 0 && effect && fixHeavy(effect)
+        ? alertBox('frontFixLoss', t('pa.review.fixRemoves', effect.added - effect.kept, effect.added,
+            Math.round(100 * (effect.added - effect.kept) / effect.added)), true)
+        : null,
 
       checksSection,
 
@@ -2044,7 +2132,6 @@ function HistoryCard({ entry, onChanged, onRestored }) {
   const [busy, setBusy] = useState(false)
   const [fold, setFold] = useState(false)
   const [cmp, setCmp] = useState(false)
-  const kindKey = HIST_KEY[entry.kind]
   const files = entry.files || []
   const changes = entry.changes || []
   const amended = entry.amended && typeof entry.amended === 'object' ? entry.amended : null
@@ -2138,7 +2225,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
             className: 'pa-tag',
             style: TAG,
             variant: KIND_VARIANT[entry.kind] || 'muted',
-            children: kindKey ? t(kindKey) : entry.kind
+            children: historyWords(t, entry)
           }, 'kind')
         ]
       }, 'head'),
@@ -2693,6 +2780,19 @@ function HistoryList({ data, error, refresh, onChanged }) {
   const [busy, setBusy] = useState(false)
   const entries = data?.entries || []
   const all = data?.counts?.total ?? entries.length
+  const totals = data?.counts || {}
+  const todayKey = dayKey(Date.now() / 1000)
+  const today = entries.filter(e => dayKey(e.ts) === todayKey)
+  const savedToday = today.filter(e => e.kind === 'apply' || e.kind === 'external').length
+  const notSavedToday = today.filter(e => e.kind === 'rejected').length
+  const failedToday = today.filter(e => e.kind === 'failed').length
+  const headParts = [
+    savedToday ? t('pa.hist.headSaved', savedToday) : null,
+    notSavedToday ? t('pa.hist.headNotSaved', notSavedToday) : null,
+    failedToday ? t('pa.hist.headFailed', failedToday) : null
+  ].filter(Boolean)
+  const headLine = [t('pa.hist.dayToday'), ...headParts].join(' · ')
+  const groups = groupByDay(entries)
 
   const clear = async () => {
     setBusy(true)
@@ -2722,6 +2822,18 @@ function HistoryList({ data, error, refresh, onChanged }) {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       staleNotice(t, error, refresh),
+      jsxs('div', {
+        className: 'pa-activity-head',
+        children: [
+          jsx('span', { className: 'pa-activity-today', children: headLine }, 'today'),
+          (totals.applied || totals.failed || totals.undoable)
+            ? jsx('span', {
+                className: 'pa-activity-totals',
+                children: t('pa.hist.totals', totals.applied || 0, totals.failed || 0, totals.undoable || 0)
+              }, 'totals')
+            : null
+        ]
+      }, 'activity-head'),
       jsx('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm },
         children: confirming
@@ -2763,7 +2875,13 @@ function HistoryList({ data, error, refresh, onChanged }) {
       }, 'header'),
       jsx('div', {
         className: 'pa-cols pa-two',
-        children: entries.map(e => jsx(HistoryCard, { entry: e, onChanged, onRestored: onChanged }, e.id))
+        children: groups.flatMap(g => {
+          const heading = g.key === todayKey ? null : dayHeading(t, g.ts)
+          return [
+            heading ? jsx('div', { className: 'pa-day-heading', children: heading }, `day-${g.key}`) : null,
+            ...g.entries.map(e => jsx(HistoryCard, { entry: e, onChanged, onRestored: onChanged }, e.id))
+          ].filter(Boolean)
+        })
       }, 'grid')
     ]
   })
@@ -2824,6 +2942,13 @@ function MemoryView({ data, error, refresh, onChanged }) {
     children: [
       staleNotice(t, error, refresh),
       jsxs('div', {
+        className: 'pa-mem-rings',
+        children: [
+          jsx(MemoryRing, { label: t('pa.kpi.memoryLabel'), store: data?.memory }, 'memory'),
+          jsx(MemoryRing, { label: t('pa.kpi.profileLabel'), store: data?.user }, 'profile')
+        ]
+      }, 'rings'),
+      jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
         children: [
           jsx(Tabs, {
@@ -2848,7 +2973,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
           className: 'pa-alert',
           children: [
             jsx('div', { style: { fontWeight: 600, color: 'var(--ui-text-primary)' }, children: t('pa.memory.warnTitle') }, 'title'),
-            t('pa.memory.warnBody', pct),
+            t('pa.memory.warnBody'),
             jsxs('div', {
               style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, marginTop: G.xs },
               children: [

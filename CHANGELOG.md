@@ -69,6 +69,29 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   struck-through "before" line under a shortened description, and the "Second opinion by ..." meta
   line under the checks, no longer sit below the AA contrast floor in light mode.
 
+* **Activity rows now say what happened, in words, and group by day.** A row used to read "Approved
+  and applied" / "Rejected" / "Approve failed" regardless of what kind of record it was; it now reads
+  "Saved to Profile", "Saved to memory", "Saved skill", "Not saved" or "Couldn't save — <reason>"
+  (the backend's own error, shortened to a row-sized phrase). Above the list, a header reads today's
+  totals in words — "Today · 3 saved · 1 not saved · 1 failed" — leaving out any count that is zero,
+  and the all-time applied/failed/still-undoable counts (what used to be the standalone KPI boxes)
+  are kept as a line under it. Entries from an earlier day now sit under their own "Yesterday" or
+  weekday/date heading instead of one unbroken list.
+
+* **The Memory tab leads with the two files' own fill state, not a buried number.** A big ring per
+  file (`MEMORY.md`, `USER.md`) now sits above the per-file notes list, each reading "<file> has
+  room / is nearly full / is full · N notes · chars / limit characters" — the same fill rule the top
+  gauges already use, just said in words and with the note count. The near-full warning banner's body
+  is now a fixed sentence ("A new note fits only if an older one is shortened or merged. Hermes can
+  propose which.") instead of repeating the percent a second time right next to the ring that already
+  shows it.
+
+* **The front card's heavy-fix-loss warning is visible without opening "Show the full change"
+  again.** A suggested fix that would delete most of a skill's or memory's new text used to only
+  show its "deletes N of M new words" alert inside the expanded change view, a regression from the
+  front-card rewrite above; it is now also drawn directly on the closed front card, next to the
+  effect line.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
