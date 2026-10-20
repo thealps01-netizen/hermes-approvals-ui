@@ -552,9 +552,12 @@ const STYLE = `
 .pa-gauge[data-tone="warn"]{--pa-tone:var(--ui-orange)}
 .pa-gauge[data-tone="bad"]{--pa-tone:var(--ui-red)}
 .pa-gauge[data-tone="off"]{--pa-tone:var(--ui-text-tertiary)}
-.pa-gauge-ring{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;
-  background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0)}
-.pa-gauge-pct{width:27px;height:27px;border-radius:50%;background:var(--hx-card);display:grid;place-items:center;
+.pa-gauge-ring{width:36px;height:36px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
+.pa-gauge-ring::before{content:'';position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0);
+  -webkit-mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px));
+  mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px))}
+.pa-gauge-pct{position:relative;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;
   font-size:${FS.micro}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}

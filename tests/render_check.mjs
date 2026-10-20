@@ -1300,6 +1300,17 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
 }
 
+// --- 12e) gauge-hollow: the ring's hole does not depend on a guessed background colour ----------
+{
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  const pctRule = sheet.match(/\.pa-gauge-pct\{[^}]*\}/)?.[0] || ''
+  if (/background/.test(pctRule)) fail(`.pa-gauge-pct still paints its own background: ${pctRule}`)
+  const ringRules = sheet.match(/\.pa-gauge-ring[^{]*\{[^}]*\}/g) || []
+  if (!ringRules.some(r => /mask:/.test(r))) {
+    fail('no mask rule cuts the hole out of .pa-gauge-ring (or its pseudo-element) — the hole is painted instead')
+  }
+}
+
 // --- 12a) top-headline: "N things need you" / "1 thing needs you" / all caught up, with word counts
 {
   const headlineText = en.hostEl.querySelector('.pa-headline')?.textContent || ''

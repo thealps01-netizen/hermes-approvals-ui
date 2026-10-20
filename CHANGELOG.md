@@ -20,6 +20,10 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   footer's old hint text is replaced by the safety promise, "Nothing is written to your memory or
   skills without you."
 
+* **The two ring gauges' hole is cut out, not painted.** It used to be a flat circle the same colour
+  as the card background, so the gauge looked wrong on any other background. Now the hole is a real
+  mask over the ring, so it stays transparent wherever the gauge sits.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
