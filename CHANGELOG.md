@@ -92,6 +92,13 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   front-card rewrite above; it is now also drawn directly on the closed front card, next to the
   effect line.
 
+* **A failed record's Activity badge no longer runs off the card.** It used to carry the whole
+  reason ("Couldn't save — approving was attempted, Hermes refused: …"), which could push the row
+  wider than the card and squeeze the timestamp to one letter per line. The badge now says only
+  "Couldn't save"; the reason stays on its own line in the card body, where it already was. Eight
+  more strings that still told the user to check the "History" tab (the tab has been "Activity"
+  since this redesign started) now say "Activity" too.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

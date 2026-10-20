@@ -178,10 +178,10 @@ const BUNDLES = {
         none: 'Clear selection',
         approve: n => `Approve ${n}`,
         reject: n => `Reject ${n}`,
-        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “History” and can be undone there.`,
+        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Activity” and can be undone there.`,
         advisedReject: (n, all) => all === 1 ? 'The AI review advised rejecting it.'
           : `The AI review advised rejecting ${n} of them.`,
-        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “History” tab.`,
+        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Activity” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
         approvedDone: (ok, all) => `${ok} of ${all} approved`,
@@ -221,7 +221,7 @@ const BUNDLES = {
         capped: (shown, total) => `Showing ${shown} of ${total} lines`,
         noText: 'No text recorded for this operation.',
         wholeSkill: 'whole skill',
-        deletesSkill: 'Deletes the whole skill folder. You can bring it back from the “History” tab.',
+        deletesSkill: 'Deletes the whole skill folder. You can bring it back from the “Activity” tab.',
       },
       hist: {
         apply: 'Approved and applied',
@@ -253,7 +253,7 @@ const BUNDLES = {
         wordsMemory: 'Saved to memory',
         wordsSkill: 'Saved skill',
         wordsNotSaved: 'Not saved',
-        wordsFailed: reason => `Couldn’t save — ${reason}`,
+        wordsFailed: 'Couldn’t save',
         dayToday: 'Today',
         dayYesterday: 'Yesterday',
         headSaved: n => `${n} saved`,
@@ -286,7 +286,7 @@ const BUNDLES = {
         historyError: 'The history could not be read.',
         memoryError: 'Memory could not be read.',
         scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
-          + 'The pending list is current; an outside change may be missing from “History” until a check succeeds.',
+          + 'The pending list is current; an outside change may be missing from “Activity” until a check succeeds.',
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
         reviewsFailed: why => (why
@@ -306,7 +306,7 @@ const BUNDLES = {
         drafted: 'Merge request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
-        deleteConfirm: 'About to delete — undoable from the “History” tab',
+        deleteConfirm: 'About to delete — undoable from the “Activity” tab',
         deleteCancel: 'Cancel',
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
@@ -332,21 +332,21 @@ const BUNDLES = {
         awaiting: n => `${plural(n, 'write awaits', 'writes await')} your approval`,
         title: 'Hermes — pending approvals',
         body: (n, m, s) => `${plural(n, 'write awaits', 'writes await')} you (memory ${m}, skill ${s})`,
-        saved: 'Saved — you can undo it from the “History” tab',
+        saved: 'Saved — you can undo it from the “Activity” tab',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
-        lateApplied: 'Applied — it took longer than the panel waits. It is in the “History” tab.',
+        lateApplied: 'Applied — it took longer than the panel waits. It is in the “Activity” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
         lateRejectedElsewhere: 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.',
-        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “History” tab.',
-        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the “History” tab. The list is read again.',
+        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “Activity” tab.',
+        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
         deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
-        rejected: 'Rejected — you can restore it from the “History” tab',
+        rejected: 'Rejected — you can restore it from the “Activity” tab',
         stale: 'This record changed since it was shown — the list is read again.',
         restored: id => (id ? `The record is back under Pending as #${id}.` : 'The record is back under Pending.'),
         restoredAll: ids => `The changes are back under Pending as ${ids}.`,
@@ -519,7 +519,6 @@ const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).s
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || [])]
 
 const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
-const reasonFamily = summary => short(String(summary || '').split(' → ').pop().trim(), 48)
 const historyWords = (t, entry) => {
   if (entry.kind === 'apply') {
     if (entry.subsystem === 'skills') return t('pa.hist.wordsSkill')
@@ -527,7 +526,7 @@ const historyWords = (t, entry) => {
     return t(toProfile ? 'pa.hist.wordsProfile' : 'pa.hist.wordsMemory')
   }
   if (entry.kind === 'rejected') return t('pa.hist.wordsNotSaved')
-  if (entry.kind === 'failed') return t('pa.hist.wordsFailed', reasonFamily(entry.summary))
+  if (entry.kind === 'failed') return t('pa.hist.wordsFailed')
   const key = HIST_KEY[entry.kind]
   return key ? t(key) : entry.kind
 }
@@ -2218,7 +2217,8 @@ function HistoryCard({ entry, onChanged, onRestored }) {
         children: [
           jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
           jsx('span', {
-            style: { marginLeft: 'auto', fontSize: FS.micro, color: 'var(--ui-text-secondary)' },
+            className: 'pa-card-when',
+            style: { marginLeft: 'auto' },
             children: when(t, entry.ts)
           }, 'at'),
           jsx(Badge, {

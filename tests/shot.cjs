@@ -314,6 +314,15 @@ const MEASURE = `(() => {
     // A card wider than its grid cell draws over its neighbour (one long unbreakable path did it).
     cardSpill: qa('.pa-cell').filter(c => c.firstElementChild &&
       box(c.firstElementChild).width > box(c).width + 1).map(c => c.getAttribute('data-key')),
+    // No overflow:hidden/scroll/ellipsis is involved, so clip() above never sees this: a nowrap /
+    // flex-shrink:0 child (a badge, a timestamp) can refuse to shrink and make its OWN card wider
+    // than its box, which paints a sideways scrollbar the overflow/clipped keys above both miss.
+    // .pa-cell-stacked draws its OWN designed 8px peek of a card-behind-card edge via a
+    // position:absolute ::after (see the .pa-card::after rule below) — that is not this bug.
+    cardWiderThanBox: qa('.pa-frame-wrap .pa-card').filter(c => !c.closest('.pa-cell-stacked') &&
+      c.scrollWidth > c.clientWidth + 1)
+      .map(c => ({ text: txt(c).slice(0, 60), w: c.clientWidth, scrollW: c.scrollWidth,
+        entry: c.getAttribute('data-entry') })),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
     nativeTitles: qa('[title]').length,
@@ -425,7 +434,12 @@ app.whenReady().then(async () => {
 
     const bad = []
     if (m.frames.some(f => Number(f.overflowPx) > 0)) bad.push(`overflowPx=${JSON.stringify(m.overflowPx)}`)
+    if (m.bodyScrollX > 0) bad.push(`bodyScrollX=${m.bodyScrollX} (the page/frame scrolls sideways)`)
     if (m.cardSpill.length) bad.push(`cardSpill=${m.cardSpill.join(',')} (a card is wider than its cell)`)
+    if (m.cardWiderThanBox.length) {
+      const named = m.cardWiderThanBox.map(c => `#${c.entry || '?'} "${c.text}" (${c.scrollW}px content in a ${c.w}px card)`)
+      bad.push(`cardWiderThanBox=${m.cardWiderThanBox.length}: ${named.join(' · ')}`)
+    }
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
     if (m.nativeSelects > 0) bad.push(`nativeSelects=${m.nativeSelects}`)

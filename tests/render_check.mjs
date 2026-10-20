@@ -1222,7 +1222,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
-  must(en.hostEl.textContent, ['About to delete — undoable from the “History” tab'], 'delete confirmation copy')
+  must(en.hostEl.textContent, ['About to delete — undoable from the “Activity” tab'], 'delete confirmation copy')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/memory/delete')
   if (!post || post.body.target !== 'memory' || post.body.text !== 'A note') {
@@ -1269,10 +1269,10 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 
 // --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
 const appliedTab = tab(en.hostEl, /Activity/)
-if (!appliedTab) fail('the History tab is missing')
+if (!appliedTab) fail('the Activity tab is missing')
 await click(appliedTab, 60)
 must(en.hostEl.textContent, ['2 files changed outside the pane', 'Saved to memory', 'Not saved',
-  'Changed outside the pane', 'Couldn’t save — approving was attempted, Hermes refused'], 'applied tab')
+  'Changed outside the pane', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 {
   const cards = [...en.hostEl.querySelectorAll('.pa-card')]
@@ -1404,8 +1404,14 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   await click(tab(act.hostEl, /Activity/), 60)
   must(act.hostEl.textContent, [
     'Saved to memory', 'Saved to Profile', 'Saved skill', 'Not saved',
-    'Couldn\u2019t save \u2014 skill rules forbid this edit'
-  ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save \u2014 <reason family>')
+    'Couldn\u2019t save', 'applying beta-skill \u2192 skill rules forbid this edit'
+  ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save, '
+    + 'reason kept on its own line in the body')
+  const failedCard = act.hostEl.querySelector('.pa-card[data-entry="act10005"]')
+  const failedBadge = failedCard?.querySelector('.pa-tag')?.textContent || ''
+  if (failedBadge !== 'Couldn\u2019t save') {
+    fail(`activity-words: the failed badge must carry only the short family word, got ${JSON.stringify(failedBadge)}`)
+  }
   act.root.unmount()
   act.hostEl.remove()
   REST.history = null
@@ -1485,6 +1491,43 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (ringWidth < 3 || ringWidth > 5) fail(`ring band is not ~4px wide: ${ringWidth}px`)
   const margin = (ringSize / 2 - hole) - pctSize / 2
   if (margin < 1) fail(`the percent box leaves no margin inside the hole, it will touch the ring: ${margin}px`)
+}
+
+// --- 12g) activity-badge-short: a failed record's head badge carries only the short family word --
+// (the full reason stays on its own line in the card body) and the time never wraps.
+{
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act20001', ts: ACT_NOW - 10800, kind: 'failed', subsystem: 'memory',
+      summary: 'approving was attempted, Hermes refused: the record left the pending directory',
+      files: [], undoable: false }
+  ], counts: { applied: 0, failed: 1, undoable: 0, total: 1 } }
+  const bad = await mount('en', 'page')
+  await click(tab(bad.hostEl, /Activity/), 60)
+  const card = bad.hostEl.querySelector('.pa-card[data-entry="act20001"]')
+  const badge = card?.querySelector('.pa-tag')?.textContent || ''
+  if (badge !== 'Couldn\u2019t save') {
+    fail(`activity-badge-short: the failed badge must be the short family word only, got ${JSON.stringify(badge)}`)
+  }
+  if (!/approving was attempted, Hermes refused: the record left the pending directory/.test(card?.textContent || '')) {
+    fail('activity-badge-short: the full reason is gone from the card body, not merely out of the badge')
+  }
+  const when = card?.querySelector('.pa-card-when')
+  if (!when) fail('activity-badge-short: the time is not the pa-card-when element (its white-space:nowrap rule is gone)')
+  const sheet = bad.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-card-when\{[^}]*white-space:nowrap/.test(sheet)) {
+    fail('activity-badge-short: .pa-card-when no longer declares white-space:nowrap — the time can wrap again')
+  }
+  bad.root.unmount()
+  bad.hostEl.remove()
+  REST.history = null
+}
+
+// --- 12h) no-history-tab: the tab is "Activity" now; no string still sends the user to "History" ---
+{
+  if (/\u201cHistory\u201d/.test(src)) {
+    fail('no-history-tab: the en bundle source still points the user at a \u201cHistory\u201d tab')
+  }
 }
 
 // --- 12a) top-headline: "N things need you" / "1 thing needs you" / all caught up, with word counts
@@ -1747,7 +1790,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
   for (const [mode, kind, text, lateKind] of [
-    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
+    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
     ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
     ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
@@ -1775,7 +1818,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
   const toast = lastSaid()
-  if (toast?.kind !== 'success' || !/restore it from the “History” tab/.test(toast?.message || '')) {
+  if (toast?.kind !== 'success' || !/restore it from the “Activity” tab/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
   rej.hostEl.remove()
@@ -2834,7 +2877,7 @@ REST.scan = 'ok'
     h.hostEl.remove()
   }
   for (const [mode, kind, text] of [
-    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
     ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
     REST.post = mode
     const h = await mount('en', 'page')
@@ -3135,7 +3178,7 @@ REST.scan = 'ok'
     groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
   REST.pending = null
 
-  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “History” tab. The list is read again.'
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.'
   for (const [row, button] of [[null, 'Save skill'], ['apply', 'Save skill'], ['rejected', 'Save skill'],
     ['apply', 'Don’t save']]) {
     const applied = row === 'apply' && button === 'Save skill'
