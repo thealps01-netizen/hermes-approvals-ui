@@ -93,9 +93,9 @@ const BUNDLES = {
         multi: 'This record touches more than one skill — you can apply just one',
       },
       grp: {
+        select: 'Select these changes',
         changes: n => plural(n, 'change', 'changes'),
         withDelete: 'includes deleting the skill',
-        select: 'Select these changes',
         approve: n => `Approve ${plural(n, 'change', 'changes')}`,
         rejectAll: n => `Reject all ${n}`,
         rejectOne: n => `Reject #${n}`,
@@ -192,13 +192,9 @@ const BUNDLES = {
           : `${n} selected records need a decision of their own: approve them on their cards or untick them.`),
       },
       btn: {
-        reject: 'Reject',
-        approve: 'Approve',
         undo: 'Undo',
         forceUndo: 'Force undo',
-        details: 'Details and changes',
         fix: 'Shorten description',
-        detailsHide: 'Hide details',
         onlyCreate: 'Create only this',
         onlyApply: 'Apply only this',
         reReview: 'Review again',
@@ -209,6 +205,13 @@ const BUNDLES = {
         skipCancel: 'Cancel',
         restore: 'Restore',
         later: 'Later',
+        saveMemory: 'Save to memory',
+        saveSkill: 'Save skill',
+        saveChanges: 'Save changes',
+        deleteSkill: 'Delete skill',
+        dontSave: 'Don’t save',
+        fullChange: 'Show the full change',
+        fullChangeHide: 'Hide the full change',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -337,6 +340,35 @@ const BUNDLES = {
         alerts: 'Alerts',
         alertsOff: 'Alerts muted',
         promise: 'Nothing is written to your memory or skills without you.',
+      },
+      ask: {
+        memory: 'Hermes wants to remember:',
+        skillNew: 'Hermes wants to add a new skill:',
+        skillUpdate: 'Hermes wants to change a skill:',
+        skillDelete: 'Hermes wants to delete a skill:',
+      },
+      hero: {
+        why: text => `Why: ${text}`,
+        filesMore: n => `+${n} more`,
+      },
+      effect: {
+        memory: (added, before, after) =>
+          `Adds ${plural(added, 'character', 'characters')} · memory goes from ${before}% to ${after}%`,
+      },
+      check: {
+        title: 'Checked for you',
+        duplicateMemory: 'Not already in your memory',
+        duplicateSkill: 'Not already a skill like it',
+        contradiction: 'Doesn’t contradict your other notes',
+        wrong: 'No wrong facts found',
+        ruleMemory: 'Follows your rules · written in English',
+        ruleSkill: 'Follows your rules · authorship, owner',
+        notRun: reason => `Not checked yet — ${reason}`,
+        reasonRunning: 'the second opinion is still reading this',
+        reasonUnassigned: 'no review model is set',
+        reasonFailed: 'the second opinion failed',
+        reasonQueued: 'the second opinion is waiting its turn',
+        meta: model => `Second opinion by ${model}`,
       },
     }
   }
@@ -694,6 +726,28 @@ const STYLE = `
   .pa-pane *,.pa-pane *::before,.pa-pane *::after{transition:none !important;animation:none !important}
   .pa-leaving{transform:none}
 }
+.pa-kind{display:flex;align-items:center;justify-content:space-between;gap:${G.xs}px;min-width:0;flex-wrap:wrap}
+.pa-kind-left{display:flex;align-items:center;gap:${G.xs}px;min-width:0}
+.pa-kind-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.pa-kind-label{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-positions{display:flex;align-items:center;gap:4px;flex:none}
+.pa-position-dot{width:6px;height:6px;border-radius:50%;background:var(--ui-stroke-tertiary)}
+.pa-position-dot[data-on="1"]{background:var(--ui-text-secondary)}
+.pa-ask{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-hero{font-size:${FS.title}px;font-weight:600;line-height:1.4;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-hero-replaced{font-size:${FS.body}px;color:var(--ui-text-tertiary);text-decoration:line-through;overflow-wrap:anywhere}
+.pa-hero-files{font-size:${FS.body}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-why{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-effect{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-checks{display:flex;flex-direction:column;gap:${G.xxs}px}
+.pa-check-row{display:flex;flex-direction:column;gap:${G.xxs}px}
+.pa-check-line{display:flex;align-items:flex-start;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;
+  color:var(--ui-text-secondary);text-align:left}
+.pa-check-icon{flex:none;width:14px;text-align:center}
+.pa-check-ok .pa-check-icon{color:var(--ui-green)}
+.pa-check-bad .pa-check-icon{color:var(--ui-orange)}
+.pa-check-wait .pa-check-icon{color:var(--ui-text-tertiary)}
+.pa-check-meta{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -1151,6 +1205,85 @@ const askReview = async (t, subsystem, id, onChanged) => {
   return res
 }
 
+const skillKindOf = item => {
+  if (item.parts) {
+    const result = item.result || []
+    if (result.length && result.every(r => r.status === 'deleted')) return 'delete'
+    if (result.length && result.every(r => r.status === 'new')) return 'new'
+    return 'update'
+  }
+  const groups = (item.plain || {}).groups || []
+  if (groups.length && groups.every(g => (g.kind || 'update') === 'delete')) return 'delete'
+  if (groups.length && groups.every(g => (g.kind || 'update') === 'new')) return 'new'
+  return 'update'
+}
+const primaryLabel = (subsystem, item) => {
+  if (subsystem === 'memory') return say('pa.btn.saveMemory')
+  const kind = skillKindOf(item)
+  return say(kind === 'delete' ? 'pa.btn.deleteSkill' : kind === 'new' ? 'pa.btn.saveSkill' : 'pa.btn.saveChanges')
+}
+const askLine = (subsystem, item) => {
+  if (subsystem === 'memory') return say('pa.ask.memory')
+  const kind = skillKindOf(item)
+  return say(kind === 'delete' ? 'pa.ask.skillDelete' : kind === 'new' ? 'pa.ask.skillNew' : 'pa.ask.skillUpdate')
+}
+const heroOf = (subsystem, item) => {
+  const plain = item.plain || {}
+  if (!item.parts && plain.fix) return { text: plain.fix.description, replaced: plain.fix.text }
+  if (subsystem === 'memory') {
+    const ops = item.ops || []
+    const op = ops.find(o => o.new) || ops[0] || {}
+    return { text: op.new || plain.headline || '', replaced: op.old || null }
+  }
+  const sourceOps = item.parts ? item.parts.flatMap(p => p.ops || []) : (item.ops || [])
+  const files = [...new Set(sourceOps.map(o => o.file || o.name).filter(Boolean))]
+  const name = item.parts ? (item.names || []).join(', ')
+    : (plain.target || (plain.groups || []).map(g => g.name).join(', '))
+  return { name, files: files.slice(0, 4), more: Math.max(0, files.length - 4) }
+}
+const effectLine = (subsystem, item) => {
+  const plain = item.plain || {}
+  if (subsystem === 'memory') {
+    const fit = plain.fit
+    if (!fit || typeof fit.before !== 'number' || typeof fit.after !== 'number' || !fit.limit) return null
+    const added = Math.max(0, fit.after - fit.before)
+    const before = fill({ chars: fit.before, limit: fit.limit }).pct
+    const after = fill({ chars: fit.after, limit: fit.limit }).pct
+    return say('pa.effect.memory', added, before, after)
+  }
+  return plain.effect || null
+}
+const checkRows = (subsystem, item) => {
+  const review = item.review || {}
+  const facts = reviewFacts(review)
+  const { status, hard, major } = facts
+  if (status !== 'done') {
+    const reasonKey = status === 'running' ? 'pa.check.reasonRunning'
+      : status === 'unassigned' ? 'pa.check.reasonUnassigned'
+        : status === 'failed' ? 'pa.check.reasonFailed' : 'pa.check.reasonQueued'
+    return [{ state: 'wait', key: 'notRun', text: say('pa.check.notRun', say(reasonKey)) }]
+  }
+  const ruleFindings = [
+    ...hard.map(h => ({ kind: 'rule', severity: 'block', explain: h.text, edit: h.edit, quote: h.quote, other: h.other })),
+    ...major.filter(f => f.kind === 'rule')
+  ]
+  const families = [
+    ['duplicate', major.filter(f => f.kind === 'duplicate'), subsystem === 'memory' ? 'pa.check.duplicateMemory' : 'pa.check.duplicateSkill'],
+    ['contradiction', major.filter(f => f.kind === 'contradiction'), 'pa.check.contradiction'],
+    ['wrong', major.filter(f => f.kind === 'wrong'), 'pa.check.wrong'],
+    ['rule', ruleFindings, subsystem === 'memory' ? 'pa.check.ruleMemory' : 'pa.check.ruleSkill']
+  ]
+  const rows = []
+  for (const [kind, findings, okKey] of families) {
+    if (findings.length) {
+      findings.forEach((f, i) => rows.push({ state: 'bad', key: `${kind}${i}`, text: `${tagOf(f)}${f.explain}`, finding: f }))
+    } else {
+      rows.push({ state: 'ok', key: kind, text: say(okKey) })
+    }
+  }
+  return rows
+}
+
 function useRun(t, record) {
   const entry = useHeld(record)
   const busy = entry?.busy || (entry?.leaving ? 'leaving' : '')
@@ -1458,288 +1591,69 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
   })
 }
 
-function PendingCard({ subsystem, item, onChanged, picked, onPick, onLater }) {
+const RESULT_KEY = { changed: 'pa.grp.status.changed', new: 'pa.grp.status.new', deleted: 'pa.grp.status.deleted' }
+
+function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, position, total }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [skipArmed, setSkipArmed] = useState(false)
   const [fixArmed, setFixArmed] = useState(false)
+  const [shownLines, setShownLines] = useState(() => new Set())
+  const [expandedChecks, setExpandedChecks] = useState(() => new Set())
   const detailsAt = useRef(null)
+  const isGroup = Boolean(item.parts)
+  const groupSubsystem = isGroup ? 'skills' : subsystem
+  const key = `${groupSubsystem}:${item.id}`
+  const detailsId = `pa-details-${groupSubsystem}-${item.id}`
   useEffect(() => {
     if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [open])
-  const { busy, run } = useRun(t, `${subsystem}:${item.id}`)
-  const detailsId = `pa-details-${subsystem}-${item.id}`
-  const { leaving, leave } = useLeave(`${subsystem}:${item.id}`)
+  const { busy, run } = useRun(t, key)
+  const { leaving, leave } = useLeave(key)
   const cardAt = useInert(leaving)
+  const parts = item.parts || null
   const plain = item.plain || {}
-  const stale = plain.stale || []
   const groups = plain.groups || []
-  const fix = plain.fix || null
+  const stale = isGroup ? (item.stale || []) : (plain.stale || [])
   const refused = plain.refused || []
+  const fixSingle = !isGroup ? (plain.fix || null) : null
+  const fixesInGroup = isGroup ? parts.filter(p => (p.plain || {}).fix) : []
+  const failedParts = isGroup ? parts.filter(p => (p.plain || {}).last_error) : []
+  const failedBefore = isGroup ? failedParts.length > 0 : Boolean(plain.last_error)
   const review = item.review || {}
   const facts = reviewFacts(review)
   const { status, hard, notes, edits, fixLeft, effect } = facts
   const [asIsVariant, fixedVariant] = approveVariants(edits, effect)
-  const ops = item.ops || []
   const reviewLocked = !reviewed(item)
-  const heldByRule = Boolean(fix) || refused.length > 0
+  const changeList = list => list.map(x => `#${x.change}`).join(', ')
+  const heldByRule = isGroup ? fixesInGroup.length > 0 : (Boolean(fixSingle) || refused.length > 0)
   const approveBlocked = heldByRule || reviewLocked || stale.length > 0
-  const heldGroup = name => Boolean(fix && fix.name === name) || refused.includes(name) || reviewLocked
   const heldWhy = reviewLocked
-    ? (hard.length ? hard.map(h => h.text).join(' ') : t('pa.review.locked'))
-    : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
-  const failedBefore = Boolean(plain.last_error)
+    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : t('pa.review.locked'))
+    : isGroup
+      ? (stale.length ? t('pa.grp.staleHeld', changeList(stale)) : t('pa.grp.fixHeld', changeList(fixesInGroup)))
+      : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
   const unchecked = status === 'failed' || status === 'unassigned'
-  const canSkip = !hard.length && !stale.length && !fix && unchecked
-  const SKILL_KINDS = [['new', 'pa.state.newSkill'], ['update', 'pa.state.editSkill'], ['delete', 'pa.state.deleteSkill']]
-  const skillTitle = SKILL_KINDS.map(([kind, key]) => [key, groups.filter(g => (g.kind || 'update') === kind)])
-    .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${list.map(g => g.name).join(', ')}`).join(' · ')
-  const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)
-  const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length && !fix && !stale.length
+  const canSkip = !hard.length && !stale.length && !(isGroup ? fixesInGroup.length : fixSingle) && unchecked
+  const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? fixesInGroup.length : fixSingle)
+  const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length
+    && !(isGroup ? fixesInGroup.length : fixSingle) && !stale.length
   if (fixArmed && !fixUnreviewed) setFixArmed(false)
   const fixWhy = status !== 'done' ? t('pa.review.locked')
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
-  const where = plain.target || (subsystem === 'memory' ? 'MEMORY.md' : groups.map(g => g.name).join(', '))
-  const title = subsystem === 'memory' ? (plain.headline || where)
-    : skillTitle || where
-  const added = tally(ops, '+')
-  const removed = tally(ops, '-')
-  const [stateKey, stateVariant] = cardState(hard.length > 0, stale.length > 0, Boolean(fix), failedBefore, status,
-    review.verdict)
+  const [stateKey, stateVariant] = cardState(hard.length > 0, stale.length > 0,
+    Boolean(isGroup ? fixesInGroup.length : fixSingle), failedBefore, status, review.verdict)
   const tone = toneOf(stateVariant)
 
-  const applyFix = () => run('fix', () => fixRecord(t, item.id, onChanged))
-  const decideAndLeave = async (decision, only, skipReview, withEdits) => {
-    const key = withEdits ? 'fixed' : skipReview ? 'skip' : only?.length ? `only:${only[0]}` : decision
-    await run(key, async () => {
-      const r = await decideOne(t, subsystem, [item], decision, only, skipReview, withEdits)
+  const applyFix = id => run(isGroup ? `fix:${id}` : 'fix', () => fixRecord(t, id, onChanged))
+  const decide = (decision, only, skipReview, withEdits) => {
+    const dkey = withEdits ? 'fixed' : skipReview ? 'skip' : (only && only.length) ? `only:${only[0]}` : decision
+    return run(dkey, async () => {
+      const r = await decideOne(t, groupSubsystem, [item], decision, only || [], skipReview, withEdits)
       if (r?.ok) {
         refocus(cardAt.current)
         leave()
-      }
-      else onChanged()
-      return r
-    })
-  }
-  const reviewAgain = () => run('review', () => askReview(t, subsystem, item.id, onChanged))
-  const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
-  const approveBtn = (...args) => heldButton(busy, t, ...args)
-
-  return jsxs('div', {
-    ref: cardAt,
-    className: leaving ? 'pa-card pa-leaving' : 'pa-card',
-    role: 'group',
-    tabIndex: -1,
-    'aria-labelledby': `pa-title-${subsystem}-${item.id}`,
-    'aria-busy': Boolean(busy) || undefined,
-    'aria-hidden': leaving || undefined,
-    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
-    children: [
-      jsxs('div', {
-        className: 'pa-card-head',
-        children: [
-          onPick
-            ? jsx('input', {
-                type: 'checkbox',
-                className: 'pa-pick',
-                disabled: leaving,
-                checked: Boolean(picked),
-                'aria-label': `${t('pa.bulk.select')}: ${title} #${item.id}`,
-                onChange: () => onPick()
-              }, 'pick')
-            : null,
-          jsx('span', {
-            id: `pa-title-${subsystem}-${item.id}`, className: 'pa-card-title', role: 'heading', 'aria-level': 2, children: title
-          }, 'title'),
-          ops.length && !ops.every(o => o.action === 'delete')
-            ? jsx('span', { className: 'pa-change-stat', children: t('pa.op.lines', added, removed) }, 'stat')
-            : null,
-          jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
-        ]
-      }, 'head'),
-
-      stale.length
-        ? alertBox('stale', [t('pa.status.staleWhy'),
-            ...stale.map((s, i) => jsx('div', { className: 'pa-alert-sub', children: s }, `${i}:${s}`))], true)
-        : null,
-      failedBefore ? alertBox('failed', `${t('pa.field.failedBefore')}: ${plain.last_error}`, true) : null,
-
-      preReview,
-
-      groups.length > 1 &&
-        jsxs('div', {
-          className: 'pa-groups',
-          children: [
-            jsx(PanelSectionLabel, { children: t('pa.group.multi') }, 'label'),
-            ...groups.map(g =>
-              jsxs('div', {
-                style: { display: 'flex', alignItems: 'center', gap: G.xs },
-                children: [
-                  jsx(Badge, {
-                    className: 'pa-tag',
-                    style: TAG,
-                    variant: g.kind === 'new' ? 'success' : g.kind === 'delete' ? 'destructive' : 'muted',
-                    children: t(g.kind === 'new' ? 'pa.group.new' : g.kind === 'delete' ? 'pa.group.delete' : 'pa.group.update')
-                  }, 'kind'),
-                  jsx('span', { style: { ...value, flex: 1, minWidth: 0 }, children: g.name }, 'name'),
-                  jsx(Tip, {
-                    label: heldGroup(g.name) ? heldWhy : '',
-                    children: jsx(Button, {
-                      className: heldGroup(g.name) ? 'pa-held' : undefined,
-                      variant: 'outline',
-                      size: 'xs',
-                      'aria-disabled': heldGroup(g.name) || undefined,
-                      disabled: Boolean(busy) && busy !== `only:${g.name}`,
-                      loading: busy === `only:${g.name}`,
-                      onClick: () => {
-                        if (heldGroup(g.name)) return
-                        haptic('tap')
-                        void decideAndLeave('approve', [g.name])
-                      },
-                      children: t(g.kind === 'new' ? 'pa.btn.onlyCreate' : 'pa.btn.onlyApply')
-                    }, 'btn')
-                  }, 'only')
-                ]
-              }, g.name))
-          ]
-        }, 'groups'),
-
-      fix && fixView(fix, t, busy, 'fix', () => void applyFix()),
-
-      (canSkip && skipArmed) || fixArmed
-        ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
-        : null,
-
-      open &&
-        jsxs('div', {
-          ref: detailsAt,
-          id: detailsId,
-          className: 'pa-details',
-          children: [
-            jsx(PanelSectionLabel, { children: t('pa.field.change') }, 'changeLabel'),
-            ...ops.map((op, i) => jsx(Change, { op, where, t }, `op${i}`)),
-            notes.length ? jsx(PanelSectionLabel, { children: t('pa.field.findings') }, 'findLabel') : null,
-            ...notes.map((f, i) => jsx(Finding, { finding: f }, `n${i}`))
-          ]
-        }, 'open'),
-
-      jsxs('div', {
-        className: 'pa-foot',
-        children: [
-          jsx(Button, {
-            variant: 'text',
-            size: 'sm',
-            disabled: leaving,
-            'aria-expanded': open,
-            'aria-controls': detailsId,
-            onClick: () => setOpen(v => !v),
-            children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
-          }, 'details'),
-          (canSkip && skipArmed) || fixArmed
-            ? jsx(Button, {
-                variant: 'text', size: 'sm', disabled: leaving,
-                onClick: () => { setSkipArmed(false); setFixArmed(false) },
-                children: t('pa.btn.skipCancel')
-              }, 'cancel')
-            : null,
-          canSkip
-            ? jsx(Button, {
-                variant: skipArmed ? 'destructive' : 'outline',
-                size: 'sm',
-                disabled: Boolean(busy) && busy !== 'skip',
-                loading: busy === 'skip',
-                onClick: skipArmed ? () => void decideAndLeave('approve', [], true) : () => setSkipArmed(true),
-                children: t(skipArmed ? 'pa.btn.skipConfirm' : 'pa.btn.skipReview')
-              }, 'skip')
-            : null,
-          jsxs('div', {
-            className: 'pa-actions',
-            children: [
-              onLater
-                ? jsx(Button, {
-                    variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
-                  }, 'later')
-                : null,
-              jsx(Button, {
-                variant: 'destructive',
-                size: 'sm',
-                disabled: Boolean(busy) && busy !== 'reject',
-                loading: busy === 'reject',
-                onClick: () => void decideAndLeave('reject'),
-                children: t('pa.btn.reject')
-              }, 'reject'),
-              approveBtn('approve', t(edits ? 'pa.btn.approveAsIs' : 'pa.btn.approve'), asIsVariant,
-                approveBlocked, heldWhy, () => decideAndLeave('approve')),
-              !edits ? null
-                : fixArmed
-                  ? approveBtn('fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
-                      () => decideAndLeave('approve', [], true, true))
-                  : approveBtn('fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed, fixWhy,
-                      fixUnreviewed ? () => setFixArmed(true) : () => decideAndLeave('approve', [], false, true))
-            ]
-          }, 'actions')
-        ]
-      }, 'foot')
-    ]
-  })
-}
-
-const RESULT_KEY = { changed: 'pa.grp.status.changed', new: 'pa.grp.status.new', deleted: 'pa.grp.status.deleted' }
-
-function GroupCard({ item, onChanged, picked, onPick, onLater }) {
-  const t = usePluginI18n(ID)
-  const [open, setOpen] = useState(false)
-  const [skipArmed, setSkipArmed] = useState(false)
-  const [fixArmed, setFixArmed] = useState(false)
-  const [shown, setShown] = useState(() => new Set())
-  const detailsId = `pa-details-skills-${item.id}`
-  const detailsAt = useRef(null)
-  useEffect(() => {
-    if (open) detailsAt.current?.scrollIntoView?.({ block: 'nearest' })
-  }, [open])
-  const { busy, run } = useRun(t, `skills:${item.id}`)
-  const { leaving, leave } = useLeave(`skills:${item.id}`)
-  const cardAt = useInert(leaving)
-  const parts = item.parts
-  const n = parts.length
-  const review = item.review || {}
-  const facts = reviewFacts(review)
-  const { status, hard, notes, edits, fixLeft, effect } = facts
-  const [asIsVariant, fixedVariant] = approveVariants(edits, effect)
-  const stale = item.stale || []
-  const fixes = parts.filter(p => (p.plain || {}).fix)
-  const failed = parts.filter(p => (p.plain || {}).last_error)
-  const reviewLocked = !reviewed(item)
-  const groupBlocked = !pickable(item)
-  const changeList = list => list.map(x => `#${x.change}`).join(', ')
-  const staleHeld = t('pa.grp.staleHeld', changeList(stale))
-  const heldWhy = reviewLocked
-    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : t('pa.review.locked'))
-    : stale.length ? staleHeld : t('pa.grp.fixHeld', changeList(fixes))
-  const unchecked = status === 'failed' || status === 'unassigned'
-  const canSkip = !hard.length && !stale.length && !fixes.length && unchecked
-  const withFixBlocked = status !== 'done' || fixLeft.length > 0 || fixes.length > 0
-  const fixUnreviewed = withFixBlocked && unchecked && edits > 0 && !fixLeft.length && !fixes.length && !stale.length
-  if (fixArmed && !fixUnreviewed) setFixArmed(false)
-  const withFixWhy = status !== 'done' ? t('pa.review.locked')
-    : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
-  const [badgeKey, badgeVariant] = cardState(hard.length > 0, stale.length > 0, fixes.length > 0, failed.length > 0,
-    status, review.verdict)
-  const staleAt = new Set(stale.map(s => s.change))
-  const deletes = parts.some(p => (p.ops || []).some(o => o.action === 'delete'))
-  const groupTitle = [(item.names || []).join(', '), t('pa.grp.changes', n), deletes ? t('pa.grp.withDelete') : '']
-    .filter(Boolean).join(' · ')
-
-  const decideGroup = async (decision, skipReview, withEdits) => {
-    const key = withEdits ? 'fixed' : skipReview ? 'skip' : decision
-    await run(key, async () => {
-      const r = await decideOne(t, 'skills', [item], decision, [], skipReview, withEdits)
-      if (r?.ok) {
-        refocus(cardAt.current)
-        leave()
-      }
-      else onChanged()
+      } else onChanged()
       return r
     })
   }
@@ -1749,17 +1663,52 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
     onChanged()
     return one
   })
-  const toggle = id => setShown(prev => {
+  const reviewAgain = () => run('review', () => askReview(t, groupSubsystem, item.id, onChanged))
+  const toggleLines = id => setShownLines(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id)
     else next.add(id)
     return next
   })
+  const toggleCheck = ckey => setExpandedChecks(prev => {
+    const next = new Set(prev)
+    if (next.has(ckey)) next.delete(ckey)
+    else next.add(ckey)
+    return next
+  })
 
+  const typeKey = subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill'
+  const deletesInGroup = isGroup && parts.some(p => (p.ops || []).some(o => o.action === 'delete'))
+  const kindTarget = subsystem === 'memory' ? (plain.target || 'MEMORY.md')
+    : isGroup
+      ? [(item.names || []).join(', '), t('pa.grp.changes', parts.length), deletesInGroup ? t('pa.grp.withDelete') : '']
+        .filter(Boolean).join(' · ')
+      : (plain.target || groups.map(g => g.name).join(', '))
+  const SKILL_KINDS = [['new', 'pa.state.newSkill'], ['update', 'pa.state.editSkill'], ['delete', 'pa.state.deleteSkill']]
+  const skillTitle = !isGroup && subsystem !== 'memory'
+    ? SKILL_KINDS.map(([kind, key]) => [key, groups.filter(g => (g.kind || 'update') === kind)])
+      .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${list.map(g => g.name).join(', ')}`).join(' · ')
+    : ''
+  const titleText = subsystem === 'memory' ? `${t(typeKey)} · ${kindTarget}`
+    : isGroup ? kindTarget
+      : (skillTitle || kindTarget)
+  const ask = askLine(subsystem, item)
+  const hero = heroOf(subsystem, item)
+  const effectText = effectLine(subsystem, item)
+  const checks = checkRows(subsystem, item)
+  const labelPrimary = isGroup ? t('pa.grp.approve', parts.length)
+    : edits > 0 ? t('pa.btn.approveAsIs') : primaryLabel(subsystem, item)
+  const labelDecline = isGroup ? t('pa.grp.rejectAll', parts.length) : t('pa.btn.dontSave')
+  const primaryKey = 'approve'
+  const primaryBlocked = approveBlocked
+  const onPrimary = () => void decide('approve')
+  const titleId = `pa-title-${groupSubsystem}-${item.id}`
+
+  const staleAt = isGroup ? new Set(stale.map(s => s.change)) : null
   const partRow = part => {
-    const plain = part.plain || {}
+    const pPlain = part.plain || {}
     const ops = part.ops || []
-    const lines = shown.has(part.id)
+    const lines = shownLines.has(part.id)
     const rejectKey = `reject:${part.id}`
     return jsxs('div', {
       className: 'pa-member',
@@ -1771,14 +1720,14 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
             jsx('span', { className: 'pa-pill pa-pill-id', children: `#${part.change}` }, 'n'),
             jsx('span', { className: 'pa-change-stat', children: part.id }, 'id'),
             jsx('span', {
-              className: 'pa-member-what', children: (plain.what || []).join(' · ') || plain.headline || ''
+              className: 'pa-member-what', children: (pPlain.what || []).join(' · ') || pPlain.headline || ''
             }, 'what'),
             jsx('span', {
               className: 'pa-change-stat',
               children: ops.length && ops.every(o => o.action === 'delete') ? t('pa.op.wholeSkill')
                 : t('pa.op.lines', tally(ops, '+'), tally(ops, '-'))
             }, 'stat'),
-            staleAt.has(part.change)
+            staleAt && staleAt.has(part.change)
               ? jsx(Badge, {
                   className: 'pa-tag', style: TAG, variant: 'destructive', children: t('pa.status.stale')
                 }, 'stale')
@@ -1788,7 +1737,7 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
               size: 'xs',
               disabled: leaving,
               'aria-expanded': lines,
-              onClick: () => toggle(part.id),
+              onClick: () => toggleLines(part.id),
               children: t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
             }, 'fold'),
             jsx(Button, {
@@ -1804,96 +1753,202 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
         lines
           ? jsx('div', {
               className: 'pa-members',
-              children: ops.map((op, i) => jsx(Change, { op, where: plain.target || '', t }, `op${i}`))
+              children: ops.map((op, i) => jsx(Change, { op, where: pPlain.target || '', t }, `op${i}`))
             }, 'lines')
           : null,
-        plain.fix
-          ? fixView(plain.fix, t, busy, `fix:${part.id}`, () => void run(`fix:${part.id}`,
-            () => fixRecord(t, part.id, onChanged)))
-          : null
+        pPlain.fix ? fixView(pPlain.fix, t, busy, `fix:${part.id}`, () => void applyFix(part.id)) : null
       ]
     }, part.id)
   }
 
+  const checkLine = row => jsxs('span', {
+    className: 'pa-check-line',
+    children: [
+      jsx('span', {
+        className: 'pa-check-icon', 'aria-hidden': true,
+        children: row.state === 'ok' ? '✓' : row.state === 'bad' ? '!' : '…'
+      }, 'icon'),
+      jsx('span', { children: row.text }, 'text')
+    ]
+  })
+  const checksSection = jsxs('div', {
+    className: 'pa-checks',
+    children: [
+      jsx(PanelSectionLabel, { children: t('pa.check.title') }, 'label'),
+      ...checks.map(row => jsxs('div', {
+        className: `pa-check-row pa-check-${row.state}`,
+        children: [
+          row.finding
+            ? jsx(Button, {
+                variant: 'text', size: 'sm', 'aria-expanded': expandedChecks.has(row.key),
+                onClick: () => toggleCheck(row.key), children: checkLine(row)
+              }, 'btn')
+            : checkLine(row),
+          row.finding && expandedChecks.has(row.key) ? jsx(Finding, { finding: row.finding }, 'finding') : null
+        ]
+      }, row.key)),
+      status === 'done' && review.model
+        ? jsx('div', { className: 'pa-check-meta', children: t('pa.check.meta', review.model) }, 'meta')
+        : null
+    ]
+  }, 'checks')
+
+  const heldGroupOnly = name => Boolean(fixSingle && fixSingle.name === name) || refused.includes(name) || reviewLocked
+  const preReview = jsx(ReviewSection, { review, facts, tone, busy, onAgain: reviewAgain }, 'review')
+  const groupsSection = !isGroup && groups.length > 1
+    ? jsxs('div', {
+        className: 'pa-groups',
+        children: [
+          jsx(PanelSectionLabel, { children: t('pa.group.multi') }, 'label'),
+          ...groups.map(g => jsxs('div', {
+            style: { display: 'flex', alignItems: 'center', gap: G.xs },
+            children: [
+              jsx(Badge, {
+                className: 'pa-tag', style: TAG,
+                variant: g.kind === 'new' ? 'success' : g.kind === 'delete' ? 'destructive' : 'muted',
+                children: t(g.kind === 'new' ? 'pa.group.new' : g.kind === 'delete' ? 'pa.group.delete' : 'pa.group.update')
+              }, 'kind'),
+              jsx('span', { style: { flex: 1, minWidth: 0 }, children: g.name }, 'name'),
+              jsx(Tip, {
+                label: heldGroupOnly(g.name) ? heldWhy : '',
+                children: jsx(Button, {
+                  className: heldGroupOnly(g.name) ? 'pa-held' : undefined,
+                  variant: 'outline',
+                  size: 'xs',
+                  'aria-disabled': heldGroupOnly(g.name) || undefined,
+                  disabled: Boolean(busy) && busy !== `only:${g.name}`,
+                  loading: busy === `only:${g.name}`,
+                  onClick: () => {
+                    if (heldGroupOnly(g.name)) return
+                    haptic('tap')
+                    void decide('approve', [g.name])
+                  },
+                  children: t(g.kind === 'new' ? 'pa.btn.onlyCreate' : 'pa.btn.onlyApply')
+                }, 'btn')
+              }, 'only')
+            ]
+          }, g.name))
+        ]
+      }, 'groups')
+    : null
+  const fixSection = fixSingle ? fixView(fixSingle, t, busy, 'fix', () => void applyFix(item.id)) : null
+  const membersSection = isGroup
+    ? jsxs('div', {
+        className: 'pa-members',
+        children: [jsx(PanelSectionLabel, { children: t('pa.grp.list', parts.length) }, 'label'), ...parts.map(partRow)]
+      }, 'members')
+    : null
+  const fullChange = open && jsxs('div', {
+    ref: detailsAt,
+    id: detailsId,
+    className: 'pa-details',
+    children: [
+      jsx(PanelSectionLabel, { children: t(isGroup ? 'pa.grp.result' : 'pa.field.change') }, 'changeLabel'),
+      isGroup
+        ? (item.result || []).map(r => jsx(Change, {
+            op: r, where: r.file, t, badge: t(RESULT_KEY[r.status] || 'pa.grp.status.changed')
+          }, `r-${r.file}`))
+        : (item.ops || []).map((op, i) => jsx(Change, { op, where: kindTarget, t }, `op${i}`)),
+      notes.length ? jsx(PanelSectionLabel, { children: t('pa.field.findings') }, 'findLabel') : null,
+      ...notes.map((f, i) => jsx(Finding, { finding: f }, `n${i}`))
+    ]
+  }, 'open')
+
   return jsxs('div', {
     ref: cardAt,
     className: leaving ? 'pa-card pa-leaving' : 'pa-card',
-    'data-group': item.id,
     role: 'group',
     tabIndex: -1,
-    'aria-labelledby': `pa-title-group-${item.id}`,
+    'aria-labelledby': titleId,
     'aria-busy': Boolean(busy) || undefined,
     'aria-hidden': leaving || undefined,
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       jsxs('div', {
-        className: 'pa-card-head',
+        className: 'pa-kind',
         children: [
-          onPick
-            ? jsx('input', {
-                type: 'checkbox',
-                className: 'pa-pick',
-                disabled: leaving,
-                checked: picked === true,
-                'aria-label': `${t('pa.grp.select')}: ${groupTitle} #${item.id}`,
-                onChange: () => onPick()
-              }, 'pick')
+          jsxs('div', {
+            className: 'pa-kind-left',
+            children: [
+              onPick
+                ? jsx('input', {
+                    type: 'checkbox', className: 'pa-pick', disabled: leaving,
+                    checked: isGroup ? picked === true : Boolean(picked),
+                    'aria-label': `${t(isGroup ? 'pa.grp.select' : 'pa.bulk.select')}: ${titleText} #${item.id}`,
+                    onChange: () => onPick()
+                  }, 'pick')
+                : null,
+              jsx('span', { className: 'pa-kind-dot', style: { background: toneOf(stateVariant) }, 'aria-hidden': true }, 'dot'),
+              jsx('span', {
+                id: titleId, className: 'pa-kind-label pa-card-title', role: 'heading', 'aria-level': 2,
+                children: titleText
+              }, 'label'),
+              jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
+              isGroup
+                ? jsx('span', {
+                    className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
+                  }, 'stat')
+                : null
+            ]
+          }, 'left'),
+          total > 1
+            ? jsxs('span', {
+                className: 'pa-positions', 'aria-hidden': true,
+                children: Array.from({ length: total }, (_, i) =>
+                  jsx('span', { className: 'pa-position-dot', 'data-on': i === position - 1 ? '1' : '0' }, i))
+              }, 'positions')
             : null,
-          jsx('span', {
-            id: `pa-title-group-${item.id}`, className: 'pa-card-title', role: 'heading', 'aria-level': 2, children: groupTitle
-          }, 'title'),
-          jsx('span', {
-            className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
-          }, 'stat'),
-          jsx('span', { className: 'pa-card-when', children: when(t, item.staged_at) }, 'at'),
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant: badgeVariant, children: t(badgeKey) }, 'state')
+          jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
         ]
-      }, 'head'),
+      }, 'kind'),
 
       stale.length
-        ? alertBox('stale', [t('pa.grp.staleWhy'), ...stale.map(s => jsx('div', {
-            className: 'pa-alert-sub', children: `#${s.change} · ${s.text}`
-          }, `s${s.change}`))], true)
+        ? alertBox('stale', [
+            isGroup ? t('pa.grp.staleWhy') : t('pa.status.staleWhy'),
+            ...stale.map((s, i) => jsx('div', {
+              className: 'pa-alert-sub', children: isGroup ? `#${s.change} · ${s.text}` : s
+            }, isGroup ? `s${s.change}` : `${i}:${s}`))
+          ], true)
         : null,
-      failed.length
-        ? alertBox('failed', [t('pa.field.failedBefore'), ...failed.map(p => jsx('div', {
-            className: 'pa-alert-sub', children: `#${p.change} · ${p.plain.last_error}`
-          }, `f${p.change}`))], true)
+      failedBefore
+        ? alertBox('failed', isGroup
+            ? [t('pa.field.failedBefore'), ...failedParts.map(p => jsx('div', {
+                className: 'pa-alert-sub', children: `#${p.change} · ${p.plain.last_error}`
+              }, `f${p.change}`))]
+            : `${t('pa.field.failedBefore')}: ${plain.last_error}`, true)
         : null,
 
-      jsx(ReviewSection, {
-        review, facts, tone: toneOf(badgeVariant), busy,
-        onAgain: () => run('review', () => askReview(t, 'skills', item.id, onChanged))
-      }, 'review'),
+      jsx('div', { className: 'pa-ask', children: ask }, 'ask'),
+      preReview,
+      groupsSection,
+      fixSection,
+      membersSection,
+      hero.files
+        ? jsxs('div', {
+            children: [
+              jsx('div', { className: 'pa-hero', children: hero.name }, 'name'),
+              jsx('div', {
+                className: 'pa-hero-files',
+                children: [...hero.files, hero.more ? t('pa.hero.filesMore', hero.more) : null].filter(Boolean).join(', ')
+              }, 'files')
+            ]
+          }, 'hero')
+        : jsxs('div', {
+            children: [
+              jsx('div', { className: 'pa-hero', children: hero.text }, 'text'),
+              hero.replaced ? jsx('div', { className: 'pa-hero-replaced', children: hero.replaced }, 'replaced') : null
+            ]
+          }, 'hero'),
+      plain.why ? jsx('div', { className: 'pa-why', children: t('pa.hero.why', plain.why) }, 'why') : null,
+      effectText ? jsx('div', { className: 'pa-effect', children: effectText }, 'effect') : null,
+
+      checksSection,
 
       (canSkip && skipArmed) || fixArmed
-        ? jsx('div', {
-            style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn')
-          }, 'skipWarn')
+        ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
         : null,
 
-      open &&
-        jsxs('div', {
-          ref: detailsAt,
-          id: detailsId,
-          className: 'pa-details',
-          children: [
-            jsx(PanelSectionLabel, { children: t('pa.grp.result') }, 'resultLabel'),
-            ...(item.result || []).map(r => jsx(Change, {
-              op: r, where: r.file, t, badge: t(RESULT_KEY[r.status] || 'pa.grp.status.changed')
-            }, `r-${r.file}`)),
-            notes.length ? jsx(PanelSectionLabel, { children: t('pa.field.findings') }, 'findLabel') : null,
-            ...notes.map((f, i) => jsx(Finding, { finding: f }, `n${i}`))
-          ]
-        }, 'open'),
-
-      jsxs('div', {
-        className: 'pa-members',
-        children: [
-          jsx(PanelSectionLabel, { children: t('pa.grp.list', n) }, 'label'),
-          ...parts.map(partRow)
-        ]
-      }, 'members'),
+      fullChange,
 
       jsxs('div', {
         className: 'pa-foot',
@@ -1905,7 +1960,7 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
             'aria-expanded': open,
             'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
-            children: t(open ? 'pa.btn.detailsHide' : 'pa.btn.details')
+            children: t(open ? 'pa.btn.fullChangeHide' : 'pa.btn.fullChange')
           }, 'details'),
           (canSkip && skipArmed) || fixArmed
             ? jsx(Button, {
@@ -1920,7 +1975,7 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
                 size: 'sm',
                 disabled: Boolean(busy) && busy !== 'skip',
                 loading: busy === 'skip',
-                onClick: () => (skipArmed ? void decideGroup('approve', true) : setSkipArmed(true)),
+                onClick: skipArmed ? () => void decide('approve', [], true) : () => setSkipArmed(true),
                 children: t(skipArmed ? 'pa.btn.skipConfirm' : 'pa.btn.skipReview')
               }, 'skip')
             : null,
@@ -1937,23 +1992,24 @@ function GroupCard({ item, onChanged, picked, onPick, onLater }) {
                 size: 'sm',
                 disabled: Boolean(busy) && busy !== 'reject',
                 loading: busy === 'reject',
-                onClick: () => void decideGroup('reject'),
-                children: t('pa.grp.rejectAll', n)
+                onClick: () => void decide('reject'),
+                children: labelDecline
               }, 'reject'),
-              heldButton(busy, t, 'approve', t('pa.grp.approve', n), asIsVariant,
-                groupBlocked, heldWhy, () => decideGroup('approve')),
+              heldButton(busy, t, primaryKey, labelPrimary, asIsVariant,
+                primaryBlocked, heldWhy, onPrimary),
               !edits ? null
                 : fixArmed
                   ? heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'destructive', false, '',
-                      () => decideGroup('approve', true, true))
-                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant,
-                      withFixBlocked && !fixUnreviewed, withFixWhy,
-                      fixUnreviewed ? () => setFixArmed(true) : () => decideGroup('approve', false, true))
+                      () => decide('approve', [], true, true))
+                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed, fixWhy,
+                      fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true))
             ]
           }, 'actions')
         ]
       }, 'foot'),
-      stale.length ? jsx('div', { className: 'pa-note pa-hold', children: staleHeld }, 'hold') : null
+      stale.length && isGroup
+        ? jsx('div', { className: 'pa-note pa-hold', children: t('pa.grp.staleHeld', changeList(stale)) }, 'hold')
+        : null
     ]
   })
 }
@@ -2569,11 +2625,13 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
         jsx('div', {
           className: stacked ? 'pa-cell pa-cell-stacked' : 'pa-cell',
           'data-key': frontKey,
-          children: jsx(item.parts ? GroupCard : PendingCard, {
+          children: jsx(FrontCard, {
             subsystem: front.subsystem, item, onChanged,
             picked: picked.has(frontKey),
             onPick: items.length > 1 ? () => togglePick(frontKey) : null,
-            onLater: () => queue.later(frontKey)
+            onLater: () => queue.later(frontKey),
+            position: Math.max(1, queue.order.findIndex(u => queueKey(u) === frontKey) + 1),
+            total: queue.order.length
           }, 'card')
         }, frontKey)
       ]

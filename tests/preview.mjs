@@ -305,8 +305,8 @@ const openDetails = async hostEl => {
       await click(row, `Up next row for ${key}`)
     }
     const card = hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
-    await click(byText(card, /^Details and changes$/i), `Details and changes on ${key}`)
-    if (!byText(card, /^Hide details$/i)) problems.push(`the details of ${key} did not open`)
+    await click(byText(card, /^Show the full change$/i), `Show the full change on ${key}`)
+    if (!byText(card, /^Hide the full change$/i)) problems.push(`the details of ${key} did not open`)
   }
 }
 
@@ -344,7 +344,7 @@ frames.push({
   label: 'Pending — a skill group: one card, one review, one decision for three changes (Result open, #1 unfolded)',
   html: await frame(async hostEl => {
     const card = () => hostEl.querySelector(`.pa-cell[data-key="skills:${GROUP_ID}"]`)
-    await click(byText(card(), /^Details and changes$/i), 'Details and changes on the group')
+    await click(byText(card(), /^Show the full change$/i), 'Show the full change on the group')
     await click(byText(card()?.querySelector('.pa-member'), /^Show lines$/), 'Show lines on #1')
     if (!/Approve 3 changes/.test(card()?.textContent || '')) problems.push('the group card lost its Approve 3 changes')
   }, GROUPED)

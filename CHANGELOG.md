@@ -46,6 +46,15 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   truncated line with a trailing ellipsis; now they wrap onto as many lines as the title needs,
   so a long skill name or memory note is never hidden.
 
+* **The front card now opens with a plain-language question, not a jargon field list.** A new
+  record leads with what it actually asks ("Hermes wants to add a new skill: x", "Hermes wants to
+  remember something new") and a one-line statement of effect, before the Change/Result detail
+  (now behind a "Show the full change" / "Hide the full change" toggle, replacing "Details and
+  changes" / "Hide details"). The primary and decline buttons now say what they do in the record's
+  own words — "Save skill", "Save changes", "Delete skill", "Save to memory" and "Don't save" —
+  instead of the bare, undifferentiated "Approve" / "Reject". A record with a rule-check pass/fail
+  shows each check as its own line instead of one pass/fail line for the whole record.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

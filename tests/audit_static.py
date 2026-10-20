@@ -562,14 +562,15 @@ def check_two_step_actions() -> None:
                         ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is bulk-approvable"),
                         ("const [skipArmed, setSkipArmed] = useState(false)",
                          "approving without a pre-review has no confirmation state"),
-                        ("onClick: skipArmed ? () => void decideAndLeave('approve', [], true) : () => setSkipArmed(true)",
+                        ("onClick: skipArmed ? () => void decide('approve', [], true) : () => setSkipArmed(true)",
                          "the first \"Approve without review\" click does not arm"),
                         ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
                         ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",
                          "a record that can no longer be applied keeps Approve open"),
-                        ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)",
+                        ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? "
+                         "fixesInGroup.length : fixSingle)",
                          "a suggested fix can be approved before the review finished or while it leaves a problem"),
-                        ("approveBtn('fixed', t('pa.btn.approveFixed')",
+                        ("heldButton(busy, t, 'fixed', t('pa.btn.approveFixed')",
                          "a card with a suggested edit lost \"Approve with the fix\""),
                         ("with_edits: Boolean(withEdits)", "the suggested edits do not reach the backend"),
                         ("edit?.ok ? jsx(EditView, { edit, t }, 'edit') : null",
@@ -635,17 +636,17 @@ def check_skill_groups_panel() -> None:
     src = JS.read_text(encoding="utf-8")
     units = _function_body(src, "units")
     listing = _function_body(src, "NeedsYou")
-    group = _function_body(src, "GroupCard")
+    card = _function_body(src, "FrontCard")
     chip = _function_body(src, "Chip")
     for needle in ("if (drawn.has(group.id)) continue", "parts, plain: { stale: group.stale || [], fix }"):
         if needle not in units:
             _report(f"plugin.js: units() lost {needle!r} — a skill group is not folded into one card")
-    if "units(data)" not in listing or "item.parts ? GroupCard : PendingCard" not in listing:
-        _report("plugin.js: the pending list does not draw ONE group card per skill group — its members "
+    if "units(data)" not in listing or "jsx(FrontCard" not in listing:
+        _report("plugin.js: the pending list does not draw ONE front card per skill group — its members "
                 "would be cards of their own")
-    if "const groupBlocked = !pickable(item)" not in group or "groupBlocked, heldWhy, () => decideGroup('approve'))" \
-            not in group:
-        _report("plugin.js: the group's Approve is not held by the group gate — a group with a stale change, "
+    if "const heldByRule = isGroup ? fixesInGroup.length > 0" not in card \
+            or "primaryBlocked, heldWhy, onPrimary)" not in card:
+        _report("plugin.js: the group's primary action is not held by the group gate — a group with a stale change, "
                 "a rule check or an unfinished review could be approved")
     if "groups: items.filter(item => item.parts).map(item => item.id)," not in src \
             or "ids: items.filter(item => !item.parts).map(item => item.id)," not in src:
