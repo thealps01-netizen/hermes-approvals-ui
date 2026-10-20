@@ -44,6 +44,8 @@ const BUNDLES = {
       },
       stage: {
         upNext: 'Up next',
+        select: 'Select',
+        selectDone: 'Done',
         justDone: 'Just done',
         typeMemory: 'Memory',
         typeSkill: 'Skill',
@@ -666,6 +668,7 @@ const STYLE = `
 .pa-activity-list{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-act-row{display:flex;flex-direction:column;gap:${G.xxs}px;padding:${G.xs}px ${G.sm}px}
 .pa-act-line{display:flex;align-items:center;gap:${G.xs}px;min-width:0}
+.pa-act-said{font-size:${FS.body}px;line-height:1.5;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-act-files{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-act-note{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-day-heading{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
@@ -751,6 +754,7 @@ const STYLE = `
 .pa-side-title{font-size:${FS.micro}px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ui-text-secondary)}
 .pa-upnext{display:flex;flex-direction:column;gap:6px}
+.pa-upnext-head{display:flex;align-items:center;justify-content:space-between;gap:${G.xs}px;min-height:24px}
 .pa-upnext-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);text-align:left;cursor:pointer;min-width:0;width:100%}
 .pa-upnext-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ui-text-tertiary)}
@@ -927,21 +931,10 @@ function Raw({ children, height, tone, className }) {
   }, 'fade')
 }
 
-function Summary({ text, raw, height }) {
+function Summary({ text, raw }) {
   const t = usePluginI18n(ID)
-  const fade = useFade(true)
-  const box = jsx('div', {
-    ref: fade.ref,
-    className: 'pa-fade',
-    'data-more': fade.more,
-    children: jsx('div', {
-      className: 'pa-scroll pa-summary',
-      onScroll: fade.sync,
-      style: fieldBox(height),
-      children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: text }, 'text')
-    }, 'scroll')
-  }, 'fade')
-  return text === raw ? box : jsx(Tip, { label: t('pa.hist.rawAs', raw), children: box }, 'tip')
+  const line = jsx('div', { className: 'pa-act-said', children: text }, 'text')
+  return text === raw ? line : jsx(Tip, { label: t('pa.hist.rawAs', raw), children: line }, 'tip')
 }
 
 function Field({ label: title, children }) {
@@ -2584,12 +2577,27 @@ function UpNextRow({ subsystem, item, t, onPick, picked, onTogglePick }) {
   }, key)
 }
 
-function UpNext({ units: upcoming, t, onPick, picked, onTogglePick }) {
+function UpNext({ units: upcoming, t, onPick, picked, onTogglePick, selecting, onSelect }) {
   if (!upcoming.length) return null
   return jsxs('div', {
     className: 'pa-side-section pa-upnext',
     children: [
-      jsx('div', { className: 'pa-side-title', children: t('pa.stage.upNext') }, 'title'),
+      jsxs('div', {
+        className: 'pa-upnext-head',
+        children: [
+          jsx('div', { className: 'pa-side-title', children: t('pa.stage.upNext') }, 'title'),
+          onSelect
+            ? jsx(Button, {
+                className: 'pa-select',
+                variant: 'text',
+                size: 'sm',
+                'aria-pressed': selecting,
+                onClick: onSelect,
+                children: t(selecting ? 'pa.stage.selectDone' : 'pa.stage.select')
+              }, 'select')
+            : null
+        ]
+      }, 'head'),
       ...upcoming.map(u => jsx(UpNextRow, {
         subsystem: u.subsystem, item: u.item, t, onPick: () => onPick(queueKey(u)),
         picked: picked?.has(queueKey(u)), onTogglePick
@@ -2666,7 +2674,14 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
   const stageRef = useRef(null)
   const prevFrontKey = useRef(null)
   const [picked, setPicked] = useState(() => new Set())
+  const [selectOn, setSelectOn] = useState(false)
   const items = data ? units(data) : []
+  const canSelect = items.length > 1
+  const selecting = selectOn && canSelect
+  const toggleSelect = () => {
+    if (selecting) setPicked(new Set())
+    setSelectOn(!selecting)
+  }
   const queue = useQueue(items)
   const keys = items.map(queueKey).join('\n')
   useEffect(() => {
@@ -2738,7 +2753,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
           children: jsx(FrontCard, {
             subsystem: front.subsystem, item, onChanged,
             picked: picked.has(frontKey),
-            onPick: items.length > 1 ? () => togglePick(frontKey) : null,
+            onPick: selecting ? () => togglePick(frontKey) : null,
             onLater: () => queue.later(frontKey),
             position: Math.max(1, queue.order.findIndex(u => queueKey(u) === frontKey) + 1),
             total: queue.order.length
@@ -2760,14 +2775,15 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
         children: [
           jsx(UpNext, {
             units: queue.order.slice(1), t, onPick: queue.pick,
-            picked, onTogglePick: items.length > 1 ? togglePick : null
+            picked, onTogglePick: selecting ? togglePick : null,
+            selecting, onSelect: canSelect ? toggleSelect : null
           }, 'upnext'),
           jsx(JustDone, { entries, t, onChanged }, 'justdone')
         ]
       }, 'side')
     ]
   }, 'stage')
-  const bar = total(data.counts)
+  const bar = selecting && total(data.counts)
     ? jsx(BulkBar, { items, picked, setPicked, onChanged }, 'bulk')
     : null
   return jsxs('div', { children: [stale, notice, bar, body] }, 'list')

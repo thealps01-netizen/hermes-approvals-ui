@@ -420,6 +420,19 @@ frames.push({
   }, FIXLOSS)
 })
 
+frames.push({
+  label: 'Needs you — selection mode: "Select" in Up next, checkboxes on the front card and each row, the bulk bar',
+  html: await frame(async hostEl => {
+    await click(byText(hostEl.querySelector('.pa-upnext-head'), /^Select$/), 'Select in Up next')
+    const boxes = [...hostEl.querySelectorAll('input.pa-pick')]
+    if (boxes.length !== 3) problems.push(`selection mode draws ${boxes.length} checkboxes, not 3`)
+    for (const box of boxes.slice(0, 2)) await click(box, 'a selection checkbox')
+    if (!/2 of 3 selected/.test(hostEl.querySelector('.pa-bulk')?.textContent || '')) {
+      problems.push('selection mode: the bulk bar does not count two picked records')
+    }
+  })
+})
+
 for (const f of frames) {
   const text = f.html.replace(/<style[\s\S]*?<\/style>/g, ' ')
   if (/<[^>]*\btitle="/.test(f.html)) problems.push(`${f.label}: a native title= is drawn`)

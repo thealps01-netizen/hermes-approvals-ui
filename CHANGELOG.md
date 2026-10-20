@@ -108,6 +108,13 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
   thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
 
+* **Selecting several records starts with "Select".** Checkboxes and the bulk bar no longer sit on
+  the page all the time. "Select" at the top of "Up next" adds a checkbox to the front card and to
+  each waiting row and shows the bulk bar, with its confirmation step unchanged; "Done" clears the
+  selection and hides them again.
+
+* **An Activity row's summary is plain text,** not a small box inside the row, as in the mockup.
+
 * **A problem line under "Checked for you" starts at the left** like the ✓ lines, instead of sitting
   in the middle of the card.
 

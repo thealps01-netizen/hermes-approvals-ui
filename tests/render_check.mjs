@@ -877,6 +877,10 @@ const click = async (el, wait = 40) => {
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
 const buttons = (hostEl, re) => [...hostEl.querySelectorAll('button')].filter(b => re.test(b.textContent || ''))
+const selectMode = async hostEl => {
+  const on = buttons(hostEl, /^Select$/)[0]
+  if (on) await click(on, 20)
+}
 const primaryBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
   .find(b => b.getAttribute('data-variant') === 'default')
 const declineBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
@@ -1639,12 +1643,13 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 
 // --- 12c) Bulk decisions ------------------------------------------------------------------------
-// Every card carries its checkbox, so a flagged record can be rejected in bulk. "Approve N" opens
+// After "Select", every card carries its checkbox, so a flagged record can be rejected in bulk. "Approve N" opens
 // only while EVERY selected record is approvable on its own; otherwise it is aria-disabled (still
 // focusable) with a themed Tip counting the records that need their own decision, and a click sends
 // nothing. Both bulk actions arm first and send on Confirm; every /decide carries its versions.
 {
   const bulk = await mount('en')
+  await selectMode(bulk.hostEl)
   const barOf = h => h.hostEl.querySelector('.pa-bulk')
   const bar = barOf(bulk)
   if (!bar) fail('no bulk bar over three pending records')
@@ -1705,6 +1710,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised rejecting 1 of them.']]) {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict } })
     const advisedBulk = await mount('en')
+    await selectMode(advisedBulk.hostEl)
     await click(buttons(barOf(advisedBulk), /^Select all$/)[0])
     await click(pickOf(advisedBulk, 'skills:def67890'))
     await click(buttons(barOf(advisedBulk), /^Approve 2$/)[0])
@@ -1717,6 +1723,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict: 'reject' } })
     const single = await mount('en')
+    await selectMode(single.hostEl)
     await click(pickOf(single, 'skills:aaa11111'))
     await click(buttons(barOf(single), /^Approve 1$/)[0])
     const armed = barOf(single)?.textContent || ''
@@ -1729,6 +1736,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'bulkfail'
   const partial = await mount('en')
+  await selectMode(partial.hostEl)
   const from0 = posts().length
   await click(buttons(barOf(partial), /^Select all$/)[0])
   await click(pickOf(partial, 'skills:def67890'))
@@ -1747,6 +1755,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'stale'
   const stale = await mount('en')
+  await selectMode(stale.hostEl)
   await click(buttons(barOf(stale), /^Select all$/)[0])
   await click(pickOf(stale, 'skills:def67890'))
   await click(buttons(barOf(stale), /^Approve 2$/)[0])
@@ -1760,6 +1769,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.mode = 'twomem'
   const batch = await mount('en')
+  await selectMode(batch.hostEl)
   const from = posts().length
   await click(buttons(barOf(batch), /^Select all$/)[0])
   if (buttons(barOf(batch), /^Approve 4$/)[0]?.getAttribute('aria-disabled') !== 'true') {
@@ -1790,6 +1800,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'stale'
   const stale = await mount('en')
+  await selectMode(stale.hostEl)
   await toFront(stale.hostEl, 'skills:aaa11111')
   const reads = GETS.filter(p => p === '/pending').length
   await click([primaryBtn(cellOf(stale, 'skills:aaa11111'))].filter(Boolean)[0], 120)
@@ -2135,6 +2146,7 @@ REST.scan = 'ok'
   }
   REST.mode = 'reviewing'
   const gate = await mount('en')
+  await selectMode(gate.hostEl)
   const approveIn = key => [primaryBtn(cell(gate.hostEl, key))].filter(Boolean)[0]
   for (const key of ['memory:abc12345', 'skills:aaa11111']) {
     await toFront(gate.hostEl, key)
@@ -2368,7 +2380,7 @@ REST.scan = 'ok'
   {
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .map(el => (el.tagName === 'INPUT' ? 'checkbox' : el.textContent.trim()))
-    const want = ['checkbox', 'Review again', 'Hide the full change', 'Later', 'Don’t save', 'Save skill']
+    const want = ['Review again', 'Hide the full change', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -2471,6 +2483,7 @@ REST.scan = 'ok'
 
   REST.mode = 'groups'
   const g = await mount('en', 'page')
+  await selectMode(g.hostEl)
   const expectKeys = ['memory:abc12345', ck(CLEAN_GROUP), 'skills:c3000003', ck(STALE_GROUP)]
   const keys = [...reachableKeys(g.hostEl)]
   if (!same([...keys].sort(), [...expectKeys].sort())) {
@@ -2771,6 +2784,7 @@ REST.scan = 'ok'
 
   REST.mode = 'groupsloss'
   const g = await mount('en', 'page')
+  await selectMode(g.hostEl)
   await toFront(g.hostEl, `skills:${CLEAN_GROUP}`)
   const gc = cell(g.hostEl, `skills:${CLEAN_GROUP}`)
   {
@@ -3005,12 +3019,14 @@ REST.scan = 'ok'
   REST.pending = { ...PENDING, memory: [], skills: [PENDING.skills[1]], counts: { memory: 0, skills: 1 } }
   const lone = await mount('en', 'page')
   if (lone.hostEl.querySelectorAll('.pa-pick').length) fail('a lone pending record draws a selection box with nothing to bulk-act on')
+  if (buttons(lone.hostEl, /^Select$/).length) fail('a lone pending record offers Select with nothing to bulk-act on')
   lone.root.unmount()
   lone.hostEl.remove()
 
   REST.pending = null
   REST.gone = new Set()
   const pick = await mount('en', 'page')
+  await selectMode(pick.hostEl)
   const pickBoxOf = (h, key) => cellOf(h, key)?.querySelector('.pa-pick')
     || h.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] .pa-pick`)
   for (const key of ['skills:aaa11111', 'skills:def67890']) {
@@ -3095,6 +3111,7 @@ REST.scan = 'ok'
 
   REST.pending = unreviewed(['new-skill: still missing the author line.'])
   const partial = await mount('en', 'page')
+  await selectMode(partial.hostEl)
   await toFront(partial.hostEl, 'skills:aaa11111')
   const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
   const from = sends().length
@@ -3261,6 +3278,7 @@ REST.scan = 'ok'
   const two = { counts: { memory: 1, skills: 1 }, memory: PENDING.memory, skills: [PENDING.skills[1]] }
   REST.pending = two
   const pair = await mount('en', 'page')
+  await selectMode(pair.hostEl)
   for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
   if (pair.hostEl.querySelector('.pa-bulk-count')?.textContent !== '2 of 2 selected') fail('setup: two cards could not both be ticked')
   REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
@@ -3296,6 +3314,7 @@ REST.scan = 'ok'
   if (say('pa.hist.clear', 1) !== 'Clear 1 record') fail(`one history row reads ${JSON.stringify(say('pa.hist.clear', 1))}`)
   if (/Delete button/.test(say('pa.memory.readonlyEmpty'))) fail('an empty Memory tab points at a Delete button that is not there')
   const ui = await mount('en', 'page')
+  await selectMode(ui.hostEl)
   await wait(60)
   const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
   if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
@@ -3376,6 +3395,7 @@ REST.scan = 'ok'
     const realNow = Date.now
     REST.mode = 'reviewing'
     const hw = await mount('en', 'page')
+    await selectMode(hw.hostEl)
     await wait(60)
     await toFront(hw.hostEl, 'memory:abc12345')
     const onScreen = re => stub.screen.filter(m => m?.kind === 'warning' && re.test(m?.message || '')).length
@@ -3434,13 +3454,13 @@ REST.scan = 'ok'
     const plainBad = why => fail(`a History summary still reads like code: ${why}`)
     for (const [id, text, raw] of [['e2e0d001', PLAIN_CREATE, RAW_CREATE], ['e2e0d002', PLAIN_PATCH, RAW_PATCH]]) {
       const card = cardOf(id)
-      const box = card?.querySelector('.pa-summary')
+      const box = card?.querySelector('.pa-act-said')
       if (!box?.textContent.includes(text)) plainBad(`#${id} reads ${JSON.stringify(box?.textContent)}`)
       if (box?.closest('[data-slot="log-view"]') || box?.querySelector('[data-slot="log-view"]')) {
         plainBad(`#${id} sits in a monospace LogView`)
       }
-      if (box?.querySelector('[data-slot="panel-block"].pa-prose')?.textContent !== text) {
-        plainBad(`#${id} is not drawn as prose (PanelBlock .pa-prose)`)
+      if (box?.textContent !== text || box?.querySelector('[data-slot="panel-block"]')) {
+        plainBad(`#${id} is not drawn as plain row text (the mockup has no box around it)`)
       }
       if (box?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${raw}`) {
         plainBad(`#${id} does not keep Hermes' own text in its Tip`)
@@ -3448,14 +3468,14 @@ REST.scan = 'ok'
       const label = buttons(card || ph.hostEl, /^Undo$/)[0]?.getAttribute('aria-label') || ''
       if (!label.startsWith(`Undo: ${text.slice(0, 40)}`)) plainBad(`#${id} Undo is read out as ${JSON.stringify(label)}`)
     }
-    const batch = cardOf('e2e0d003')?.querySelector('.pa-summary')
+    const batch = cardOf('e2e0d003')?.querySelector('.pa-act-said')
     if (batch?.textContent !== PLAIN_BATCH) plainBad(`a batch record reads ${JSON.stringify(batch?.textContent)}`)
     if (batch?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${RAW_BATCH}`) {
       plainBad('a batch record does not keep the text Hermes recorded in its Tip')
     }
-    const odd = cardOf('e2e0d004')?.querySelector('.pa-summary')
+    const odd = cardOf('e2e0d004')?.querySelector('.pa-act-said')
     if (odd?.textContent !== RAW_ODD) plainBad(`a batch with an unknown action is guessed: ${odd?.textContent}`)
-    const memory = cardOf('aa11bb22')?.querySelector('.pa-summary')
+    const memory = cardOf('aa11bb22')?.querySelector('.pa-act-said')
     if (memory?.textContent !== 'MEMORY.md updated' || memory?.closest('[data-tip]')) {
       plainBad('an unmapped summary is not shown unchanged without a Tip')
     }
@@ -3784,6 +3804,31 @@ REST.scan = 'ok'
   }
   REST.pending = null
   del.hostEl.remove()
+}
+
+// --- 38) Task 4 test `select-mode`: checkboxes and the bulk bar appear only after "Select" -----------
+{
+  const sm = await mount('en', 'page')
+  const picksOf = () => [...sm.hostEl.querySelectorAll('input.pa-pick')]
+  const barNow = () => sm.hostEl.querySelector('.pa-bulk')
+  if (picksOf().length || barNow()) fail('select-mode: checkboxes or the bulk bar show before "Select" is pressed')
+  const on = sm.hostEl.querySelector('.pa-upnext-head button')
+  if (on?.textContent !== 'Select') fail(`select-mode: "Select" is not at the top of Up next: ${on?.textContent}`)
+  if (on) await click(on, 40)
+  if (picksOf().length !== 3) fail(`select-mode: the front card and each Up next row need a checkbox, got ${picksOf().length}`)
+  if (!sm.hostEl.querySelector('.pa-cell input.pa-pick')) fail('select-mode: the front card has no checkbox')
+  must(barNow()?.textContent, ['0 of 3 selected', 'Select all'], 'select-mode: the bulk bar after Select')
+  for (const box of picksOf().slice(0, 2)) await click(box, 20)
+  must(barNow()?.textContent, ['2 of 3 selected', 'Reject 2'], 'select-mode: two picked')
+  const done = buttons(sm.hostEl.querySelector('.pa-upnext-head') || sm.hostEl, /^Done$/)[0]
+  if (!done) fail('select-mode: "Select" does not turn into "Done"')
+  if (done) await click(done, 40)
+  if (picksOf().length || barNow()) fail('select-mode: "Done" leaves checkboxes or the bulk bar behind')
+  const again = buttons(sm.hostEl, /^Select$/)[0]
+  if (again) await click(again, 40)
+  must(barNow()?.textContent, ['0 of 3 selected'], 'select-mode: a second Select starts with nothing picked')
+  sm.root.unmount()
+  sm.hostEl.remove()
 }
 
 

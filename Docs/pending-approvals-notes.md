@@ -560,6 +560,11 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Selection is a mode (Needs you, Task 4).** With one record in front, permanent checkboxes and a
+  bulk bar were noise for the common case of deciding one thing. "Select" in the Up next head turns
+  on checkboxes (front card + Up next rows) and the unchanged BulkBar; "Done" clears the picks. A lone
+  record offers no Select. Tests enter the mode through `selectMode()` in `render_check.mjs`; block 38
+  locks the mode itself.
 - **A single description-fix record has one fix button.** Its primary "Use the short version" posts
   `/fix`; the in-card "Shorten description" did the same, so it is drawn only for group members.
 - **Scrollbar arrows hidden** (`::-webkit-scrollbar-button`), so a thin box shows no stepper glyphs.
