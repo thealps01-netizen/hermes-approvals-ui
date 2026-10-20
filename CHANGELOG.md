@@ -55,6 +55,14 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   instead of the bare, undifferentiated "Approve" / "Reject". A record with a rule-check pass/fail
   shows each check as its own line instead of one pass/fail line for the whole record.
 
+* **A record that only needs its description shortened is no longer stuck behind a held, disabled
+  Approve.** Its primary button now reads "Use the short version" and does the shortening fix
+  directly (still today's `/fix` call); the pre-review summary, its findings, "Review again" and
+  the group's member list now live inside "Show the full change" instead of always showing, so the
+  front card stays short for every record kind. Pressing Esc while the full change is open closes
+  it and returns focus to the toggle that opened it. Expanding a check row's finding now also shows
+  its suggested edit, where one exists, matching what the pre-review box always offered.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
