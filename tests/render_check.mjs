@@ -872,6 +872,7 @@ async function mount(appLocale, parts = 'both') {
 // registry `ctx.i18n.register` filled, exactly like the application does.
 
 const click = async (el, wait = 40) => {
+  if (!el) return
   await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
@@ -879,7 +880,7 @@ const buttons = (hostEl, re) => [...hostEl.querySelectorAll('button')].filter(b 
 const primaryBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
   .find(b => b.getAttribute('data-variant') === 'default')
 const declineBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
-  .find(b => b.getAttribute('data-variant') === 'destructive')
+  .find(b => b.classList.contains('pa-decline'))
 const byText = (hostEl, text) => [...hostEl.querySelectorAll('div')].find(d => d.textContent === text)
 const tab = (hostEl, re) => [...hostEl.querySelectorAll('.pa-tab')].find(b => re.test(b.textContent || ''))
 const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
@@ -994,7 +995,7 @@ for (const mounted of [en, other]) {
   if (slot(cell, 'log-view')) fail('a closed card draws the change; it belongs under "Show the full change"')
   const reject = declineBtn(cell)
   const approve = primaryBtn(cell)
-  if (reject?.getAttribute('data-variant') !== 'destructive') fail('the decline action is not the kit destructive variant')
+  if (reject?.getAttribute('data-variant') !== 'outline') fail('the decline action is not the kit outline variant')
   if (approve?.getAttribute('data-variant') !== 'default') fail('the primary action is not the kit default variant')
   if (/^Approve$/.test(reject?.textContent || '') || /^Reject$/.test(approve?.textContent || '')) {
     fail('a front-card button still reads the bare "Approve"/"Reject"')
@@ -1178,8 +1179,8 @@ for (const mounted of [en, other]) {
   if (!actions) fail('a card lost its action row')
   const variants = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.getAttribute('data-variant'))
   const decisionVariants = variants.slice(-2)
-  if (JSON.stringify(decisionVariants) !== JSON.stringify(['destructive', 'default'])) {
-    fail(`the action pair is not the kit destructive/default pair: ${JSON.stringify(variants)}`)
+  if (JSON.stringify(decisionVariants) !== JSON.stringify(['outline', 'default'])) {
+    fail(`the action pair is not the kit outline/default pair: ${JSON.stringify(variants)}`)
   }
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
   if (/\.pa-(reject|approve)\b/.test(sheet) || /filter:brightness/.test(sheet) || /var\(--(dt|theme)-/.test(sheet)) {
@@ -2388,7 +2389,10 @@ REST.scan = 'ok'
 
   await toFront(g.hostEl, ck(CLEAN_GROUP))
   if (clean()?.textContent.includes('RESULT-CHANGED-LINE')) fail('the Result is drawn before Details is opened')
-  await click(buttons(clean(), /^Show the full change$/)[0])
+  {
+    const sfc = buttons(clean(), /^Show the full change$/)[0]
+    if (sfc) await click(sfc)
+  }
   must(clean()?.querySelector('.pa-details')?.textContent, ['Result', 'alpha-skill/SKILL.md', 'Changed',
     'RESULT-CHANGED-LINE', 'alpha-skill/references/notes.md', 'New file', 'RESULT-NEW-LINE', '+2 −0'], 'group Result')
 
@@ -2425,7 +2429,10 @@ REST.scan = 'ok'
 
   const pick = key => cell(g.hostEl, key)?.querySelector('.pa-kind input[type="checkbox"]')
     || g.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] input[type="checkbox"]`)
-  for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) await click(pick(key))
+  for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) {
+    const cb = pick(key)
+    if (cb) await click(cb)
+  }
   const bar = () => g.hostEl.querySelector('.pa-bulk')
   must(bar()?.textContent, ['2 of 4 selected', 'Approve 2'], 'a group is one selectable unit')
   sent = postsTo('/decide').length
@@ -3357,6 +3364,9 @@ REST.scan = 'ok'
   const delBody = delCell?.querySelector('.pa-change')?.textContent || ''
   if (!/whole skill/.test(delBody) || !/Deletes the whole skill folder/.test(delBody) || /No text recorded|\+0 −0/.test(delBody)) {
     fail(`a skill deletion's change reads ${JSON.stringify(delBody)}`)
+  }
+  if (declineBtn(delCell)?.getAttribute('data-variant') !== 'destructive') {
+    fail('a skill deletion\'s decline action is not the kit destructive variant')
   }
   REST.pending = null
   ed.root.unmount()

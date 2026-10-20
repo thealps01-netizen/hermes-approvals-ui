@@ -354,6 +354,7 @@ frames.push({
   label: 'Pending — a suggested fix that deletes most of the new text (1.11.1): the alert with its count, Approve as written primary',
   html: await frame(async hostEl => {
     const card = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
+    await click(byText(card, /^Show the full change$/i), 'Show the full change on the heavy fix')
     if (!/deletes 30 of the 33 new words/.test(card?.textContent || '')) problems.push('the fix-effect alert is not drawn')
     if (byText(card, /^Approve as written$/)?.getAttribute('data-variant') !== 'default') {
       problems.push('Approve as written is not the primary button under a heavy fix')

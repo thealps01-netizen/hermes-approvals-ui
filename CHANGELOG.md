@@ -63,6 +63,12 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   it and returns focus to the toggle that opened it. Expanding a check row's finding now also shows
   its suggested edit, where one exists, matching what the pre-review box always offered.
 
+* **"Don't save" is no longer drawn in destructive red.** Only deleting a skill (its own two-step
+  confirm) still uses the red button; declining a memory add, a skill add/update or a description
+  fix now uses the same quiet outline style as every other non-destructive secondary action. The
+  struck-through "before" line under a shortened description, and the "Second opinion by ..." meta
+  line under the checks, no longer sit below the AA contrast floor in light mode.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

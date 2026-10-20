@@ -738,7 +738,7 @@ const STYLE = `
 .pa-hero-box{background:var(--hx-field);border-radius:${R.box}px;padding:${G.base}px;
   display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-hero{font-size:${FS.hero}px;font-weight:600;line-height:1.4;color:var(--ui-text-primary);overflow-wrap:anywhere}
-.pa-hero-replaced{font-size:${FS.body}px;color:var(--ui-text-tertiary);text-decoration:line-through;overflow-wrap:anywhere}
+.pa-hero-replaced{font-size:${FS.body}px;color:var(--ui-text-secondary);text-decoration:line-through;overflow-wrap:anywhere}
 .pa-hero-files{font-size:${FS.body}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-why{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-effect{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
@@ -746,8 +746,7 @@ const STYLE = `
 .pa-check-row{display:flex;flex-direction:column;gap:${G.xxs}px}
 .pa-check-line{display:flex;align-items:flex-start;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;
   color:var(--ui-text-secondary);text-align:left}
-.pa-check-badge{flex:none;width:18px;justify-content:center;padding:0}
-.pa-check-meta{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
+.pa-check-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -1704,6 +1703,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
     : isFix ? primaryLabel(subsystem, item)
       : edits > 0 ? t('pa.btn.approveAsIs') : primaryLabel(subsystem, item)
   const labelDecline = isGroup ? t('pa.grp.rejectAll', parts.length) : t('pa.btn.dontSave')
+  const declineIsDelete = isGroup || (subsystem !== 'memory' && skillKindOf(item) === 'delete')
   const primaryKey = isFix ? 'fix' : 'approve'
   const primaryBlocked = isFix ? false : approveBlocked
   const onPrimary = isFix ? () => void applyFix(item.id) : () => void decide('approve')
@@ -1770,7 +1770,8 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
     className: 'pa-check-line',
     children: [
       jsx(Badge, {
-        className: 'pa-tag pa-check-badge', style: TAG, 'aria-hidden': true,
+        className: 'pa-tag', style: { ...TAG, width: 18, padding: 0, flex: 'none', justifyContent: 'center' },
+        'aria-hidden': true,
         variant: row.state === 'ok' ? 'success' : row.state === 'bad' ? 'warn' : 'muted',
         children: row.state === 'ok' ? '✓' : row.state === 'bad' ? '!' : '…'
       }, 'icon'),
@@ -2010,8 +2011,9 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
                   }, 'later')
                 : null,
               jsx(Button, {
-                variant: 'destructive',
+                variant: declineIsDelete ? 'destructive' : 'outline',
                 size: 'sm',
+                className: 'pa-decline',
                 disabled: Boolean(busy) && busy !== 'reject',
                 loading: busy === 'reject',
                 onClick: () => void decide('reject'),
