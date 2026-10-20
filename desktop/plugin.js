@@ -212,6 +212,7 @@ const BUNDLES = {
         dontSave: 'Don’t save',
         fullChange: 'Show the full change',
         fullChangeHide: 'Hide the full change',
+        useShort: 'Use the short version',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -368,7 +369,7 @@ const BUNDLES = {
         reasonUnassigned: 'no review model is set',
         reasonFailed: 'the second opinion failed',
         reasonQueued: 'the second opinion is waiting its turn',
-        meta: model => `Second opinion by ${model}`,
+        meta: (model, cost, age) => [`Second opinion by ${model}`, cost, age].filter(Boolean).join(' · '),
       },
     }
   }
@@ -536,7 +537,7 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
-const FS = { gauge: 9.5, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, headline: 34 }
+const FS = { gauge: 9.5, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, hero: 21, headline: 34 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, histSummary: 58, histFiles: 38, histAction: 30
@@ -734,7 +735,9 @@ const STYLE = `
 .pa-position-dot{width:6px;height:6px;border-radius:50%;background:var(--ui-stroke-tertiary)}
 .pa-position-dot[data-on="1"]{background:var(--ui-text-secondary)}
 .pa-ask{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-hero{font-size:${FS.title}px;font-weight:600;line-height:1.4;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-hero-box{background:var(--hx-field);border-radius:${R.box}px;padding:${G.base}px;
+  display:flex;flex-direction:column;gap:${G.xs}px}
+.pa-hero{font-size:${FS.hero}px;font-weight:600;line-height:1.4;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-hero-replaced{font-size:${FS.body}px;color:var(--ui-text-tertiary);text-decoration:line-through;overflow-wrap:anywhere}
 .pa-hero-files{font-size:${FS.body}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-why{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
@@ -743,10 +746,7 @@ const STYLE = `
 .pa-check-row{display:flex;flex-direction:column;gap:${G.xxs}px}
 .pa-check-line{display:flex;align-items:flex-start;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;
   color:var(--ui-text-secondary);text-align:left}
-.pa-check-icon{flex:none;width:14px;text-align:center}
-.pa-check-ok .pa-check-icon{color:var(--ui-green)}
-.pa-check-bad .pa-check-icon{color:var(--ui-orange)}
-.pa-check-wait .pa-check-icon{color:var(--ui-text-tertiary)}
+.pa-check-badge{flex:none;width:18px;justify-content:center;padding:0}
 .pa-check-meta{font-size:${FS.micro}px;color:var(--ui-text-tertiary)}
 `
 
@@ -1218,6 +1218,7 @@ const skillKindOf = item => {
   return 'update'
 }
 const primaryLabel = (subsystem, item) => {
+  if (!item.parts && (item.plain || {}).fix) return say('pa.btn.useShort')
   if (subsystem === 'memory') return say('pa.btn.saveMemory')
   const kind = skillKindOf(item)
   return say(kind === 'delete' ? 'pa.btn.deleteSkill' : kind === 'new' ? 'pa.btn.saveSkill' : 'pa.btn.saveChanges')
@@ -1229,11 +1230,12 @@ const askLine = (subsystem, item) => {
 }
 const heroOf = (subsystem, item) => {
   const plain = item.plain || {}
-  if (!item.parts && plain.fix) return { text: plain.fix.description, replaced: plain.fix.text }
+  if (!item.parts && plain.fix) return { lines: [{ text: plain.fix.description, replaced: plain.fix.text }] }
   if (subsystem === 'memory') {
-    const ops = item.ops || []
-    const op = ops.find(o => o.new) || ops[0] || {}
-    return { text: op.new || plain.headline || '', replaced: op.old || null }
+    const notes = (item.ops || []).filter(o => o.new)
+    const lines = notes.length ? notes.map(o => ({ text: o.new, replaced: o.old || null }))
+      : [{ text: plain.headline || '', replaced: null }]
+    return { lines }
   }
   const sourceOps = item.parts ? item.parts.flatMap(p => p.ops || []) : (item.ops || [])
   const files = [...new Set(sourceOps.map(o => o.file || o.name).filter(Boolean))]
@@ -1381,7 +1383,8 @@ function Finding({ finding }) {
         className: 'pa-free pa-prose', children: `${tagOf(finding)}${finding.explain}`
       }, 'explain') : null,
       finding.quote ? jsx(Raw, { children: `“${finding.quote}”` }, 'quote') : null,
-      finding.other ? jsx(Raw, { children: `${t('pa.review.other')}: “${finding.other}”` }, 'other') : null
+      finding.other ? jsx(Raw, { children: `${t('pa.review.other')}: “${finding.other}”` }, 'other') : null,
+      finding.edit?.ok && !finding.unverified ? jsx(EditView, { edit: finding.edit, t }, 'edit') : null
     ]
   })
 }
@@ -1696,12 +1699,14 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
   const hero = heroOf(subsystem, item)
   const effectText = effectLine(subsystem, item)
   const checks = checkRows(subsystem, item)
+  const isFix = !isGroup && Boolean(fixSingle)
   const labelPrimary = isGroup ? t('pa.grp.approve', parts.length)
-    : edits > 0 ? t('pa.btn.approveAsIs') : primaryLabel(subsystem, item)
+    : isFix ? primaryLabel(subsystem, item)
+      : edits > 0 ? t('pa.btn.approveAsIs') : primaryLabel(subsystem, item)
   const labelDecline = isGroup ? t('pa.grp.rejectAll', parts.length) : t('pa.btn.dontSave')
-  const primaryKey = 'approve'
-  const primaryBlocked = approveBlocked
-  const onPrimary = () => void decide('approve')
+  const primaryKey = isFix ? 'fix' : 'approve'
+  const primaryBlocked = isFix ? false : approveBlocked
+  const onPrimary = isFix ? () => void applyFix(item.id) : () => void decide('approve')
   const titleId = `pa-title-${groupSubsystem}-${item.id}`
 
   const staleAt = isGroup ? new Set(stale.map(s => s.change)) : null
@@ -1764,13 +1769,17 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
   const checkLine = row => jsxs('span', {
     className: 'pa-check-line',
     children: [
-      jsx('span', {
-        className: 'pa-check-icon', 'aria-hidden': true,
+      jsx(Badge, {
+        className: 'pa-tag pa-check-badge', style: TAG, 'aria-hidden': true,
+        variant: row.state === 'ok' ? 'success' : row.state === 'bad' ? 'warn' : 'muted',
         children: row.state === 'ok' ? '✓' : row.state === 'bad' ? '!' : '…'
       }, 'icon'),
       jsx('span', { children: row.text }, 'text')
     ]
   })
+  const reviewUsage = review.usage || {}
+  const costNote = typeof reviewUsage.cost_usd === 'number'
+    ? t('pa.review.cost', reviewUsage.cost_usd, reviewUsage.cost_status || '') : ''
   const checksSection = jsxs('div', {
     className: 'pa-checks',
     children: [
@@ -1788,7 +1797,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         ]
       }, row.key)),
       status === 'done' && review.model
-        ? jsx('div', { className: 'pa-check-meta', children: t('pa.check.meta', review.model) }, 'meta')
+        ? jsx('div', { className: 'pa-check-meta', children: t('pa.check.meta', review.model, costNote, when(t, item.staged_at)) }, 'meta')
         : null
     ]
   }, 'checks')
@@ -1842,7 +1851,16 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
     ref: detailsAt,
     id: detailsId,
     className: 'pa-details',
+    onKeyDown: e => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setOpen(false)
+      cardAt.current?.querySelector('.pa-fullchange-toggle')?.focus()
+    },
     children: [
+      preReview,
+      groupsSection,
+      membersSection,
       jsx(PanelSectionLabel, { children: t(isGroup ? 'pa.grp.result' : 'pa.field.change') }, 'changeLabel'),
       isGroup
         ? (item.result || []).map(r => jsx(Change, {
@@ -1919,30 +1937,33 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         : null,
 
       jsx('div', { className: 'pa-ask', children: ask }, 'ask'),
-      preReview,
-      groupsSection,
-      fixSection,
-      membersSection,
-      hero.files
-        ? jsxs('div', {
-            children: [
-              jsx('div', { className: 'pa-hero', children: hero.name }, 'name'),
-              jsx('div', {
-                className: 'pa-hero-files',
-                children: [...hero.files, hero.more ? t('pa.hero.filesMore', hero.more) : null].filter(Boolean).join(', ')
-              }, 'files')
-            ]
-          }, 'hero')
-        : jsxs('div', {
-            children: [
-              jsx('div', { className: 'pa-hero', children: hero.text }, 'text'),
-              hero.replaced ? jsx('div', { className: 'pa-hero-replaced', children: hero.replaced }, 'replaced') : null
-            ]
-          }, 'hero'),
+      jsx('div', {
+        className: 'pa-hero-box',
+        children: hero.files
+          ? jsxs('div', {
+              children: [
+                jsx('div', { className: 'pa-hero', children: hero.name }, 'name'),
+                jsx('div', {
+                  className: 'pa-hero-files',
+                  children: [...hero.files, hero.more ? t('pa.hero.filesMore', hero.more) : null]
+                    .filter(Boolean).join(', ')
+                }, 'files')
+              ]
+            }, 'target')
+          : hero.lines.map((line, i) => jsxs('div', {
+              className: 'pa-hero-line',
+              children: [
+                jsx('div', { className: 'pa-hero', children: line.text }, 'text'),
+                line.replaced ? jsx('div', { className: 'pa-hero-replaced', children: line.replaced }, 'replaced') : null
+              ]
+            }, i))
+      }, 'hero'),
       plain.why ? jsx('div', { className: 'pa-why', children: t('pa.hero.why', plain.why) }, 'why') : null,
       effectText ? jsx('div', { className: 'pa-effect', children: effectText }, 'effect') : null,
 
       checksSection,
+
+      fixSection,
 
       (canSkip && skipArmed) || fixArmed
         ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
@@ -1956,6 +1977,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
           jsx(Button, {
             variant: 'text',
             size: 'sm',
+            className: 'pa-fullchange-toggle',
             disabled: leaving,
             'aria-expanded': open,
             'aria-controls': detailsId,
