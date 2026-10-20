@@ -3815,7 +3815,7 @@ REST.scan = 'ok'
   const on = sm.hostEl.querySelector('.pa-upnext-head button')
   if (on?.textContent !== 'Select') fail(`select-mode: "Select" is not at the top of Up next: ${on?.textContent}`)
   if (on) await click(on, 40)
-  if (picksOf().length !== 3) fail(`select-mode: the front card and each Up next row need a checkbox, got ${picksOf().length}`)
+  if (picksOf().length !== 3) fail(`select-mode: front card + each Up next row need a checkbox, got ${picksOf().length}`)
   if (!sm.hostEl.querySelector('.pa-cell input.pa-pick')) fail('select-mode: the front card has no checkbox')
   must(barNow()?.textContent, ['0 of 3 selected', 'Select all'], 'select-mode: the bulk bar after Select')
   for (const box of picksOf().slice(0, 2)) await click(box, 20)
