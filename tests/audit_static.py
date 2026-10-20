@@ -863,8 +863,8 @@ def check_visual_scale() -> None:
     for m in re.finditer(r"font-size:\d", src):
         line = src.count("\n", 0, m.start()) + 1
         _report(f"plugin.js:{line}: a literal font-size in the sheet — read it from ${{FS.*}}px")
-    if "container-type:inline-size" not in src or "@container (max-width:640px)" not in src:
-        _report("plugin.js: the pane lost its container query — the Memory grid no longer answers the pane width")
+    if "container-type:inline-size" not in src or "@container (max-width:" not in src:
+        _report("plugin.js: the pane lost its container query — the page no longer answers the pane width")
     if "`%${" in src:
         _report("plugin.js: a percent sign is written before its number — write `${n}%`")
 
@@ -885,8 +885,8 @@ def check_round3_surface() -> None:
         if "className: 'pa-tag'" not in head:
             line = js.count("\n", 0, m.start()) + 1
             _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
-    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 1:
-        _report("plugin.js: a lone last card sits in half the grid (the .pa-two lone-card rule is gone)")
+    if ".pa-activity-list{display:flex;flex-direction:column" not in js or js.count("'pa-activity-list'") != 1:
+        _report("plugin.js: Activity is a grid of big cards again, not one list of short rows")
 
 
 def check_version_consistency() -> None:

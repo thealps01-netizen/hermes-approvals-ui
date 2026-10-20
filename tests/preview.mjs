@@ -236,7 +236,12 @@ const FIXREADY = {
       ...PENDING.skills[0],
       review: {
         status: 'done', verdict: 'fix', summary: 'The description is over the character budget; the fix shortens it.',
-        hard: [], model: 'gpt-5.5', usage: { input: 4020, output: 180, cost_usd: 0, cost_status: 'included' }
+        hard: [{
+          name: 'hermes-agent',
+          text: 'hermes-agent: the new description is 172 characters; the skill list shows only 60 and cuts the rest, '
+            + 'so the trigger can be lost.'
+        }],
+        model: 'gpt-5.5', usage: { input: 4020, output: 180, cost_usd: 0, cost_status: 'included' }
       }
     },
     PENDING.skills[1]

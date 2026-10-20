@@ -192,7 +192,7 @@ why they are drawn whole with their size in the label (§6).
   empty queue/history are `PanelEmpty`/`EmptyState`, the memory read is a `Loader` and a
   failed read an `ErrorState`. The kit's OWN classes are compiled (the kit components are application
   source), which is why the panel can wear them while its own layout stays in the `<style>` block.
-  The panel's `<style>` block therefore holds only its own LAYOUT: the card grid (`.pa-cols`/`.pa-cell`),
+  The panel's `<style>` block therefore holds only its own LAYOUT: the card cell (`.pa-cell`),
   the KPI strip (`.pa-kpis`), the tab strip (`.pa-tab` + `data-on`), the FLIP/leaving classes
   (`.pa-card`/`.pa-leaving`, with the `prefers-reduced-motion` escape), the red tone hook (`.pa-bad`) and
   the fixed-layer hooks (`.pa-fill`: `max-height:100%`, so the kit block's own scrollbar serves the
@@ -556,9 +556,12 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   kind) and every `.pa-pill` (id, kind, op, op count) share one `TAG` form: 20 px high, 999 px radius,
   `0 8px`, `FS.micro` / 600, sentence case. The mixed-case uppercase pill is gone. Tone stays on the
   fill.
-- **A lone last card spans the row.** Pending and Applied grids are `.pa-cols.pa-two`: 2 columns, one
-  column under 640 px (container query). A last card in an odd position spans both columns. Row
-  heights stay equal and the card still never grows.
+- **Activity is one list of rows (Needs you redesign).** The old `.pa-cols.pa-two` two-column grid
+  (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
+  `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
+  approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **A single description-fix record has one fix button.** Its primary "Use the short version" posts
+  `/fix`; the in-card "Shorten description" did the same, so it is drawn only for group members.
 - **Scrollbar arrows hidden** (`::-webkit-scrollbar-button`), so a thin box shows no stepper glyphs.
 - Locks: `render_check.mjs` checks the tag form on every card Badge, the whole-line arithmetic on
   every fixed `LogView`, the `.pa-lines` / fade CSS, the lone-card rule, no nested scroll other than

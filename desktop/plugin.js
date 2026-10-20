@@ -63,7 +63,6 @@ const BUNDLES = {
       },
       field: {
         failedBefore: 'Approving was attempted',
-        affected: 'Affected files',
         fixCurrent: n => `As written (${plural(n, 'character', 'characters')})`,
         fixSuggested: n => `Shortened (${plural(n, 'character', 'characters')})`,
         change: 'Change',
@@ -114,6 +113,8 @@ const BUNDLES = {
       },
       advice: {
         fix: 'It cannot be applied as staged — “Shorten description” rewrites it, then the pre-review reads it again.',
+        fixShort: 'It cannot be applied as staged — “Use the short version” rewrites it, then the pre-review reads it '
+          + 'again.',
       },
       review: {
         running: model => `Reading this write against your rules${model ? ` · ${model}` : ''}…`,
@@ -375,6 +376,8 @@ const BUNDLES = {
       },
       check: {
         title: 'Checked for you',
+        open: 'Details',
+        close: 'Hide details',
         duplicateMemory: 'Not already in your memory',
         duplicateSkill: 'Not already a skill like it',
         contradiction: 'Doesn’t contradict your other notes',
@@ -588,7 +591,7 @@ const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
 const FS = { gauge: 9.5, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, hero: 21, headline: 34 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
-  prose: 80, histSummary: 58, histFiles: 38, histAction: 30
+  prose: 80
 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
@@ -598,7 +601,6 @@ const TAG = {
 }
 const tint = (tone, pct) => `color-mix(in srgb, ${tone} ${pct}%, transparent)`
 const label = { fontSize: FS.micro, fontWeight: 500, letterSpacing: '.02em', color: 'var(--ui-text-secondary)' }
-const value = { fontSize: FS.body, lineHeight: 1.55, color: 'var(--ui-text-secondary)' }
 const hintLine = { fontSize: FS.meta, lineHeight: 1.5, color: 'var(--ui-text-secondary)', whiteSpace: 'pre-wrap' }
 const EASE = {
   standard: 'cubic-bezier(0.2, 0, 0.38, 0.9)',
@@ -616,7 +618,6 @@ const LIT_EDGE = `inset 0 1px 0 ${tint('var(--ui-text-primary)', 7)}`
 const THIN_SCROLL = 'scrollbar-width:thin;'
   + 'scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 45%,transparent) transparent'
 const STYLE = `
-.pa-cols{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));align-items:stretch}
 .pa-cell{display:flex;min-width:0}
 .pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
@@ -662,7 +663,12 @@ const STYLE = `
 .pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xs}px}
 .pa-activity-today{font-size:${FS.lead}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-activity-totals{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-day-heading{grid-column:1/-1;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
+.pa-activity-list{display:flex;flex-direction:column;gap:${G.xs}px}
+.pa-act-row{display:flex;flex-direction:column;gap:${G.xxs}px;padding:${G.xs}px ${G.sm}px}
+.pa-act-line{display:flex;align-items:center;gap:${G.xs}px;min-width:0}
+.pa-act-files{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-act-note{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
+.pa-day-heading{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
   margin-top:${G.xs}px}
 .pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
@@ -678,9 +684,6 @@ const STYLE = `
 .pa-fade{--pa-fade:${LINE}px}
 .pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent);
   mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}
-.pa-two{grid-template-columns:repeat(2,minmax(0,1fr))}
-.pa-two>:last-child:nth-child(odd){grid-column:1/-1}
-@container (max-width:640px){.pa-two{grid-template-columns:minmax(0,1fr)}}
 .pa-card{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
   box-shadow:${LIT_EDGE};flex:1 1 0;min-width:0;overflow-wrap:anywhere;
   transition:${move('enter', 'opacity, transform')},${move('hover', 'border-color')}}
@@ -803,7 +806,9 @@ const STYLE = `
 .pa-why{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-effect{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-checks{display:flex;flex-direction:column;gap:${G.xxs}px}
-.pa-check-row{display:flex;flex-direction:column;gap:${G.xxs}px}
+.pa-check-row{display:flex;flex-direction:column;align-items:flex-start;gap:${G.xxs}px;min-width:0;width:100%}
+.pa-check-head{display:flex;align-items:flex-start;gap:${G.xs}px;min-width:0;width:100%}
+.pa-check-head>.pa-check-line{flex:1;min-width:0;overflow-wrap:anywhere}
 .pa-check-line{display:flex;align-items:flex-start;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;
   color:var(--ui-text-secondary);text-align:left}
 .pa-check-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
@@ -1421,7 +1426,7 @@ const heldButton = (busy, t, key, text, variant, blocked, why, onGo) => jsx(Tip,
 const fixView = (fix, t, busy, key, onApply) => jsxs('div', {
   className: 'pa-fix',
   children: [
-    jsx('div', { className: 'pa-gist', children: t('pa.advice.fix') }, 'why'),
+    jsx('div', { className: 'pa-gist', children: t(onApply ? 'pa.advice.fix' : 'pa.advice.fixShort') }, 'why'),
     jsxs('div', {
       className: 'pa-cmp',
       children: [
@@ -1435,15 +1440,17 @@ const fixView = (fix, t, busy, key, onApply) => jsxs('div', {
         }, 'suggested')
       ]
     }, 'cmp'),
-    jsx(Button, {
-      variant: 'default',
-      size: 'sm',
-      style: { alignSelf: 'flex-start' },
-      disabled: Boolean(busy) && busy !== key,
-      loading: busy === key,
-      onClick: onApply,
-      children: t('pa.btn.fix')
-    }, 'apply')
+    onApply
+      ? jsx(Button, {
+          variant: 'default',
+          size: 'sm',
+          style: { alignSelf: 'flex-start' },
+          disabled: Boolean(busy) && busy !== key,
+          loading: busy === key,
+          onClick: onApply,
+          children: t('pa.btn.fix')
+        }, 'apply')
+      : null
   ]
 }, 'fix')
 
@@ -1872,10 +1879,17 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         className: `pa-check-row pa-check-${row.state}`,
         children: [
           row.finding
-            ? jsx(Button, {
-                variant: 'text', size: 'sm', 'aria-expanded': expandedChecks.has(row.key),
-                onClick: () => toggleCheck(row.key), children: checkLine(row)
-              }, 'btn')
+            ? jsxs('div', {
+                className: 'pa-check-head',
+                children: [
+                  checkLine(row),
+                  jsx(Button, {
+                    variant: 'text', size: 'sm', 'aria-expanded': expandedChecks.has(row.key),
+                    onClick: () => toggleCheck(row.key),
+                    children: t(expandedChecks.has(row.key) ? 'pa.check.close' : 'pa.check.open')
+                  }, 'btn')
+                ]
+              }, 'head')
             : checkLine(row),
           row.finding && expandedChecks.has(row.key) ? jsx(Finding, { finding: row.finding }, 'finding') : null
         ]
@@ -1924,7 +1938,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         ]
       }, 'groups')
     : null
-  const fixSection = fixSingle ? fixView(fixSingle, t, busy, 'fix', () => void applyFix(item.id)) : null
+  const fixSection = fixSingle ? fixView(fixSingle, t, busy, 'fix', null) : null
   const membersSection = isGroup
     ? jsxs('div', {
         className: 'pa-members',
@@ -2205,32 +2219,57 @@ function HistoryCard({ entry, onChanged, onRestored }) {
     }
   }
 
+  const action = entry.undoable
+      ? jsx(Button, {
+          variant: conflict ? 'destructive' : 'outline',
+          size: 'sm',
+          loading: busy,
+          onClick: () => void undo(Boolean(conflict)),
+          'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${named}`,
+          children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
+        }, 'undo')
+      : restorable
+        ? jsx(Button, {
+            className: 'pa-restore',
+            variant: 'outline',
+            size: 'sm',
+            loading: busy,
+            onClick: () => void restore(),
+            'aria-label': `${t('pa.btn.restore')}: ${named}`,
+            children: t('pa.btn.restore')
+          }, 'restore')
+        : jsx('div', {
+            className: 'pa-act-note',
+            children: entry.undone ? t('pa.hist.undone')
+              : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
+          }, 'note')
   return jsxs('div', {
     ref: own,
-    className: 'pa-card',
+    className: 'pa-card pa-act-row',
     tabIndex: -1,
     'data-entry': entry.id,
-    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm, height: '100%' },
     children: [
       jsxs('div', {
-        style: { display: 'flex', alignItems: 'center', gap: G.xs },
+        className: 'pa-act-line',
         children: [
-          jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
-          jsx('span', {
-            className: 'pa-card-when',
-            style: { marginLeft: 'auto' },
-            children: when(t, entry.ts)
-          }, 'at'),
           jsx(Badge, {
             className: 'pa-tag',
             style: TAG,
             variant: KIND_VARIANT[entry.kind] || 'muted',
             children: historyWords(t, entry)
-          }, 'kind')
+          }, 'kind'),
+          jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
+          jsx('span', { className: 'pa-card-when', style: { marginLeft: 'auto' }, children: when(t, entry.ts) }, 'at'),
+          action
         ]
       }, 'head'),
 
-      jsx(Summary, { height: H.histSummary, text: plainGist(t, said), raw: said }, 'summary'),
+      jsx(Summary, { text: plainGist(t, said), raw: said }, 'summary'),
+
+      jsx('div', {
+        className: 'pa-act-files',
+        children: files.length ? files.map(f => f.path).join(', ') : t('pa.hist.noFiles')
+      }, 'files'),
 
       changes.length
         ? jsxs('div', {
@@ -2285,53 +2324,13 @@ function HistoryCard({ entry, onChanged, onRestored }) {
           }, 'amended')
         : null,
 
-      jsxs('div', {
-        style: { display: 'flex', flexDirection: 'column', gap: G.xxs },
-        children: [
-          jsx(PanelSectionLabel, { children: t('pa.field.affected') }, 'label'),
-          jsx(Raw, {
-            className: 'pa-files',
-            height: H.histFiles,
-            children: files.length ? files.map(f => f.path).join(', ') : t('pa.hist.noFiles')
-          }, 'files')
-        ]
-      }, 'affected'),
-
       conflict
         ? jsx('div', {
             className: 'pa-alert pa-alert-danger',
             role: 'alert',
             children: t('pa.hist.conflict', conflict.join(', '))
           }, 'conflict')
-        : null,
-
-      jsx('div', {
-        style: { marginTop: 'auto', minHeight: H.histAction, display: 'flex', alignItems: 'stretch' },
-        children: entry.undoable
-          ? jsx(Button, {
-              variant: conflict ? 'destructive' : 'outline',
-              size: 'sm',
-              loading: busy,
-              onClick: () => void undo(Boolean(conflict)),
-              'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${named}`,
-              children: t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')
-            }, 'undo')
-          : restorable
-            ? jsx(Button, {
-                className: 'pa-restore',
-                variant: 'outline',
-                size: 'sm',
-                loading: busy,
-                onClick: () => void restore(),
-                'aria-label': `${t('pa.btn.restore')}: ${named}`,
-                children: t('pa.btn.restore')
-              }, 'restore')
-            : jsx('div', {
-                style: { ...value, display: 'flex', alignItems: 'center', color: 'var(--ui-text-secondary)' },
-                children: entry.undone ? t('pa.hist.undone')
-                  : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
-              }, 'note')
-      }, 'action')
+        : null
     ]
   })
 }
@@ -2874,7 +2873,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
             }, 'arm')
       }, 'header'),
       jsx('div', {
-        className: 'pa-cols pa-two',
+        className: 'pa-activity-list',
         children: groups.flatMap(g => {
           const heading = g.key === todayKey ? null : dayHeading(t, g.ts)
           return [

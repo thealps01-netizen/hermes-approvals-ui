@@ -909,7 +909,7 @@ for (const key of ['skills:def67890', 'skills:aaa11111']) {
   sweepText += ' ' + liveText(en.hostEl)
 }
 await toFront(en.hostEl, 'memory:abc12345')
-must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Shorten description', 'Approve failed',
+must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Approve failed',
   'Shorten first', 'Looks fine', 'Hermes wants to add a new skill:', 'Show the full change', 'MEMORY.md', 'USER.md'],
   'en')
 noRawKeys(sweepText, 'en')
@@ -1063,8 +1063,11 @@ for (const mounted of [en, other]) {
   if (!decline || decline.disabled || decline.getAttribute('aria-disabled') === 'true') {
     fail('a record with a fix still available cannot be declined')
   }
-  const fixBtn = buttons(blocked, /Shorten description/)[0]
-  if (!fixBtn) fail('a record with a shortening fix does not offer the fix as its own control')
+  const twin = buttons(blocked, /Shorten description/)
+  if (twin.length) fail('a single fix record offers "Shorten description" next to "Use the short version"')
+  if (!/“Use the short version” rewrites it/.test(blocked?.textContent || '')) {
+    fail('the single fix record still points at a “Shorten description” button it no longer has')
+  }
   if (approve) {
     const before = stub.calls.posts.filter(p => p.path === '/fix').length
     await click(approve, 60)
@@ -1193,13 +1196,15 @@ for (const mounted of [en, other]) {
   if (!tags.length || odd.length) {
     fail(`a status tag is not drawn in the one tag form: ${JSON.stringify(odd.map(b => b.textContent))}`)
   }
-  if (!en.hostEl.innerHTML.includes('.pa-two>:last-child:nth-child(odd){grid-column:1/-1}')) {
-    fail('a lone last memory card sits in half the grid again (the .pa-two lone-card rule is gone)')
+  if (!/\.pa-check-row\{[^}]*align-items:flex-start/.test(sheet)) {
+    fail('a ! row in "Checked for you" is centred instead of starting at the left like the ✓ rows')
   }
-  const fixBtn = buttons(en.hostEl, /Shorten description/)[0]
-  if (!fixBtn) fail('the "Shorten description" button is missing')
-  await click(fixBtn, 60)
-  const post = stub.calls.posts.find(p => p.path === '/fix')
+  await toFront(en.hostEl, 'skills:def67890')
+  const fixBtn = primaryBtn(en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]'))
+  if (fixBtn?.textContent !== 'Use the short version') fail('the "Use the short version" button is missing')
+  const before = stub.calls.posts.length
+  if (fixBtn) await click(fixBtn, 60)
+  const post = stub.calls.posts.slice(before).find(p => p.path === '/fix')
   if (!post || post.body.subsystem !== 'skills' || post.body.id !== 'def67890' || 'approve' in post.body) {
     fail(`the fix request is not {subsystem: 'skills', id} alone: ${JSON.stringify(post)}`)
   }
@@ -1282,7 +1287,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     .filter(v => v !== '|').join(' '))
   const unique = [...new Set(layers)]
   if (unique.length !== 1) fail(`history cards have different layers: ${JSON.stringify(unique)}`)
-  must(unique[0], ['58px', '38px', '30px'], 'history card fixed layers')
+  if (/(^|\s)\d+px\|/.test(unique[0] || '')) fail(`an Activity row has a fixed height again: ${unique[0]}`)
 }
 {
   const undoBtns = buttons(en.hostEl, /^Undo$/)
@@ -1412,6 +1417,16 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (failedBadge !== 'Couldn\u2019t save') {
     fail(`activity-words: the failed badge must carry only the short family word, got ${JSON.stringify(failedBadge)}`)
   }
+  const list = act.hostEl.querySelector('.pa-activity-list')
+  if (!list) fail('activity-rows: Activity is a grid of big cards again, not one list of short rows (the mockup)')
+  const rows = [...act.hostEl.querySelectorAll('.pa-card[data-entry]')]
+  const odd = rows.filter(r => !r.classList.contains('pa-act-row') || !r.querySelector('.pa-act-line .pa-tag')
+    || !r.querySelector('.pa-act-line .pa-card-when') || !r.querySelector('.pa-act-line .pa-pill-id'))
+  if (rows.length !== 5 || odd.length) {
+    fail(`activity-rows: a row does not put word, #id and time on one line: ${odd.map(r => r.dataset.entry)}`)
+  }
+  if (act.hostEl.textContent.includes('Affected files')) fail('activity-rows: the big "Affected files" box is back')
+  if (!/skills\/new-skill\/SKILL\.md/.test(rows[2]?.textContent || '')) fail('activity-rows: a row lost its file')
   act.root.unmount()
   act.hostEl.remove()
   REST.history = null
@@ -1876,7 +1891,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const fresh = await mount('en')
   await toFront(fresh.hostEl, 'skills:def67890')
   REST.post = 'fixfail'
-  const fixBtn = buttons(fresh.hostEl, /Shorten description/)[0]
+  const fixBtn = primaryBtn(fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]'))
   if (fixBtn) await click(fixBtn, 60)
   const fixCell = fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"] .pa-card')
   if (!fixCell || fixCell.classList.contains('pa-leaving')) fail('a failed /fix removed the card')

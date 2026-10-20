@@ -323,6 +323,16 @@ const MEASURE = `(() => {
       c.scrollWidth > c.clientWidth + 1)
       .map(c => ({ text: txt(c).slice(0, 60), w: c.clientWidth, scrollW: c.scrollWidth,
         entry: c.getAttribute('data-entry') })),
+    spillOutOfCard: qa('.pa-frame-wrap .pa-card').flatMap(c => {
+      const edge = box(c)
+      return [...c.querySelectorAll('*')].filter(el => {
+        const b = box(el)
+        return b.width > 0 && (b.left < edge.left - 1 || b.right > edge.right + 1)
+      }).filter(el => !el.parentElement || el.parentElement === c || (() => {
+        const p = box(el.parentElement)
+        return p.left >= edge.left - 1 && p.right <= edge.right + 1
+      })()).map(el => ({ text: txt(el).slice(0, 60), key: c.closest('.pa-cell')?.getAttribute('data-key') || '' }))
+    }),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
     nativeTitles: qa('[title]').length,
@@ -439,6 +449,10 @@ app.whenReady().then(async () => {
     if (m.cardWiderThanBox.length) {
       const named = m.cardWiderThanBox.map(c => `#${c.entry || '?'} "${c.text}" (${c.scrollW}px content in a ${c.w}px card)`)
       bad.push(`cardWiderThanBox=${m.cardWiderThanBox.length}: ${named.join(' · ')}`)
+    }
+    if (m.spillOutOfCard.length) {
+      const named = m.spillOutOfCard.map(s => `${s.key} "${s.text}"`)
+      bad.push(`spillOutOfCard=${m.spillOutOfCard.length}: ${named.join(' · ')} (text drawn past the card edge)`)
     }
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)

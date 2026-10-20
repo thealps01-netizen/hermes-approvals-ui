@@ -99,6 +99,18 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   more strings that still told the user to check the "History" tab (the tab has been "Activity"
   since this redesign started) now say "Activity" too.
 
+* **Activity is one list of short rows, as in the approved mockup.** Each row puts what happened
+  ("Saved to Profile", "Couldn't save"), the record number, the time and Undo / Why / Restore on one
+  line, with the summary and the changed files under it. The two-column grid of tall cards with an
+  "Affected files" box is gone; details still open inside the row.
+
+* **A record whose skill description is too long has one button for the fix, not two.** It showed
+  "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
+  thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
+
+* **A problem line under "Checked for you" starts at the left** like the ✓ lines, instead of sitting
+  in the middle of the card.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
