@@ -496,7 +496,7 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
-const FS = { micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, headline: 34 }
+const FS = { gauge: 9.5, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, headline: 34 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, histSummary: 58, histFiles: 38, histAction: 30
@@ -557,8 +557,8 @@ const STYLE = `
   background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0);
   -webkit-mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px));
   mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px))}
-.pa-gauge-pct{position:relative;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;
-  font-size:${FS.micro}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-gauge-pct{position:relative;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  font-size:${FS.gauge}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
 .pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;

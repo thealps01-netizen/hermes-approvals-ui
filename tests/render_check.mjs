@@ -1311,6 +1311,24 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
 }
 
+// --- 12f) gauge-thin-ring: the ring is ~4px wide and the percent sits clear of it in both themes ----
+{
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  const pctRule = sheet.match(/\.pa-gauge-pct\{[^}]*\}/)?.[0] || ''
+  const pctFont = Number(pctRule.match(/font-size:([\d.]+)px/)?.[1] || 0)
+  const pctSize = Number(pctRule.match(/width:([\d.]+)px/)?.[1] || 0)
+  if (!pctFont || pctFont > 10) fail(`gauge percent text is not a smaller font: ${JSON.stringify(pctRule)}`)
+  const ringRule = (sheet.match(/\.pa-gauge-ring\{[^}]*\}/) || [''])[0]
+  const ringSize = Number(ringRule.match(/width:([\d.]+)px/)?.[1] || 0)
+  const holeRule = sheet.match(/\.pa-gauge-ring::before\{[^}]*\}/)?.[0] || ''
+  const hole = Number(holeRule.match(/transparent calc\(50% - ([\d.]+)px\)/)?.[1] || 0)
+  if (!ringSize || !hole) fail(`could not read the ring/hole sizes: ${JSON.stringify({ ringRule, holeRule })}`)
+  const ringWidth = hole
+  if (ringWidth < 3 || ringWidth > 5) fail(`ring band is not ~4px wide: ${ringWidth}px`)
+  const margin = (ringSize / 2 - hole) - pctSize / 2
+  if (margin < 1) fail(`the percent box leaves no margin inside the hole, it will touch the ring: ${margin}px`)
+}
+
 // --- 12a) top-headline: "N things need you" / "1 thing needs you" / all caught up, with word counts
 {
   const headlineText = en.hostEl.querySelector('.pa-headline')?.textContent || ''

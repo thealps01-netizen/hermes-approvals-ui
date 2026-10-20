@@ -24,6 +24,10 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   as the card background, so the gauge looked wrong on any other background. Now the hole is a real
   mask over the ring, so it stays transparent wherever the gauge sits.
 
+* **The gauge ring is thin, and the percent no longer runs over it.** The ring band is now about
+  4 px wide (it measured correctly but the percent text sat right at its inner edge with no room),
+  and the percent text is a smaller size with a clear margin inside the hole, in both themes.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only
