@@ -3,22 +3,20 @@
  *
  * Run: cd tests && node preview.mjs   (writes preview.html, exit 0 = ok)
  *
- * It draws SEVEN FRAMES in jsdom with the real React — the panel's REAL output, never a hand-drawn
- * mock — and embeds the application's own theme block (`_theme_preview.css`), so the colors are the
- * app's:
- *   1. Pending — the blocked record with its details OPEN: the kit PanelMeta inspector, the
- *      PanelSectionLabel rows, the PanelBlock bodies, the LogView diff, the disabled Approve with the
- *      reason in a themed Tip, and the description-fix block.
- *   2. Pending — a record that touches MORE THAN ONE skill (the group layer + `Apply Only This`).
- *   3. History — the history cards with the kit Badge kind, the summary in plain words (Hermes' own
- *      text kept in a Tip) and the two-step `Force undo` (the conflict is reported first).
- *   4. Memory — the note cards and the TWO-STEP delete armed.
- *   5. Pending — a skill GROUP (1.11.0): one card for three changes to one skill, the review lines
- *      tagged #n, the stale change, the combined Result open, one member's own lines unfolded and
- *      the held "Approve 3 changes" with its Tip.
- *   6. Pending — a suggested fix that deletes most of the new text (1.11.1): the red alert with the
- *      count and "Approve as written" as the primary button.
- *   7. Pending — the narrow 420 px pane.
+ * It draws SEVEN FRAMES of the "Needs you" stage in jsdom with the real React — the panel's REAL
+ * output, never a hand-drawn mock — and embeds the application's own theme block
+ * (`_theme_preview.css`), so the colors are the app's:
+ *   1. The stage with 3 things waiting: the memory record in front (hero, Why, "Checked for you"
+ *      with its meta line, Later / Don't save / Save to memory), Up next and Just done at the side.
+ *   2. A fix record in front: the as-written vs. shortened comparison and "Use the short version"
+ *      as the primary action.
+ *   3. A skill GROUP record in front (1.11.0): one card for three changes to one skill.
+ *   4. The front card with "Show the full change" open: today's ReviewSection / Finding / EditView /
+ *      Change internals, reused inside the toggle.
+ *   5. All clear: no front card, the spec sentence, Just done still listed at the side.
+ *   6. The narrow 420 px pane.
+ *   7. A record whose second opinion is still running, brought to the front from Up next: the
+ *      "Not checked yet" / "the second opinion is still reading this" state.
  *
  * The text resolves exactly like the app does: ONE English bundle registered through
  * `ctx.i18n.register` and read through `usePluginI18n` / `ctx.i18n.t`; there is no picker. The SDK and
@@ -225,25 +223,21 @@ const MEMORY = {
   }
 }
 
-let version = 0
-const FIX_WRITTEN = 'When a tool overlaps the setup, the better one is decided by a measured test on a real task, '
-  + 'and the result names what was measured, on which task, and at what cost.'
-const FIXLOSS = {
+const FIXREADY = {
   ...PENDING,
-  memory: [{
-    ...PENDING.memory[0],
-    ops: [{ action: 'add', new: FIX_WRITTEN }],
-    plain: { ...PENDING.memory[0].plain, headline: 'USER.md: 1 note is added', what: ['Adds one profile note'] },
-    review: {
-      status: 'done', verdict: 'fix', summary: 'The note repeats a rule the profile already has.', hard: [],
-      model: 'gpt-5.5', usage: { input: 4120, output: 210, cost_usd: 0, cost_status: 'included' }, edits: 1,
-      fix_effect: { added: 33, kept: 3 },
-      findings: [{ severity: 'fix', kind: 'duplicate', quote: 'the better one is decided by a measured test',
-                   other: 'A measured head-to-head decides.', explain: 'The profile already says this.',
-                   edit: { find: FIX_WRITTEN, replace: 'The better one is decided.', ok: true } }]
-    }
-  }]
+  skills: [
+    {
+      ...PENDING.skills[0],
+      review: {
+        status: 'done', verdict: 'fix', summary: 'The description is over the character budget; the fix shortens it.',
+        hard: [], model: 'gpt-5.5', usage: { input: 4020, output: 180, cost_usd: 0, cost_status: 'included' }
+      }
+    },
+    PENDING.skills[1]
+  ]
 }
+
+let version = 0
 async function frame(actions, pending = PENDING) {
   const registrations = []
   const ctx = {
@@ -297,85 +291,68 @@ const click = async (el, what, wait = 60) => {
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
 const byText = (hostEl, text) => [...(hostEl?.querySelectorAll('button') || [])].find(b => text.test(b.textContent || ''))
-const tab = (hostEl, text) => [...hostEl.querySelectorAll('.pa-tab')].find(b => text.test(b.textContent || ''))
-const openDetails = async hostEl => {
-  for (const key of ['skills:def67890', 'memory:abc12345']) {
-    if (!hostEl.querySelector(`.pa-cell[data-key="${key}"]`)) {
-      const row = hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] button`)
-      await click(row, `Up next row for ${key}`)
-    }
-    const card = hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
-    await click(byText(card, /^Show the full change$/i), `Show the full change on ${key}`)
-    if (!byText(card, /^Hide the full change$/i)) problems.push(`the details of ${key} did not open`)
-  }
-}
 
 const frames = []
 
 frames.push({
-  label: 'Pending — the blocked record and the record with the long op bodies, details open (kit Meta / PanelBlock / LogView / Tip)',
-  html: await frame(openDetails)
-})
-
-frames.push({
-  label: 'Pending — one record that touches two skills (the group layer)',
+  label: 'Needs you — 3 things waiting, the memory record in front (hero, Why, Checked for you, Later / Don\'t save / Save to memory)',
   html: await frame(async () => {})
 })
 
 frames.push({
-  label: 'History — history cards, the summary in plain words (Hermes\' own text in a Tip), two-step Force undo, ' +
-    'Restore on a rejected record',
-  html: await frame(async hostEl => {
-    await click(tab(hostEl, /^Activity/), 'the Activity tab')
-    await click(byText(hostEl, /^Compare with the write as staged$/), 'Compare with the write as staged')
-    await click(byText(hostEl, /^Undo$/), 'Undo')
-  })
-})
-
-frames.push({
-  label: 'Memory — the note cards, the delete armed (two-step)',
-  html: await frame(async hostEl => {
-    await click(tab(hostEl, /^Memory/), 'the Memory tab')
-    await click(byText(hostEl, /^Delete$/), 'Delete')
-  })
-})
-
-frames.push({
-  label: 'Pending — a skill group: one card, one review, one decision for three changes (Result open, #1 unfolded)',
-  html: await frame(async hostEl => {
-    const card = () => hostEl.querySelector(`.pa-cell[data-key="skills:${GROUP_ID}"]`)
-    await click(byText(card(), /^Show the full change$/i), 'Show the full change on the group')
-    await click(byText(card()?.querySelector('.pa-member'), /^Show lines$/), 'Show lines on #1')
-    if (!/Approve 3 changes/.test(card()?.textContent || '')) problems.push('the group card lost its Approve 3 changes')
-  }, GROUPED)
-})
-
-frames.push({
-  label: 'Pending — a suggested fix that deletes most of the new text (1.11.1): the alert with its count, Approve as written primary',
-  html: await frame(async hostEl => {
-    const card = hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
-    await click(byText(card, /^Show the full change$/i), 'Show the full change on the heavy fix')
-    if (!/deletes 30 of the 33 new words/.test(card?.textContent || '')) problems.push('the fix-effect alert is not drawn')
-    if (byText(card, /^Approve as written$/)?.getAttribute('data-variant') !== 'default') {
-      problems.push('Approve as written is not the primary button under a heavy fix')
-    }
-  }, FIXLOSS)
-})
-
-frames.push({
-  label: 'Pending — a skill description fix shortens it under the limit: as-written vs. shortened comparison',
+  label: 'Needs you — a fix record in front: as-written vs. shortened comparison, Use the short version primary',
   html: await frame(async hostEl => {
     const row = hostEl.querySelector('.pa-upnext-row[data-key="skills:def67890"] button')
     await click(row, 'Up next row for skills:def67890')
     const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
     if (!card?.querySelector('.pa-cmp')) problems.push('the fix as-written/shortened comparison grid is not drawn')
+    if (!byText(card, /^Use the short version$/)) problems.push('the fix record is missing its primary action')
+  }, FIXREADY)
+})
+
+frames.push({
+  label: 'Needs you — a skill group record in front (1.11.0): one card, one review, one decision for three changes',
+  html: await frame(async hostEl => {
+    const card = hostEl.querySelector('.pa-cell')
+    await click(byText(card, /^Show the full change$/i), 'Show the full change on the group')
+    if (!/plugin-notes/.test(card?.textContent || '')) problems.push('the group record is not drawn in front')
+    if (card?.querySelectorAll('.pa-pill-id').length !== 3) problems.push('the group record does not list its 3 members')
+  }, GROUPED)
+})
+
+frames.push({
+  label: 'Needs you — the front card with "Show the full change" open',
+  html: await frame(async hostEl => {
+    const card = hostEl.querySelector('.pa-cell')
+    await click(byText(card, /^Show the full change$/i), 'Show the full change on the front card')
+    if (!byText(card, /^Hide the full change$/i)) problems.push('the full change did not open on the front card')
   })
 })
 
 frames.push({
-  label: 'Pending — a narrow 420 px pane: the KPI row, the card grid and the comparisons answer the pane width',
+  label: 'Needs you — all clear: no front card, the spec sentence, Just done still listed at the side',
+  html: await frame(async hostEl => {
+    if (hostEl.querySelector('.pa-cell')) problems.push('a front card is drawn with 0 pending')
+    if (!hostEl.querySelector('.pa-justdone-row')) problems.push('all-clear: Just done is gone although history has entries')
+  }, { memory: [], skills: [], counts: { memory: 0, skills: 0 } })
+})
+
+frames.push({
+  label: 'Needs you — a narrow 420 px pane: the stage, Up next and Just done answer the pane width',
   narrow: true,
-  html: await frame(openDetails)
+  html: await frame(async () => {})
+})
+
+frames.push({
+  label: 'Needs you — a record whose second opinion is still running, brought to the front from Up next',
+  html: await frame(async hostEl => {
+    const row = hostEl.querySelector('.pa-upnext-row[data-key="skills:def67890"] button')
+    await click(row, 'Up next row for skills:def67890')
+    const card = hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
+    if (!/the second opinion is still reading this/.test(card?.textContent || '')) {
+      problems.push('the running-review state is not drawn on the front card')
+    }
+  })
 })
 
 for (const f of frames) {
