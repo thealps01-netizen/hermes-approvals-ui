@@ -317,7 +317,7 @@ frames.push({
   label: 'History — history cards, the summary in plain words (Hermes\' own text in a Tip), two-step Force undo, ' +
     'Restore on a rejected record',
   html: await frame(async hostEl => {
-    await click(tab(hostEl, /^History/), 'the History tab')
+    await click(tab(hostEl, /^Activity/), 'the Activity tab')
     await click(byText(hostEl, /^Undo$/), 'Undo')
   })
 })

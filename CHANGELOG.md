@@ -5,6 +5,21 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## Unreleased
+
+The page is being redesigned to "Needs you". Nothing is released yet.
+
+### Changed
+
+* **The top of the page now leads with a headline, not four boxes.** Where the panel used to show
+  four separate "Pending / Applied / Failed / Undoable" count boxes, it now opens with today's date,
+  a plain-language headline ("3 things need you", "1 thing needs you", or "You're all caught up"),
+  and a one-line word count of what is waiting (e.g. "1 memory · 2 skills · 1 needs a fix"). Two ring
+  gauges to the right show how full `MEMORY.md` and `USER.md` are, by percent and by chars/limit. The
+  "Pending" and "History" tabs are renamed "Needs you" (with a count badge) and "Activity". The
+  footer's old hint text is replaced by the safety promise, "Nothing is written to your memory or
+  skills without you."
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

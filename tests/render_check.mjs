@@ -882,7 +882,7 @@ const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'History', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
+must(en.text, ['Needs you', 'Activity', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
   'Looks fine', 'New skill', 'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
 noRawKeys(en.text, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
@@ -892,7 +892,7 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
-must(other.text, ['Approvals', 'Pending', 'Approve failed', 'New skill'], 'app locale tr')
+must(other.text, ['Needs you', 'Approve failed', 'New skill'], 'app locale tr')
 noRawKeys(other.text, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
@@ -921,7 +921,7 @@ for (const mounted of [en, other]) {
       selected[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!now || !/History/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
+    if (!now || !/Activity/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
     if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
     const panel = en.hostEl.querySelector('[role="tabpanel"]')
     if (!panel || panel.getAttribute('aria-labelledby') !== now?.id) fail('the tab panel is not labelled by its tab')
@@ -932,6 +932,18 @@ for (const mounted of [en, other]) {
   }
   const glyph = [...en.hostEl.querySelectorAll('button')].filter(b => /[✓✕]/.test(b.textContent || ''))
   if (glyph.length) fail(`a glyph is part of a button name: ${glyph.map(b => b.textContent).join(', ')}`)
+}
+
+// --- 2c) tabs-renamed: "Needs you" (badge 3), "Activity", "Memory" ------------------------------
+{
+  const tabs = [...en.hostEl.querySelectorAll('[role="tab"]')]
+  const texts = tabs.map(b => (b.textContent || '').trim())
+  if (texts.length !== 3 || !/^Needs you3$/.test(texts[0]) || texts[1] !== 'Activity' || texts[2] !== 'Memory') {
+    fail(`tab labels are not renamed: ${JSON.stringify(texts)}`)
+  }
+  const badge = slot(tabs[0], 'badge')
+  if (!badge || badge.textContent !== '3') fail('the "Needs you" tab carries no kit Badge with the waiting count')
+  if (en.hostEl.querySelector('.pa-kpis')) fail('the four KPI boxes are still in the DOM')
 }
 
 // --- 3) No native `title=`, and every control keeps an accessible name --------------------------
@@ -1167,7 +1179,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 }
 
 // --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
-const appliedTab = tab(en.hostEl, /History/)
+const appliedTab = tab(en.hostEl, /Activity/)
 if (!appliedTab) fail('the History tab is missing')
 await click(appliedTab, 60)
 must(en.hostEl.textContent, ['2 files changed outside the pane', 'Approved and applied', 'Rejected',
@@ -1257,33 +1269,24 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
 }
 
-// --- 12) KPI cards, the refresh ICON, and the status-bar chip ----------------------------------
+// --- 12) top-gauges: two Gauges (Memory, Profile), the refresh ICON, and the status-bar chip ----
 {
-  const kpi = [...(en.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
-  if (kpi.length !== 4) fail(`expected 4 KPI cards, found ${kpi.length}: ${JSON.stringify(kpi)}`)
-  must(kpi.join(' | '), ['MEMORY.md', '99%', 'USER.md', '84%', 'Nearly full'], 'KPI cards')
-  const figs = [...en.hostEl.querySelectorAll('.pa-kpis')[0].querySelectorAll('.pa-kpi-val')].map(v => v.textContent)
-  if (figs.some(f => /^%/.test(f || ''))) fail(`a percent sign leads its number: ${JSON.stringify(figs)}`)
-  const kbox = [...en.hostEl.querySelectorAll('.pa-kpis')[0].children]
-  const tones = kbox.map(k => k.querySelector('.pa-kpi-pill')?.getAttribute('data-tone'))
-  if (JSON.stringify(tones) !== JSON.stringify(['warn', 'warn', 'ok', 'bad'])) {
-    fail(`KPI tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
+  const gauges = [...(en.hostEl.querySelector('.pa-gauges')?.children || [])]
+  if (gauges.length !== 2) fail(`expected 2 gauges, found ${gauges.length}`)
+  const texts = gauges.map(g => g.textContent || '')
+  must(texts.join(' | '), ['Memory', '99%', 'MEMORY.md', 'Profile', '84%', 'USER.md'], 'gauges')
+  if (texts.some(x => /^%/.test(x))) fail(`a percent sign leads its number: ${JSON.stringify(texts)}`)
+  if (gauges[0].getAttribute('data-tone') !== 'warn') {
+    fail(`memory gauge tone wrong (2189/2200 is nearly full): ${gauges[0].getAttribute('data-tone')}`)
   }
-  if (kbox[1].getAttribute('data-tone') !== 'warn') fail('a file with room left is marked full (2189 of 2200 is not full)')
-  if (!kbox[1].querySelector('.pa-kpi-label')?.classList.contains('pa-kpi-file')) {
-    fail('a file name is set in caps (MEMORY.MD): file labels keep their own case')
+  if (gauges[1].getAttribute('data-tone') !== 'ok') {
+    fail(`profile gauge tone wrong (1158/1375 has room): ${gauges[1].getAttribute('data-tone')}`)
   }
-  if (kbox.some(k => k.querySelector('.pa-kpi-val')?.hasAttribute('data-tone'))) {
-    fail('a KPI figure wears a tone as text — the tone belongs on the card surface')
-  }
+  if (en.hostEl.querySelector('.pa-kpis')) fail('the four KPI boxes are still in the DOM')
   if (!/Updated \d\d:\d\d/.test(en.hostEl.querySelector('.pa-updated')?.textContent || '')) {
     fail('the header carries no “Updated HH:MM” stamp')
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
-  const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
-  if (appliedFigure !== '57') {
-    fail(`the Applied card must use the backend's full count, not the last 50 rows (figured ${JSON.stringify(appliedFigure)})`)
-  }
   const icon = en.hostEl.querySelector('.pa-refresh')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
     fail('the refresh control is gone (kit Button + svg + aria-label expected)')
@@ -1295,6 +1298,65 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
   if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
+}
+
+// --- 12a) top-headline: "N things need you" / "1 thing needs you" / all caught up, with word counts
+{
+  const headlineText = en.hostEl.querySelector('.pa-headline')?.textContent || ''
+  if (headlineText !== '3 things need you') fail(`headline wrong for 3 pending: ${JSON.stringify(headlineText)}`)
+  const countsText = en.hostEl.querySelector('.pa-counts')?.textContent || ''
+  if (countsText !== '1 memory · 2 skills') fail(`counts line wrong (no hard finding here): ${JSON.stringify(countsText)}`)
+
+  REST.mode = 'remedy'
+  const remedy = await mount('en')
+  const remedyCounts = remedy.hostEl.querySelector('.pa-counts')?.textContent || ''
+  if (remedyCounts !== '1 memory · 2 skills · 1 needs a fix') {
+    fail(`counts line does not count the hard-finding record: ${JSON.stringify(remedyCounts)}`)
+  }
+  remedy.root.unmount()
+  remedy.hostEl.remove()
+  REST.mode = 'normal'
+
+  REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [], counts: { memory: 1, skills: 0 } }
+  const one = await mount('en')
+  const oneHeadline = one.hostEl.querySelector('.pa-headline')?.textContent || ''
+  if (oneHeadline !== '1 thing needs you') fail(`headline wrong for 1 pending: ${JSON.stringify(oneHeadline)}`)
+  const oneCounts = one.hostEl.querySelector('.pa-counts')?.textContent || ''
+  if (oneCounts !== '1 memory') fail(`counts line should drop the zero skills part: ${JSON.stringify(oneCounts)}`)
+  one.root.unmount()
+  one.hostEl.remove()
+  REST.pending = null
+
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  REST.history = { entries: [], counts: { applied: 2, failed: 0, undoable: 0 } }
+  const clear = await mount('en')
+  const clearHeadline = clear.hostEl.querySelector('.pa-headline')?.textContent || ''
+  if (clearHeadline !== 'You’re all caught up') fail(`all-clear headline wrong: ${JSON.stringify(clearHeadline)}`)
+  const clearCounts = clear.hostEl.querySelector('.pa-counts')?.textContent || ''
+  if (clearCounts !== '2 saved today') fail(`all-clear counts line wrong: ${JSON.stringify(clearCounts)}`)
+  if (clear.hostEl.querySelector('[role="heading"][aria-level="1"]')?.getAttribute('aria-live') !== 'polite') {
+    fail('the headline is not a polite live region')
+  }
+  clear.root.unmount()
+  clear.hostEl.remove()
+  REST.pending = null
+  REST.history = null
+}
+
+// --- 12x) footer-promise: the safety sentence and the Alerts switch, hint text gone -------------
+{
+  const footer = en.hostEl.querySelector('.pa-footer')
+  const promiseText = footer?.querySelector('.pa-footer-promise')?.textContent || ''
+  if (!promiseText.includes('Nothing is written to your memory or skills without you.')) {
+    fail(`footer does not state the safety promise: ${JSON.stringify(promiseText)}`)
+  }
+  if (/Approve → written|awaiting approval/.test(footer?.textContent || '')) {
+    fail('the old footer hint / pending count text is still in the DOM')
+  }
+  const toggle = footer?.querySelector('.pa-alerts')
+  if (!toggle || toggle.getAttribute('aria-pressed') !== 'true' || toggle.textContent !== 'Alerts on') {
+    fail(`footer alert switch wrong: ${toggle?.getAttribute('aria-pressed')} ${toggle?.textContent}`)
+  }
 }
 
 // --- 12b) Palette rows and the alert switch -----------------------------------------------------
@@ -1539,7 +1601,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
       }
     })
   }
-  const pendingTab = tab(en.hostEl, /Pending/)
+  const pendingTab = tab(en.hostEl, /Needs you/)
   await click(pendingTab)
   const setOffsets = tops => {
     const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
@@ -1640,7 +1702,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
     fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
   }
-  await click(tab(held.hostEl, /History/))
+  await click(tab(held.hostEl, /Activity/))
   if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
   if (!held.hostEl.querySelector('.pa-root > div:nth-child(3) [data-slot="loader"]')) {
     fail('no kit Loader while the history loads')
@@ -1937,7 +1999,7 @@ REST.scan = 'ok'
 
   REST.mode = 'restore'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /History/), 60)
+  await click(tab(hist.hostEl, /Activity/), 60)
   const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
   const rowOf = text => rows.find(c => c.textContent.includes(text))
   const restorable = rowOf('new-skill rejected')
@@ -2119,7 +2181,7 @@ REST.scan = 'ok'
 
   REST.mode = 'grouphist'
   const h = await mount('en', 'page')
-  await click(tab(h.hostEl, /History/), 60)
+  await click(tab(h.hostEl, /Activity/), 60)
   const histRows = [...h.hostEl.querySelectorAll('.pa-card')]
   const applied = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('alpha-skill · 2 changes'))
   const rejected = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('beta-skill · 3 changes'))
@@ -2248,7 +2310,7 @@ REST.scan = 'ok'
 
   REST.mode = 'amendhist'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /History/), 60)
+  await click(tab(hist.hostEl, /Activity/), 60)
   const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
   const rowOf = text => rows.find(c => c.textContent.includes(text))
   const fixedRow = rowOf('patch in user profile')
@@ -2292,7 +2354,7 @@ REST.scan = 'ok'
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the “could not refresh” notice offers no kit Retry')
   if (retry) await click(retry, 80)
   if (kept.hostEl.querySelector('.pa-stale')) fail('the “could not refresh” notice stays after a successful Retry')
-  await click(tab(kept.hostEl, /History/), 40)
+  await click(tab(kept.hostEl, /Activity/), 40)
   REST.mode = 'fail'
   await click(kept.hostEl.querySelector('.pa-refresh'), 80)
   if (kept.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed refresh replaced the loaded history with the error state')
@@ -2384,15 +2446,15 @@ REST.scan = 'ok'
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
   const before = sends()
   await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
-  await click(tab(h.hostEl, /History/), 5)
-  await click(tab(h.hostEl, /Pending/), 5)
+  await click(tab(h.hostEl, /Activity/), 5)
+  await click(tab(h.hostEl, /Needs you/), 5)
   const cell0 = cellOf(h, 'skills:aaa11111')
   const during = cell0 ? buttons(cell0, /^Approve$/)[0] : null
   if (during && !during.disabled) fail('switching tabs while a decision is in flight brought its Approve back enabled')
   if (during) await click(during, 5)
   await wait(90)
-  await click(tab(h.hostEl, /History/), 5)
-  await click(tab(h.hostEl, /Pending/), 5)
+  await click(tab(h.hostEl, /Activity/), 5)
+  await click(tab(h.hostEl, /Needs you/), 5)
   const out = cellOf(h, 'skills:aaa11111')
   if (out) {
     const card = out.querySelector('.pa-card')
@@ -2425,7 +2487,7 @@ REST.scan = 'ok'
   let from = reads()
   await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
   grew(from, 'a decision')
-  await click(tab(all.hostEl, /History/), 60)
+  await click(tab(all.hostEl, /Activity/), 60)
   from = reads()
   await click(buttons(all.hostEl, /^Undo$/)[0], 200)
   grew(from, 'an undo')
@@ -2514,10 +2576,10 @@ REST.scan = 'ok'
   console.error = realError
 
   const mem = await mount('en', 'page')
-  const kpi = [...mem.hostEl.querySelectorAll('.pa-kpis [data-slot]')].map(e => e.textContent).join(' ')
+  const kpi = (mem.hostEl.querySelector('.pa-gauges')?.textContent || '')
   await click(tab(mem.hostEl, /^Memory/), 60)
   const said = mem.hostEl.querySelector('[role="tabpanel"]')?.textContent || ''
-  const kpiPct = (mem.hostEl.querySelector('.pa-kpis')?.textContent.match(/(\d+)%/) || [])[1]
+  const kpiPct = (mem.hostEl.querySelector('.pa-gauges')?.textContent.match(/(\d+)%/) || [])[1]
   const tabPct = (said.match(/(\d+)% full/) || [])[1]
   if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
   mem.root.unmount()
@@ -2745,8 +2807,8 @@ REST.scan = 'ok'
   const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
   if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
   const tabs = [...ui.hostEl.querySelectorAll('[role=tab]')].map(x => x.textContent.trim())
-  if (!tabs.some(x => /^History/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
-    fail(`the decided-records tab is not named History: ${JSON.stringify(tabs)}`)
+  if (!tabs.some(x => /^Activity/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
+    fail(`the decided-records tab is not named Activity: ${JSON.stringify(tabs)}`)
   }
   const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent || ''
   if (old !== '2 hours ago') fail(`a record staged two hours ago reads ${JSON.stringify(old)}, not "2 hours ago"`)
@@ -2854,7 +2916,7 @@ REST.scan = 'ok'
     REST.undoReply = { ok: true, restored: ['skills/e2e-demo/SKILL.md'] }
     const ph = await mount('en', 'page')
     await wait(60)
-    await click(tab(ph.hostEl, /History/), 60)
+    await click(tab(ph.hostEl, /Activity/), 60)
     const cardOf = id => [...ph.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes(`#${id}`))
     const plainBad = why => fail(`a History summary still reads like code: ${why}`)
     for (const [id, text, raw] of [['e2e0d001', PLAIN_CREATE, RAW_CREATE], ['e2e0d002', PLAIN_PATCH, RAW_PATCH]]) {
@@ -2898,7 +2960,7 @@ REST.scan = 'ok'
     REST.history = undone('e2e0d002')
     second?.focus()
     if (second) await click(second, 40)
-    const moved = tab(ph.hostEl, /Pending/)
+    const moved = tab(ph.hostEl, /Needs you/)
     moved?.focus()
     await wait(1600)
     if (doc.activeElement !== moved) fail('after Undo focus is pulled away from where the user moved it')

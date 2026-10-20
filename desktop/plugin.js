@@ -30,31 +30,27 @@ const BUNDLES = {
     pa: {
       pane: {
         title: 'Approvals',
-        subtitle: 'Hermes waits for your decision before writing',
         updated: at => `Updated ${at}`,
+        headlineN: n => `${n} things need you`,
+        headline1: '1 thing needs you',
+        headlineClear: 'You’re all caught up',
+        countsMemory: n => `${n} memory`,
+        countsSkills: n => `${n} skills`,
+        countsFix: n => `${n} needs a fix`,
+        savedToday: n => `${n} saved today`,
       },
       action: {
         refresh: 'Refresh',
       },
       kpi: {
-        pending: 'Pending',
-        applied: 'Applied',
-        undoable: n => (n ? `${n} can be undone` : 'Nothing to undo'),
-        failedN: n => `${n} failed`,
-        noFailures: 'No failures',
-        review: 'Needs review',
-        clear: 'All clear',
-        full: 'Full',
-        nearlyFull: 'Nearly full',
-        room: 'Has room',
-        memorySplit: (m, s) => `Memory: ${m} · Skills: ${s}`,
         chars: (c, l) => `${c} / ${l} characters`,
-        waiting: 'Reading',
+        memoryLabel: 'Memory',
+        profileLabel: 'Profile',
       },
       tab: {
         memory: 'Memory',
-        pending: 'Pending',
-        history: 'History',
+        pending: 'Needs you',
+        history: 'Activity',
         label: 'Approval views',
       },
       field: {
@@ -329,11 +325,10 @@ const BUNDLES = {
         restoreFailed: 'Could not restore the record',
       },
       footer: {
-        pending: n => (n ? `${n} awaiting approval` : 'Nothing pending'),
         alertsOn: 'Alerts on',
         alerts: 'Alerts',
         alertsOff: 'Alerts muted',
-        hint: 'Approve → written immediately, undoable',
+        promise: 'Nothing is written to your memory or skills without you.',
       },
     }
   }
@@ -501,7 +496,7 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
-const FS = { micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, kpi: 28 }
+const FS = { micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, headline: 34 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, histSummary: 58, histFiles: 38, histAction: 30
@@ -543,35 +538,35 @@ const STYLE = `
 .pa-tipwrap{display:inline-flex}
 .pa-root{container-type:inline-size;
   --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
-.pa-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
-.pa-kpi{background:var(--hx-card);border:1px solid var(--ui-stroke-tertiary);border-radius:${R.card}px;
-  box-shadow:${LIT_EDGE};padding:12px 14px;display:flex;flex-direction:column;min-width:0}
-.pa-kpi-top{display:flex;align-items:center;gap:8px;min-width:0}
-.pa-kpi-label{font-size:${FS.micro}px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ui-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pa-kpi-pill{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;
-  flex-shrink:0;border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;
-  font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap}
-.pa-kpi-dot{width:5px;height:5px;border-radius:50%;background:var(--ui-green)}
-.pa-kpi-pill[data-tone="warn"] .pa-kpi-dot{background:var(--ui-orange)}
-.pa-kpi-pill[data-tone="bad"] .pa-kpi-dot{background:var(--ui-red)}
-.pa-kpi-pill[data-tone="off"] .pa-kpi-dot{background:var(--ui-text-tertiary)}
-.pa-kpi-file{text-transform:none;letter-spacing:.02em}
-.pa-kpi-val{margin-top:10px;font-size:${FS.kpi}px;font-weight:650;letter-spacing:-.02em;line-height:1.15;
-  color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
-.pa-kpi[data-tone="warn"]{border-color:color-mix(in srgb,var(--ui-orange) 42%,transparent)}
-.pa-kpi[data-tone="bad"]{border-color:color-mix(in srgb,var(--ui-red) 50%,transparent)}
-.pa-kpi-sub{margin-top:6px;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pa-head{display:flex;align-items:center;gap:12px;min-width:0}
-.pa-title{font-size:${FS.title}px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
-.pa-sub{margin-top:2px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-top{display:flex;align-items:flex-start;justify-content:space-between;gap:${G.base}px;flex-wrap:wrap}
+.pa-date{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-headline{margin:4px 0 6px;font-size:${FS.headline}px;font-weight:650;letter-spacing:-.02em;line-height:1.1;
+  color:var(--ui-text-primary)}
+.pa-counts{font-size:${FS.body}px;color:var(--ui-text-secondary)}
+.pa-top-side{display:flex;flex-direction:column;align-items:flex-end;gap:${G.xs}px;flex-shrink:0}
+.pa-top-actions{display:flex;align-items:center;gap:${G.xs}px}
+.pa-gauges{display:flex;gap:${G.xs}px}
+.pa-gauge{display:flex;align-items:center;gap:9px;padding:8px 12px 8px 8px;border:${HAIRLINE};
+  border-radius:${R.card}px;background:var(--hx-card);min-width:0}
+.pa-gauge[data-tone="ok"]{--pa-tone:var(--ui-green)}
+.pa-gauge[data-tone="warn"]{--pa-tone:var(--ui-orange)}
+.pa-gauge[data-tone="bad"]{--pa-tone:var(--ui-red)}
+.pa-gauge[data-tone="off"]{--pa-tone:var(--ui-text-tertiary)}
+.pa-gauge-ring{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0)}
+.pa-gauge-pct{width:27px;height:27px;border-radius:50%;background:var(--hx-card);display:grid;place-items:center;
+  font-size:${FS.micro}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
   color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
-@container (max-width:560px){.pa-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pa-footer-promise{display:flex;align-items:center;gap:6px;min-width:0}
+.pa-footer-lock{width:16px;height:16px;border-radius:5px;flex:none;background:var(--ui-bg-tertiary);
+  display:grid;place-items:center;font-size:${FS.micro}px}
+@container (max-width:560px){.pa-top{flex-direction:column}.pa-top-side{align-items:flex-start;width:100%}}
 @container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
-@container (max-width:360px){.pa-kpi-top{flex-wrap:wrap}.pa-kpi-pill{margin-left:0}}
 .pa-free{max-height:none !important;overflow:visible !important}
 .pa-fade{--pa-fade:${LINE}px}
 .pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent);
@@ -801,28 +796,34 @@ function Field({ label: title, children }) {
   })
 }
 
-function Stat({ title, figure, delta, tone, pill, file }) {
+const TONE_COLOR = { ok: 'var(--ui-green)', warn: 'var(--ui-orange)', bad: 'var(--ui-red)', off: 'var(--ui-text-tertiary)' }
+const pendingBadge = n => jsx(Badge, {
+  className: 'pa-tag', style: { ...TAG, marginLeft: G.xxs }, variant: 'default', children: String(n)
+}, 'badge')
+
+function Gauge({ file, label, f }) {
+  const t = usePluginI18n(ID)
+  const { pct, tone } = f ? fill(f) : { pct: null, tone: 'off' }
   return jsxs('div', {
-    className: 'pa-kpi',
+    className: 'pa-gauge',
     'data-tone': tone,
     children: [
+      jsx('div', {
+        className: 'pa-gauge-ring',
+        style: { '--pa-tone': TONE_COLOR[tone], '--pa-pct': `${pct ?? 0}%` },
+        'aria-hidden': true,
+        children: jsx('span', { className: 'pa-gauge-pct', children: pct === null ? '—' : `${pct}%` }, 'pct')
+      }, 'ring'),
       jsxs('div', {
-        className: 'pa-kpi-top',
+        className: 'pa-gauge-meta',
         children: [
+          jsx('span', { className: 'pa-gauge-label', children: label }, 'label'),
           jsx('span', {
-            className: file ? 'pa-kpi-label pa-kpi-file' : 'pa-kpi-label', children: title
-          }, 'title'),
-          pill
-            ? jsxs('span', {
-                className: 'pa-kpi-pill',
-                'data-tone': tone,
-                children: [jsx('span', { className: 'pa-kpi-dot' }, 'dot'), pill]
-              }, 'pill')
-            : null
+            className: 'pa-gauge-file',
+            children: f ? `${file} · ${t('pa.kpi.chars', f.chars ?? 0, f.limit ?? 0)}` : file
+          }, 'file')
         ]
-      }, 'top'),
-      jsx('div', { className: 'pa-kpi-val', children: figure }, 'figure'),
-      jsx('div', { className: 'pa-kpi-sub', children: delta }, 'delta')
+      }, 'meta')
     ]
   })
 }
@@ -871,17 +872,38 @@ const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
   ]
 }, 'stale'))
 
-const WAITING = { figure: '—', tone: 'off', delta: '' }
-
 const fill = f => {
   const chars = Number(f?.chars) || 0
   const limit = Number(f?.limit) || 0
   const pct = limit ? Math.floor((chars * 100) / limit) : Number(f?.percent) || 0
   const full = limit ? chars >= limit : pct >= 100
   const tone = full ? 'bad' : pct >= 90 ? 'warn' : 'ok'
-  return { pct, tone, key: full ? 'pa.kpi.full' : pct >= 90 ? 'pa.kpi.nearlyFull' : 'pa.kpi.room' }
+  return { pct, tone }
 }
 const clock = ms => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+const dateLabel = () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+
+function Headline({ n, counts, saved }) {
+  const t = usePluginI18n(ID)
+  const text = n === 0 ? t('pa.pane.headlineClear') : n === 1 ? t('pa.pane.headline1') : t('pa.pane.headlineN', n)
+  const parts = n
+    ? [
+        counts.memory ? t('pa.pane.countsMemory', counts.memory) : null,
+        counts.skills ? t('pa.pane.countsSkills', counts.skills) : null,
+        counts.fix ? t('pa.pane.countsFix', counts.fix) : null
+      ].filter(Boolean)
+    : [t('pa.pane.savedToday', saved)]
+  return jsxs('div', {
+    style: { minWidth: 0 },
+    children: [
+      jsx('div', { className: 'pa-date', children: dateLabel() }, 'date'),
+      jsx('div', {
+        className: 'pa-headline', role: 'heading', 'aria-level': 1, 'aria-live': 'polite', children: text
+      }, 'headline'),
+      jsx('div', { className: 'pa-counts', children: parts.join(' · ') }, 'counts')
+    ]
+  })
+}
 
 function RefreshButton({ onClick, label: title }) {
   return jsx(Tip, {
@@ -2616,27 +2638,16 @@ function Pane() {
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
   const hc = hist.data?.counts || {}
-  const undoable = hc.undoable ?? entries.filter(e => e.undoable && !e.undone).length
   const applied = hc.applied ?? entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
-  const failedCount = hc.failed ?? entries.filter(e => e.kind === 'failed').length
-  const waiting = { ...WAITING, pill: t('pa.kpi.waiting') }
   const muted = useAlertsMuted()
-  const fileStat = (key, fallback) => {
-    const f = mem.data?.[key]
-    if (!f) return { ...waiting, title: fallback, file: true }
-    const { pct, tone, key: pillKey } = fill(f)
-    return {
-      title: f?.file || fallback,
-      file: true,
-      figure: `${pct}%`,
-      tone,
-      pill: t(pillKey),
-      delta: t('pa.kpi.chars', f?.chars ?? 0, f?.limit ?? 0)
-    }
-  }
+  const fixCount = units(data).filter(({ item }) => (
+    (item.review?.hard || []).length || (item.plain?.stale || []).length
+  )).length
 
   return jsxs('div', {
     className: 'pa-root',
+    role: 'region',
+    'aria-label': t('pa.pane.title'),
     style: {
       display: 'flex', height: '100%', minHeight: 0, flexDirection: 'column',
       background: 'transparent', color: 'var(--ui-text-primary)'
@@ -2648,40 +2659,37 @@ function Pane() {
         style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: '16px 16px 0' },
         children: [
           jsxs('div', {
-            className: 'pa-head',
+            className: 'pa-top',
             children: [
+              jsx(Headline, {
+                n,
+                counts: { memory: counts.memory || 0, skills: counts.skills || 0, fix: fixCount },
+                saved: applied
+              }, 'headline'),
               jsxs('div', {
-                style: { minWidth: 0 },
+                className: 'pa-top-side',
                 children: [
-                  jsx('div', { className: 'pa-title', role: 'heading', 'aria-level': 1, children: t('pa.pane.title') }, 'title'),
-                  jsx('div', { className: 'pa-sub', children: t('pa.pane.subtitle') }, 'subtitle')
+                  jsxs('div', {
+                    className: 'pa-top-actions',
+                    children: [
+                      at ? jsx('span', { className: 'pa-updated', children: t('pa.pane.updated', clock(at)) }, 'updated') : null,
+                      jsx(RefreshButton, {
+                        label: t('pa.action.refresh'),
+                        onClick: refreshAll
+                      }, 'refresh')
+                    ]
+                  }, 'actions'),
+                  jsxs('div', {
+                    className: 'pa-gauges',
+                    children: [
+                      jsx(Gauge, { file: mem.data?.memory?.file || 'MEMORY.md', label: t('pa.kpi.memoryLabel'), f: mem.data?.memory }, 'memory'),
+                      jsx(Gauge, { file: mem.data?.user?.file || 'USER.md', label: t('pa.kpi.profileLabel'), f: mem.data?.user }, 'profile')
+                    ]
+                  }, 'gauges')
                 ]
-              }, 'titles'),
-              at ? jsx('span', { className: 'pa-updated', children: t('pa.pane.updated', clock(at)) }, 'updated')
-                : jsx('span', { style: { marginLeft: 'auto' } }, 'spacer'),
-              jsx(RefreshButton, {
-                label: t('pa.action.refresh'),
-                onClick: refreshAll
-              }, 'refresh')
+              }, 'side')
             ]
-          }, 'head'),
-          jsxs('div', {
-            className: 'pa-kpis',
-            children: [
-              jsx(Stat, data ? {
-                title: t('pa.kpi.pending'), figure: String(n), tone: n ? 'warn' : 'ok',
-                pill: t(n ? 'pa.kpi.review' : 'pa.kpi.clear'),
-                delta: t('pa.kpi.memorySplit', counts.memory || 0, counts.skills || 0)
-              } : { ...waiting, title: t('pa.kpi.pending') }, 'pending'),
-              jsx(Stat, { ...fileStat('memory', 'MEMORY.md') }, 'memory'),
-              jsx(Stat, { ...fileStat('user', 'USER.md') }, 'user'),
-              jsx(Stat, hist.data ? {
-                title: t('pa.kpi.applied'), figure: String(applied), tone: failedCount ? 'bad' : 'ok',
-                pill: failedCount ? t('pa.kpi.failedN', failedCount) : t('pa.kpi.noFailures'),
-                delta: t('pa.kpi.undoable', undoable)
-              } : { ...waiting, title: t('pa.kpi.applied') }, 'history')
-            ]
-          }, 'kpis'),
+          }, 'top'),
           jsx('div', {
             style: { display: 'flex', alignItems: 'center', borderBottom: HAIRLINE, minWidth: 0 },
             children: jsx(Tabs, {
@@ -2691,7 +2699,7 @@ function Pane() {
               onSelect: setView,
               items: ['pending', 'history', 'memory'].map(id => ({
                 id,
-                label: id === 'pending' ? `${t('pa.tab.pending')}${n ? ` (${n})` : ''}` : t(TAB_KEY[id])
+                label: id === 'pending' && n ? [t(TAB_KEY[id]), pendingBadge(n)] : t(TAB_KEY[id])
               }))
             }, 'tabs')
           }, 'tabs')
@@ -2721,17 +2729,23 @@ function Pane() {
           padding: '8px 16px', fontSize: FS.meta, color: 'var(--ui-text-secondary)'
         },
         children: [
-          jsx('span', { children: t('pa.footer.pending', n) }, 'pending'),
+          jsxs('span', {
+            className: 'pa-footer-promise',
+            children: [
+              jsx('span', { className: 'pa-footer-lock', 'aria-hidden': true, children: '🔒' }, 'lock'),
+              jsx('span', { children: t('pa.footer.promise') }, 'text')
+            ]
+          }, 'promise'),
           jsx(Button, {
             className: 'pa-alerts',
             variant: 'text',
             size: 'sm',
+            style: { marginLeft: 'auto' },
             'aria-pressed': !muted,
             'aria-label': t('pa.footer.alerts'),
             onClick: () => setAlertsMuted(!muted),
             children: t(muted ? 'pa.footer.alertsOff' : 'pa.footer.alertsOn')
-          }, 'alerts'),
-          jsx('span', { style: { marginLeft: 'auto' }, children: t('pa.footer.hint') }, 'hint')
+          }, 'alerts')
         ]
       }, 'footer')
     ]
