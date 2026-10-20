@@ -55,24 +55,40 @@ v0.22.0 audit=0 canary=0 contract=0 contract-canary=0 selftest=0 regress=0 rende
 
 ## Visual comparison
 
-Screenshots (`tests/_ny1-dark.png`, `tests/_ny1-light.png`, copied to
-`C:/Users/enesa/AppData/Local/hermes/cache/scratch/pa-ny/_ny1-dark.png` and `_ny1-light.png`) were
-compared against `pa-ny/mockup-needs-you.png` (shot.mjs contrast/overflow lines report 0 in both
-themes):
+Screenshots (`tests/_ny1-dark.png`, `tests/_ny1-light.png`) were compared against
+`pa-ny/mockup-needs-you.png`.
 
 Matches:
 - Date, "3 things need you" headline, "1 memory · 2 skills · 1 needs a fix" subline.
 - Two ring gauges with percent, label and `file chars/limit` text, in the same top-right position.
 - Tabs read "Needs you" (badge "3") / "Activity" / "Memory".
 - Footer: lock glyph + promise sentence on the left, Alerts switch on the right.
-- Dark and light themes both render with no clipping or overflow.
 
-No differences left in this task's scope were found; the "all clear" headline/subline variant was
-checked against `pa-ny/mockup-all-clear.png` in the same preview run and also matches.
+Narrow-pane overflow (round 2 finding, now fixed): the 420px frame's top band (date/headline/gauges
+row) does NOT fit side by side — the two gauge cards side-by-side plus the right-aligned refresh/
+updated row forced `.pa-top-side` past 420px, which the browser reported as scrollWidth overflow on
+the sibling `.pa-cols` grid (`overflowPx=[0,0,0,0,0,0,85]`, `.pa-cols` clipped to `scrollW:503` vs
+`w:420`). The earlier "Dark and light themes both render with no clipping or overflow" claim in this
+section was wrong for that narrow frame — it was never actually checked. Fix: at the existing
+`@container (max-width:560px)` breakpoint the two `.pa-gauge` cards now stack vertically
+(`.pa-gauges{flex-direction:column}`, each gauge `width:100%`) instead of staying side by side, and
+`.pa-gauge-file` got `overflow:hidden;text-overflow:ellipsis;max-width:100%` so a long file name can
+no longer force the card wider than its column. Verified by rerunning `node preview.mjs` then
+`node shot.mjs preview.html _ny1-dark.png` / `preview-light.html _ny1-light.png` against current HEAD
+just now; both now end in `gate OK: frames 7 · overflow 0 · clipped 0 · ...` with no
+`MEASUREMENT FAILED` line, and the narrow frame's `measure.json` entry (`frameW:420`) reads
+`"overflowPx": 0`. Visually the narrow frame now shows the date/headline/subline on top, the two
+gauge cards stacked full-width underneath, then the tabs/cards — no change to the ≥560px layouts,
+which still show the gauges side by side as before.
+
+No other differences left in this task's scope were found; the "all clear" headline/subline variant
+was checked against `pa-ny/mockup-all-clear.png` in the same preview run and also matches.
 
 ## Files changed
 
-- `desktop/plugin.js` — top band, gauges, tab labels/badge, footer (see "What was built").
+- `desktop/plugin.js` — top band, gauges, tab labels/badge, footer (see "What was built"); plus the
+  round-2 fix: `.pa-gauges` stacks vertically and `.pa-gauge-file` ellipsizes under the narrow
+  `@container (max-width:560px)` breakpoint, instead of staying side by side and overflowing.
 - `tests/render_check.mjs` — new `top-headline`, `top-gauges`, `tabs-renamed`, `footer-promise`
   checks; block "12) KPI cards…" updated to assert the gauges instead of the four boxes, keeping its
   refresh-icon and chip assertions; block 2b (tabs) updated for the new labels.

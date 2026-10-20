@@ -558,14 +558,17 @@ const STYLE = `
   font-size:${FS.micro}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap}
+.pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
   color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 .pa-footer-promise{display:flex;align-items:center;gap:6px;min-width:0}
 .pa-footer-lock{width:16px;height:16px;border-radius:5px;flex:none;background:var(--ui-bg-tertiary);
   display:grid;place-items:center;font-size:${FS.micro}px}
-@container (max-width:560px){.pa-top{flex-direction:column}.pa-top-side{align-items:flex-start;width:100%}}
+@container (max-width:560px){.pa-top{flex-direction:column}.pa-top-side{align-items:flex-start;width:100%;flex-shrink:1}
+  .pa-gauges{flex-direction:column;align-items:stretch;width:100%}
+  .pa-gauge{width:100%;min-width:0}.pa-gauge-meta{min-width:0}}
 @container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
 .pa-free{max-height:none !important;overflow:visible !important}
 .pa-fade{--pa-fade:${LINE}px}
