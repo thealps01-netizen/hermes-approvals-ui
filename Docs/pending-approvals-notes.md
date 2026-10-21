@@ -1269,3 +1269,67 @@ to seven with the contrast negative control.
   now also draws it directly (next to the effect line, always visible when the card is closed) in
   addition to the copy inside "Show the full change" — the duplication when expanded is accepted as
   the smaller cost against hiding it by default.
+
+## App layout — list and detail (2026-10)
+
+The page became an app: in every tab a 300 px list on the left and the selected record on the right,
+under one 48 px top bar (title, tabs, today's progress, Alerts, Refresh). The owner asked for it after
+the "newspaper" top (headline, rings, footer strip) kept pushing the record itself below the fold.
+Below is the why of every row the closed inventory (job spec R2) did not draw exactly as the mockup.
+
+**Data the backend does not have, so the panel does not invent it.**
+
+* No line numbers (F3) and no section tag such as "frontmatter" (F9): an op's `lines` are
+  `[mark, text]` pairs. The diff grid is `mark │ text`.
+* The fold row reads "Unchanged lines" with no count (F7): the backend's `'…'` row carries none.
+* "Checking…" without "2 of 4" (L7), and the four check steps all drawn pending (C3): a review
+  exposes no per-check progress. The one spinner is the verdict seal's.
+* "Why Hermes wants this" is the backend's origin + summary sentence (F8), not an evidence sentence;
+  the skill effect sentence (F11) sits under it in the same style.
+* The fix note gives counts only (X4): what the fix keeps in prose is not in the data.
+* Activity entries carry no written text (A11): the detail shows the plain summary instead.
+
+**Rules that outrank the mockup.**
+
+* Full labels on a narrow pane (N4): long text is ellipsised or wrapped, never swapped for a shorter
+  variant. The narrow footer wraps.
+* "Use the short version" stays the label of a description fix (X6): `/fix` stages the shortened
+  text and does not approve it.
+* The note delete reads "About to delete — undoable from the Activity tab", not the mockup's "It
+  cannot be undone" (M6): `/memory/delete` records a snapshot, so the delete is undoable and the
+  mockup sentence would be false.
+* No drop shadow on the active tab (T2) and no glow on the primary (B5): the shadow has no theme
+  source, and the glow is inside a kit Button the panel may not restyle.
+
+**Moved, not lost.**
+
+* Alerts went into the bar (T6, K15) because the global footer that held it is gone (K22); the
+  footer's promise is the Memory list footer (M3) and the All caught up line (E3).
+* "Updated 12:03" is in the Refresh Tip (K23). The day is the progress (T4), the count the badge (T3).
+* The rings became the Memory file rows with meters (M2, M8) and the "Memory after saving" meter (B2).
+* Up next and Just done became the list rows, the in-row "Saved … Undo" row (L11), the All caught up
+  Last line (E5) and Activity (K24). Group changes, the as-staged comparison and the Force undo
+  alert live in the Activity detail body (A12-A14).
+* The full review is behind one "Show the full review" toggle (K9): the diff is always shown.
+* The position dots and "2 of 3" are dropped in the wide layout (K19, C5): the list shows the
+  position. The narrow Back bar reads "‹ 3 waiting · 1 of 3" (N2).
+* The narrow bar has no mini memory gauge (N3) and no "4 of 4 checks fine" line (N5): the approved
+  bar does not carry it, and the verdict card is drawn in narrow too.
+* "Nothing waiting · Open Activity" (E6) gave way to the approved All caught up screen; the last
+  change and read-only sentences of the Memory tab (M7) were not in the approved design.
+
+**The keyboard guard.** J/K move, A approves, X rejects, L puts the record last — only on the
+Needs you split; never while focus is in a text field (an input other than a checkbox, radio or
+button, a textarea, a select or an editable region), never with Ctrl, Alt or Meta, never while a
+two-step warning or the armed bulk bar is open, and A/X do not repeat when the key is held. A on a
+held record warns once and sends nothing: a key must not be a quieter way past the gate than the
+button.
+
+**Narrow mode.** Under 760 px of PANE width (`@container`, never `@media`, which measures the window)
+the split shows one column: the list, or the detail with its 36 px Back bar. The tabs get their own
+row.
+
+**The measured gate.** A hidden Electron window runs no animation frames, so an entrance animation
+stays at its first frame (4 px down, transparent) and the frames read 4 px too tall and dim. The gate
+sets the panel's own `data-still` before measuring. A list row's one-line ellipsis is not counted as
+a clip: the row points at the record, whose full text is the detail's title.

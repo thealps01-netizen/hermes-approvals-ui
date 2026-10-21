@@ -11,6 +11,15 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 
 ### Changed
 
+* **The page is now an app: a list on the left and the record on the right, in all three tabs.**
+  "Needs you" lists what is waiting and opens the selected record beside it; its verdict comes first
+  ("Safe to save", "Needs one edit", "Checking…"), then the change, then the decision with its effect
+  ("Memory after saving 95% → 97%"). The keys J and K move through the list, A approves, X rejects and
+  L puts a record last. The top bar shows today's progress ("5 of 10 decided"). A decided record turns
+  into a "Saved … Undo" (or "Not saved … Restore") row in the list. A record the reviewer can fix
+  shows the change "With the fix" or "As written" with one click. Activity and Memory use the same
+  list and detail. The headline, the memory rings and the footer strip are gone.
+
 * **The top of the page now leads with a headline, not four boxes.** Where the panel used to show
   four separate "Pending / Applied / Failed / Undoable" count boxes, it now opens with today's date,
   a plain-language headline ("3 things need you", "1 thing needs you", or "You're all caught up"),
