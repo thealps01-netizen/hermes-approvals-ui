@@ -560,6 +560,15 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Text actions at a row's edge use the kit's `inline` size.** `xs`/`sm` add 8-10px of side padding,
+  so a text-only Undo, Later or Delete sat visibly inside the edge the rest of the row's text keeps.
+  `inline` drops the box padding; boxed buttons (Force undo, Cancel/Delete pairs) keep their size.
+- **The shot gate measures alignment** (`alignment` in `tests/shot.cjs`): one left edge for the
+  headline and every tab's first block, equal widths for side-by-side gauge/file cards, at least 8px
+  between list text and its frame, one right edge for row actions. The overflow/clipped keys never
+  saw these; a day heading touching the list border passed every gate before it.
+- **Side-column rows wrap, they do not ellipsize.** The shot gate rejects ellipsis-cut text (the user
+  loses it), so equal-looking rows come from one framed list with equal padding, not a fixed height.
 - **Surfaces are neutral, not `--ui-bg-secondary`.** The app's `--ui-bg-secondary/tertiary` fills mix
   in 11% / 8% of the accent (`styles.css`, `--theme-fill-*-accent-mix`); the app itself almost never
   paints a surface with them. `--hx-card` is transparent and `--hx-field` is 4% of the text colour, so a

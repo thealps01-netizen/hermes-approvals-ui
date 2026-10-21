@@ -623,12 +623,13 @@ const MOTION = {
 }
 const move = (job, props) => props.split(',')
   .map(p => `${p.trim()} ${MOTION[job].ms}ms ${EASE[MOTION[job].ease]}`).join(', ')
+const rise = job => `pa-in ${MOTION[job].ms}ms ${EASE[MOTION[job].ease]} both`
 const LIT_EDGE = `inset 0 1px 0 ${tint('var(--ui-text-primary)', 7)}`
 const THIN_SCROLL = 'scrollbar-width:thin;'
   + 'scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 45%,transparent) transparent'
 const STYLE = `
 .pa-cell{display:flex;min-width:0}
-.pa-bulk{display:flex;flex-direction:column;gap:6px;margin:12px 12px 0;padding:8px 12px;border:${HAIRLINE};
+.pa-bulk{display:flex;flex-direction:column;gap:6px;margin:${G.sm}px ${G.base}px 0;padding:8px 12px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-bulk-count{font-variant-numeric:tabular-nums;color:var(--ui-text-primary);font-weight:600}
 .pa-pick{width:14px;height:14px;margin:0;accent-color:var(--ui-accent);cursor:pointer;flex:none}
@@ -645,7 +646,7 @@ const STYLE = `
 .pa-counts{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-top-side{display:flex;flex-direction:column;align-items:flex-end;gap:${G.xs}px;flex-shrink:0}
 .pa-top-actions{display:flex;align-items:center;gap:${G.xs}px}
-.pa-gauges{display:flex;gap:${G.xs}px}
+.pa-gauges{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:${G.xs}px}
 .pa-gauge{display:flex;align-items:center;gap:9px;padding:8px 12px 8px 8px;border:${HAIRLINE};
   border-radius:${R.card}px;background:var(--hx-card);min-width:0}
 .pa-gauge[data-tone="ok"]{--pa-tone:var(--ui-green)}
@@ -688,7 +689,8 @@ const STYLE = `
 .pa-note-ask{flex:1 1 220px;font-size:${FS.meta}px;color:var(--ui-text-primary)}
 .pa-note-btns{display:flex;gap:${G.xs}px;margin-left:auto}
 .pa-mem-head{display:flex;flex-wrap:wrap;gap:${G.xxs}px ${G.sm}px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xs}px}
+.pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xxs}px ${G.xs}px}
+.pa-activity-head>.pa-activity-clear{margin-left:auto;align-self:center}
 .pa-activity-today{font-size:${FS.lead}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-activity-totals{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-activity-list{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.card}px;
@@ -696,15 +698,15 @@ const STYLE = `
 .pa-activity-list>.pa-act-row{border:none;border-bottom:${HAIRLINE};border-radius:0;box-shadow:none;background:none}
 .pa-activity-list>.pa-act-row:last-child{border-bottom:none}
 .pa-act-row{display:flex;flex-direction:column;gap:${G.xxs}px;padding:${G.xs}px ${G.sm}px}
-.pa-act-line{display:flex;align-items:center;gap:${G.xs}px;min-width:0}
+.pa-act-line{display:flex;align-items:center;gap:${G.xs}px;min-width:0;min-height:28px}
 .pa-act-word{font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
 .pa-act-gap{flex:1}
-.pa-act-sub{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px ${G.xs}px;min-width:0}
+.pa-act-sub{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xxs}px ${G.xs}px;min-width:0}
 .pa-act-said{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary);overflow-wrap:anywhere;min-width:0}
 .pa-act-files{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-act-note{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
-.pa-day-heading{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
-  margin-top:${G.xs}px}
+.pa-day-heading{padding:6px ${G.sm}px;border-bottom:${HAIRLINE};background:var(--hx-field);
+  font-size:${FS.micro}px;font-weight:600;letter-spacing:.02em;color:var(--ui-text-secondary)}
 .pa-updated{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;
   font-variant-numeric:tabular-nums}
 .pa-tabbar{display:flex;align-items:center;gap:${G.xs}px;border-bottom:${HAIRLINE};min-width:0}
@@ -715,7 +717,7 @@ const STYLE = `
 .pa-wrapw{width:100%;max-width:1080px;margin:0 auto;min-width:0}
 @container (max-width:760px){.pa-top{flex-direction:column;gap:${G.sm}px}
   .pa-top-side{align-items:stretch;width:100%;flex-shrink:1}
-  .pa-gauges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+  .pa-gauges{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   .pa-gauge{min-width:0}.pa-gauge-meta{min-width:0}}
 @container (max-width:380px){.pa-gauges{grid-template-columns:minmax(0,1fr)}}
 .pa-free{max-height:none !important;overflow:visible !important}
@@ -781,7 +783,7 @@ const STYLE = `
 .pa-ln-text{min-width:0;flex:1}
 .pa-ln[data-k="…"]{color:var(--ui-text-tertiary)}
 .pa-list{display:flex;flex-direction:column;gap:12px}
-.pa-stage{display:flex;gap:${G.base}px;align-items:flex-start;padding:12px;min-width:0}
+.pa-stage{display:flex;gap:${G.base}px;align-items:flex-start;padding:${G.sm}px ${G.base}px;min-width:0}
 .pa-stage-main{position:relative;flex:1 1 0;min-width:0}
 .pa-stage-main>.pa-cell{position:relative;z-index:1}
 .pa-cell.pa-cell-stacked .pa-card{position:relative}
@@ -793,10 +795,13 @@ const STYLE = `
 .pa-side-section{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-side-title{font-size:${FS.micro}px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ui-text-secondary)}
-.pa-upnext{display:flex;flex-direction:column;gap:6px}
+.pa-side-list{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.card}px;
+  background:var(--ui-bg-editor);overflow:hidden}
+.pa-side-list>*{border-bottom:${HAIRLINE}}
+.pa-side-list>:last-child{border-bottom:none}
 .pa-upnext-head{display:flex;align-items:center;justify-content:space-between;gap:${G.xs}px;min-height:24px}
-.pa-upnext-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:${HAIRLINE};
-  border-radius:${R.box}px;background:var(--hx-card);text-align:left;cursor:pointer;min-width:0;width:100%}
+.pa-upnext-row{display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:52px;box-sizing:border-box;
+  text-align:left;cursor:pointer;min-width:0;width:100%}
 .pa-upnext-btn{display:flex;align-items:center;gap:8px;min-width:0;flex:1;margin:0;padding:0;border:0;
   background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .pa-upnext-row:hover{background:var(--hx-field)}
@@ -805,16 +810,14 @@ const STYLE = `
 .pa-upnext-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-upnext-state{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.pa-justdone{display:flex;flex-direction:column;gap:6px}
-.pa-justdone-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:${R.box}px;
-  background:color-mix(in srgb,var(--ui-text-primary) 4%,transparent)}
+.pa-justdone-row{display:flex;align-items:center;gap:8px;padding:8px 12px;min-height:52px;box-sizing:border-box}
 .pa-clear{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:56px 20px}
 .pa-clear-mark{margin-bottom:10px}
 .pa-clear-title{font-size:${FS.title}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-clear-body{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-justdone-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .pa-justdone-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
-.pa-justdone-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
+.pa-justdone-meta{font-size:${FS.micro}px;line-height:1.45;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 @container (max-width:760px){.pa-stage{flex-direction:column;align-items:stretch}.pa-side{width:100%}
   .pa-clear{padding:24px 16px}
   .pa-cell.pa-cell-stacked .pa-card::after{display:none}}
@@ -839,6 +842,8 @@ const STYLE = `
 .pa-pane ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ui-text-tertiary) 42%,transparent);
   border-radius:4px}
 .pa-pane ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ui-text-tertiary) 62%,transparent)}
+@keyframes pa-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.pa-view{animation:${rise('enter')}}
 @media (prefers-reduced-motion: reduce){
   .pa-pane *,.pa-pane *::before,.pa-pane *::after{transition:none !important;animation:none !important}
   .pa-leaving{transform:none}
@@ -1608,10 +1613,14 @@ function Change({ op, where, t, badge }) {
           }, 'body')
         : jsx('div', { style: hintLine, children: t('pa.op.noText') }, 'none'),
       hidden > 0 && shown.length < rows.length
-        ? jsx(Button, { variant: 'text', size: 'xs', onClick: () => setAll(true), children: t('pa.op.more', hidden) }, 'more')
+        ? jsx(Button, {
+            variant: 'text', size: 'inline', onClick: () => setAll(true), children: t('pa.op.more', hidden)
+          }, 'more')
         : null,
       all && rows.length > CHANGE_PEEK
-        ? jsx(Button, { variant: 'text', size: 'xs', onClick: () => setAll(false), children: t('pa.op.less') }, 'less')
+        ? jsx(Button, {
+            variant: 'text', size: 'inline', onClick: () => setAll(false), children: t('pa.op.less')
+          }, 'less')
         : null,
       all && total > rows.length ? jsx('div', { style: hintLine, children: t('pa.op.capped', rows.length, total) }, 'cap') : null,
       op.old_current_note ? jsx('div', { style: hintLine, children: op.old_current_note }, 'note') : null
@@ -1882,7 +1891,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
               : null,
             jsx(Button, {
               variant: 'text',
-              size: 'xs',
+              size: 'inline',
               disabled: leaving,
               'aria-expanded': lines,
               onClick: () => toggleLines(part.id),
@@ -1937,7 +1946,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
                 children: [
                   checkLine(row),
                   jsx(Button, {
-                    variant: 'text', size: 'sm', 'aria-expanded': expandedChecks.has(row.key),
+                    variant: 'text', size: 'inline', 'aria-expanded': expandedChecks.has(row.key),
                     onClick: () => toggleCheck(row.key),
                     children: t(expandedChecks.has(row.key) ? 'pa.check.close' : 'pa.check.open')
                   }, 'btn')
@@ -2128,7 +2137,7 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
 
       jsx(Button, {
         variant: 'text',
-        size: 'sm',
+        size: 'inline',
         className: 'pa-fullchange-toggle',
         disabled: leaving,
         'aria-expanded': open,
@@ -2144,7 +2153,11 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         children: [
           onLater
             ? jsx(Button, {
-                variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
+                variant: 'text',
+                size: 'inline',
+                disabled: leaving,
+                onClick: () => onLater(),
+                children: t('pa.btn.later')
               }, 'later')
             : null,
           (canSkip && skipArmed) || fixArmed
@@ -2278,7 +2291,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
   const action = entry.undoable
       ? jsx(Button, {
           variant: conflict ? 'destructive' : 'textStrong',
-          size: 'sm',
+          size: conflict ? 'sm' : 'inline',
           loading: busy,
           onClick: () => void undo(Boolean(conflict)),
           'aria-label': `${t(conflict ? 'pa.btn.forceUndo' : 'pa.btn.undo')}: ${named}`,
@@ -2288,7 +2301,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
         ? jsx(Button, {
             className: 'pa-restore',
             variant: 'textStrong',
-            size: 'sm',
+            size: 'inline',
             loading: busy,
             onClick: () => void restore(),
             'aria-label': `${t('pa.btn.restore')}: ${named}`,
@@ -2336,7 +2349,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
             children: [
               jsx(Button, {
                 variant: 'text',
-                size: 'xs',
+                size: 'inline',
                 style: { alignSelf: 'flex-start' },
                 'aria-expanded': fold,
                 onClick: () => setFold(v => !v),
@@ -2367,7 +2380,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
                 : written.length
                   ? jsx(Button, {
                       variant: 'text',
-                      size: 'xs',
+                      size: 'inline',
                       style: { alignSelf: 'flex-start' },
                       'aria-expanded': cmp,
                       onClick: () => setCmp(v => !v),
@@ -2657,17 +2670,20 @@ function UpNext({ units: upcoming, t, onPick, picked, onTogglePick, selecting, o
             ? jsx(Button, {
                 className: 'pa-select',
                 variant: 'text',
-                size: 'sm',
+                size: 'inline',
                 onClick: onSelect,
                 children: t(selecting ? 'pa.stage.selectDone' : 'pa.stage.select')
               }, 'select')
             : null
         ]
       }, 'head'),
-      ...upcoming.map(u => jsx(UpNextRow, {
-        subsystem: u.subsystem, item: u.item, t, onPick: () => onPick(queueKey(u)),
-        picked: picked?.has(queueKey(u)), onTogglePick
-      }, queueKey(u)))
+      jsx('div', {
+        className: 'pa-side-list',
+        children: upcoming.map(u => jsx(UpNextRow, {
+          subsystem: u.subsystem, item: u.item, t, onPick: () => onPick(queueKey(u)),
+          picked: picked?.has(queueKey(u)), onTogglePick
+        }, queueKey(u)))
+      }, 'rows')
     ]
   }, 'upnext')
 }
@@ -2678,6 +2694,7 @@ function JustDoneRow({ entry, t, onChanged }) {
     ? t('pa.hist.externalDetail', entry.files.length)
     : String(entry.summary || '')
   const canUndo = Boolean(entry.undoable) && !entry.undone
+  const gist = plainGist(t, said)
   const undo = async () => {
     setBusy(true)
     try {
@@ -2705,13 +2722,13 @@ function JustDoneRow({ entry, t, onChanged }) {
               : historyWords(t, entry)
           }, 'title'),
           jsx('span', {
-            className: 'pa-justdone-meta', children: [plainGist(t, said), when(t, entry.ts)].filter(Boolean).join(' · ')
+            className: 'pa-justdone-meta', children: [gist, when(t, entry.ts)].filter(Boolean).join(' · ')
           }, 'meta')
         ]
       }, 'text'),
       canUndo
         ? jsx(Button, {
-            variant: 'textStrong', size: 'xs', loading: busy, onClick: () => void undo(),
+            variant: 'textStrong', size: 'inline', loading: busy, onClick: () => void undo(),
             children: t('pa.btn.undo')
           }, 'undo')
         : null
@@ -2727,7 +2744,7 @@ function JustDone({ entries, t, onChanged }) {
     children: [
       jsx('div', { className: 'pa-side-title', children: t('pa.stage.justDone') }, 'title'),
       jsx('div', {
-        className: 'pa-justdone',
+        className: 'pa-side-list',
         children: list.map(e => jsx(JustDoneRow, { entry: e, t, onChanged }, e.id))
       }, 'rows')
     ]
@@ -2855,7 +2872,6 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
   const body = jsxs('div', {
     ref: stageRef,
     className: 'pa-stage',
-    style: { padding: 12 },
     children: [
       jsxs('div', {
         className: 'pa-stage-main',
@@ -2925,7 +2941,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
     }, 'empty')
   }
   return jsxs('div', {
-    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
+    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: `${G.sm}px ${G.base}px` },
     children: [
       staleNotice(t, error, refresh),
       jsxs('div', {
@@ -2937,47 +2953,48 @@ function HistoryList({ data, error, refresh, onChanged }) {
                 className: 'pa-activity-totals',
                 children: t('pa.hist.totals', totals.applied || 0, totals.failed || 0, totals.undoable || 0)
               }, 'totals')
-            : null
+            : null,
+          confirming
+            ? null
+            : jsx(Button, {
+                variant: 'text',
+                size: 'inline',
+                className: 'pa-activity-clear',
+                onClick: () => setConfirming(true),
+                children: t('pa.hist.clear', all)
+              }, 'arm')
         ]
       }, 'activity-head'),
-      jsx('div', {
+      confirming && jsx('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.sm },
-        children: confirming
-          ? jsxs('div', {
-              style: { display: 'flex', flexDirection: 'column', gap: G.xs, width: '100%' },
+        children: jsxs('div', {
+          style: { display: 'flex', flexDirection: 'column', gap: G.xs, width: '100%' },
+          children: [
+            jsx('div', {
+              className: 'pa-alert pa-alert-danger',
+              children: t('pa.hist.clearConfirm', all)
+            }, 'copy'),
+            jsxs('div', {
+              style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: G.xs },
               children: [
-                jsx('div', {
-                  className: 'pa-alert pa-alert-danger',
-                  children: t('pa.hist.clearConfirm', all)
-                }, 'copy'),
-                jsxs('div', {
-                  style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: G.xs },
-                  children: [
-                    jsx(Button, {
-                      variant: 'outline',
-                      size: 'sm',
-                      disabled: busy,
-                      onClick: () => setConfirming(false),
-                      children: t('pa.hist.clearCancel')
-                    }, 'cancel'),
-                    jsx(Button, {
-                      variant: 'destructive',
-                      size: 'sm',
-                      loading: busy,
-                      onClick: () => void clear(),
-                      children: t('pa.hist.clear', all)
-                    }, 'confirm')
-                  ]
-                }, 'row')
+                jsx(Button, {
+                  variant: 'outline',
+                  size: 'sm',
+                  disabled: busy,
+                  onClick: () => setConfirming(false),
+                  children: t('pa.hist.clearCancel')
+                }, 'cancel'),
+                jsx(Button, {
+                  variant: 'destructive',
+                  size: 'sm',
+                  loading: busy,
+                  onClick: () => void clear(),
+                  children: t('pa.hist.clear', all)
+                }, 'confirm')
               ]
-            }, 'arming')
-          : jsx(Button, {
-              variant: 'text',
-              size: 'sm',
-              style: { marginLeft: 'auto' },
-              onClick: () => setConfirming(true),
-              children: t('pa.hist.clear', all)
-            }, 'arm')
+            }, 'row')
+          ]
+        }, 'arming')
       }, 'header'),
       jsx('div', {
         className: 'pa-activity-list',
@@ -3044,7 +3061,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
   if (!store && error) return jsx(LoadError, { title: t('pa.empty.memoryError'), error, onRetry: refresh }, 'error')
   if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   return jsxs('div', {
-    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
+    style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: `${G.sm}px ${G.base}px` },
     children: [
       staleNotice(t, error, refresh),
       jsx(Tabs, {
@@ -3087,7 +3104,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
         role: 'tabpanel',
         id: 'pa-mem-panel',
         'aria-labelledby': `pa-mem-${target}`,
-        className: store.entries.length ? 'pa-notes' : undefined,
+        className: store.entries.length ? 'pa-notes pa-view' : 'pa-view',
         children: store.entries.map((entry, i) => jsxs('div', {
           className: 'pa-note-row',
           children: [
@@ -3125,7 +3142,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
                     jsx('span', { className: 'pa-note-gap' }, 'gap'),
                     jsx(Button, {
                       variant: 'text',
-                      size: 'xs',
+                      size: 'inline',
                       onClick: () => setConfirming({ target, i, text: entry }),
                       children: t('pa.memory.delete')
                     }, 'arm')
@@ -3133,7 +3150,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
                 }, 'idle')
           ]
         }, i))
-      }, 'notes'),
+      }, `notes-${target}`),
       jsx('div', {
         style: { fontSize: FS.meta, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
         children: t(store.entries.length ? 'pa.memory.readonly' : 'pa.memory.readonlyEmpty')
@@ -3254,7 +3271,7 @@ function Pane() {
         'aria-labelledby': `pa-view-${view}`,
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
         children: jsx('div', {
-          className: 'pa-wrapw',
+          className: 'pa-wrapw pa-view',
           children: view === 'memory'
             ? jsx(MemoryView, {
               data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane
@@ -3264,7 +3281,7 @@ function Pane() {
                 data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
               }, 'history')
               : jsx(NeedsYou, { data, error, refresh, onChanged: refreshPane, hist }, 'pending')
-        }, 'wrap')
+        }, `view-${view}`)
       }, 'body'),
 
       jsx('div', {

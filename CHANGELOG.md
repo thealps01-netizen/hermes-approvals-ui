@@ -108,6 +108,13 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
   thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
 
+* **Everything lines up.** Every tab starts on the same left edge as the title; the two gauge cards
+  are the same width; Up next and Just done are one framed list each with equal row padding; Activity
+  day headings ("Yesterday") sit inside the list with room from its border instead of touching it;
+  "Clear all" is on the same row as the Activity heading; Undo, Restore and "Later" line up with the
+  text around them instead of being pushed in by button padding.
+* **Switching tabs fades the new tab in** (switching Memory/Profile too), instead of an instant swap.
+  It is off when the system asks for reduced motion.
 * **The page looks like the rest of Hermes.** Cards, rows and gauges no longer carry the blue/lilac
   accent tint; surfaces are plain with thin lines, and the accent stays on the main button and the
   selected tab. Warnings keep their coloured edge on a neutral ground. Item numbers are outlined tags.

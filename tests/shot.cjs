@@ -323,6 +323,48 @@ const MEASURE = `(() => {
       c.scrollWidth > c.clientWidth + 1)
       .map(c => ({ text: txt(c).slice(0, 60), w: c.clientWidth, scrollW: c.scrollWidth,
         entry: c.getAttribute('data-entry') })),
+    // Designer's-eye geometry the overflow keys never see: the page's left edge (headline, the
+    // first card or list of every tab) is one line; side-by-side cards of one kind are one width;
+    // text inside a framed list keeps off the frame; row actions end on one right edge.
+    alignment: qa('.pa-frame').flatMap((f, i) => {
+      const out = []
+      const frame = i + 1
+      const head = f.querySelector('.pa-headline')
+      const x = head ? box(head).left : null
+      for (const el of f.querySelectorAll('.pa-stage-main, .pa-activity-list, .pa-activity-head, .pa-mem-rings, .pa-bulk')) {
+        if (x !== null && Math.abs(box(el).left - x) > 1) {
+          out.push({ frame, what: 'left edge', el: el.className, off: Math.round(box(el).left - x) })
+        }
+      }
+      for (const row of f.querySelectorAll('.pa-gauges, .pa-mem-rings')) {
+        const kids = [...row.children].map(box).filter(b => b.width > 0)
+        const tops = new Set(kids.map(b => Math.round(b.top)))
+        if (tops.size === 1 && kids.length > 1) {
+          const ws = kids.map(b => Math.round(b.width))
+          if (Math.max(...ws) - Math.min(...ws) > 1) out.push({ frame, what: 'unequal cards', el: row.className, ws })
+        }
+      }
+      for (const list of f.querySelectorAll('.pa-activity-list, .pa-side-list, .pa-notes')) {
+        const edge = box(list)
+        const walker = document.createTreeWalker(list, NodeFilter.SHOW_TEXT)
+        let n
+        while ((n = walker.nextNode())) {
+          if (!n.textContent.trim()) continue
+          const r = document.createRange()
+          r.selectNodeContents(n)
+          const b = r.getBoundingClientRect()
+          if (b.width < 1) continue
+          const gap = Math.min(b.left - edge.left, edge.right - b.right)
+          if (gap < 8) out.push({ frame, what: 'text on the frame', el: list.className, text: n.textContent.trim().slice(0, 40), gap: Math.round(gap) })
+        }
+        const ends = [...list.querySelectorAll(':scope > * > .pa-act-line > :last-child')]
+          .map(e => Math.round(box(e).right))
+        if (ends.length > 1 && Math.max(...ends) - Math.min(...ends) > 1) {
+          out.push({ frame, what: 'ragged row actions', el: list.className, ends })
+        }
+      }
+      return out
+    }),
     spillOutOfCard: qa('.pa-frame-wrap .pa-card').flatMap(c => {
       const edge = box(c)
       return [...c.querySelectorAll('*')].filter(el => {
@@ -455,6 +497,7 @@ app.whenReady().then(async () => {
       bad.push(`spillOutOfCard=${m.spillOutOfCard.length}: ${named.join(' · ')} (text drawn past the card edge)`)
     }
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
+    if (m.alignment.length) bad.push(`alignment=${m.alignment.length} ${JSON.stringify(m.alignment.slice(0, 3))}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
     if (m.nativeSelects > 0) bad.push(`nativeSelects=${m.nativeSelects}`)
     if (m.languagePickers + m.languageButtons > 0) bad.push(`languagePickers=${m.languagePickers} languageButtons=${m.languageButtons}`)
@@ -499,7 +542,7 @@ app.whenReady().then(async () => {
     const hostNote = `host kit: ${m.contrast.host.failures} below AA`
       + (m.contrast.host.failures ? ` (${m.contrast.host.nodes.slice(0, 3).map(n => `${n.owner.replace('kit:', '')} "${n.text}" ${n.ratio}:1`).join(' · ')})` : '')
       + ` · ${m.toneText.host.count} tone-as-text (the panel must not restyle kit internals)`
-    console.log(`gate OK: frames ${m.frameCount} · overflow 0 · clipped 0 · hidden warnings 0 · layers ` + m.layers.length + '/' + m.layers.length
+    console.log(`gate OK: frames ${m.frameCount} · overflow 0 · clipped 0 · alignment 0 · hidden warnings 0 · layers ` + m.layers.length + '/' + m.layers.length
       + ' at declared px · nativeTitles 0 · nativeSelects 0 · languagePickers 0 · rawKeys 0 · '
       + `kit buttons ${m.kit.buttons} (destructive ${m.kit.destructive}) · cards ${m.cards} · tabs ${m.tabs}`
       + ` · panel contrast ${m.contrast.panelNodes} nodes measured, lowest ${m.contrast.lowest}:1 `

@@ -213,7 +213,7 @@ const HISTORY = { entries: [
   { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', summary: "batch(3 ops: create, patch, delete) on hermes-desktop-plugin-dev", files: [], undoable: false, restorable: true },
   { id: 'ee55ff66', ts: NOW - 5400, kind: 'rejected', subsystem: 'memory', summary: 'MEMORY.md: a note about the old calendar schedule', files: [], undoable: false, restored: '9a8b7c6d' },
   { id: 'cc33dd44', ts: NOW - 7200, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane: the file was written by another bot while the record was waiting', files: [{ path: 'memories/MEMORY.md' }, { path: 'memories/USER.md' }], undoable: true },
-  { id: 'dd44ee55', ts: NOW - 9000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused: the record left the pending directory', files: [], undoable: false }
+  { id: 'dd44ee55', ts: NOW - 90000, kind: 'failed', subsystem: 'memory', summary: 'approving was attempted, Hermes refused: the record left the pending directory', files: [], undoable: false }
 ] }
 
 const MEMORY = {

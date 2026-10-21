@@ -4009,6 +4009,30 @@ REST.scan = 'ok'
   pg.hostEl.remove()
 }
 
+// --- 42) alignment: equal cards, headings off the lines, one header row, a tab-switch transition ---
+{
+  const pg = await mount('en', 'page')
+  const sheet = pg.hostEl.querySelector('style')?.textContent || ''
+  const rule = sel => sheet.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}'))?.[0] || ''
+  if (!/grid-auto-columns:minmax\(0,1fr\)/.test(rule('.pa-gauges'))) {
+    fail('alignment: the two gauge cards size to their own text, so they come out different widths')
+  }
+  if (!/padding:/.test(rule('.pa-day-heading'))) {
+    fail('alignment: the day heading inside the Activity list has no padding and touches the list border')
+  }
+  if (!/@keyframes pa-in\{/.test(sheet) || !/\.pa-view\{animation:pa-in \d+ms/.test(sheet)) {
+    fail('alignment: switching tabs swaps the content with no transition')
+  }
+  if (!pg.hostEl.querySelector('.pa-view')) fail('alignment: the tab content is not wrapped in the transition class')
+  await click(tab(pg.hostEl, /Activity/), 60)
+  const head = pg.hostEl.querySelector('.pa-activity-head')
+  if (!head || !buttons(head, /^Clear all/).length) {
+    fail('alignment: "Clear all" sits on its own row under the Activity heading')
+  }
+  pg.root.unmount()
+  pg.hostEl.remove()
+}
+
 
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
