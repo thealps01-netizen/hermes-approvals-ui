@@ -487,11 +487,13 @@ add('f13', 'Needs you — select mode: 3 checkboxes, the bulk bar “2 of 3 sele
   need(/2 of 3 selected/.test(hostEl.querySelector('.pa-bulk')?.textContent || ''), 'f13: the bulk bar does not count 2')
 }))
 
-add('f14', 'Needs you — a skill group selected: result boxes, members, the stale #3 alert, Reject #n', await frame(async hostEl => {
+add('f14', 'Needs you — a skill group selected: result boxes, members, the stale #3 alert, Reject #n, a scan issue strip',
+  await frame(async hostEl => {
   const card = await pick(hostEl, `skills:${GROUP_ID}`)
   need(card?.querySelectorAll('.pa-file').length >= 3, 'f14: the group draws fewer than 3 result boxes')
   need(byText(card, /^Reject #3$/), 'f14: the stale member has no “Reject #3”')
-}, GROUPED))
+  need(hostEl.querySelector('.pa-strip .pa-alert-danger'), 'f14: the scan issue has no notice strip')
+}, { ...GROUPED, issues: ['Could not read one skill folder: skills/private-notes (permission denied).'] }))
 
 add('f15', 'Needs you — a suggested fix that deletes most of the new text: the alert with its count', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')
