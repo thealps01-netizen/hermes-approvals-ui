@@ -192,7 +192,7 @@ why they are drawn whole with their size in the label (§6).
   empty queue/history are `PanelEmpty`/`EmptyState`, the memory read is a `Loader` and a
   failed read an `ErrorState`. The kit's OWN classes are compiled (the kit components are application
   source), which is why the panel can wear them while its own layout stays in the `<style>` block.
-  The panel's `<style>` block therefore holds only its own LAYOUT: the card grid (`.pa-cols`/`.pa-cell`),
+  The panel's `<style>` block therefore holds only its own LAYOUT: the card cell (`.pa-cell`),
   the KPI strip (`.pa-kpis`), the tab strip (`.pa-tab` + `data-on`), the FLIP/leaving classes
   (`.pa-card`/`.pa-leaving`, with the `prefers-reduced-motion` escape), the red tone hook (`.pa-bad`) and
   the fixed-layer hooks (`.pa-fill`: `max-height:100%`, so the kit block's own scrollbar serves the
@@ -556,9 +556,53 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   kind) and every `.pa-pill` (id, kind, op, op count) share one `TAG` form: 20 px high, 999 px radius,
   `0 8px`, `FS.micro` / 600, sentence case. The mixed-case uppercase pill is gone. Tone stays on the
   fill.
-- **A lone last card spans the row.** Pending and Applied grids are `.pa-cols.pa-two`: 2 columns, one
-  column under 640 px (container query). A last card in an odd position spans both columns. Row
-  heights stay equal and the card still never grows.
+- **Activity is one list of rows (Needs you redesign).** The old `.pa-cols.pa-two` two-column grid
+  (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
+  `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
+  approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Text actions at a row's edge use the kit's `inline` size.** `xs`/`sm` add 8-10px of side padding,
+  so a text-only Undo, Later or Delete sat visibly inside the edge the rest of the row's text keeps.
+  `inline` drops the box padding; boxed buttons (Force undo, Cancel/Delete pairs) keep their size.
+- **The shot gate measures alignment** (`alignment` in `tests/shot.cjs`): one left edge for the
+  headline and every tab's first block, equal widths for side-by-side gauge/file cards, at least 8px
+  between list text and its frame, one right edge for row actions. The overflow/clipped keys never
+  saw these; a day heading touching the list border passed every gate before it.
+- **Side-column rows wrap, they do not ellipsize.** The shot gate rejects ellipsis-cut text (the user
+  loses it), so equal-looking rows come from one framed list with equal padding, not a fixed height.
+- **Surfaces are neutral, not `--ui-bg-secondary`.** The app's `--ui-bg-secondary/tertiary` fills mix
+  in 11% / 8% of the accent (`styles.css`, `--theme-fill-*-accent-mix`); the app itself almost never
+  paints a surface with them. `--hx-card` is transparent and `--hx-field` is 4% of the text colour, so a
+  card reads like the app's own rows in both themes.
+- **Glyphs come from the kit's icon set.** A `✓` or a colour emoji depends on the system font: the
+  preview once drew `*` for the check, and the lock emoji blurs at 16px. `icons.Check` / `icons.Lock` are
+  vectors; the text glyph stays only as a fallback when the icon set lacks them.
+- **The narrow `.pa-cmp` rule sits after the two-column rule.** Both have the same specificity, so the
+  later one wins; placed before it, the one-column rule never applied.
+- **Memory file cards are the tablist.** `Tabs` takes `listClass`/`tabClass`, so the file cards keep the
+  tablist keyboard model (arrows, Home/End) while looking like cards.
+- **Bulk decisions mark their keys in `decidedHere`.** The "front left the queue" notice treats a front
+  record as decided here only when this page decided it. Single cards do that through `held`; the bulk
+  bar never set `held`, so its decisions looked like decisions made elsewhere. The bar now adds each
+  chosen key to `decidedHere`, and the check consumes it.
+- **"Saved today" is counted from today's history entries.** The backend's `counts.applied` is all-time.
+- **Gauge rings use a `closest-side` mask.** `radial-gradient(circle, … calc(50% - 4px) …)` sizes the
+  gradient to the far corner of the box, so "50%" was about 25px on a 36px ring and the band came out
+  about 9px thick. `closest-side` makes 100% the ring's radius, so `calc(100% - 4px)` is a 4px band.
+- **The date is formatted in English on purpose.** The UI has one `en` bundle; `toLocaleDateString`
+  with the system locale printed "20 Ekim Salı" on a Turkish machine next to English text.
+- **A clean front card has no state badge.** The mockup carries "looks fine" in the dot and the ✓ rows;
+  every other state (rule failed, stale, shorten first, unreviewed, …) keeps its badge.
+- **All clear is drawn by the panel, not `PanelEmpty`.** `PanelEmpty` draws a muted codicon; the spec
+  asks for a green check, as in the mockup.
+- **Alerts uses the SDK `Switch`** (exported since v0.22.0); the core's own guidance is "a Switch, never
+  an Off/On pill".
+- **Selection is a mode (Needs you, Task 4).** With one record in front, permanent checkboxes and a
+  bulk bar were noise for the common case of deciding one thing. "Select" in the Up next head turns
+  on checkboxes (front card + Up next rows) and the unchanged BulkBar; "Done" clears the picks. A lone
+  record offers no Select. Tests enter the mode through `selectMode()` in `render_check.mjs`; block 38
+  locks the mode itself.
+- **A single description-fix record has one fix button.** Its primary "Use the short version" posts
+  `/fix`; the in-card "Shorten description" did the same, so it is drawn only for group members.
 - **Scrollbar arrows hidden** (`::-webkit-scrollbar-button`), so a thin box shows no stepper glyphs.
 - Locks: `render_check.mjs` checks the tag form on every card Badge, the whole-line arithmetic on
   every fixed `LogView`, the `.pa-lines` / fade CSS, the lone-card rule, no nested scroll other than
@@ -1204,3 +1248,132 @@ to seven with the contrast negative control.
   the only inner scroll boxes.
 - **Backend English strings (CP1).** Backend messages all come from the single `_tx` English table;
   the panel shows them as they are because the panel is English-only (one bundle) — not changed.
+
+## Task 5 — Activity and Memory speak the "Needs you" language
+
+- **`reasonFamily()`'s arrow split.** A `kind:"failed"` history entry's `summary` is written by the
+  backend as `"<record summary> → <error>"` (`dashboard/plugin_api.py`'s `_append` calls for failed
+  group/single applies both build it that way). The row's first line — `Couldn't save — <reason
+  family>` — takes whatever follows the last arrow, short()'d to a row-sized phrase, since that is
+  already the backend's own explanation of what went wrong; a synthetic/older entry with no arrow
+  falls back to its whole summary, trimmed the same way, rather than showing nothing.
+- **`historyWords()`'s Profile/memory split.** There is no backend field saying which memory file a
+  write targeted; the entry's own `files[].path` already names it (`memories/USER.md` vs
+  `memories/MEMORY.md`), so that is what decides "Saved to Profile" vs "Saved to memory" — no new
+  backend data, just reading what the entry already carries.
+- **The restored front-card fix-loss alert.** Before this task, `ReviewSection`'s heavy-fix-loss
+  alert (`pa.review.fixRemoves`, "the suggested fix deletes N of M new words") only rendered inside
+  "Show the full change" — a regression from the Task 2+3 front-card rewrite, which moved
+  `ReviewSection` behind that toggle along with everything else it carries. A safety-relevant count
+  that used to be visible without expanding anything should not need a click to see, so `FrontCard`
+  now also draws it directly (next to the effect line, always visible when the card is closed) in
+  addition to the copy inside "Show the full change" — the duplication when expanded is accepted as
+  the smaller cost against hiding it by default.
+
+## App layout — list and detail (2026-10)
+
+The page became an app: in every tab a 300 px list on the left and the selected record on the right,
+under one 48 px top bar (title, tabs, today's progress, Alerts, Refresh). The owner asked for it after
+the "newspaper" top (headline, rings, footer strip) kept pushing the record itself below the fold.
+Below is the why of every row the closed inventory (job spec R2) did not draw exactly as the mockup.
+
+**Data the backend does not have, so the panel does not invent it.**
+
+* No line numbers (F3) and no section tag such as "frontmatter" (F9): an op's `lines` are
+  `[mark, text]` pairs. The diff grid is `mark │ text`.
+* The fold row reads "Unchanged lines" with no count (F7): the backend's `'…'` row carries none.
+* "Checking…" without "2 of 4" (L7), and the four check steps all drawn pending (C3): a review
+  exposes no per-check progress. The one spinner is the verdict seal's.
+* "Why Hermes wants this" is the backend's origin + summary sentence (F8), not an evidence sentence;
+  the skill effect sentence (F11) sits under it in the same style.
+* The fix note gives counts only (X4): what the fix keeps in prose is not in the data.
+* Activity entries carry no written text (A11): the detail shows the plain summary instead.
+
+**Rules that outrank the mockup.**
+
+* Full labels on a narrow pane (N4): long text is ellipsised or wrapped, never swapped for a shorter
+  variant. The narrow footer may take a second row, but only for Later and Review again: the decision
+  buttons stay on one row with the primary at its right end (rework 2 item 4).
+* "Use the short version" stays the label of a description fix (X6): `/fix` stages the shortened
+  text and does not approve it.
+* The note delete reads "About to delete — undoable from the Activity tab", not the mockup's "It
+  cannot be undone" (M6): `/memory/delete` records a snapshot, so the delete is undoable and the
+  mockup sentence would be false.
+* No drop shadow on the active tab (T2) and no glow on the primary (B5): the shadow has no theme
+  source, and the glow is inside a kit Button the panel may not restyle.
+
+**Moved, not lost.**
+
+* Alerts went into the bar (T6, K15) because the global footer that held it is gone (K22); the
+  footer's promise is the Memory list footer (M3) and the All caught up line (E3).
+* "Updated 12:03" is in the Refresh Tip (K23). The day is the progress (T4), the count the badge (T3).
+* The rings became the Memory file rows with meters (M2, M8) and the "Memory after saving" meter (B2).
+* Up next and Just done became the list rows, the in-row "Saved … Undo" row (L11), the All caught up
+  Last line (E5) and Activity (K24). Group changes, the as-staged comparison and the Force undo
+  alert live in the Activity detail body (A12-A14).
+* The full review is behind one "Show the full review" toggle (K9): the diff is always shown.
+* The position dots and "2 of 3" are dropped in the wide layout (K19, C5): the list shows the
+  position. The narrow Back bar reads "‹ 3 waiting · 1 of 3" (N2).
+* The narrow bar has no "4 of 4 checks fine" line (N5): the verdict card is drawn in narrow too. The
+  mini memory gauge (N3) came back with rework 2: the bar carries the Memory and Profile meters on
+  every tab, and at 480 px and below only their percents.
+* "Nothing waiting · Open Activity" (E6) gave way to the approved All caught up screen; the last
+  change and read-only sentences of the Memory tab (M7) were not in the approved design.
+
+**The keyboard guard.** J/K move, A approves, X rejects, L puts the record last — only on the
+Needs you split; never while focus is in a text field (an input other than a checkbox, radio or
+button, a textarea, a select or an editable region), never with Ctrl, Alt or Meta, never while a
+two-step warning or the armed bulk footer is open, and A/X do not repeat when the key is held. A on a
+held record warns once and sends nothing: a key must not be a quieter way past the gate than the
+button.
+
+**Narrow mode.** Under 760 px of PANE width (`@container`, never `@media`, which measures the window)
+the split shows one column: the list, or the detail with its 36 px Back bar. The tabs get their own
+row.
+
+**The measured gate.** A hidden Electron window runs no animation frames, so an entrance animation
+stays at its first frame (4 px down, transparent) and the frames read 4 px too tall and dim. The gate
+sets the panel's own `data-still` before measuring. A list row's one-line ellipsis is not counted as
+a clip: the row points at the record, whose full text is the detail's title.
+
+**Rework 2 (the owner's review of round 2).**
+
+* Select mode follows `select-mode.html`: the row's 28 px tile becomes its checkbox (the same place,
+  so the row does not shift), the list header is the one count ("2 selected · Select all · Cancel"),
+  and the detail pane is the selection: one bordered row per record, the "Memory after approving"
+  meter when every ticked record writes to the same memory file, and "Reject N" / "Approve N" in the
+  footer. Clicking a row while selecting opens that record to read it (the ticks stay); a new tick
+  returns to the summary. The bar inside the list is gone because it duplicated the header's count.
+* Warning tone (`WARN`, `--ui-yellow`) means "you can still approve, read this first": "Needs one
+  edit", "Not reviewed", a fixable chip, the 90 % memory meter, the confirm warning. Red stays for a
+  stop (a rule check, a held record, a delete). A Reject or "Apply unreviewed" is outline: it is a
+  decision, not a danger; only a skill delete keeps the destructive Reject.
+* A failed review says one sentence ("The check failed — “Review again” retries it.") rather than
+  "Not checked yet — the second opinion failed", which read as two states.
+* The armed footer is one row: the warning sentence, Cancel, the confirm. Later and Review again are
+  hidden while armed, because they are not answers to the question asked.
+* The footer keeps its decision buttons on one row with the primary at the right end at every pane
+  width; Later / Review again take the second row. The shot gate measures it (`footSplit`).
+* Section headings are the panel's own sentence-case `.pa-section`; the kit `PanelSectionLabel` is
+  uppercase and tracked, which the owner read as shouting.
+* The bar carries the two memory meters on every tab (decision 2); the Activity bar no longer counts
+  "N saved · N failed", which disagreed with the list header's count.
+* With nothing waiting the "All caught up" screen fills the body: an empty list column with a
+  "Waiting · 0" header and key legend was a list of nothing.
+* The narrow Memory tab is one scroll (files, then the selected file's notes): two rows do not need a
+  list→detail step.
+* At 560 px and below the crumb time moves under the title, so the crumb keeps its path.
+* Narrow select mode shows the list with the bulk footer under it (the summary rows are the ticked
+  list rows); the footer's card must not take `flex:1 1 0` there, or it collapses to 0 px and the
+  footer is pushed out of the pane (the shot gate's `clipped` caught it at 640 and 420).
+* Arming a note delete scrolls its confirm row into view: in the one-scroll narrow Memory tab the
+  last note's row sits at the fold. `preview.mjs` records the panel's `scrollIntoView` calls on the
+  element (`data-shot-reveal`) and `shot.cjs` replays them, since a static frame keeps no scroll.
+* The bar steps down in two stages: below 760 px the day dots and the meter bars go, below 480 px the
+  day count goes. The meter names stay at every width: "99% 84%" alone does not say which file is
+  full. Round 3 shipped "Approvals" painted across "Today" at 640 px; no gate measured text drawn over
+  text, so `shot.cjs` now does (`alignment`: `text over text`, every visible text box of a frame cut to
+  its clipping ancestors).
+* The primary decision button ends its row: for a heavy fix "Approve as written" is the primary and
+  "Approve with the fix" (outline) comes before it. A failed review's chip carries the warning glyph;
+  "…" means "still waiting" and only queued or unassigned reviews wear it.

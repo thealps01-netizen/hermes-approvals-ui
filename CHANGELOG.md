@@ -5,6 +5,192 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## Unreleased
+
+The page is being redesigned to "Needs you". Nothing is released yet.
+
+### Changed
+
+* **Selecting several records works like the design.** After "Select" each record's icon turns into
+  its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
+  you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all
+  write to one memory file). Space ticks the focused row and Esc leaves.
+
+* **"Needs one edit" and "Not reviewed" are a warning (amber), not an alarm (red).** Red now means
+  only "stop": a broken rule, a record that cannot be applied, a delete. Reject and "Apply unreviewed"
+  are plain outline buttons. A failed review says "The check failed — “Review again” retries it.",
+  and "Approve without review" asks in one row: the warning, Cancel, then "Apply unreviewed".
+
+* **The top bar shows how full Memory and Profile are on every tab.** The Activity bar no longer
+  shows its own "saved · failed" count, which disagreed with the list's count.
+
+* **Smaller fixes from the owner's review.** With nothing waiting the "All caught up" screen fills the
+  page (no empty list). On a narrow pane the Memory tab is one scroll, the decision buttons stay on one
+  row with the main one at the right, the time moves under the title, and arming a note delete scrolls
+  its confirmation into view. Headings are in sentence
+  case, path parts are separated by "›", "No file changes" is plain text and failing checks are no
+  longer underlined like links.
+
+* **The top bar no longer draws text over text on a narrow pane.** At 640 px "Approvals" ran into
+  "Today" and the day count into "Memory"; at 420 px the meters were two bare percents. Now the small
+  bars and day dots step aside below 760 px, the day count steps aside below 480 px, and the meters
+  always keep their names ("Memory 99%", "Profile 84%").
+
+* **A heavy fix keeps the main button at the right end.** When the suggested fix would delete most of
+  the new text, "Approve as written" is the main button and now sits last, after "Approve with the fix".
+  A failed review's line starts with the warning mark instead of a waiting "…".
+
+* **The page is now an app: a list on the left and the record on the right, in all three tabs.**
+  "Needs you" lists what is waiting and opens the selected record beside it; its verdict comes first
+  ("Safe to save", "Needs one edit", "Checking…"), then the change, then the decision with its effect
+  ("Memory after saving 95% → 97%"). The keys J and K move through the list, A approves, X rejects and
+  L puts a record last. The top bar shows today's progress ("5 of 10 decided"). A decided record turns
+  into a "Saved … Undo" (or "Not saved … Restore") row in the list. A record the reviewer can fix
+  shows the change "With the fix" or "As written" with one click. Activity and Memory use the same
+  list and detail. The headline, the memory rings and the footer strip are gone.
+
+* **The top of the page now leads with a headline, not four boxes.** Where the panel used to show
+  four separate "Pending / Applied / Failed / Undoable" count boxes, it now opens with today's date,
+  a plain-language headline ("3 things need you", "1 thing needs you", or "You're all caught up"),
+  and a one-line word count of what is waiting (e.g. "1 memory · 2 skills · 1 needs a fix"). Two ring
+  gauges to the right show how full `MEMORY.md` and `USER.md` are, by percent and by chars/limit. The
+  "Pending" and "History" tabs are renamed "Needs you" (with a count badge) and "Activity". The
+  footer's old hint text is replaced by the safety promise, "Nothing is written to your memory or
+  skills without you."
+
+* **The two ring gauges' hole is cut out, not painted.** It used to be a flat circle the same colour
+  as the card background, so the gauge looked wrong on any other background. Now the hole is a real
+  mask over the ring, so it stays transparent wherever the gauge sits.
+
+* **The gauge ring is thin, and the percent no longer runs over it.** The ring band is now about
+  4 px wide (it measured correctly but the percent text sat right at its inner edge with no room),
+  and the percent text is a smaller size with a clear margin inside the hole, in both themes.
+
+* **The waiting list is now one card at a time, with the rest in an "Up next" sidebar.** Where
+  "Needs you" used to show every pending record as its own card in a grid, it now shows one full
+  card up front and lists the others by type and title in a compact sidebar list; clicking an
+  item there brings it to the front. The sidebar also carries a "Just done" section and the
+  panel's all-clear state ("All clear" / "Nothing is waiting. Hermes will ask here before it
+  writes again."). Bulk selection still works from the sidebar: each Up-next row carries its own
+  checkbox alongside the front card's, so "Select all" and group Approve/Reject still act on every
+  waiting record, not just the one on screen.
+
+* **Later moved into the card's own action row, the faint second-card edge no longer doubles the
+  card's own corner radius, and the Up-next dots now carry the record's own state colour** (the
+  same colour the state text already uses — red for "needs a fix", grey while a review is still
+  running, the kit's warn/success colours otherwise) instead of a flat grey that meant nothing.
+
+* **Up next and Just done titles no longer get cut off mid-word.** They used to be a single
+  truncated line with a trailing ellipsis; now they wrap onto as many lines as the title needs,
+  so a long skill name or memory note is never hidden.
+
+* **The front card now opens with a plain-language question, not a jargon field list.** A new
+  record leads with what it actually asks ("Hermes wants to add a new skill: x", "Hermes wants to
+  remember something new") and a one-line statement of effect, before the Change/Result detail
+  (now behind a "Show the full change" / "Hide the full change" toggle, replacing "Details and
+  changes" / "Hide details"). The primary and decline buttons now say what they do in the record's
+  own words — "Save skill", "Save changes", "Delete skill", "Save to memory" and "Don't save" —
+  instead of the bare, undifferentiated "Approve" / "Reject". A record with a rule-check pass/fail
+  shows each check as its own line instead of one pass/fail line for the whole record.
+
+* **A record that only needs its description shortened is no longer stuck behind a held, disabled
+  Approve.** Its primary button now reads "Use the short version" and does the shortening fix
+  directly (still today's `/fix` call); the pre-review summary, its findings, "Review again" and
+  the group's member list now live inside "Show the full change" instead of always showing, so the
+  front card stays short for every record kind. Pressing Esc while the full change is open closes
+  it and returns focus to the toggle that opened it. Expanding a check row's finding now also shows
+  its suggested edit, where one exists, matching what the pre-review box always offered.
+
+* **"Don't save" is no longer drawn in destructive red.** Only deleting a skill (its own two-step
+  confirm) still uses the red button; declining a memory add, a skill add/update or a description
+  fix now uses the same quiet outline style as every other non-destructive secondary action. The
+  struck-through "before" line under a shortened description, and the "Second opinion by ..." meta
+  line under the checks, no longer sit below the AA contrast floor in light mode.
+
+* **Activity rows now say what happened, in words, and group by day.** A row used to read "Approved
+  and applied" / "Rejected" / "Approve failed" regardless of what kind of record it was; it now reads
+  "Saved to Profile", "Saved to memory", "Saved skill", "Not saved" or "Couldn't save — <reason>"
+  (the backend's own error, shortened to a row-sized phrase). Above the list, a header reads today's
+  totals in words — "Today · 3 saved · 1 not saved · 1 failed" — leaving out any count that is zero,
+  and the all-time applied/failed/still-undoable counts (what used to be the standalone KPI boxes)
+  are kept as a line under it. Entries from an earlier day now sit under their own "Yesterday" or
+  weekday/date heading instead of one unbroken list.
+
+* **The Memory tab leads with the two files' own fill state, not a buried number.** A big ring per
+  file (`MEMORY.md`, `USER.md`) now sits above the per-file notes list, each reading "<file> has
+  room / is nearly full / is full · N notes · chars / limit characters" — the same fill rule the top
+  gauges already use, just said in words and with the note count. The near-full warning banner's body
+  is now a fixed sentence ("A new note fits only if an older one is shortened or merged. Hermes can
+  propose which.") instead of repeating the percent a second time right next to the ring that already
+  shows it.
+
+* **The front card's heavy-fix-loss warning is visible without opening "Show the full change"
+  again.** A suggested fix that would delete most of a skill's or memory's new text used to only
+  show its "deletes N of M new words" alert inside the expanded change view, a regression from the
+  front-card rewrite above; it is now also drawn directly on the closed front card, next to the
+  effect line.
+
+* **A failed record's Activity badge no longer runs off the card.** It used to carry the whole
+  reason ("Couldn't save — approving was attempted, Hermes refused: …"), which could push the row
+  wider than the card and squeeze the timestamp to one letter per line. The badge now says only
+  "Couldn't save"; the reason stays on its own line in the card body, where it already was. Eight
+  more strings that still told the user to check the "History" tab (the tab has been "Activity"
+  since this redesign started) now say "Activity" too.
+
+* **Activity is one list of short rows, as in the approved mockup.** Each row puts what happened
+  ("Saved to Profile", "Couldn't save"), the record number, the time and Undo / Why / Restore on one
+  line, with the summary and the changed files under it. The two-column grid of tall cards with an
+  "Affected files" box is gone; details still open inside the row.
+
+* **A record whose skill description is too long has one button for the fix, not two.** It showed
+  "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
+  thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
+
+* **Everything lines up.** Every tab starts on the same left edge as the title; the two gauge cards
+  are the same width; Up next and Just done are one framed list each with equal row padding; Activity
+  day headings ("Yesterday") sit inside the list with room from its border instead of touching it;
+  "Clear all" is on the same row as the Activity heading; Undo, Restore and "Later" line up with the
+  text around them instead of being pushed in by button padding.
+* **Switching tabs fades the new tab in** (switching Memory/Profile too), instead of an instant swap.
+  It is off when the system asks for reduced motion.
+* **The page looks like the rest of Hermes.** Cards, rows and gauges no longer carry the blue/lilac
+  accent tint; surfaces are plain with thin lines, and the accent stays on the main button and the
+  selected tab. Warnings keep their coloured edge on a neutral ground. Item numbers are outlined tags.
+  The page stops at a readable width on wide windows; below about 760px the side column moves under the
+  card and the two gauges sit side by side. "Updated" and refresh sit on the tab bar. The All clear check
+  and the footer lock are drawn as icons (no font glyph or colour emoji), and the percent inside the
+  rings is larger.
+* **Memory tab is simpler.** The two file cards are the file switch (no second row of tabs); each says
+  once how full it is. Notes are rows in one list in normal text size, with a quiet Delete; the two-step
+  delete asks on the same row with small buttons. The header gauges are hidden on this tab.
+
+* **Fixes found in review.** "N saved today" counts today's saves, not every save ever. Deciding the
+  front record from the bulk bar no longer says it was "decided elsewhere". "Just done" says "Undone" or
+  "Back in Needs you" for entries taken back. A note that makes memory smaller reads "Frees N
+  characters". The "needs a fix" count includes records that need shortening ("2 need a fix"). Selection
+  mode ends when only one record is left, instead of coming back by itself later. "Just done" is hidden
+  when there is no history yet.
+
+* **The page matches the approved mockup more closely.** The date is in English ("Tuesday, 20
+  October"). The two gauges are thin rings. The front card sits on the plain card surface, with the
+  second card peeking out underneath; a clean record shows no "Looks fine" badge (the dot and the ✓
+  checks say it). "Show the full change" sits above the action bar; the bar has a rule above it, with
+  "Later" on the left and "Don't save" and the main button on the right. "Just done" rows lead with
+  what happened ("Saved to memory", "Not saved"), then the summary and time. Activity rows lead with the
+  same words in plain text, with the summary, time and record number under them and Undo / Restore as
+  a quiet text button. "All clear" shows a green check. The Alerts control in the footer is the app's
+  own on/off switch. Texts that pointed to a "Pending" tab now say "Needs you".
+
+* **Selecting several records starts with "Select".** Checkboxes and the bulk bar no longer sit on
+  the page all the time. "Select" at the top of "Up next" adds a checkbox to the front card and to
+  each waiting row and shows the bulk bar, with its confirmation step unchanged; "Done" clears the
+  selection and hides them again.
+
+* **An Activity row's summary is plain text,** not a small box inside the row, as in the mockup.
+
+* **A problem line under "Checked for you" starts at the left** like the ✓ lines, instead of sitting
+  in the middle of the card.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

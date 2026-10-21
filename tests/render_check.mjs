@@ -130,6 +130,11 @@ export const haptic = () => {}
 export const relativeTime = () => '2 hours ago'
 
 // The kit's icon namespace: every glyph is an <svg>, exactly like the app's own set.
+const glyph = (name, paths) => ({ size = 24 }) => jsx('svg', {
+  'data-icon': name, viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor',
+  strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+  children: paths.map((d, i) => jsx('path', { d }, i))
+})
 export const icons = {
   RefreshCw: () => jsx('svg', {
     'data-icon': 'refresh', viewBox: '0 0 24 24', width: 14, height: 14, fill: 'none', stroke: 'currentColor',
@@ -140,7 +145,29 @@ export const icons = {
       jsx('path', { d: 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16' }, 'c'),
       jsx('path', { d: 'M8 16H3v5' }, 'd')
     ]
-  })
+  }),
+  Check: ({ size = 24 }) => jsx('svg', {
+    'data-icon': 'check', viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor',
+    strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    children: jsx('path', { d: 'M20 6 9 17l-5-5' }, 'a')
+  }),
+  Lock: () => jsx('svg', {
+    'data-icon': 'lock', viewBox: '0 0 24 24', width: 13, height: 13, fill: 'none', stroke: 'currentColor',
+    strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    children: [
+      jsx('rect', { x: 3, y: 11, width: 18, height: 11, rx: 2 }, 'a'),
+      jsx('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' }, 'b')
+    ]
+  }),
+  AlertCircle: glyph('alert-circle', ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 8v4', 'M12 16h.01']),
+  ChevronLeft: glyph('chevron-left', ['M15 6l-6 6l6 6']),
+  Book: glyph('book', ['M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6v13',
+    'M12 6v13', 'M21 6v13']),
+  Users: glyph('users', ['M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2',
+    'M16 3.13a4 4 0 0 1 0 7.75', 'M21 21v-2a4 4 0 0 0 -3 -3.85']),
+  Brain: glyph('brain', ['M15.5 13a3.5 3.5 0 0 0 -3.5 3.5v1a3.5 3.5 0 0 0 7 0v-1.8',
+    'M8.5 13a3.5 3.5 0 0 1 3.5 3.5v1a3.5 3.5 0 0 1 -7 0v-1.8', 'M17.5 16a3.5 3.5 0 0 0 0 -7h-.5',
+    'M19 9.3v-2.8a3.5 3.5 0 0 0 -7 0', 'M6.5 16a3.5 3.5 0 0 1 0 -7h.5', 'M5 9.3v-2.8a3.5 3.5 0 0 1 7 0v10'])
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -323,6 +350,33 @@ export function PanelEmpty({ title, description, icon = 'inbox', action, classNa
       description ? jsx('p', { style: { margin: 0, fontSize: 11, color: UI.tertiary }, children: description }, 'desc') : null,
       action ? jsx('span', { children: action }, 'action') : null
     ]
+  })
+}
+
+export function Switch({ checked, onCheckedChange, size = 'default', className, ...rest }) {
+  const on = Boolean(checked)
+  return jsx('button', {
+    ...rest,
+    type: 'button',
+    role: 'switch',
+    'aria-checked': on,
+    'data-slot': 'switch',
+    'data-state': on ? 'checked' : 'unchecked',
+    'data-size': size,
+    className,
+    onClick: () => onCheckedChange?.(!on),
+    style: {
+      position: 'relative', width: size === 'xs' ? 28 : 36, height: size === 'xs' ? 16 : 20, padding: 0, flex: 'none',
+      borderRadius: 999, border: '1px solid ' + UI.stroke, cursor: 'pointer',
+      background: on ? UI.accent : UI.tint(UI.primary, 10)
+    },
+    children: jsx('span', {
+      'data-slot': 'switch-thumb',
+      style: {
+        position: 'absolute', top: 1, left: on ? (size === 'xs' ? 13 : 17) : 1, width: size === 'xs' ? 12 : 16,
+        height: size === 'xs' ? 12 : 16, borderRadius: '50%', background: on ? UI.ink : UI.primary
+      }
+    }, 'thumb')
   })
 }
 
@@ -679,6 +733,13 @@ const decided = body => [...decidedGroups(body), ...body.ids.map(id => {
   return { id, ok: true, message: '1 operation(s) applied.' }
 })]
 let version = 0
+// Every mount's roots, so a check that counts posts across the whole stub can stop the ones earlier
+// blocks left running: a forgotten chip still polls /count and posts /reviews when the shared count changes.
+const LIVE_ROOTS = []
+async function stopLeftMounts() {
+  for (const r of LIVE_ROOTS.splice(0)) await act(async () => { r.unmount() })
+  await act(async () => { await new Promise(r => setTimeout(r, 100)) })
+}
 async function mount(appLocale, parts = 'both') {
   stub.state.appLocale = appLocale
   REST.lateDecided = false
@@ -823,6 +884,7 @@ async function mount(appLocale, parts = 'both') {
   const hostEl = document.createElement('div')
   document.body.appendChild(hostEl)
   const root = createRoot(hostEl)
+  LIVE_ROOTS.push(root)
   if (parts !== 'chip') {
     await act(async () => { root.render(React.createElement(pageReg.render)) })
     await act(async () => { await new Promise(r => setTimeout(r, 60)) })
@@ -831,22 +893,25 @@ async function mount(appLocale, parts = 'both') {
   const chipEl = document.createElement('div')
   document.body.appendChild(chipEl)
   const chipRoot = createRoot(chipEl)
+  LIVE_ROOTS.push(chipRoot)
   if (parts !== 'page') {
     await act(async () => { chipRoot.render(React.createElement(chipReg.render)) })
     await act(async () => { await new Promise(r => setTimeout(r, 40)) })
   }
 
   // A removed mount must stop polling: a leaked poller reads /pending into the shared GETS log and
-  // made the burst count flaky on slow runners.
+  // made the burst count flaky on slow runners. Both paths call the ONE real unmount: the remove path
+  // used to set `gone` and then call the guarded unmount, which saw `gone` and did nothing.
   for (const [el, r] of [[hostEl, root], [chipEl, chipRoot]]) {
     const drop = el.remove.bind(el)
+    const unmount = r.unmount.bind(r)
     let gone = false
+    const stop = () => { if (!gone) { gone = true; act(() => { unmount() }) } }
     el.remove = () => {
-      if (!gone) { gone = true; r.unmount() }
+      stop()
       drop()
     }
-    const unmount = r.unmount.bind(r)
-    r.unmount = () => { if (!gone) { gone = true; unmount() } }
+    r.unmount = stop
   }
 
   const text = hostEl.innerHTML
@@ -861,19 +926,62 @@ async function mount(appLocale, parts = 'both') {
 // registry `ctx.i18n.register` filled, exactly like the application does.
 
 const click = async (el, wait = 40) => {
+  if (!el) return
   await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
-const buttons = (hostEl, re) => [...hostEl.querySelectorAll('button')].filter(b => re.test(b.textContent || ''))
+// A button's visible name without its aria-hidden key hint (`<span class="pa-kbd">A</span>` rides inside it).
+const name = b => (b ? [...b.childNodes].filter(n => !n.classList?.contains('pa-kbd')).map(n => n.textContent)
+  .join('') : undefined)
+const buttons = (hostEl, re) => [...(hostEl?.querySelectorAll('button') || [])].filter(b => re.test(name(b) || ''))
+const selectMode = async hostEl => {
+  const on = buttons(hostEl, /^Select$/)[0]
+  if (on) await click(on, 20)
+}
+const primaryBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
+  .find(b => b.getAttribute('data-variant') === 'default')
+const declineBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
+  .find(b => b.classList.contains('pa-decline'))
 const byText = (hostEl, text) => [...hostEl.querySelectorAll('div')].find(d => d.textContent === text)
 const tab = (hostEl, re) => [...hostEl.querySelectorAll('.pa-tab')].find(b => re.test(b.textContent || ''))
 const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
+// The split layout: every waiting record is a `.pa-row[data-key]` button in the list; the selected one
+// is drawn in the detail column (`.pa-detail.pa-cell[data-key]`). Selecting = clicking its row.
+const rowOf = (hostEl, key) => hostEl.querySelector(`.pa-row[data-key="${key}"]`)
+const toFront = async (hostEl, key) => {
+  if (hostEl.querySelector(`.pa-detail[data-key="${key}"] .pa-card`)) return
+  const row = rowOf(hostEl, key)
+  if (!row) fail(`"${key}" is not a row of the Needs you list`)
+  await click(row)
+}
+const frontCell = hostEl => hostEl.querySelector('.pa-detail')
+const reachableKeys = hostEl => new Set([...hostEl.querySelectorAll('.pa-row[data-key]')]
+  .map(c => c.getAttribute('data-key')))
+const keyDown = async (el, key, extra = {}) => {
+  if (!el) return null
+  const ev = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra })
+  await act(async () => { el.dispatchEvent(ev) })
+  await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+  return ev
+}
+const liveText = hostEl => hostEl.innerHTML
+  .replace(/<style[\s\S]*?<\/style>/g, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
 
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
-must(en.text, ['Approvals', 'Pending', 'History', 'Memory', 'Reject', 'Approve', 'Approve failed', 'Shorten first',
-  'Looks fine', 'New skill', 'Details and changes', 'MEMORY.md', 'USER.md'], 'en')
-noRawKeys(en.text, 'en')
+let sweepText = liveText(en.hostEl)
+for (const key of ['skills:def67890', 'skills:aaa11111']) {
+  await toFront(en.hostEl, key)
+  sweepText += ' ' + liveText(en.hostEl)
+}
+await toFront(en.hostEl, 'memory:abc12345')
+must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Approve failed',
+  'Needs one edit', 'Safe to save', 'new-skill', 'Save skill', 'Show the full review', 'MEMORY.md', 'Waiting · 3',
+  'move', 'approve', 'reject'], 'en')
+noRawKeys(sweepText, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
 if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, got ${locales}`)
@@ -881,8 +989,10 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
-must(other.text, ['Approvals', 'Pending', 'Approve failed', 'New skill'], 'app locale tr')
-noRawKeys(other.text, 'app locale tr')
+await toFront(other.hostEl, 'skills:aaa11111')
+const otherSwept = liveText(other.hostEl)
+must(otherSwept, ['Needs you', 'Save skill', 'new-skill'], 'app locale tr')
+noRawKeys(otherSwept, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
 for (const mounted of [en, other]) {
@@ -910,7 +1020,7 @@ for (const mounted of [en, other]) {
       selected[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!now || !/History/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
+    if (!now || !/Activity/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
     if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
     const panel = en.hostEl.querySelector('[role="tabpanel"]')
     if (!panel || panel.getAttribute('aria-labelledby') !== now?.id) fail('the tab panel is not labelled by its tab')
@@ -921,6 +1031,18 @@ for (const mounted of [en, other]) {
   }
   const glyph = [...en.hostEl.querySelectorAll('button')].filter(b => /[✓✕]/.test(b.textContent || ''))
   if (glyph.length) fail(`a glyph is part of a button name: ${glyph.map(b => b.textContent).join(', ')}`)
+}
+
+// --- 2c) tabs-renamed: "Needs you" (badge 3), "Activity", "Memory" ------------------------------
+{
+  const tabs = [...en.hostEl.querySelectorAll('[role="tab"]')]
+  const texts = tabs.map(b => (b.textContent || '').trim())
+  if (texts.length !== 3 || !/^Needs you3$/.test(texts[0]) || texts[1] !== 'Activity' || texts[2] !== 'Memory') {
+    fail(`tab labels are not renamed: ${JSON.stringify(texts)}`)
+  }
+  const badge = slot(tabs[0], 'badge')
+  if (!badge || badge.textContent !== '3') fail('the "Needs you" tab carries no kit Badge with the waiting count')
+  if (en.hostEl.querySelector('.pa-kpis')) fail('the four KPI boxes are still in the DOM')
 }
 
 // --- 3) No native `title=`, and every control keeps an accessible name --------------------------
@@ -936,14 +1058,19 @@ for (const mounted of [en, other]) {
 {
   const cell = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
   if (!cell) fail('the memory record card is missing')
-  if (!slot(cell, 'badge')) fail('the record state pill is not a kit Badge')
+  const verdict = cell?.querySelector('.pa-verdict[data-k] .pa-vtitle[role="status"]')
+  if (!verdict || !verdict.textContent.trim()) fail('the record state is not named in the verdict card')
   const buttonsInCard = [...cell.querySelectorAll('[data-slot="button"]')]
   if (buttonsInCard.length < 3) fail(`the card controls are not kit Buttons (${buttonsInCard.length})`)
-  if (slot(cell, 'log-view')) fail('a closed card draws the change; it belongs under Details')
-  const reject = buttonsInCard.find(b => /^Reject$/.test(b.textContent || ''))
-  const approve = buttonsInCard.find(b => /^Approve$/.test(b.textContent || ''))
-  if (reject?.getAttribute('data-variant') !== 'destructive') fail('Reject is not the kit destructive variant')
-  if (approve?.getAttribute('data-variant') !== 'default') fail('Approve is not the kit default variant')
+  if (cell.querySelector('.pa-details')) fail('a closed card draws the full review (it belongs under its toggle)')
+  if (!cell.querySelector('.pa-dbody .pa-file .pa-dl')) fail('the detail does not draw the change in a file box')
+  const reject = declineBtn(cell)
+  const approve = primaryBtn(cell)
+  if (reject?.getAttribute('data-variant') !== 'outline') fail('the decline action is not the kit outline variant')
+  if (approve?.getAttribute('data-variant') !== 'default') fail('the primary action is not the kit default variant')
+  if (/^Approve$/.test(reject?.textContent || '') || /^Reject$/.test(name(approve) || '')) {
+    fail('a front-card button still reads the bare "Approve"/"Reject"')
+  }
   if (buttonsInCard.some(b => b.getAttribute('data-size') === null || b.getAttribute('data-variant') === null)) {
     fail('a kit Button is drawn without its size/variant contract')
   }
@@ -951,71 +1078,102 @@ for (const mounted of [en, other]) {
 
 // --- 5) Cards: one head line, the one message that decides it, no repeated boilerplate -------------
 {
-  const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
-  if (cells.length !== 3) fail(`expected 3 pending cards, found ${cells.length}`)
-  if (!cells.every(c => c.getAttribute('data-key'))) fail('a card cell carries no data-key (FLIP)')
+  // The split shows one record's detail at a time; walk all 3 rows of the list through the detail column.
+  const keys = ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']
+  const reachable = () => reachableKeys(en.hostEl)
+  if (reachable().size !== 3) fail(`expected 3 reachable pending records, found ${reachable().size}`)
   const html = en.hostEl.innerHTML
   if (!html.includes('.pa-leaving{opacity:0')) fail('the leaving animation class is not defined')
   must(html, [
     'cubic-bezier(0.2, 0, 0.38, 0.9)', 'cubic-bezier(0, 0, 0.38, 0.9)', 'cubic-bezier(0.4, 0, 1, 1)',
-    'transition:opacity 240ms', 'transition:opacity 200ms',
-    'box-shadow:inset 0 1px 0',
+    'animation:pa-in 240ms', 'opacity 200ms',
     '::-webkit-scrollbar-thumb',
     'transition:none !important;animation:none !important'
-  ], 'the motion table, the lit card edge and the themed scrollbars')
+  ], 'the motion table and the themed scrollbars')
   if (!en.hostEl.querySelector('.pa-pane')) fail('the pane root lost its pa-pane class')
-  if (!en.hostEl.querySelector('.pa-card')) fail('no .pa-card in the render — the class the motion rules target is gone')
-  for (const card of en.hostEl.querySelectorAll('.pa-cell .pa-card')) {
-    if ([...card.querySelectorAll('*')].some(el => el.style.overflowY === 'auto')) {
-      fail('a pending card holds its own scroll box again — the pane scrolls, the card grows')
+  for (const key of keys) {
+    await toFront(en.hostEl, key)
+    const cell = en.hostEl.querySelector('.pa-cell')
+    if (!cell || cell.getAttribute('data-key') !== key) fail(`"${key}" did not become the one front .pa-cell`)
+    const card = cell?.querySelector('.pa-card')
+    if (!card) fail(`no .pa-card in the render for "${key}" — the class the motion rules target is gone`)
+    if ([...(card?.querySelectorAll('*') || [])].some(el => el.style.overflowY === 'auto')) {
+      fail(`"${key}" holds its own inline scroll box — the detail body is the one scroll box`)
     }
-    if (card.querySelectorAll('.pa-card-head').length !== 1) fail('a card has no single head line')
+    const heads = card?.querySelectorAll('.pa-dh').length
+    if (heads !== 1 || card?.querySelectorAll('.pa-dh [role="heading"]').length !== 1) {
+      fail(`"${key}" has no single head line`)
+    }
   }
   for (const gone of ['Why it arrived', 'If you approve', 'What it does', 'Applicability check', 'Source',
     'Operations', 'Agent suggestion']) {
-    if (en.hostEl.textContent.includes(gone)) fail(`the removed card section “${gone}” is back`)
+    if (en.hostEl.textContent.includes(gone)) fail(`the removed card section "${gone}" is back`)
   }
   if (en.hostEl.querySelector('.pa-cols.pa-two')) fail('the pending list is a two-column grid again (cards stretch to their neighbour)')
-  const footer = en.hostEl.querySelector('.pa-footer')
-  if (!footer || footer.style.flexWrap !== 'wrap') fail('the footer row cannot wrap')
+  const sheet5 = en.hostEl.querySelector('style')?.textContent || ''
+  // Rework 2 item 4: the footer may take a second row (Later, Review again), the decision buttons never split.
+  if (!/\.pa-dfoot\{[^}]*flex-wrap:wrap/.test(sheet5)) fail('the detail footer row cannot wrap')
+  if (!/\.pa-actions\{[^}]*flex-wrap:nowrap/.test(sheet5)) fail('the footer decision buttons can split over two rows')
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
-// --- 6) The blocked record keeps Approve disabled, an open record does not ----------------------
+// --- 6) The description-fix record offers "Use the short version" as its primary action ---------
 {
+  await toFront(en.hostEl, 'skills:def67890')
   const blocked = en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]')
-  const approve = [...(blocked?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
-  if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('the blocked record still offers a clickable “Approve”')
-  if (approve?.disabled) fail('the blocked Approve is a disabled button: keyboard users can never reach its reason Tip')
+  const approve = primaryBtn(blocked)
+  if (!approve || approve.disabled || approve.getAttribute('aria-disabled') === 'true') {
+    fail('the description-fix record primary action is blocked instead of offering the short version')
+  }
+  if (name(approve) !== 'Use the short version') {
+    fail(`the fix record primary action is not "Use the short version": ${name(approve)}`)
+  }
+  if (approve?.closest('[data-tip]')) fail('the short-version primary action carries an unneeded tooltip')
+  if (approve?.getAttribute('title')) fail('the short-version primary action still carries a native title')
+  const decline = declineBtn(blocked)
+  if (!decline || decline.disabled || decline.getAttribute('aria-disabled') === 'true') {
+    fail('a record with a fix still available cannot be declined')
+  }
+  const twin = buttons(blocked || en.hostEl, /Shorten description/)
+  if (twin.length) fail('a single fix record offers "Shorten description" next to "Use the short version"')
+  if (!/With the fix the description is 53 of 60 characters\./.test(blocked?.textContent || '')) {
+    fail('the single fix record does not say what the short version leaves (fix.after of fix.limit)')
+  }
+  if (/Shorten description/.test(blocked?.textContent || '')) {
+    fail('the single fix record still points at a “Shorten description” button it no longer has')
+  }
   if (approve) {
-    const before = stub.calls.posts.filter(p => p.path === '/decide').length
-    await click(approve)
-    if (stub.calls.posts.filter(p => p.path === '/decide').length !== before) fail('the held Approve still sends /decide')
+    const before = stub.calls.posts.filter(p => p.path === '/fix').length
+    await click(approve, 60)
+    const post = stub.calls.posts.filter(p => p.path === '/fix').at(-1)
+    if (stub.calls.posts.filter(p => p.path === '/fix').length !== before + 1
+        || post?.body.subsystem !== 'skills' || post?.body.id !== 'def67890') {
+      fail(`the short-version primary action did not post /fix as today: ${JSON.stringify(post)}`)
+    }
   }
-  const tip = approve?.closest('[data-tip]')
-  if (!tip || !String(tip.getAttribute('data-tip')).includes('long text')) {
-    fail('the blocked Approve carries no themed Tip with the reason')
-  }
-  if (approve?.getAttribute('title')) fail('the blocked Approve still carries a native title')
+  await toFront(en.hostEl, 'skills:aaa11111')
   const open = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
-  const openApprove = [...(open?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
-  if (!openApprove || openApprove.disabled || openApprove.getAttribute('aria-disabled') === 'true') fail('a record that needs no fix has Approve disabled')
-  if (openApprove?.closest('[data-tip]')) fail('a record that needs no fix carries a tooltip on Approve')
+  const openApprove = primaryBtn(open)
+  if (!openApprove || openApprove.disabled || openApprove.getAttribute('aria-disabled') === 'true') fail('a record that needs no fix has its primary action disabled')
+  if (openApprove?.closest('[data-tip]')) fail('a record that needs no fix carries a tooltip on its primary action')
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
-// --- 6c) A path Hermes refuses holds Approve and the per-skill button --------------------------
+// --- 6c) A path Hermes refuses holds the primary action and the per-skill button ----------------
 {
   REST.mode = 'refused'
   const ref = await mount('en')
+  await toFront(ref.hostEl, 'skills:aaa11111')
   const cell = ref.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
-  const approve = [...(cell?.querySelectorAll('button') || [])].find(b => /^Approve$/.test(b.textContent || ''))
-  if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('a refused path still offers a clickable Approve')
+  const approve = primaryBtn(cell)
+  if (!approve || approve.getAttribute('aria-disabled') !== 'true') fail('a refused path still offers a clickable primary action')
   if (!String(approve?.closest('[data-tip]')?.getAttribute('data-tip')).includes('refused path reason')) {
-    fail('the held Approve of a refused path carries no Tip with the reason')
+    fail('the held primary action of a refused path carries no Tip with the reason')
   }
   const sent = () => stub.calls.posts.filter(p => p.path === '/decide').length
   const before = sent()
   if (approve) await click(approve)
-  const details = buttons(cell, /^Details$/)[0]
+  const details = buttons(cell || ref.hostEl, /^Show the full review$/)[0]
   if (details) await click(details)
   const onlys = [...(cell?.querySelectorAll('button') || [])].filter(b => /only this$/.test(b.textContent || ''))
   if (onlys.length !== 2) fail(`the two-skill refused record shows ${onlys.length} per-skill buttons, not 2`)
@@ -1028,79 +1186,121 @@ for (const mounted of [en, other]) {
   REST.mode = 'normal'
 }
 
-// --- 6b) One state badge per card, and it names what decides the card -----------------------------
+// --- 6b) One verdict per card, and it names what decides the card ----------------------------------
+// The old head badge is absorbed by the verdict card (R2 V1-V8): its title names the state, `data-k` its tone.
 {
-  const badgeOf = key => en.hostEl.querySelector('.pa-cell[data-key="' + key + '"] .pa-card-head [data-slot="badge"]')
-  const failed = badgeOf('memory:abc12345')
-  if (failed?.textContent !== 'Approve failed' || failed?.getAttribute('data-variant') !== 'destructive') {
-    fail(`a record whose approve was refused is not marked as such: ${failed?.textContent}`)
+  const verdictOf = key => en.hostEl.querySelector('.pa-cell[data-key="' + key + '"] .pa-verdict')
+  const vtitle = v => v?.querySelector('.pa-vtitle')?.textContent
+  await toFront(en.hostEl, 'memory:abc12345')
+  const failed = verdictOf('memory:abc12345')
+  if (vtitle(failed) !== 'Approve failed' || failed?.getAttribute('data-k') !== 'failed'
+      || failed?.style.getPropertyValue('--pa-tone') !== 'var(--ui-red)') {
+    fail(`a record whose approve was refused is not marked as such: ${vtitle(failed)}`)
   }
   must(en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')?.textContent,
     ['Approving was attempted: Approving was already attempted and Hermes refused'], 'the refused attempt')
-  const fixable = badgeOf('skills:def67890')
-  if (fixable?.textContent !== 'Shorten first' || fixable?.getAttribute('data-variant') !== 'warn') {
-    fail(`a record with a description fix is not marked “Shorten first”: ${fixable?.textContent}`)
+  await toFront(en.hostEl, 'skills:def67890')
+  const fixable = verdictOf('skills:def67890')
+  if (vtitle(fixable) !== 'Needs one edit — Hermes already drafted it' || fixable?.getAttribute('data-k') !== 'edit'
+      || fixable?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
+    fail(`a record with a description fix is not marked "Needs one edit": ${vtitle(fixable)}`)
   }
-  const clean = badgeOf('skills:aaa11111')
-  if (clean?.textContent !== 'Looks fine' || clean?.getAttribute('data-variant') !== 'success') {
-    fail(`a clean record is not drawn as approvable: ${clean?.textContent}`)
+  await toFront(en.hostEl, 'skills:aaa11111')
+  const clean = verdictOf('skills:aaa11111')
+  if (vtitle(clean) !== 'Safe to save' || clean?.getAttribute('data-k') !== 'safe') {
+    fail(`a clean record is not "Safe to save": ${vtitle(clean)}`)
   }
-  if (!(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-card-title')?.textContent || '')
-    .startsWith('New skill: new-skill')) fail('a new skill does not say so in its title')
-  if (buttons(en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /Approve with the fix/).length) {
+  const newCell = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+  if (name(primaryBtn(newCell)) !== 'Save skill') fail('a new skill does not say so on its primary action')
+  if (!(newCell?.querySelector('.pa-dh')?.textContent || '').includes('new-skill')) {
+    fail('a new skill does not name itself in its head line')
+  }
+  if (buttons(newCell, /Approve with the fix/).length) {
     fail('a clean record offers a fix it does not need')
   }
 }
 
-// --- 7) Details: one change view, only the changed lines, nothing cut by characters ---------------
+// --- 7) The change: always drawn in file boxes, only the changed lines, nothing cut by characters -----
 {
-  for (const b of buttons(en.hostEl, /^Details and changes$/)) await click(b)
-  const logs = [...en.hostEl.querySelectorAll('.pa-details [data-slot="log-view"]')]
-  if (!logs.length || !logs.every(r => r.getAttribute('data-selectable-text') === 'true')) {
-    fail('the change is not drawn in the kit LogView')
+  let sweep = ''
+  for (const key of ['skills:def67890', 'skills:aaa11111', 'memory:abc12345']) {
+    await toFront(en.hostEl, key)
+    const asIs = buttons(en.hostEl.querySelector('.pa-cell .pa-toggle'), /^As written$/)[0]
+    if (key === 'skills:def67890' && !asIs) fail('the description-fix record has no "As written" view of its change')
+    if (asIs) await click(asIs)
+    sweep += ' ' + en.hostEl.textContent
+    if (key === 'memory:abc12345') {
+      const cell = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
+      const files = [...(cell?.querySelectorAll('.pa-dbody .pa-file') || [])]
+      if (files.length !== 2) fail(`a two-op memory record does not draw one file box per op (${files.length})`)
+      if (!files.every(f => f.querySelector('.pa-file-path')?.textContent === 'memories/MEMORY.md')) {
+        fail('a memory file box is not headed by its path memories/MEMORY.md')
+      }
+      const btn = buttons(cell, /^Show the full review$/)[0]
+      if (!btn) fail('the detail offers no "Show the full review" toggle')
+      if (btn) await click(btn)
+      if (!buttons(en.hostEl, /^Hide the full review$/).length) {
+        fail('the full-review toggle does not flip to "Hide the full review"')
+      }
+      if (!en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"] .pa-details .pa-review')) {
+        fail('the full-review toggle does not open the review')
+      }
+      const marks = [...(cell?.querySelectorAll('.pa-file .pa-dl') || [])].map(l => l.getAttribute('data-k'))
+      if (!marks.includes('-') || !marks.includes('+')) fail(`a replaced note is not drawn as removed + added lines: ${marks}`)
+      if (!(cell?.querySelector('.pa-dbody')?.textContent || '').includes(OP_TAIL)) {
+        fail('the replaced text is cut by characters — its tail is missing')
+      }
+      const back = buttons(en.hostEl, /^Hide the full review$/)[0]
+      if (back) await click(back)
+    }
   }
-  must(en.hostEl.textContent, ['# New file', 'The text', 'A note to add'], 'the change lines')
-  if (!buttons(en.hostEl, /^Hide details$/).length) fail('the details toggle does not flip to “Hide details”')
-  const mem = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"] .pa-details')
-  const marks = [...(mem?.querySelectorAll('.pa-ln') || [])].map(l => l.getAttribute('data-k'))
-  if (!marks.includes('-') || !marks.includes('+')) fail(`a replaced note is not drawn as removed + added lines: ${marks}`)
-  if (!(mem?.textContent || '').includes(OP_TAIL)) fail('the replaced text is cut by characters — its tail is missing')
+  must(sweep, ['# New file', 'The text', 'A note to add'], 'the change lines')
+  await toFront(en.hostEl, 'skills:def67890')
+  const asWritten = buttons(en.hostEl.querySelector('.pa-cell .pa-toggle'), /^As written$/)[0]
+  if (asWritten) await click(asWritten)
   if ((en.hostEl.textContent.match(/# New file/g) || []).length !== 1) fail('the change is drawn more than once')
+  const withFix = buttons(en.hostEl.querySelector('.pa-cell .pa-toggle'), /^With the fix$/)[0]
+  if (withFix) await click(withFix)
   if (en.hostEl.innerHTML.includes('(batch on')) fail('the meaningless "(batch on \'\')" text is back')
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
-  if (/\.pa-change-file\{[^}]*text-transform:uppercase/.test(sheet)) fail('the file name is forced to uppercase (unreadable)')
+  if (/\.pa-(change-file|file-path)\{[^}]*text-transform:uppercase/.test(sheet)) {
+    fail('the file name is forced to uppercase (unreadable)')
+  }
 }
 
 // --- 8) The description fix: own text, shortened suggestion, POST /fix --------------------------
 {
-  must(en.hostEl.textContent, ['As written (172 characters)', 'Shortened (53 characters)', FIX_SUGGESTED, FIX_RAW_DESC],
-    'the fix surfaces')
-  const badgeSizes = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')].map(b => b.getAttribute('data-size'))
-  if (new Set(badgeSizes).size !== 1) fail(`the card badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
-  const actions = en.hostEl.querySelector('.pa-cell .pa-foot .pa-actions')
+  must(en.hostEl.textContent, ['With the fix', 'As written', 'With the fix the description is 53 of 60 characters.',
+    FIX_SUGGESTED, FIX_RAW_DESC], 'the fix surfaces')
+  const badgeSizes = [...en.hostEl.querySelectorAll('[data-slot="badge"]')].map(b => b.getAttribute('data-size'))
+  if (new Set(badgeSizes).size > 1) fail(`the badges come in more than one size: ${JSON.stringify(badgeSizes)}`)
+  const actions = en.hostEl.querySelector('.pa-cell .pa-dfoot .pa-actions')
   if (!actions) fail('a card lost its action row')
   const variants = [...(actions?.querySelectorAll('[data-slot="button"]') || [])].map(b => b.getAttribute('data-variant'))
-  if (JSON.stringify(variants) !== JSON.stringify(['destructive', 'default'])) {
-    fail(`the action pair is not the kit destructive/default pair: ${JSON.stringify(variants)}`)
+  const decisionVariants = variants.slice(-2)
+  if (JSON.stringify(decisionVariants) !== JSON.stringify(['outline', 'default'])) {
+    fail(`the action pair is not the kit outline/default pair: ${JSON.stringify(variants)}`)
   }
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
   if (/\.pa-(reject|approve)\b/.test(sheet) || /filter:brightness/.test(sheet) || /var\(--(dt|theme)-/.test(sheet)) {
     fail('the panel restyles the kit buttons (!important fills, --dt-*/--theme-* mixes or a brightness hover)')
   }
   if (/font-size:10\.5px/.test(sheet)) fail('10.5px text is back (FS.micro below 11px)')
-  const tags = [...en.hostEl.querySelectorAll('.pa-card [data-slot="badge"]')]
+  const tags = [...en.hostEl.querySelectorAll('[data-slot="badge"]')]
   const odd = tags.filter(b => !b.classList.contains('pa-tag') || b.style.height !== '20px'
     || b.style.borderRadius !== '999px' || b.style.fontWeight !== '600')
   if (!tags.length || odd.length) {
     fail(`a status tag is not drawn in the one tag form: ${JSON.stringify(odd.map(b => b.textContent))}`)
   }
-  if (!en.hostEl.innerHTML.includes('.pa-two>:last-child:nth-child(odd){grid-column:1/-1}')) {
-    fail('a lone last memory card sits in half the grid again (the .pa-two lone-card rule is gone)')
+  if (!/\.pa-chips\{[^}]*flex-wrap:wrap/.test(sheet) || !/\.pa-chip\{[^}]*display:inline-flex/.test(sheet)) {
+    fail('the check chips of the verdict card do not wrap as one row of chips')
   }
-  const fixBtn = buttons(en.hostEl, /Shorten description/)[0]
-  if (!fixBtn) fail('the "Shorten description" button is missing')
-  await click(fixBtn, 60)
-  const post = stub.calls.posts.find(p => p.path === '/fix')
+  await toFront(en.hostEl, 'skills:def67890')
+  const fixBtn = primaryBtn(en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]'))
+  if (name(fixBtn) !== 'Use the short version') fail('the "Use the short version" button is missing')
+  const before = stub.calls.posts.length
+  if (fixBtn) await click(fixBtn, 60)
+  const post = stub.calls.posts.slice(before).find(p => p.path === '/fix')
   if (!post || post.body.subsystem !== 'skills' || post.body.id !== 'def67890' || 'approve' in post.body) {
     fail(`the fix request is not {subsystem: 'skills', id} alone: ${JSON.stringify(post)}`)
   }
@@ -1110,8 +1310,14 @@ for (const mounted of [en, other]) {
 const memoryTab = tab(en.hostEl, /Memory/)
 if (!memoryTab) fail('the Memory tab is missing')
 await click(memoryTab, 60)
-must(en.hostEl.textContent, ['Note 1 · 6 characters', 'Note 2', '2 notes', 'MEMORY.md', 'USER.md', 'Last change'],
-  'memory tab')
+must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', 'MEMORY.md · 2 notes · 2189 / 2200', 'USER.md',
+  'Nothing is written to your memory without you.'], 'memory tab')
+{
+  const labels = [...en.hostEl.querySelectorAll('.pa-note-del')].map(b => b.getAttribute('aria-label'))
+  if (labels[0] !== 'Delete: Note 1 · 6 characters' || !/^Delete: Note 2/.test(labels[1] || '')) {
+    fail(`the note delete controls do not name their note: ${JSON.stringify(labels)}`)
+  }
+}
 if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memory file tabs are not a tablist')
 if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
 {
@@ -1120,10 +1326,13 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   await click(del)
   const armed = en.hostEl.querySelectorAll(DESTRUCTIVE).length
   if (armed !== 1) fail(`arming one of two identical notes armed ${armed} confirmations`)
+  if (en.hostEl.querySelectorAll('.pa-note-row[data-armed="1"]').length !== 1) {
+    fail('the armed note row is not marked (data-armed) — the mockup washes it')
+  }
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
-  must(en.hostEl.textContent, ['About to delete — undoable from the “History” tab'], 'delete confirmation copy')
+  must(en.hostEl.textContent, ['About to delete — undoable from the “Activity” tab'], 'delete confirmation copy')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/memory/delete')
   if (!post || post.body.target !== 'memory' || post.body.text !== 'A note') {
@@ -1137,7 +1346,13 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 {
   const draft = buttons(en.hostEl, /^Draft a merge request$/)[0]
   if (!draft) fail('the nearly-full memory warning offers no merge draft')
-  if (!en.hostEl.textContent.includes('Memory is nearly full')) fail('the merge draft sits outside the warning')
+  const banner = draft?.closest('.pa-banner')
+  if (!banner || !banner.textContent.includes('A new note fits only if an older one is shortened or merged')) {
+    fail('the merge draft sits outside the nearly-full banner')
+  }
+  if (!String(draft?.closest('[data-tip]')?.getAttribute('data-tip')).includes('Writes a request into the chat box')) {
+    fail('the merge draft carries no Tip saying it only writes into the chat box')
+  }
   const decided = stub.calls.posts.filter(p => p.path === '/decide').length
   await click(draft, 40)
   const put = stub.calls.composer[stub.calls.composer.length - 1]
@@ -1155,29 +1370,90 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   stub.state.composerLive = true
 }
 
-// --- 11) The Applied tab: two-step clearing, equal card layers, two-step forced undo ------------
-const appliedTab = tab(en.hostEl, /History/)
-if (!appliedTab) fail('the History tab is missing')
-await click(appliedTab, 60)
-must(en.hostEl.textContent, ['2 files changed outside the pane', 'Approved and applied', 'Rejected',
-  'Changed outside the pane', 'Approve failed'], 'applied tab')
-must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
+// --- 10c) Memory list + detail (R2 M1-M6, replaces the memory rings): one file row per file with its
+// meter in the fill() tone; selecting Profile shows its own notes and no banner -----------------------
 {
-  const cards = [...en.hostEl.querySelectorAll('.pa-card')]
-  if (cards.length < 2) fail(`at least 2 history cards are needed, found ${cards.length}`)
-  const layers = cards.map(card => [...card.querySelectorAll('div')]
-    .map(d => `${d.style.height || ''}|${d.style.minHeight || ''}`)
-    .filter(v => v !== '|').join(' '))
-  const unique = [...new Set(layers)]
-  if (unique.length !== 1) fail(`history cards have different layers: ${JSON.stringify(unique)}`)
-  must(unique[0], ['58px', '38px', '30px'], 'history card fixed layers')
+  const rows = [...en.hostEl.querySelectorAll('.pa-memrows [role="tab"].pa-memrow')]
+  if (rows.length !== 2) fail(`expected 2 file rows (Memory, Profile), found ${rows.length}`)
+  const [mem, prof] = rows
+  const memText = mem?.textContent || ''
+  if (!/^Memory99%/.test(memText) || !memText.includes('MEMORY.md · 2 notes · 2189 / 2200')) {
+    fail(`the Memory file row does not read name, percent, file · notes · chars / limit: ${mem?.textContent}`)
+  }
+  if (!/^Profile84%USER\.md · 1 note · 1158 \/ 1375$/.test(prof?.textContent || '')) {
+    fail(`the Profile file row does not read likewise: ${prof?.textContent}`)
+  }
+  const meter = r => r?.querySelector('.pa-meter.pa-meter-thin')
+  if (meter(mem)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)'
+      || meter(mem)?.querySelector('.pa-meter-fill')?.style.width !== '99%') {
+    fail('the Memory row meter is not 99% wide in the warn tone')
+  }
+  if (meter(prof)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-green)'
+      || meter(prof)?.querySelector('.pa-meter-fill')?.style.width !== '84%') {
+    fail('the Profile row meter is not 84% wide in the ok tone')
+  }
+  if (mem?.getAttribute('aria-selected') !== 'true' || mem?.getAttribute('data-on') !== '1') {
+    fail('the Memory file row is not the selected one by default')
+  }
+  if (!en.hostEl.querySelector('.pa-memory .pa-detail [role="tabpanel"][aria-labelledby="pa-mem-memory"]')) {
+    fail('the memory detail is not the tab panel of its file row')
+  }
+  await click(prof, 60)
+  const panel = en.hostEl.querySelector('.pa-memory .pa-detail [role="tabpanel"]')
+  if (panel?.getAttribute('aria-labelledby') !== 'pa-mem-user') fail('selecting Profile does not show its panel')
+  if (!(panel?.textContent || '').includes('A profile note') || (panel?.textContent || '').includes('A note to add')) {
+    fail('selecting Profile does not show the Profile notes')
+  }
+  if (!(panel?.querySelector('.pa-dh')?.textContent || '').includes('USER.md')
+      || !(panel?.textContent || '').includes('Profile · 1 note')) {
+    fail('the Profile detail is not headed by its file and note count')
+  }
+  if (panel?.querySelector('.pa-banner')) fail('an 84% full Profile still shows the nearly-full banner')
+  if (en.hostEl.querySelector('.pa-mem-rings, .pa-gauge-ring-lg')) fail('the memory rings are back')
+  await click(mem, 60)
+}
+
+// --- 11) The Activity tab: list + detail, two-step clearing, two-step forced undo -------------------
+const appliedTab = tab(en.hostEl, /Activity/)
+if (!appliedTab) fail('the Activity tab is missing')
+await click(appliedTab, 60)
+must(en.hostEl.textContent, ['2 files changed outside the pane', 'Saved to memory', 'Not saved',
+  'Changed outside the pane', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
+must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
+const actRow = (hostEl, id) => hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`)
+const actDetail = hostEl => hostEl.querySelector('.pa-activity .pa-detail .pa-card[data-entry]')
+// The Activity detail of the first row whose detail mentions `text` (selecting rows one by one).
+const actFind = async (hostEl, text) => {
+  for (const row of [...hostEl.querySelectorAll('.pa-act-row[data-entry]')]) {
+    await click(hostEl.querySelector(`.pa-act-row[data-entry="${row.dataset.entry}"]`), 20)
+    const d = actDetail(hostEl)
+    if ((d?.textContent || '').includes(text)) return d
+  }
+  return null
 }
 {
-  const undoBtns = buttons(en.hostEl, /^Undo$/)
-  if (undoBtns.length < 2) fail(`expected an Undo button per undoable record, found ${undoBtns.length}`)
-  if (undoBtns.some(b => !/^Undo: .{4,}/.test(b.getAttribute('aria-label') || ''))) {
-    fail('History Undo buttons are all read out as just "Undo", with no record named')
+  // The equal card layers of the old grid are absorbed by the list rows (R2 A3-A6): every row has the one
+  // fixed row height, and only the selected entry's detail is drawn.
+  const wraps = [...en.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
+  if (wraps.length !== 4) fail(`expected one Activity row per entry (4), found ${wraps.length}`)
+  const heights = [...new Set(wraps.map(w => w.style.height))]
+  if (heights.length !== 1 || heights[0] !== '58px') fail(`the Activity rows are not one fixed height: ${heights}`)
+  if (en.hostEl.querySelectorAll('.pa-activity .pa-detail .pa-card').length !== 1) {
+    fail('the Activity tab draws more than the one selected detail')
   }
+}
+{
+  const undoable = ['aa11bb22', 'cc33dd44']
+  for (const id of undoable) {
+    await click(actRow(en.hostEl, id), 40)
+    const undo = buttons(actDetail(en.hostEl), /^Undo$/)[0]
+    if (!undo) fail(`the undoable entry ${id} has no Undo in its detail`)
+    if (!/^Undo: .{4,}/.test(undo?.getAttribute('aria-label') || '')) {
+      fail('History Undo buttons are all read out as just "Undo", with no record named')
+    }
+  }
+  await click(actRow(en.hostEl, 'aa11bb22'), 40)
+  const undoBtns = buttons(actDetail(en.hostEl), /^Undo$/)
   await click(undoBtns[0], 60)
   const posts = stub.calls.posts.filter(p => p.path === '/undo')
   if (posts.length !== 1 || posts[0].body.force !== false) fail(`the plain undo request is wrong: ${JSON.stringify(posts)}`)
@@ -1189,8 +1465,10 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (!line || !line.textContent.includes('memories/MEMORY.md')) {
     fail('the conflict that arms “Force undo” is not stated as an alert on the card')
   }
-  if (line?.closest('.pa-scroll')) fail('the conflict alert sits inside a scroll box, where it can fall below the fold')
-  if (forced.getAttribute('data-variant') !== 'destructive') fail('the forced undo is not a kit destructive Button')
+  if (line && line.parentElement?.firstElementChild !== line) {
+    fail('the conflict alert is not at the top of the detail body, where it can fall below the fold')
+  }
+  if (forced?.getAttribute('data-variant') !== 'destructive') fail('the forced undo is not a kit destructive Button')
   await click(forced, 60)
   const after = stub.calls.posts.filter(p => p.path === '/undo')
   if (after.length !== 2 || after[1].body.force !== true) fail(`the forced undo request is wrong: ${JSON.stringify(after)}`)
@@ -1200,7 +1478,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 {
   // An undo of a write that created a file deletes it: the backend lists it under `removed`, not `restored`.
   REST.undoReply = { ok: true, restored: [], removed: ['skills/e2e-demo/SKILL.md'] }
-  const undoBtn = buttons(en.hostEl, /^Undo$/)[0]
+  const undoBtn = buttons(actDetail(en.hostEl), /^Undo$/)[0]
   await click(undoBtn, 60)
   REST.undoReply = undefined
   const said = lastSaid()?.message || ''
@@ -1209,9 +1487,11 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
 }
 {
-  const cards = () => [...en.hostEl.querySelectorAll('.pa-card')]
-  const external = cards().find(c => c.textContent.includes('outside the pane'))
-  if (!external) fail('the record changed outside the pane is missing from the history')
+  await click(actRow(en.hostEl, 'cc33dd44'), 40)
+  const external = actDetail(en.hostEl)
+  if (external?.getAttribute('data-entry') !== 'cc33dd44') {
+    fail('the record changed outside the pane is missing from the history')
+  }
   const undoBtn = buttons(external || en.hostEl, /^Undo$/)[0]
   if (!undoBtn) fail('the outside change lost its plain Undo button')
   await click(undoBtn, 60)
@@ -1222,7 +1502,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
   const escalated = buttons(en.hostEl, /^Force undo$/)
   if (escalated.length) fail(`a Force undo appeared for a failure no force can fix (${escalated.length})`)
-  const after = cards().find(c => c.textContent.includes('outside the pane'))
+  const after = actDetail(en.hostEl)
   if (!after || !buttons(after, /^Undo$/).length) {
     fail('an undo failure with no conflict turned the button into “Force undo”')
   }
@@ -1235,44 +1515,198 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   // 1.13: the backend clears the whole history (counts.total), not just the 4 rows shown.
   if ((clear?.textContent || '') !== 'Clear all 87 records') fail(`the clear label does not state the real total: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
+  if (!clear?.closest('.pa-activity .pa-list-foot')) {
+    fail('the history clear control is not in the Activity list footer')
+  }
   await click(clear)
   must(en.hostEl.textContent, ['Clearing deletes all 87 records', 'not only the ones shown', 'undo copies'],
     'clear confirmation copy')
   if (stub.calls.posts.some(p => p.path === '/history/clear')) fail('the clear fired before confirmation')
-  const confirm = en.hostEl.querySelector(DESTRUCTIVE)
+  const confirm = en.hostEl.querySelector('.pa-list-foot ' + DESTRUCTIVE)
   if (!confirm) fail('the clear confirmation (two-step) did not appear')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/history/clear')
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
 }
 
-// --- 12) KPI cards, the refresh ICON, and the status-bar chip ----------------------------------
+// --- 11b) activity-head: "Today · N saved · N not saved · N failed", zero parts left out ---------
 {
-  const kpi = [...(en.hostEl.querySelector('.pa-kpis')?.children || [])].map(c => c.textContent || '')
-  if (kpi.length !== 4) fail(`expected 4 KPI cards, found ${kpi.length}: ${JSON.stringify(kpi)}`)
-  must(kpi.join(' | '), ['MEMORY.md', '99%', 'USER.md', '84%', 'Nearly full'], 'KPI cards')
-  const figs = [...en.hostEl.querySelectorAll('.pa-kpis')[0].querySelectorAll('.pa-kpi-val')].map(v => v.textContent)
-  if (figs.some(f => /^%/.test(f || ''))) fail(`a percent sign leads its number: ${JSON.stringify(figs)}`)
-  const kbox = [...en.hostEl.querySelectorAll('.pa-kpis')[0].children]
-  const tones = kbox.map(k => k.querySelector('.pa-kpi-pill')?.getAttribute('data-tone'))
-  if (JSON.stringify(tones) !== JSON.stringify(['warn', 'warn', 'ok', 'bad'])) {
-    fail(`KPI tones do not follow meaning (pending 3, memory 2189/2200, user 84%, 1 failed): ${JSON.stringify(tones)}`)
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act00001', ts: ACT_NOW - 100, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act00002', ts: ACT_NOW - 200, kind: 'apply', subsystem: 'memory', summary: 'USER.md updated',
+      files: [{ path: 'memories/USER.md' }], undoable: true },
+    { id: 'act00003', ts: ACT_NOW - 300, kind: 'external', subsystem: 'memory', summary: 'changed outside the pane',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act00004', ts: ACT_NOW - 400, kind: 'rejected', subsystem: 'skills', summary: 'batch rejected',
+      files: [], undoable: false },
+    { id: 'act00005', ts: ACT_NOW - 500, kind: 'failed', subsystem: 'skills',
+      summary: 'applying beta-skill → skill rules forbid this edit', files: [], undoable: false }
+  ], counts: { applied: 2, failed: 1, undoable: 2, total: 5 } }
+  const act = await mount('en', 'page')
+  await click(tab(act.hostEl, /Activity/), 60)
+  must(act.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent,
+    ['Today · 3 saved · 1 not saved · 1 failed'], 'activity header: today\u2019s counts in words, no count left out')
+  // Rework 2 item 8: the bar's "2 saved · 1 failed" disagreed with the list header; the header is the one
+  // count on screen and the bar carries the memory meters instead (decision 2).
+  const barText = act.hostEl.querySelector('.pa-bar')?.textContent || ''
+  if (act.hostEl.querySelector('.pa-bar .pa-bar-counts') || /\d+ saved/.test(barText)) {
+    fail('the Activity bar still counts saved records beside the list header (two sources, two wordings)')
   }
-  if (kbox[1].getAttribute('data-tone') !== 'warn') fail('a file with room left is marked full (2189 of 2200 is not full)')
-  if (!kbox[1].querySelector('.pa-kpi-label')?.classList.contains('pa-kpi-file')) {
-    fail('a file name is set in caps (MEMORY.MD): file labels keep their own case')
+  // Decision 2: every tab's bar shows "Memory ▬ 99%" and "Profile ▬ 84%" (label, 44 px bar, bold percent), the
+  // tone following the file's fill exactly as the Memory tab does (>= 90 % warning tone).
+  for (const view of [/Activity/, /Needs you/, /^Memory/]) {
+    await click(tab(act.hostEl, view), 40)
+    const gms = [...act.hostEl.querySelectorAll('.pa-bar .pa-gms > .pa-gm')]
+    const read = gms.map(g => `${g.querySelector('.pa-gm-word')?.textContent}|${g.querySelector('b')?.textContent}|${
+      g.style.getPropertyValue('--pa-tone')}|${g.querySelector('.pa-gm-bar > i')?.style.width}`)
+    if (read.join(' ') !== 'Memory|99%|var(--ui-yellow)|99% Profile|84%|var(--ui-green)|84%') {
+      fail(`the bar's memory meters do not read Memory 99 % (warning) · Profile 84 % in ${view}: ${read.join(' ')}`)
+    }
+    if (gms.some(g => !/^(Memory|Profile) \d+% full$/.test(g.getAttribute('aria-label') || ''))) {
+      fail('a bar meter has no spoken name')
+    }
   }
-  if (kbox.some(k => k.querySelector('.pa-kpi-val')?.hasAttribute('data-tone'))) {
-    fail('a KPI figure wears a tone as text — the tone belongs on the card surface')
+  const narrowCss = act.hostEl.querySelector('style')?.textContent || ''
+  if (!narrowCss.includes('@container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}')
+      || !narrowCss.includes('@container (max-width:480px){.pa-bar .pa-progress{display:none}}')) {
+    fail('at 480 px and below the bar does not make room for the named meters (day progress and meter bars off)')
   }
-  if (!/Updated \d\d:\d\d/.test(en.hostEl.querySelector('.pa-updated')?.textContent || '')) {
-    fail('the header carries no “Updated HH:MM” stamp')
+  if (act.hostEl.querySelector('.pa-bar .pa-progress')) fail('the Activity bar still shows the day progress')
+  act.root.unmount()
+  act.hostEl.remove()
+  REST.history = null
+}
+
+// --- 11c) activity-words: each row says what happened, in words ----------------------------------
+{
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act10001', ts: ACT_NOW - 100, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'act10002', ts: ACT_NOW - 200, kind: 'apply', subsystem: 'memory', summary: 'USER.md updated',
+      files: [{ path: 'memories/USER.md' }], undoable: true },
+    { id: 'act10003', ts: ACT_NOW - 300, kind: 'apply', subsystem: 'skills', summary: 'new-skill created',
+      files: [{ path: 'skills/new-skill/SKILL.md' }], undoable: true },
+    { id: 'act10004', ts: ACT_NOW - 400, kind: 'rejected', subsystem: 'skills', summary: 'batch rejected',
+      files: [], undoable: false },
+    { id: 'act10005', ts: ACT_NOW - 500, kind: 'failed', subsystem: 'skills',
+      summary: 'applying beta-skill → skill rules forbid this edit', files: [], undoable: false }
+  ], counts: { applied: 3, failed: 1, undoable: 2, total: 5 } }
+  const act = await mount('en', 'page')
+  await click(tab(act.hostEl, /Activity/), 60)
+  must(act.hostEl.textContent, [
+    'Saved to memory', 'Saved to Profile', 'Saved skill', 'Not saved',
+    'Couldn\u2019t save', 'applying beta-skill \u2192 skill rules forbid this edit'
+  ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save, '
+    + 'reason kept on its own line')
+  const failedRow = actRow(act.hostEl, 'act10005')
+  const failedWord = failedRow?.querySelector('.pa-row-title')?.textContent || ''
+  if (failedWord !== 'Couldn\u2019t save') {
+    fail(`activity-words: the failed row title must carry only the short family word, got ${
+      JSON.stringify(failedWord)}`)
+  }
+  const list = act.hostEl.querySelector('.pa-activity-list')
+  if (!list) fail('activity-rows: Activity is a grid of big cards again, not one list of short rows (the mockup)')
+  const rows = [...act.hostEl.querySelectorAll('.pa-act-row[data-entry]')]
+  const odd = rows.filter(r => r.tagName !== 'BUTTON' || !r.querySelector('.pa-tile svg')
+    || !r.querySelector('.pa-row-title')
+    || !r.querySelector('.pa-row-preview') || !r.querySelector('.pa-row-time')?.textContent
+    || r.querySelector('[data-slot="badge"]'))
+  if (rows.length !== 5 || odd.length) {
+    fail(`activity-rows: not tile, word on top, summary under it and a time: ${odd.map(r => r.dataset.entry)}`)
+  }
+  const icons = rows.map(r => r.querySelector('.pa-tile svg')?.getAttribute('data-icon')).join()
+  if (icons !== 'brain,users,book,book,book') {
+    fail(`activity-rows: the row tiles are not Brain / Users / Book: ${icons}`)
+  }
+  if (!/^\d\d:\d\d/.test(rows[0]?.querySelector('.pa-row-time')?.textContent || '')) {
+    fail('activity-rows: a row of today does not show its clock time')
+  }
+  if (act.hostEl.textContent.includes('Affected files')) fail('activity-rows: the big "Affected files" box is back')
+  await click(rows[2], 40)
+  const detail = actDetail(act.hostEl)
+  if (detail?.getAttribute('data-entry') !== 'act10003') fail('activity: selecting a row does not show its detail')
+  if (rows[2]?.getAttribute('aria-current') !== 'true') fail('activity: the selected row is not aria-current')
+  if (!/skills\/new-skill\/SKILL\.md/.test(detail?.querySelector('.pa-act-files')?.textContent || '')) {
+    fail('activity-rows: a row lost its file')
+  }
+  must(detail?.textContent, ['Skill', '#act10003', 'approved by you', 'Saved skill', 'Can be undone', 'Files',
+    'What happened', 'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
+  act.root.unmount()
+  act.hostEl.remove()
+  REST.history = null
+}
+
+// --- 11d) front-fix-loss: a heavy-fix alert (FIXLOSS) is drawn even with the full review closed ------
+{
+  REST.pending = FIXLOSS
+  const loss = await mount('en', 'page')
+  await toFront(loss.hostEl, 'skills:aaa11111')
+  const card = loss.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+  if (buttons(card, /^Hide the full review$/).length) fail('front-fix-loss: the full review opened by itself')
+  if (!/deletes 51 of the 54 new words/.test(card?.textContent || '')) {
+    fail('front-fix-loss: the heavy-fix alert (count of deleted new words) is not drawn on the closed front card')
+  }
+  if (!card?.querySelector('.pa-alert.pa-alert-danger')) fail('front-fix-loss: the alert is not a danger alert box')
+  REST.pending = null
+  loss.root.unmount()
+  loss.hostEl.remove()
+}
+
+// --- 12) The shell (R2 T1-T6, replaces the top gauges): bar title, segmented tablist with its count
+// badge, day progress text + pips, Alerts switch, the refresh ICON with its "Updated" Tip, and the chip --
+const dayOf = ts => new Date(ts * 1000).toDateString()
+const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kind === 'rejected')
+  && dayOf(e.ts) === dayOf(Date.now() / 1000))
+{
+  await click(tab(en.hostEl, /Needs you/), 60)
+  const bar = en.hostEl.querySelector('.pa-root > .pa-bar')
+  if (!bar) fail('shell: the pane has no top bar')
+  if (bar?.style.minHeight !== '48px') fail(`shell: the bar is not 48px high: ${bar?.style.minHeight}`)
+  const title = bar?.querySelector('.pa-bar-title[role="heading"][aria-level="1"]')
+  if (title?.textContent !== 'Approvals') fail(`shell: the bar title is not "Approvals": ${title?.textContent}`)
+  const list = bar?.querySelector('.pa-bar-tabs [role="tablist"].pa-tabs')
+  if (!list || list.querySelectorAll('[role="tab"].pa-tab').length !== 3) {
+    fail('shell: the segmented tablist is not in the bar')
+  }
+  const badge = list?.querySelector('[role="tab"] [data-slot="badge"].pa-tag')
+  if (badge?.textContent !== '3') fail('shell: the Needs you tab carries no count badge')
+  const done = decidedToday(HISTORY.entries)
+  const all = done.length + 3
+  const progress = bar?.querySelector('.pa-bar-side .pa-progress')
+  if (!progress) fail('shell: the day progress is not in the bar')
+  if (progress?.querySelector('.pa-progress-text')?.textContent !== `${done.length} of ${all} decided`) {
+    fail(`shell: the progress text is not "${done.length} of ${all} decided": ${progress?.textContent}`)
+  }
+  if (!(progress?.textContent || '').startsWith('Today')) fail('shell: the progress does not start with "Today"')
+  const pips = progress?.querySelector('.pa-pips[role="img"]')
+  if (pips?.getAttribute('aria-label') !== `${done.length} of ${all} decided`) {
+    fail('shell: the pips are not one labelled image')
+  }
+  const kinds = [...(pips?.querySelectorAll('.pa-pip') || [])].map(p => p.getAttribute('data-k') || 'wait')
+  const want = [...done.sort((a, b) => a.ts - b.ts).map(e => e.kind), 'wait', 'wait', 'wait']
+  if (kinds.join() !== want.join()) fail(`shell: the pips are not decided-then-waiting: ${kinds} (want ${want})`)
+  const alerts = bar?.querySelector('.pa-bar-side .pa-alerts-row')
+  if (!(alerts?.textContent || '').includes('Alerts')
+      || alerts?.querySelector('.pa-alerts')?.getAttribute('role') !== 'switch') {
+    fail('shell: the Alerts switch is not in the bar')
+  }
+  const split = en.hostEl.querySelector('[role="tabpanel"] > .pa-split')
+  if (!split || split.children.length !== 2 || !split.children[0].classList.contains('pa-list')
+      || !split.children[1].classList.contains('pa-detail')) {
+    fail('shell: the Needs you body is not one split of list + detail')
+  }
+  const current = [...en.hostEl.querySelectorAll('.pa-split .pa-row[aria-current="true"]')]
+  const shown = split?.querySelector('.pa-detail')?.getAttribute('data-key')
+  if (current.length !== 1 || current[0].getAttribute('data-key') !== shown) {
+    fail('shell: the one aria-current row is not the record the detail shows')
+  }
+  if (en.hostEl.querySelector('.pa-kpis, .pa-gauges, .pa-footer, .pa-headline')) {
+    fail('the KPI boxes, the gauges, the global footer or the headline are still in the DOM')
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
-  const appliedFigure = en.hostEl.querySelector('.pa-kpis')?.children[3]?.children[1]?.textContent
-  if (appliedFigure !== '57') {
-    fail(`the Applied card must use the backend's full count, not the last 50 rows (figured ${JSON.stringify(appliedFigure)})`)
-  }
   const icon = en.hostEl.querySelector('.pa-refresh')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
     fail('the refresh control is gone (kit Button + svg + aria-label expected)')
@@ -1280,10 +1714,132 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (icon?.getAttribute('data-variant') !== 'outline' || icon?.getAttribute('data-size') !== 'icon-xs') {
     fail('the refresh control is not the kit Button (variant outline, size icon-xs)')
   }
-  if (icon?.closest('[data-tip]')?.getAttribute('data-tip') !== 'Refresh') fail('the refresh control carries no Tip')
+  // The old "Updated HH:MM" header stamp lives in the refresh Tip now (R2 T5, K23).
+  if (!/^Refresh · Updated \d\d:\d\d/.test(icon?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
+    fail('the refresh control carries no "Refresh · Updated HH:MM" Tip')
+  }
+  if (icon?.getAttribute('aria-label') !== 'Refresh') fail('the refresh control is not named "Refresh"')
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
   if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
+}
+
+// --- 12e) theme-only colours (replaces gauge-hollow): the ring masks and their #000 are gone; the meters
+// are drawn from theme tokens only -----------------------------------------------------------------
+{
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (/#000\b|\bblack\b/.test(sheet)) fail('a colour literal independent of the theme (#000 / black) is in the sheet')
+  if (/\.pa-gauge/.test(sheet)) fail('the gauge ring rules are still in the sheet')
+}
+
+// --- 12f) meter sizes (replaces gauge-thin-ring): the footer meter is 6px, the file-row meter 5px ----
+{
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-meter\{[^}]*height:6px/.test(sheet)) fail('the footer meter is not 6px high')
+  if (!/\.pa-meter-thin\{[^}]*height:5px/.test(sheet)) fail('the Memory file-row meter is not 5px high')
+  if (!/\.pa-meter-add\{[^}]*repeating-linear-gradient/.test(sheet)) fail('the added part of the meter is not striped')
+}
+
+// --- 12g) activity-badge-short: a failed record's row title carries only the short family word --
+// (the full reason stays in the row preview and the detail) and the time never wraps.
+{
+  const ACT_NOW = Date.now() / 1000
+  REST.history = { entries: [
+    { id: 'act20001', ts: ACT_NOW - 10800, kind: 'failed', subsystem: 'memory',
+      summary: 'approving was attempted, Hermes refused: the record left the pending directory',
+      files: [], undoable: false }
+  ], counts: { applied: 0, failed: 1, undoable: 0, total: 1 } }
+  const bad = await mount('en', 'page')
+  await click(tab(bad.hostEl, /Activity/), 60)
+  const row = bad.hostEl.querySelector('.pa-act-row[data-entry="act20001"]')
+  const word = row?.querySelector('.pa-row-title')?.textContent || ''
+  if (word !== 'Couldn\u2019t save') {
+    fail(`activity-badge-short: the failed row must say the short family word only, got ${JSON.stringify(word)}`)
+  }
+  const card = bad.hostEl.querySelector('.pa-detail .pa-card[data-entry="act20001"]')
+  if (!/approving was attempted, Hermes refused: the record left the pending directory/.test(card?.textContent || '')) {
+    fail('activity-badge-short: the full reason is gone from the detail, not merely out of the row word')
+  }
+  if (!row?.querySelector('.pa-row-time')) fail('activity-badge-short: the time is not the pa-row-time element')
+  const sheet = bad.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-row-time\{[^}]*white-space:nowrap/.test(sheet)) {
+    fail('activity-badge-short: .pa-row-time no longer declares white-space:nowrap — the time can wrap again')
+  }
+  bad.root.unmount()
+  bad.hostEl.remove()
+  REST.history = null
+}
+
+// --- 12h) no-history-tab: the tab is "Activity" now; no string still sends the user to "History" ---
+{
+  if (/\u201cHistory\u201d/.test(src)) {
+    fail('no-history-tab: the en bundle source still points the user at a \u201cHistory\u201d tab')
+  }
+}
+
+// --- 12a) counts (replaces top-headline, R2 K20 → T3/L2/E3): the badge and the list header count the
+// waiting records, the all-clear names today's decisions; no headline -----------------------------------
+{
+  const listHead = h => h.querySelector('.pa-split .pa-list-head')?.textContent || ''
+  if (!listHead(en.hostEl).startsWith('Waiting · 3')) fail(`list header wrong for 3 pending: ${listHead(en.hostEl)}`)
+  if (en.hostEl.querySelector('.pa-headline, .pa-counts')) fail('the headline and its counts line are back')
+
+  REST.mode = 'remedy'
+  const remedy = await mount('en')
+  if (remedy.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '3') {
+    fail('the Needs you badge does not count the hard-finding record')
+  }
+  remedy.root.unmount()
+  remedy.hostEl.remove()
+  REST.mode = 'normal'
+
+  REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [], counts: { memory: 1, skills: 0 } }
+  const one = await mount('en')
+  if (!listHead(one.hostEl).startsWith('Waiting · 1')) fail(`list header wrong for 1 pending: ${listHead(one.hostEl)}`)
+  if (buttons(one.hostEl, /^Select$/).length) fail('"Select" is offered for a single waiting record')
+  if (one.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '1') {
+    fail('the badge does not read 1')
+  }
+  one.root.unmount()
+  one.hostEl.remove()
+  REST.pending = null
+
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  REST.history = { entries: [
+    { id: 'td000001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'today', files: [] },
+    { id: 'td000002', ts: Date.now() / 1000 - 3 * 86400, kind: 'apply', subsystem: 'memory', summary: 'old', files: [] }
+  ], counts: { applied: 47, failed: 0, undoable: 0 } }
+  const clear = await mount('en')
+  const allClear = clear.hostEl.querySelector('.pa-detail .pa-clear')
+  if (allClear?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') {
+    fail(`all-clear title wrong: ${JSON.stringify(allClear?.querySelector('.pa-clear-title')?.textContent)}`)
+  }
+  if (allClear?.querySelector('.pa-clear-body')?.textContent !== '1 decided today · nothing written without you') {
+    fail(`"decided today" counts all-time saves, not today's: ${
+      allClear?.querySelector('.pa-clear-body')?.textContent}`)
+  }
+  if (allClear?.getAttribute('role') !== 'status') fail('the all-clear is not a polite status region')
+  if (clear.hostEl.querySelector('[role="tab"] [data-slot="badge"]')) fail('the Needs you badge shows at 0')
+  clear.root.unmount()
+  clear.hostEl.remove()
+  REST.pending = null
+  REST.history = null
+}
+
+// --- 12x) Alerts in the bar, the promise in the Memory list footer (replaces footer-promise, R2 K22) ---
+{
+  if (en.hostEl.querySelector('.pa-footer')) fail('the global footer strip is back')
+  const toggle = en.hostEl.querySelector('.pa-bar .pa-alerts')
+  if (toggle?.getAttribute('role') !== 'switch' || toggle.getAttribute('aria-checked') !== 'true'
+      || toggle.getAttribute('aria-label') !== 'Alerts'
+      || !(en.hostEl.querySelector('.pa-bar .pa-alerts-row')?.textContent || '').includes('Alerts')) {
+    const said = `${toggle?.getAttribute('role')} ${toggle?.getAttribute('aria-checked')}`
+    fail(`the bar Alerts is not the host switch, on: ${said}`)
+  }
+  if (/Approve → written/.test(en.hostEl.textContent)) fail('the old footer hint text is still in the DOM')
+  if (!src.includes('Nothing is written to your memory without you.')) {
+    fail('the safety promise is gone from the bundle')
+  }
 }
 
 // --- 12b) Palette rows and the alert switch -----------------------------------------------------
@@ -1303,13 +1859,12 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail('unmuted: the new records raised no in-app or OS alert')
   }
   const toggle = en.hostEl.querySelector('.pa-alerts')
-  if (toggle?.getAttribute('aria-pressed') !== 'true' || toggle?.textContent !== 'Alerts on') {
-    fail(`footer alert switch wrong: ${toggle?.getAttribute('aria-pressed')} ${toggle?.textContent}`)
-  }
+  const onNow = toggle?.getAttribute('aria-checked')
+  if (onNow !== 'true') fail(`footer alert switch wrong: ${onNow}`)
   if (toggle) await click(toggle)
   if (STORE.get('muted') !== true) fail('muting did not reach ctx.storage')
   if (alerts?.detail?.() !== 'muted') fail('the palette row does not read the muted state')
-  if (toggle?.textContent !== 'Alerts muted') fail('the footer switch did not follow the mute')
+  if (toggle?.getAttribute('aria-checked') !== 'false') fail('the footer switch did not follow the mute')
   const said = stub.calls.notify.length
   const osSaid = stub.calls.os.length
   const quiet = await mount('en')
@@ -1321,29 +1876,33 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 }
 
 // --- 12c) Bulk decisions ------------------------------------------------------------------------
-// Every card carries its checkbox, so a flagged record can be rejected in bulk. "Approve N" opens
+// After "Select", every card carries its checkbox, so a flagged record can be rejected in bulk. "Approve N" opens
 // only while EVERY selected record is approvable on its own; otherwise it is aria-disabled (still
 // focusable) with a themed Tip counting the records that need their own decision, and a click sends
 // nothing. Both bulk actions arm first and send on Confirm; every /decide carries its versions.
 {
   const bulk = await mount('en')
-  const barOf = h => h.hostEl.querySelector('.pa-bulk')
+  await selectMode(bulk.hostEl)
+  const barOf = h => h.hostEl.querySelector('.pa-split')
+  const cardOf = h => h.hostEl.querySelector('.pa-detail .pa-bulk')
   const bar = barOf(bulk)
-  if (!bar) fail('no bulk bar over three pending records')
+  if (bulk.hostEl.querySelector('.pa-list .pa-bulk')) fail('the bulk actions are still drawn inside the list')
   const picks = [...bulk.hostEl.querySelectorAll('input.pa-pick')]
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
-  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
+    ?.querySelector('input.pa-pick')
   if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
-  must(bar?.textContent, ['0 of 3 selected', 'Select all'], 'bulk bar idle')
+  must(bulk.hostEl.querySelector('.pa-list-head')?.textContent, ['0 selected', 'Select all', 'Cancel'], 'bulk bar idle')
   if (/cannot be applied as staged/.test(bar?.textContent || '')) fail('the old "left out of the selection" note is back')
-  if (buttons(bar, /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
+  if (buttons(cardOf(bulk), /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = posts().length
   await click(buttons(bar, /^Select all$/)[0])
-  must(barOf(bulk)?.textContent, ['3 of 3 selected', 'Clear selection'], 'bulk all')
+  must(barOf(bulk)?.textContent, ['3 selected', 'Clear selection', '3 records selected'], 'bulk all')
+  if (!cardOf(bulk)) fail('no selection summary in the detail pane over three ticked records')
   const lockedApprove = buttons(barOf(bulk), /^Approve 3$/)[0]
   if (lockedApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a flagged record selected')
   if (lockedApprove?.disabled) fail('the locked bulk Approve is a disabled button: its Tip can never be reached')
@@ -1355,19 +1914,19 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (/Apply 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
   if (posts().length !== before) fail('the locked bulk Approve sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['2 of 3 selected'], 'bulk flagged unticked')
+  must(barOf(bulk)?.textContent, ['2 selected'], 'bulk flagged unticked')
   const openApprove = buttons(barOf(bulk), /^Approve 2$/)[0]
   if (!openApprove || openApprove.getAttribute('aria-disabled') === 'true') fail('bulk Approve stays locked once every selected record is approvable')
   if (openApprove?.closest('[data-tip]')) fail('an open bulk Approve still carries the "needs a decision" Tip')
   await click(openApprove)
   must(barOf(bulk)?.textContent, ['Apply 2 records now?'], 'bulk arming')
   if (posts().length !== before) fail('bulk approve fired before Confirm')
-  await click(buttons(barOf(bulk), /^Cancel$/)[0])
+  await click(bulk.hostEl.querySelector('.pa-bulk-cancel'))
   if (posts().length !== before) fail('Cancel still sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['3 of 3 selected'], 'bulk flagged ticked again')
+  must(barOf(bulk)?.textContent, ['3 selected'], 'bulk flagged ticked again')
   await click(buttons(barOf(bulk), /^Reject 3$/)[0])
-  const arm = bulk.hostEl.querySelector('.pa-bulk .pa-alert-danger')
+  const arm = bulk.hostEl.querySelector('.pa-bulk [role="alert"]')
   if (!arm || !/Reject 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
     fail('bulk reject does not arm with its own warning (and the way back through Restore)')
   }
@@ -1386,6 +1945,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised rejecting 1 of them.']]) {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict } })
     const advisedBulk = await mount('en')
+    await selectMode(advisedBulk.hostEl)
     await click(buttons(barOf(advisedBulk), /^Select all$/)[0])
     await click(pickOf(advisedBulk, 'skills:def67890'))
     await click(buttons(barOf(advisedBulk), /^Approve 2$/)[0])
@@ -1398,6 +1958,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict: 'reject' } })
     const single = await mount('en')
+    await selectMode(single.hostEl)
     await click(pickOf(single, 'skills:aaa11111'))
     await click(buttons(barOf(single), /^Approve 1$/)[0])
     const armed = barOf(single)?.textContent || ''
@@ -1410,6 +1971,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'bulkfail'
   const partial = await mount('en')
+  await selectMode(partial.hostEl)
   const from0 = posts().length
   await click(buttons(barOf(partial), /^Select all$/)[0])
   await click(pickOf(partial, 'skills:def67890'))
@@ -1428,6 +1990,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'stale'
   const stale = await mount('en')
+  await selectMode(stale.hostEl)
   await click(buttons(barOf(stale), /^Select all$/)[0])
   await click(pickOf(stale, 'skills:def67890'))
   await click(buttons(barOf(stale), /^Approve 2$/)[0])
@@ -1441,6 +2004,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.mode = 'twomem'
   const batch = await mount('en')
+  await selectMode(batch.hostEl)
   const from = posts().length
   await click(buttons(barOf(batch), /^Select all$/)[0])
   if (buttons(barOf(batch), /^Approve 4$/)[0]?.getAttribute('aria-disabled') !== 'true') {
@@ -1460,8 +2024,9 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const one = await mount('en')
+  await toFront(one.hostEl, 'skills:aaa11111')
   const from = posts().length
-  await click(buttons(cellOf(one, 'skills:aaa11111'), /^Approve$/)[0], 80)
+  await click([primaryBtn(cellOf(one, 'skills:aaa11111'))].filter(Boolean)[0], 80)
   const sent = posts().slice(from)
   if (sent.length !== 1 || JSON.stringify(sent[0].body.versions) !== '{"aaa11111":"v-aaa11111"}') {
     fail(`a single Approve does not send its version: ${JSON.stringify(sent.map(p => p.body))}`)
@@ -1470,8 +2035,10 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
 
   REST.post = 'stale'
   const stale = await mount('en')
+  await selectMode(stale.hostEl)
+  await toFront(stale.hostEl, 'skills:aaa11111')
   const reads = GETS.filter(p => p === '/pending').length
-  await click(buttons(cellOf(stale, 'skills:aaa11111'), /^Approve$/)[0], 120)
+  await click([primaryBtn(cellOf(stale, 'skills:aaa11111'))].filter(Boolean)[0], 120)
   const warned = lastSaid()
   if (warned?.kind !== 'warning' || warned?.message !== STALE_ERR) {
     fail(`a stale single Approve is not a warning toast with its error: ${JSON.stringify(warned)}`)
@@ -1484,14 +2051,15 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
   for (const [mode, kind, text, lateKind] of [
-    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
+    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
     ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
     ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
     REST.post = mode
     REST.lateKind = lateKind
     const late = await mount('en')
-    await click(buttons(cellOf(late, 'skills:aaa11111'), /^Approve$/)[0], 120)
+    await toFront(late.hostEl, 'skills:aaa11111')
+    await click([primaryBtn(cellOf(late, 'skills:aaa11111'))].filter(Boolean)[0], 120)
     const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a /decide that outlived the request timeout (${mode}) is reported wrong: ${JSON.stringify(said)}`)
@@ -1502,66 +2070,46 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   }
 
   const rej = await mount('en')
+  await toFront(rej.hostEl, 'skills:aaa11111')
   const cell = cellOf(rej, 'skills:aaa11111')
   const before = posts().length
-  await click(buttons(cell, /^Reject$/)[0], 80)
+  await click([declineBtn(cell)].filter(Boolean)[0], 80)
   const rejected = posts().slice(before)
   if (rejected.length !== 1 || rejected[0].body.decision !== 'reject' || rejected[0].body.ids.join() !== 'aaa11111') {
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
   const toast = lastSaid()
-  if (toast?.kind !== 'success' || !/restore it from the “History” tab/.test(toast?.message || '')) {
+  if (toast?.kind !== 'success' || !/restore it from the “Activity” tab/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
   rej.hostEl.remove()
 }
 
-// --- 13) FLIP: unchanged positions animate nothing, changed ones animate then settle ------------
+// --- 13) Rise: a newly selected record's detail is a fresh card (its CSS rise-in replays); an unchanged
+// selection keeps the same card node across a refresh, so nothing animates ------------------------
 {
-  const offsets = new Map()
-  for (const prop of ['offsetTop', 'offsetLeft']) {
-    Object.defineProperty(dom.window.HTMLElement.prototype, prop, {
-      configurable: true,
-      get() {
-        const key = this.getAttribute && this.getAttribute('data-key')
-        return offsets.get(key)?.[prop === 'offsetTop' ? 'top' : 'left'] ?? 0
-      }
-    })
-  }
-  const pendingTab = tab(en.hostEl, /Pending/)
+  const pendingTab = tab(en.hostEl, /Needs you/)
   await click(pendingTab)
-  const setOffsets = tops => {
-    const cells = [...en.hostEl.querySelectorAll('.pa-cell')]
-    cells.forEach((cell, i) => offsets.set(cell.getAttribute('data-key'), { top: tops[i] ?? 0, left: 0 }))
-    return cells
-  }
-  const styleLog = []
-  const grid = en.hostEl.querySelector('.pa-list')
-  const observer = new dom.window.MutationObserver(records => {
-    for (const r of records) {
-      styleLog.push({ transition: r.target.style.transition || '', transform: r.target.style.transform || '' })
-    }
-  })
-  observer.observe(grid, { attributes: true, subtree: true, attributeFilter: ['style'] })
+  await toFront(en.hostEl, 'memory:abc12345')
+  const cardNow = () => en.hostEl.querySelector('.pa-split .pa-detail > .pa-card')
   const refresh = async () => {
     await click(en.hostEl.querySelector('.pa-refresh'))
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
   }
-  const animated = () => styleLog.filter(m => m.transform.includes('translate') || m.transition.includes('transform')).length
-  const cells = setOffsets([0, 400, 800])
-  if (cells.length < 3) fail(`FLIP needs 3 cells, found ${cells.length}`)
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-detail>\.pa-card\{[^}]*animation:pa-in 240ms/.test(sheet)) fail('the detail card has no rise-in animation')
   await refresh()
-  styleLog.length = 0
+  const first = cardNow()
   await refresh()
-  if (animated()) fail(`cards animated although the positions did not change: ${animated()}`)
-  styleLog.length = 0
-  setOffsets([0, 300, 600])
-  await refresh()
-  const moved = animated()
-  if (moved < 2) fail(`cards that moved must animate, saw ${moved} style records`)
-  const stuck = [...en.hostEl.querySelectorAll('.pa-cell')].filter(c => (c.style.transform || '').includes('translate'))
+  if (!first || cardNow() !== first) {
+    fail('the detail card was redrawn (and animated) although its record did not change')
+  }
+  await toFront(en.hostEl, 'skills:def67890')
+  if (!cardNow() || cardNow() === first) fail('the newly selected record does not rise in (same card node reused)')
+  const stuck = [...en.hostEl.querySelectorAll('.pa-cell, .pa-card')]
+    .filter(c => (c.style.transform || '').includes('translate'))
   if (stuck.length) fail(`a permanent transform was left behind on ${stuck.length} card(s)`)
-  observer.disconnect()
+  await toFront(en.hostEl, 'memory:abc12345')
 }
 
 // --- 13b) A running action shows progress; a failed /fix keeps the card; leave timers die with the pane
@@ -1580,15 +2128,17 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     return realClear(id)
   }
   const fresh = await mount('en')
+  await toFront(fresh.hostEl, 'skills:def67890')
   REST.post = 'fixfail'
-  const fixBtn = buttons(fresh.hostEl, /Shorten description/)[0]
+  const fixBtn = primaryBtn(fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]'))
   if (fixBtn) await click(fixBtn, 60)
   const fixCell = fresh.hostEl.querySelector('.pa-cell[data-key="skills:def67890"] .pa-card')
   if (!fixCell || fixCell.classList.contains('pa-leaving')) fail('a failed /fix removed the card')
   const said = stub.calls.notify.map(n => n.message || '').join(' | ')
   if (!said.includes('left exactly as it was staged')) fail(`a failed /fix was not reported: ${said}`)
   REST.post = 'normal'
-  const rejectBtn = buttons(fresh.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Reject$/)[0]
+  await toFront(fresh.hostEl, 'skills:aaa11111')
+  const rejectBtn = [declineBtn(fresh.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'))].filter(Boolean)[0]
   if (rejectBtn) await click(rejectBtn, 0)
   const leaveIds = [...timers].filter(([, ms]) => ms === 340).map(([id]) => id)
   if (!leaveIds.length) fail('no leave timer was started by a successful decision')
@@ -1599,13 +2149,185 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   fresh.hostEl.remove()
 
   const busy = await mount('en')
+  await toFront(busy.hostEl, 'skills:aaa11111')
   REST.post = 'hold'
-  const approve = buttons(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Approve$/)[0]
+  const approve = [primaryBtn(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'))].filter(Boolean)[0]
   if (approve) await click(approve, 20)
-  const running = buttons(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'), /^Approve$/)[0]
+  const running = [primaryBtn(busy.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'))].filter(Boolean)[0]
   if (running?.getAttribute('aria-busy') !== 'true') fail('a running approve shows no progress (aria-busy/loading)')
   REST.post = 'normal'
   busy.hostEl.remove()
+}
+
+// --- 13c) queue-order: Later moves the record to the end and selects the next; picking a row selects it
+// without reordering; new records append; the selection holds across refresh ----------------------
+{
+  const h = await mount('en', 'page')
+  const listKeys = () => [...h.hostEl.querySelectorAll('.pa-split .pa-row[data-key]')]
+    .map(c => c.getAttribute('data-key'))
+  const sel = () => frontCell(h.hostEl)?.getAttribute('data-key')
+  if (sel() !== 'memory:abc12345') fail(`queue-order: selection did not start on A: ${sel()}`)
+  await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
+  if (sel() !== 'skills:def67890') fail(`queue-order: later(A) did not select B: ${sel()}`)
+  if (JSON.stringify(listKeys()) !== JSON.stringify(['skills:def67890', 'skills:aaa11111', 'memory:abc12345'])) {
+    fail(`queue-order: later(A) did not give B,C,A: ${JSON.stringify(listKeys())}`)
+  }
+  await toFront(h.hostEl, 'skills:aaa11111')
+  if (sel() !== 'skills:aaa11111') fail(`queue-order: pick(C) did not select C: ${sel()}`)
+  if (JSON.stringify(listKeys()) !== JSON.stringify(['skills:def67890', 'skills:aaa11111', 'memory:abc12345'])) {
+    fail(`queue-order: pick(C) reordered the list: ${JSON.stringify(listKeys())}`)
+  }
+  REST.mode = 'twomem'
+  await click(h.hostEl.querySelector('.pa-refresh'), 80)
+  if (sel() !== 'skills:aaa11111') {
+    fail(`queue-order: the selection changed on refresh even though it is still there: ${sel()}`)
+  }
+  const want = ['skills:def67890', 'skills:aaa11111', 'memory:abc12345', 'memory:abc99999']
+  if (JSON.stringify(listKeys()) !== JSON.stringify(want)) {
+    fail(`queue-order: a new record (D) did not append at the end: ${JSON.stringify(listKeys())}`)
+  }
+  REST.mode = 'normal'
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13d) later-button: Later moves the front record to the end and posts nothing -----------------
+{
+  const h = await mount('en', 'page')
+  const postsBefore = stub.calls.posts.length
+  const from = frontCell(h.hostEl)?.getAttribute('data-key')
+  await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
+  const to = frontCell(h.hostEl)?.getAttribute('data-key')
+  if (from === to) fail('later-button: Later did not move the record out of front')
+  if (!reachableKeys(h.hostEl).has(from)) fail('later-button: the record Later moved is no longer reachable')
+  if (stub.calls.posts.length !== postsBefore) fail('later-button: Later posted something, it must decide nothing')
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13e) front-gone: the front record leaves the queue while the user was elsewhere ----------------
+{
+  const h = await mount('en', 'page')
+  const outside = h.hostEl.querySelector('.pa-refresh')
+  outside.focus()
+  REST.gone = new Set(['abc12345'])
+  await click(outside, 80)
+  const said = lastSaid()
+  const wantMsg = 'It left the queue while you were away from it — it may have been decided elsewhere. ' +
+    'The next record is now in front.'
+  if (said?.message !== wantMsg) fail(`front-gone: wrong notice: ${JSON.stringify(said)}`)
+  if (frontCell(h.hostEl)?.getAttribute('data-key') !== 'skills:def67890') {
+    fail(`front-gone: the next record did not come to the front: ${frontCell(h.hostEl)?.getAttribute('data-key')}`)
+  }
+  if (h.hostEl.ownerDocument.activeElement !== outside) {
+    fail('front-gone: focus moved into the card although the user had put it outside')
+  }
+  REST.gone = null
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13f) last-decided (replaces just-done, R2 K24 → E5): All caught up names the newest decision on
+// a "Last:" line; Undo only where undoable && !undone, and it POSTs /undo with the entry id -----------
+{
+  const NOW = Date.now() / 1000
+  const JUST_DONE_HISTORY = { entries: [
+    { id: 'jd000001', ts: NOW - 60, kind: 'apply', subsystem: 'memory',
+      summary: 'JUST-DONE-UNDOABLE', files: [{ path: 'memories/MEMORY.md' }], undoable: true },
+    { id: 'jd000002', ts: NOW - 120, kind: 'rejected', subsystem: 'skills',
+      summary: 'JUST-DONE-NOT-UNDOABLE', files: [], undoable: false },
+    { id: 'jd000003', ts: NOW - 180, kind: 'apply', subsystem: 'memory',
+      summary: 'JUST-DONE-ALREADY-UNDONE', files: [{ path: 'memories/USER.md' }], undoable: true, undone: true }
+  ], counts: { applied: 3, failed: 0, undoable: 1 } }
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  const lastOf = async entries => {
+    REST.history = { ...JUST_DONE_HISTORY, entries }
+    const h = await mount('en', 'page')
+    return h
+  }
+  const h = await lastOf(JUST_DONE_HISTORY.entries)
+  const last = h.hostEl.querySelector('.pa-detail .pa-clear .pa-clear-last')
+  if (!/^Last: “JUST-DONE-UNDOABLE” · Saved to memory · /.test(last?.textContent || '')) {
+    fail(`last-decided: the newest decision is not named on the Last line: ${JSON.stringify(last?.textContent)}`)
+  }
+  const undo = buttons(last, /^Undo$/)[0]
+  if (!undo) fail('last-decided: an undoable newest decision offers no Undo')
+  if (undo) await click(undo, 60)
+  const sent = stub.calls.posts.filter(p => p.path === '/undo').at(-1)
+  if (sent?.body?.id !== 'jd000001') {
+    fail(`last-decided: Undo did not POST /undo with the entry id: ${JSON.stringify(sent)}`)
+  }
+  h.root.unmount()
+  h.hostEl.remove()
+  for (const [i, why] of [[1, 'not undoable'], [2, 'already undone']]) {
+    const g = await lastOf([JUST_DONE_HISTORY.entries[i]])
+    const line = g.hostEl.querySelector('.pa-clear-last')
+    if (!line) fail(`last-decided: the Last line is missing (${why})`)
+    if (buttons(line, /^Undo$/).length) fail(`last-decided: Undo shown on a decision that is ${why}`)
+    g.root.unmount()
+    g.hostEl.remove()
+  }
+  REST.pending = null
+  REST.history = null
+}
+
+// --- 13g) all-clear: 0 pending draws All caught up (seal, title, today's count, pips, Last line) and no
+// record card ------------------------------------------------------------------------------------
+{
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  REST.history = HISTORY
+  const h = await mount('en', 'page')
+  if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-split .pa-row')) {
+    fail('all-clear: a record is drawn with 0 pending')
+  }
+  const empty = h.hostEl.querySelector('.pa-split .pa-detail .pa-clear')
+  if (empty?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') fail('all-clear: the title is missing')
+  if (!empty?.querySelector('.pa-clear-seal svg[data-icon="check"]')) {
+    fail('all-clear: the check mark is not the kit\u2019s Check icon (a text glyph depends on the font)')
+  }
+  const n = decidedToday(HISTORY.entries).length
+  const body = empty?.querySelector('.pa-clear-body')?.textContent
+  const wantBody = n ? `${n} decided today · nothing written without you`
+    : 'Nothing decided today · nothing written without you'
+  if (body !== wantBody) {
+    fail(`all-clear: the spec sentence is missing: ${JSON.stringify(body)}`)
+  }
+  const pips = empty?.querySelectorAll('.pa-pips .pa-pip').length || 0
+  if (n && pips !== n) fail(`all-clear: the pips are not one per decision today: ${pips} (want ${n})`)
+  if (!empty?.querySelector('.pa-clear-last')) fail('all-clear: the Last line is gone although history has entries')
+  REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
+  const none = await mount('en', 'page')
+  const noneBody = none.hostEl.querySelector('.pa-clear-body')?.textContent
+  if (noneBody !== 'Nothing decided today · nothing written without you') {
+    fail(`all-clear at 0: ${JSON.stringify(noneBody)}`)
+  }
+  if (none.hostEl.querySelector('.pa-clear-last')) fail('all-clear: a Last line is drawn with no history')
+  none.root.unmount()
+  none.hostEl.remove()
+  REST.pending = null
+  REST.history = null
+  h.root.unmount()
+  h.hostEl.remove()
+}
+
+// --- 13h) motion-reduced: under prefers-reduced-motion the pane root says so and the sheet stills it ----
+{
+  const realMM = global.window.matchMedia
+  global.window.matchMedia = q => ({ matches: /reduce/.test(q), media: q, addEventListener() {}, removeEventListener() {} })
+  const h = await mount('en', 'page')
+  await toFront(h.hostEl, 'skills:def67890')
+  if (h.hostEl.querySelector('.pa-root')?.getAttribute('data-still') !== '1') {
+    fail('motion-reduced: the pane root does not mark reduced motion (data-still)')
+  }
+  const sheet = h.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-root\[data-still="1"\] \*[^{]*\{\s*transition:none !important;animation:none !important/.test(sheet)) {
+    fail('motion-reduced: the stilled root does not switch off every transition and animation')
+  }
+  const stuck = [...h.hostEl.querySelectorAll('*')].filter(c => (c.style.transform || '').includes('translate'))
+  if (stuck.length) fail(`motion-reduced: an inline transform moves ${stuck.length} element(s)`)
+  global.window.matchMedia = realMM
+  h.root.unmount()
+  h.hostEl.remove()
 }
 
 // --- 14) The panel never touches the removed language route ------------------------------------
@@ -1629,7 +2351,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
     fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
   }
-  await click(tab(held.hostEl, /History/))
+  await click(tab(held.hostEl, /Activity/))
   if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
   if (!held.hostEl.querySelector('.pa-root > div:nth-child(3) [data-slot="loader"]')) {
     fail('no kit Loader while the history loads')
@@ -1652,7 +2374,7 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (retry) await click(retry, 80)
   if (REST.gets <= before) fail('Retry did not reload the data')
   if (broken.hostEl.querySelector('[data-slot="error-state"]')) fail('the error stays after a successful Retry')
-  if (broken.hostEl.querySelectorAll('.pa-cell').length !== 3) fail('Retry did not bring the records back')
+  if (reachableKeys(broken.hostEl).size !== 3) fail('Retry did not bring the records back')
   if (!broken.hostEl.textContent.includes(ISSUE)) fail('an issue the backend reported is not shown')
   broken.hostEl.remove()
   REST.mode = 'normal'
@@ -1666,7 +2388,7 @@ for (const how of ['throw', 'refused']) {
   const scanned = await mount('en')
   const why = how === 'throw' ? 'scan exploded' : 'scan refused'
   if (scanned.hostEl.querySelector('[data-slot="error-state"]')) fail(`a ${how} /scan replaced the pending list with an error state`)
-  if (scanned.hostEl.querySelectorAll('.pa-cell').length !== 3) fail(`a ${how} /scan hid the pending records`)
+  if (reachableKeys(scanned.hostEl).size !== 3) fail(`a ${how} /scan hid the pending records`)
   if (!scanned.hostEl.textContent.includes(why)) fail(`a ${how} /scan is not reported: “${why}” is missing`)
   scanned.hostEl.remove()
 }
@@ -1679,28 +2401,49 @@ REST.scan = 'ok'
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const pickDisabled = (host, key) => (cell(host, key)?.querySelector('input.pa-pick')
+    || host.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
+      ?.querySelector('input.pa-pick'))?.disabled
+  const openFull = async (host, key) => {
+    await toFront(host, key)
+    const btn = buttons(cell(host, key), /^Show the full review$/)[0]
+    if (btn && !buttons(cell(host, key), /^Hide the full review$/).length) await click(btn, 60)
+  }
   REST.mode = 'reviewing'
   const gate = await mount('en')
-  const approveIn = key => buttons(cell(gate.hostEl, key), /^Approve$/)[0]
-  for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
+  await selectMode(gate.hostEl)
+  const approveIn = key => [primaryBtn(cell(gate.hostEl, key))].filter(Boolean)[0]
+  for (const key of ['memory:abc12345', 'skills:aaa11111']) {
+    await toFront(gate.hostEl, key)
     if (approveIn(key)?.getAttribute('aria-disabled') !== 'true') fail(`${key}: Approve is not locked before the review`)
-    if (cell(gate.hostEl, key)?.querySelector('input.pa-pick')?.disabled) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
+    if (pickDisabled(gate.hostEl, key)) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
   }
+  await toFront(gate.hostEl, 'skills:def67890')
+  if (pickDisabled(gate.hostEl, 'skills:def67890')) fail('skills:def67890: an unreviewed record cannot be ticked for bulk Reject')
+  if (name(approveIn('skills:def67890')) !== 'Use the short version') {
+    fail('a description-fix record loses its short-version primary action while unreviewed')
+  }
+  if (approveIn('skills:def67890')?.getAttribute('aria-disabled') === 'true') {
+    fail('the short-version primary action must not be locked by the pre-review')
+  }
+  await toFront(gate.hostEl, 'memory:abc12345')
+  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Select all$/)[0])
   const gateBar = gate.hostEl.querySelector('.pa-bulk')
   if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
-  if (gateBar) await click(buttons(gateBar, /^Select all$/)[0])
   const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Approve 3$/)[0]
   if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
   if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
     fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
   }
-  if (gateBar) await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Clear selection$/)[0])
+  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
     .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
+  await openFull(gate.hostEl, 'skills:def67890')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
   if (buttons(cell(gate.hostEl, 'skills:def67890'), /Approve without review/).length) {
     fail('a failed rule check offers "Approve without review"')
   }
+  await openFull(gate.hostEl, 'skills:aaa11111')
   const open = cell(gate.hostEl, 'skills:aaa11111')
   must(open?.textContent, ['No pre-review model is set', 'Approvals review'], 'unassigned review')
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
@@ -1723,12 +2466,13 @@ REST.scan = 'ok'
 
   REST.mode = 'reviewed'
   const done = await mount('en')
+  await openFull(done.hostEl, 'skills:aaa11111')
   const card = cell(done.hostEl, 'skills:aaa11111')
   must(card?.textContent, ['Reject advised', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
   must(card?.querySelector('.pa-review')?.textContent, ['Pre-review', `In the write: “${FINDING.quote}”`,
     `Against: “${FINDING.other}”`, 'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated', 'Review again'],
   'the pre-review section')
-  if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') {
+  if ([primaryBtn(card)].filter(Boolean)[0]?.getAttribute('aria-disabled') === 'true') {
     fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
   }
   must(card?.querySelector('.pa-review')?.textContent, ['Check', ADVICE_TEXT], 'an advice check row')
@@ -1751,18 +2495,26 @@ REST.scan = 'ok'
   const live = b => b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
   const drafts = stub.calls.composer.length
+  const openFull20 = async (host, key) => {
+    await toFront(host, key)
+    const btn = buttons(cell(host, key), /^Show the full review$/)[0]
+    if (btn && !buttons(cell(host, key), /^Hide the full review$/).length) await click(btn, 60)
+  }
   REST.mode = 'remedy'
   const fixHost = await mount('en')
+  await openFull20(fixHost.hostEl, 'skills:def67890')
   const rule = cell(fixHost.hostEl, 'skills:def67890')
   must(rule?.textContent, ['Suggested edit — adds "author: Selftest Owner" to the header', 'author: Selftest Owner'],
     'rule edit shown')
   if (!live(buttons(rule, /^Approve with the fix$/)[0])) fail('a rule check with a fixing edit offers no way to approve the fixed write')
   if (live(buttons(rule, /^Approve as written$/)[0])) fail('a failed rule check lets the write through as written')
+  await openFull20(fixHost.hostEl, 'memory:abc12345')
   const left = cell(fixHost.hostEl, 'memory:abc12345')
   must(left?.textContent, [`The suggested edits do not clear every problem: ${FIX_LEFT}`], 'a fix that leaves a problem')
   const held = buttons(left, /^Approve with the fix$/)[0]
   if (live(held)) fail('a fix that leaves a problem is still clickable')
   if (!String(held?.closest('[data-tip]')?.getAttribute('data-tip')).includes(FIX_LEFT)) fail('a held fix does not say why')
+  await openFull20(fixHost.hostEl, 'skills:aaa11111')
   const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
   must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x',
     'The fix covers 1 of 2 problems'], 'suggested edit shown')
@@ -1783,20 +2535,24 @@ REST.scan = 'ok'
   if (stub.calls.composer.length !== drafts) fail('a pending card wrote into the chat box')
   fixHost.hostEl.remove()
 
-  const WAYS = /^(Approve with the fix|Approve as written|Approve|Shorten description|Approve without review|Create only this|Apply only this)$/
+  const WAYS = /^(Approve with the fix|Approve as written|Use the short version|Save to memory|Save changes|Save skill|Delete skill|Shorten description|Approve without review|Create only this|Apply only this)$/
   const gaps = []
   for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
     REST.mode = mode
     const host = await mount('en')
-    for (const c of host.hostEl.querySelectorAll('.pa-cell')) {
-      const badge = c.querySelector('.pa-card-head [data-slot="badge"]')
-      const variant = badge?.getAttribute('data-variant')
-      if (variant !== 'warn' && variant !== 'destructive') continue
+    for (const key of ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']) {
+      await toFront(host.hostEl, key)
+      const c = host.hostEl.querySelector('.pa-cell')
+      const badge = c.querySelector('.pa-verdict')
+      const variant = badge?.getAttribute('data-k')
+      if (!['rule', 'stale', 'edit', 'failed', 'reject'].includes(variant)) continue
       const text = c.textContent || ''
-      if (text.includes('Reading this write against your rules')) continue
+      if (text.includes('the second opinion is still reading this')) continue
       if (text.includes('Hermes cannot apply this write as staged')) continue
-      const ways = [...c.querySelectorAll('button')].filter(b => WAYS.test((b.textContent || '').trim()) && live(b))
-      if (!ways.length) gaps.push(`${mode} ${c.getAttribute('data-key')} “${badge?.textContent}”`)
+      if (c.querySelector('.pa-verdict .pa-steps')) continue
+      const ways = [...c.querySelectorAll('button')].filter(b => WAYS.test((name(b) || '').trim()) && live(b))
+      const vt = badge?.querySelector('.pa-vtitle')?.textContent
+      if (!ways.length) gaps.push(`${mode} ${c.getAttribute('data-key')} “${vt}”`)
     }
     host.hostEl.remove()
   }
@@ -1816,6 +2572,7 @@ REST.scan = 'ok'
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
   const reviewsPosts = () => stub.calls.posts.filter(p => p.path === '/reviews').length
 
+  await stopLeftMounts()
   const calm = reviewsPosts()
   const plain = await mount('en', 'page')
   if (reviewsPosts() !== calm) fail('a /pending load without a queued review still posted /reviews')
@@ -1833,15 +2590,20 @@ REST.scan = 'ok'
   REST.mode = 'queuedstuck'
   const queued = await mount('en', 'page')
   const qCard = cell(queued.hostEl, 'memory:abc12345')
+  {
+    const qOpen = buttons(qCard, /^Show the full review$/)[0]
+    if (qOpen) await click(qOpen, 60)
+  }
   must(qCard?.textContent, ['Reading this write against your rules'], 'a queued review is drawn like a running one')
-  const qBadge = qCard?.querySelector('.pa-card-head [data-slot="badge"]')
+  const qBadge = qCard?.querySelector('.pa-verdict')
   REST.mode = 'reviewing'
   const running = await mount('en', 'page')
-  const rBadge = cell(running.hostEl, 'memory:abc12345')?.querySelector('.pa-card-head [data-slot="badge"]')
-  if (!qBadge || qBadge.textContent !== rBadge?.textContent || qBadge.getAttribute('data-variant') !== rBadge?.getAttribute('data-variant')) {
-    fail(`a queued card wears another badge than a running one: ${qBadge?.textContent} vs ${rBadge?.textContent}`)
+  const rBadge = cell(running.hostEl, 'memory:abc12345')?.querySelector('.pa-verdict')
+  const vt = v => v?.querySelector('.pa-vtitle')?.textContent
+  if (!qBadge || vt(qBadge) !== vt(rBadge) || qBadge.getAttribute('data-k') !== rBadge?.getAttribute('data-k')) {
+    fail(`a queued card wears another verdict than a running one: ${vt(qBadge)} vs ${vt(rBadge)}`)
   }
-  if (buttons(qCard, /^Approve$/)[0]?.getAttribute('aria-disabled') !== 'true') fail('a queued review leaves Approve open')
+  if ([primaryBtn(qCard)].filter(Boolean)[0]?.getAttribute('aria-disabled') !== 'true') fail('a queued review leaves Approve open')
   for (const h of [queued, running]) { h.root.unmount(); h.hostEl.remove() }
   REST.mode = 'normal'
 
@@ -1863,6 +2625,11 @@ REST.scan = 'ok'
 
   REST.mode = 'integrity'
   const integ = await mount('en', 'page')
+  await toFront(integ.hostEl, 'skills:aaa11111')
+  {
+    const iOpen = buttons(cell(integ.hostEl, 'skills:aaa11111'), /^Show the full review$/)[0]
+    if (iOpen) await click(iOpen, 60)
+  }
   const card = cell(integ.hostEl, 'skills:aaa11111')
   const review = card?.querySelector('.pa-review')
   const doubt = [...(review?.querySelectorAll('[data-unverified="true"]') || [])]
@@ -1880,8 +2647,9 @@ REST.scan = 'ok'
   }
   {
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
-      .map(el => (el.tagName === 'INPUT' ? 'checkbox' : el.textContent.trim()))
-    const want = ['checkbox', 'Review again', 'Details and changes', 'Reject', 'Approve']
+      .filter(el => !el.closest('.pa-back'))
+      .map(el => (el.tagName === 'INPUT' ? 'checkbox' : name(el).trim()))
+    const want = ['Hide the full review', 'Review again', 'Review again', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -1890,7 +2658,9 @@ REST.scan = 'ok'
   if ((review?.textContent || '').includes('yyy') || buttons(card, /^Approve with the fix$/).length) {
     fail('an unverified finding offers its edit')
   }
-  if (/Breaks a rule/.test(card?.querySelector('.pa-card-head')?.textContent || '')) fail('an unverified finding still flags the card')
+  if (/Breaks a rule/.test(card?.querySelector('.pa-verdict')?.textContent || '')) {
+    fail('an unverified finding still flags the card')
+  }
   const lines = Object.fromEntries([...(review?.querySelectorAll('[data-aside]') || [])]
     .map(el => [el.getAttribute('data-aside'), el.textContent]))
   const want = {
@@ -1904,11 +2674,10 @@ REST.scan = 'ok'
     if (!String(lines[key] || '').startsWith(text)) fail(`the ${key} line is missing or wrong: ${JSON.stringify(lines[key])}`)
   }
   if (!buttons(card, /^Review again$/).length) fail('an outdated review lost its "Review again" button')
-  if (buttons(card, /^Approve$/)[0]?.getAttribute('aria-disabled') === 'true') fail('an outdated review locks Approve')
+  if ([primaryBtn(card)].filter(Boolean)[0]?.getAttribute('aria-disabled') === 'true') fail('an outdated review locks Approve')
   must(card?.textContent, ['UNVERIFIED-EXPLAIN-7f2'], 'an unverified finding still shows')
-  const details = buttons(card, /^Details and changes$/)[0]
+  const details = buttons(card, /^Hide the full review$/)[0]
   if (!details) fail('the integrity card lost its Details control')
-  if (details) await click(details)
   must(cell(integ.hostEl, 'skills:aaa11111')?.textContent, ['UNVERIFIED-NOTE-3c1', 'Unverified quote'],
     'an unverified note in Details')
   {
@@ -1925,22 +2694,24 @@ REST.scan = 'ok'
 
   REST.mode = 'restore'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /History/), 60)
-  const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
-  const rowOf = text => rows.find(c => c.textContent.includes(text))
-  const restorable = rowOf('new-skill rejected')
+  await click(tab(hist.hostEl, /Activity/), 60)
+  // The history cards became list rows + one detail (R2 A3-A15): Restore lives in the selected entry's detail.
+  const restoredRow = await actFind(hist.hostEl, 'MEMORY.md rejected')
+  if (!restoredRow?.textContent.includes('Restored') || buttons(restoredRow, /^Restore$/).length) {
+    fail('a restored row does not read "Restored" or still offers the button')
+  }
+  const oldRow = await actFind(hist.hostEl, 'an old rejection')
+  if (!oldRow || buttons(oldRow, /^Restore$/).length) fail('a pre-1.10.0 rejected row offers Restore')
+  const rowHeights = [...hist.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
+    .map(w => w.style.height)
+  if (new Set(rowHeights).size !== 1) {
+    fail(`a history row with Restore has another height: ${JSON.stringify(rowHeights)}`)
+  }
+  const restorable = await actFind(hist.hostEl, 'new-skill rejected')
   const restoreBtn = buttons(restorable || hist.hostEl, /^Restore$/)[0]
   if (!restoreBtn || restoreBtn.getAttribute('data-slot') !== 'button' || restoreBtn.getAttribute('data-variant') === 'destructive') {
     fail('a restorable rejected row offers no plain kit "Restore" button')
   }
-  const restoredRow = rowOf('MEMORY.md rejected')
-  if (!restoredRow?.textContent.includes('Restored') || buttons(restoredRow, /^Restore$/).length) {
-    fail('a restored row does not read "Restored" or still offers the button')
-  }
-  if (buttons(rowOf('an old rejection') || hist.hostEl, /^Restore$/).length) fail('a pre-1.10.0 rejected row offers Restore')
-  const layers = rows.map(c => [...c.querySelectorAll('div')].map(d => `${d.style.height || ''}|${d.style.minHeight || ''}`)
-    .filter(v => v !== '|').join(' '))
-  if (new Set(layers).size !== 1) fail(`a history card with Restore has other layers: ${JSON.stringify([...new Set(layers)])}`)
   const pendingReads = GETS.filter(p => p === '/pending').length
   const historyReads = GETS.filter(p => p === '/history?limit=50').length
   REST.history = { ...HISTORY_RESTORE, entries: HISTORY_RESTORE.entries.map(e => (e.id === RESTORE_ID
@@ -1959,7 +2730,7 @@ REST.scan = 'ok'
   await act(async () => { await new Promise(r => setTimeout(r, 1600)) })
   {
     const now = document.activeElement
-    if (!now?.classList.contains('pa-card') || !now.textContent.includes(`#${RESTORE_ID}`)) {
+    if (!now?.classList.contains('pa-act-row') || now.dataset.entry !== RESTORE_ID) {
       fail(`after Restore keyboard focus falls to the page top instead of the row: ${now?.outerHTML?.slice(0, 80)}`)
     }
   }
@@ -1985,22 +2756,43 @@ REST.scan = 'ok'
 
   REST.mode = 'groups'
   const g = await mount('en', 'page')
-  const keys = [...g.hostEl.querySelectorAll('.pa-cell')].map(c => c.getAttribute('data-key'))
-  if (!same(keys, ['memory:abc12345', ck(CLEAN_GROUP), 'skills:c3000003', ck(STALE_GROUP)])) {
+  await selectMode(g.hostEl)
+  const expectKeys = ['memory:abc12345', ck(CLEAN_GROUP), 'skills:c3000003', ck(STALE_GROUP)]
+  const keys = [...reachableKeys(g.hostEl)]
+  if (!same([...keys].sort(), [...expectKeys].sort())) {
     fail(`a group is not one card at its first member: ${JSON.stringify(keys)}`)
   }
   for (const id of [...CLEAN_MEMBERS, ...STALE_MEMBERS]) {
-    if (cell(g.hostEl, ck(id))) fail(`member ${id} is drawn as a card of its own`)
+    if (reachableKeys(g.hostEl).has(ck(id))) fail(`member ${id} is drawn as a card of its own`)
   }
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
   const clean = () => cell(g.hostEl, ck(CLEAN_GROUP))
+  const cleanHead = clean()?.querySelector('.pa-dh')
+  must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1'], 'clean group header')
+  if (cleanHead?.querySelectorAll('[data-slot="badge"]').length) fail('a clean group header wears a state badge')
+  if (!g.hostEl.querySelector(`.pa-row[data-key="${ck(CLEAN_GROUP)}"]`)?.closest('.pa-rowwrap')
+    ?.querySelector('input[type="checkbox"]')) fail('a group row has no checkbox')
+
+  await toFront(g.hostEl, ck(STALE_GROUP))
   const stale = () => cell(g.hostEl, ck(STALE_GROUP))
-  const cleanHead = clean()?.querySelector('.pa-card-head')
-  must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1', 'Looks fine'], 'clean group header')
-  if (cleanHead?.querySelectorAll('[data-slot="badge"]').length !== 1) fail('a group header wears more than one badge')
-  if (!cleanHead?.querySelector('input[type="checkbox"]')) fail('a group header has no checkbox')
-  must(stale()?.querySelector('.pa-card-head')?.textContent, ['beta-skill, gamma-skill · 3 changes', '+5 −2',
-    'Cannot be applied'], 'stale group header')
-  if (g.hostEl.querySelectorAll('.pa-review').length !== 4) fail('a group does not have exactly one review section')
+  must(`${stale()?.querySelector('.pa-dh')?.textContent} | ${stale()?.querySelector('.pa-verdict')?.textContent}`,
+    ['beta-skill, gamma-skill · 3 changes', '+5 −2', 'Cannot be applied'], 'stale group header')
+
+  // Each reachable record still carries exactly one review section (the stage shows one at a time now,
+  // so the panel-wide "4 review sections at once" count is replaced by a per-card sweep of the same 4 keys).
+  for (const key of expectKeys) {
+    await toFront(g.hostEl, key)
+    const c = cell(g.hostEl, key)
+    const sfc = buttons(c, /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+    const n = g.hostEl.querySelectorAll('.pa-review').length
+    if (n !== 1) fail(`"${key}" does not have exactly one review section: ${n}`)
+  }
+  await toFront(g.hostEl, ck(STALE_GROUP))
+  {
+    const sfc = buttons(stale(), /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   const sReview = stale()?.querySelector('.pa-review')?.textContent || ''
   must(sReview, ['GROUP-SUMMARY-STALE', '#2 · FINDING-FOR-TWO', 'FINDING-UNATTRIBUTED'], 'group review')
   if (/#\d+ · FINDING-UNATTRIBUTED/.test(sReview)) fail('a finding without `change` still starts with #n')
@@ -2022,10 +2814,14 @@ REST.scan = 'ok'
   if (sApprove) await click(sApprove)
   if (postsTo('/decide').length !== sent) fail('a held group Approve sent /decide')
 
-  if (clean()?.textContent.includes('RESULT-CHANGED-LINE')) fail('the Result is drawn before Details is opened')
-  await click(buttons(clean(), /^Details and changes$/)[0])
-  must(clean()?.querySelector('.pa-details')?.textContent, ['Result', 'alpha-skill/SKILL.md', 'Changed',
-    'RESULT-CHANGED-LINE', 'alpha-skill/references/notes.md', 'New file', 'RESULT-NEW-LINE', '+2 −0'], 'group Result')
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
+  // The group Result (R2 K8) is drawn as file boxes with a status pill in the body, not behind Details.
+  {
+    const boxes = [...(clean()?.querySelectorAll('.pa-dbody > .pa-change .pa-file') || [])]
+    must(boxes.map(b => b.textContent).join(' | '), ['alpha-skill/SKILL.md', 'Changed', 'RESULT-CHANGED-LINE',
+      'alpha-skill/references/notes.md', 'New file', 'RESULT-NEW-LINE', '+2 −0'], 'group Result')
+    if (boxes.some(b => !b.querySelector('.pa-file-head .pa-pill'))) fail('a group Result file box has no status pill')
+  }
 
   await click(buttons(clean(), /^Reject #2$/)[0], 60)
   let body = lastDecide()
@@ -2038,6 +2834,7 @@ REST.scan = 'ok'
       || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
     fail(`group Approve did not send groups + versions[groupId]: ${JSON.stringify(body)}`)
   }
+  await toFront(g.hostEl, ck(STALE_GROUP))
   await click(buttons(stale(), /^Reject all 3$/)[0], 80)
   body = lastDecide()
   if (body.decision !== 'reject' || !same(body.groups, [STALE_GROUP]) || (body.ids || []).length) {
@@ -2047,15 +2844,25 @@ REST.scan = 'ok'
   if (toast?.kind !== 'success' || !/restore it/.test(toast?.message || '')) fail(`a group reject toast: ${JSON.stringify(toast)}`)
   // 1.13: a card on its way out is inert, so wait for the re-read to bring the fixture's card back.
   await act(async () => { await new Promise(r => setTimeout(r, 500)) })
+  await toFront(g.hostEl, ck(CLEAN_GROUP))
+  {
+    const sfc = buttons(clean(), /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   await click(buttons(clean(), /^Review again$/)[0], 60)
   const again = postsTo('/review').at(-1)?.body || {}
   if (again.id !== CLEAN_GROUP || again.subsystem !== 'skills') fail(`"Review again" on a group: ${JSON.stringify(again)}`)
   noRawKeys(g.hostEl.textContent, 'group cards')
 
-  const pick = key => cell(g.hostEl, key)?.querySelector('.pa-card-head input[type="checkbox"]')
-  for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) await click(pick(key))
+  const pick = key => g.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
+    ?.querySelector('input[type="checkbox"]')
+  for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) {
+    const cb = pick(key)
+    if (cb) await click(cb)
+  }
   const bar = () => g.hostEl.querySelector('.pa-bulk')
-  must(bar()?.textContent, ['2 of 4 selected', 'Approve 2'], 'a group is one selectable unit')
+  must(g.hostEl.querySelector('.pa-list-head')?.textContent, ['2 selected'], 'a group is one selectable unit')
+  must(bar()?.textContent, ['2 records selected', 'Approve 2'], 'a group is one selectable unit')
   sent = postsTo('/decide').length
   await click(buttons(bar(), /^Approve 2$/)[0])
   await click(buttons(bar(), /^Confirm$/)[0], 80)
@@ -2064,6 +2871,7 @@ REST.scan = 'ok'
       || bulk[0].versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
     fail(`bulk did not send one /decide with groups for groups and ids for the rest: ${JSON.stringify(bulk)}`)
   }
+  if (!pick(ck(STALE_GROUP))) await selectMode(g.hostEl)
   await click(pick(ck(STALE_GROUP)))
   const heldBulk = buttons(bar(), /^Approve 1$/)[0]
   if (heldBulk?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a stale group selected')
@@ -2072,15 +2880,25 @@ REST.scan = 'ok'
 
   REST.mode = 'groupsfix'
   const f = await mount('en', 'page')
-  const fClean = () => cell(f.hostEl, ck(CLEAN_GROUP))
+  await toFront(f.hostEl, ck(STALE_GROUP))
   const fStale = () => cell(f.hostEl, ck(STALE_GROUP))
-  must(fStale()?.querySelector('.pa-card-head')?.textContent, ['Rule check failed'], 'a hard rule badge on a group')
+  must(fStale()?.querySelector('.pa-verdict')?.textContent, ['Rule check failed'], 'a hard rule badge on a group')
+  {
+    const sfc = buttons(fStale(), /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   must(fStale()?.querySelector('.pa-review')?.textContent, ['#3 · HARD-FOR-THREE'], 'a rule check names its change')
-  must(fClean()?.querySelector('.pa-review')?.textContent, ['#1 · FIX-FOR-ONE'], 'an edit finding names its change')
   const shorten = buttons(fStale(), /^Shorten description$/)
   if (shorten.length !== 1) fail(`the member with plain.fix offers ${shorten.length} description fixes, not 1`)
   if (shorten[0]) await click(shorten[0], 60)
   if (postsTo('/fix').at(-1)?.body?.id !== STALE_MEMBERS[1]) fail('the member description fix did not post /fix for #2')
+  await toFront(f.hostEl, ck(CLEAN_GROUP))
+  const fClean = () => cell(f.hostEl, ck(CLEAN_GROUP))
+  {
+    const sfc = buttons(fClean(), /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
+  must(fClean()?.querySelector('.pa-review')?.textContent, ['#1 · FIX-FOR-ONE'], 'an edit finding names its change')
   await click(buttons(fClean(), /^Approve with the fix$/)[0], 80)
   body = lastDecide()
   if (!body.with_edits || !same(body.groups, [CLEAN_GROUP]) || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
@@ -2089,10 +2907,17 @@ REST.scan = 'ok'
   f.root.unmount()
   f.hostEl.remove()
 
+  await stopLeftMounts()
   REST.mode = 'groupsqueued'
   const qPosts = postsTo('/reviews').length
   const q = await mount('en', 'page')
-  if (postsTo('/reviews').length - qPosts !== 1) fail('a queued group review did not start the reviews once')
+  for (let w = 0; w < 100 && postsTo('/reviews').length === qPosts; w++) {
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  }
+  await act(async () => { await new Promise(r => setTimeout(r, 60)) })
+  const qGot = postsTo('/reviews').length - qPosts
+  if (qGot !== 1) fail(`a queued group review posted /reviews ${qGot} times, not once`)
+  await toFront(q.hostEl, ck(CLEAN_GROUP))
   if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Approve 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
     fail('a group whose review runs leaves Approve open')
   }
@@ -2101,16 +2926,20 @@ REST.scan = 'ok'
 
   REST.mode = 'grouphist'
   const h = await mount('en', 'page')
-  await click(tab(h.hostEl, /History/), 60)
-  const histRows = [...h.hostEl.querySelectorAll('.pa-card')]
-  const applied = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('alpha-skill · 2 changes'))
-  const rejected = () => [...h.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes('beta-skill · 3 changes'))
-  if (!applied() || !rejected() || histRows.length !== 2) fail('the group history rows are not drawn one per group')
+  await click(tab(h.hostEl, /Activity/), 60)
+  const histRows = [...h.hostEl.querySelectorAll('.pa-act-row')]
+  const appliedRow = await actFind(h.hostEl, 'alpha-skill · 2 changes')
+  const rejectedRow = await actFind(h.hostEl, 'beta-skill · 3 changes')
+  if (!appliedRow || !rejectedRow || histRows.length !== 2) fail('the group history rows are not drawn one per group')
+  const applied = () => actDetail(h.hostEl)
+  const rejected = () => actDetail(h.hostEl)
+  await actFind(h.hostEl, 'alpha-skill · 2 changes')
   if (applied()?.textContent.includes('CHANGE-ONE-SUMMARY')) fail('a group row shows its changes unfolded')
   await click(buttons(applied(), /^Changes \(2\)$/)[0])
   must(applied()?.textContent, ['#1 · CHANGE-ONE-SUMMARY', '#2 · CHANGE-TWO-SUMMARY'], 'group row changes')
   await click(buttons(applied(), /^Undo$/)[0], 60)
   if (postsTo('/undo').at(-1)?.body?.id !== 'abab0101') fail('Undo on a group row did not post the row id')
+  await actFind(h.hostEl, 'beta-skill · 3 changes')
   await click(buttons(rejected(), /^Restore$/)[0], 80)
   if (postsTo('/restore').at(-1)?.body?.id !== GROUP_REJECTED) fail('Restore on a group row did not post the row id')
   const back = lastSaid()
@@ -2122,6 +2951,7 @@ REST.scan = 'ok'
   h.hostEl.remove()
   REST.mode = 'normal'
 
+  await stopLeftMounts()
   const ticks = []
   const realTimeout = globalThis.setTimeout
   globalThis.setTimeout = (fn, ms, ...rest) => {
@@ -2134,12 +2964,17 @@ REST.scan = 'ok'
   globalThis.setTimeout = realTimeout
   const poll = ticks.filter(x => x.ms === 15000).at(-1)
   if (!poll) fail('the chip scheduled no next /count poll after its first answer')
-  if (postsTo('/reviews').length - c0 !== 1) fail('the chip\'s first poll with records did not post /reviews once')
+  const polls = ticks.filter(x => x.ms === 15000).length
+  if (polls > 1) fail(`${polls} pollers scheduled while only the chip was mounted — an earlier mount still polls`)
+  const chipSent = () => postsTo('/reviews').length - c0
+  if (chipSent() !== 1) fail(`the chip's first poll with records posted /reviews ${chipSent()} times, not once`)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (postsTo('/reviews').length - c0 !== 1) fail('an unchanged /count posted /reviews again')
+  if (chipSent() !== 1) fail(`after an unchanged /count the chip has posted /reviews ${chipSent()} times, not once`)
   REST.count = CHIP_RECORDS(3)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (postsTo('/reviews').length - c0 !== 2) fail('the chip did not post /reviews when only `records` changed')
+  if (chipSent() !== 2) {
+    fail(`after only \`records\` changed the chip has posted /reviews ${chipSent()} times, not twice`)
+  }
   if (!/3 awaiting approval/.test(chip.chipEl.textContent)) fail(`the chip total is not the counts total: ${chip.chipEl.textContent}`)
   chip.chipRoot.unmount()
   chip.chipEl.remove()
@@ -2182,8 +3017,12 @@ REST.scan = 'ok'
   const variant = (c, re) => buttons(c, re)[0]?.getAttribute('data-variant')
   REST.mode = 'fixloss'
   const host = await mount('en')
+  await toFront(host.hostEl, 'skills:aaa11111')
   const heavy = cell(host.hostEl, 'skills:aaa11111')
-  const light = cell(host.hostEl, 'memory:abc12345')
+  {
+    const sfc = buttons(heavy, /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   must(heavy?.textContent, ['The suggested fix deletes 51 of the 54 new words in the text it edits (94%).',
     'Approve as written keeps the write.'], 'a heavy fix is stated with its number')
   if (!heavy?.querySelector('.pa-alert-danger')) {
@@ -2194,6 +3033,12 @@ REST.scan = 'ok'
       + `fix=${variant(heavy, /^Approve with the fix$/)}`)
   }
   if (!live(buttons(heavy, /^Approve with the fix$/)[0])) fail('a heavy fix is no longer clickable (1.9.3 dead end)')
+  await toFront(host.hostEl, 'memory:abc12345')
+  const light = cell(host.hostEl, 'memory:abc12345')
+  {
+    const sfc = buttons(light, /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   must(light?.textContent, ['With the fix, 53 of the 54 new words in the text it edits remain.'],
     'a light fix states what it keeps')
   if ((light?.textContent || '').includes('deletes')) fail('a light fix reads as an alert')
@@ -2204,6 +3049,11 @@ REST.scan = 'ok'
 
   REST.mode = 'remedy'
   const plain = await mount('en')
+  await toFront(plain.hostEl, 'skills:aaa11111')
+  {
+    const sfc = buttons(cell(plain.hostEl, 'skills:aaa11111'), /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   if (/new words in the text it edit/.test(cell(plain.hostEl, 'skills:aaa11111')?.textContent || '')) {
     fail('a review without fix_effect shows an effect line')
   }
@@ -2214,7 +3064,13 @@ REST.scan = 'ok'
 
   REST.mode = 'groupsloss'
   const g = await mount('en', 'page')
+  await selectMode(g.hostEl)
+  await toFront(g.hostEl, `skills:${CLEAN_GROUP}`)
   const gc = cell(g.hostEl, `skills:${CLEAN_GROUP}`)
+  {
+    const sfc = buttons(gc, /^Show the full review$/)[0]
+    if (sfc) await click(sfc, 40)
+  }
   must(gc?.textContent, ['The suggested fix deletes 5 of the 10 new words in the text it edits (50%).'],
     'a group heavy fix at exactly half')
   if (variant(gc, /^Approve 2 changes$/) !== 'default' || variant(gc, /^Approve with the fix$/) !== 'outline') {
@@ -2224,20 +3080,20 @@ REST.scan = 'ok'
 
   REST.mode = 'amendhist'
   const hist = await mount('en', 'page')
-  await click(tab(hist.hostEl, /History/), 60)
-  const rows = [...hist.hostEl.querySelectorAll('.pa-card')]
-  const rowOf = text => rows.find(c => c.textContent.includes(text))
-  const fixedRow = rowOf('patch in user profile')
+  await click(tab(hist.hostEl, /Activity/), 60)
+  const fixedRow = await actFind(hist.hostEl, 'patch in user profile')
   must(fixedRow?.textContent, ['The suggested fix removed 51 of the 54 new words in the text it edited.'],
     'a fixed history row states the effect')
   const cmp = buttons(fixedRow || hist.hostEl, /^Compare with the write as staged$/)[0]
   if (!cmp) fail('a fixed history row offers no comparison with the write as staged')
   if ((fixedRow?.textContent || '').includes(WRITTEN_TEXT)) fail('the as-written text is shown before it is asked for')
   if (cmp) await click(cmp, 40)
-  must(rowOf('patch in user profile')?.textContent, [`As written (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
+  must(actDetail(hist.hostEl)?.textContent, [`As written (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
     'Applied (13 characters)', 'APPLIED-short', 'Reviewer: AMEND-WHY', 'Hide the comparison'], 'the comparison')
-  must(rowOf('an older fixed write')?.textContent, ['The as-written copy is no longer kept.'], 'a pruned copy')
-  if (/as staged|as-written|new words/.test(rowOf('a plain write')?.textContent || '')) {
+  must((await actFind(hist.hostEl, 'an older fixed write'))?.textContent, ['The as-written copy is no longer kept.'],
+    'a pruned copy')
+  const plainRow = await actFind(hist.hostEl, 'a plain write')
+  if (!plainRow || /as staged|as-written|new words/.test(plainRow?.textContent || '')) {
     fail('a write approved as written shows fix lines in its history row')
   }
   hist.hostEl.remove()
@@ -2251,7 +3107,7 @@ REST.scan = 'ok'
 // new request while the last was still open: a refresh during a load is folded into ONE follow-up load
 // after it, so no poll ever has two requests in flight.
 {
-  const cells = h => h.hostEl.querySelectorAll('.pa-cell').length
+  const cells = h => reachableKeys(h.hostEl).size
   const kept = await mount('en', 'page')
   REST.mode = 'fail'
   await click(kept.hostEl.querySelector('.pa-refresh'), 80)
@@ -2268,7 +3124,7 @@ REST.scan = 'ok'
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the “could not refresh” notice offers no kit Retry')
   if (retry) await click(retry, 80)
   if (kept.hostEl.querySelector('.pa-stale')) fail('the “could not refresh” notice stays after a successful Retry')
-  await click(tab(kept.hostEl, /History/), 40)
+  await click(tab(kept.hostEl, /Activity/), 40)
   REST.mode = 'fail'
   await click(kept.hostEl.querySelector('.pa-refresh'), 80)
   if (kept.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed refresh replaced the loaded history with the error state')
@@ -2316,8 +3172,9 @@ REST.scan = 'ok'
   for (const [mode, text] of [['decide500', 'Could not run /decide: disk full'], ['notok', 'BACKEND-REASON-xyz']]) {
     REST.post = mode
     const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:aaa11111')
     const from = reads()
-    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    await click([primaryBtn(cellOf(h, 'skills:aaa11111'))].filter(Boolean)[0], 150)
     const said = lastSaid()
     if (said?.kind !== 'error' || said?.message !== text) {
       fail(`a failed /decide (${mode}) does not show the backend's own error: ${JSON.stringify(said)}`)
@@ -2329,11 +3186,12 @@ REST.scan = 'ok'
     h.hostEl.remove()
   }
   for (const [mode, kind, text] of [
-    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “History” tab.'],
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
     ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
     REST.post = mode
     const h = await mount('en', 'page')
-    await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 150)
+    await toFront(h.hostEl, 'skills:aaa11111')
+    await click([primaryBtn(cellOf(h, 'skills:aaa11111'))].filter(Boolean)[0], 150)
     const said = lastSaid()
     if (said?.kind !== kind || said?.message !== text) {
       fail(`a late /decide (${mode}) is judged by the clock or by a row read before the click: ${JSON.stringify(said)}`)
@@ -2357,18 +3215,19 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const h = await mount('en', 'page')
   await wait(400)
+  await toFront(h.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide').length
   const before = sends()
-  await click(buttons(cellOf(h, 'skills:aaa11111'), /^Approve$/)[0], 5)
-  await click(tab(h.hostEl, /History/), 5)
-  await click(tab(h.hostEl, /Pending/), 5)
+  await click([primaryBtn(cellOf(h, 'skills:aaa11111'))].filter(Boolean)[0], 5)
+  await click(tab(h.hostEl, /Activity/), 5)
+  await click(tab(h.hostEl, /Needs you/), 5)
   const cell0 = cellOf(h, 'skills:aaa11111')
-  const during = cell0 ? buttons(cell0, /^Approve$/)[0] : null
+  const during = cell0 ? [primaryBtn(cell0)].filter(Boolean)[0] : null
   if (during && !during.disabled) fail('switching tabs while a decision is in flight brought its Approve back enabled')
   if (during) await click(during, 5)
   await wait(90)
-  await click(tab(h.hostEl, /History/), 5)
-  await click(tab(h.hostEl, /Pending/), 5)
+  await click(tab(h.hostEl, /Activity/), 5)
+  await click(tab(h.hostEl, /Needs you/), 5)
   const out = cellOf(h, 'skills:aaa11111')
   if (out) {
     const card = out.querySelector('.pa-card')
@@ -2378,7 +3237,7 @@ REST.scan = 'ok'
     }
     const live = [...out.querySelectorAll('button, input')].filter(b => !b.disabled)
     if (live.length) fail(`a card on its way out keeps ${live.length} enabled control(s)`)
-    for (const b of buttons(out, /^Approve$/)) await click(b, 5)
+    for (const b of [primaryBtn(out)].filter(Boolean)) await click(b, 5)
   }
   await wait(900)
   if (sends() - before !== 1) fail(`a decided record was sent ${sends() - before} times across tab switches`)
@@ -2398,10 +3257,11 @@ REST.scan = 'ok'
   }
   all = await mount('en')
   await wait(100)
+  await toFront(all.hostEl, 'skills:aaa11111')
   let from = reads()
-  await click(buttons(cellOf(all, 'skills:aaa11111'), /^Approve$/)[0], 700)
+  await click([primaryBtn(cellOf(all, 'skills:aaa11111'))].filter(Boolean)[0], 700)
   grew(from, 'a decision')
-  await click(tab(all.hostEl, /History/), 60)
+  await click(tab(all.hostEl, /Activity/), 60)
   from = reads()
   await click(buttons(all.hostEl, /^Undo$/)[0], 200)
   grew(from, 'an undo')
@@ -2422,7 +3282,7 @@ REST.scan = 'ok'
 // A lone pending record drew a selection box that did nothing, and a selection outlived its record.
 // "Approve without review" was offered on a card held by "Shorten first" (the backend refuses it).
 // MEMORY.md read 99 % "Nearly full" in the KPI and "100% full" on the Memory tab (floor vs round).
-// Repeated stale lines or issues gave React duplicate keys. "Details and changes" did not say what it
+// Repeated stale lines or issues gave React duplicate keys. "Show the full review" did not say what it
 // opens or whether it is open. With no review model (or a failed review) an automatic rule fix that
 // clears every rule failure could only be rejected: it now gets the two-step "Apply unreviewed" confirm
 // and sends with_edits + skip_review; it stays held while the fix leaves a rule failure behind.
@@ -2439,21 +3299,25 @@ REST.scan = 'ok'
   REST.pending = { ...PENDING, memory: [], skills: [PENDING.skills[1]], counts: { memory: 0, skills: 1 } }
   const lone = await mount('en', 'page')
   if (lone.hostEl.querySelectorAll('.pa-pick').length) fail('a lone pending record draws a selection box with nothing to bulk-act on')
+  if (buttons(lone.hostEl, /^Select$/).length) fail('a lone pending record offers Select with nothing to bulk-act on')
   lone.root.unmount()
   lone.hostEl.remove()
 
   REST.pending = null
   REST.gone = new Set()
   const pick = await mount('en', 'page')
+  await selectMode(pick.hostEl)
+  const pickBoxOf = (h, key) => cellOf(h, key)?.querySelector('.pa-pick')
+    || h.hostEl.querySelector(`.pa-upnext-row[data-key="${key}"] .pa-pick`)
   for (const key of ['skills:aaa11111', 'skills:def67890']) {
-    const box = cellOf(pick, key)?.querySelector('.pa-pick')
+    const box = pickBoxOf(pick, key)
     if (box) await click(box, 10)
   }
   REST.gone.add('aaa11111')
   await click(pick.hostEl.querySelector('.pa-refresh'), 150)
   REST.gone.delete('aaa11111')
   await click(pick.hostEl.querySelector('.pa-refresh'), 150)
-  if (cellOf(pick, 'skills:aaa11111')?.querySelector('.pa-pick')?.checked) {
+  if (pickBoxOf(pick, 'skills:aaa11111')?.checked) {
     fail('a selection outlives its record: the record came back still ticked')
   }
   REST.gone = null
@@ -2463,6 +3327,7 @@ REST.scan = 'ok'
   REST.pending = { ...PENDING, skills: PENDING.skills.map(s => (s.id === 'def67890'
     ? { ...s, review: { status: 'unassigned', hard: [] } } : s)) }
   const short = await mount('en', 'page')
+  await toFront(short.hostEl, 'skills:def67890')
   if (buttons(cellOf(short, 'skills:def67890'), /Approve without review/).length) {
     fail('"Approve without review" is offered on a card held by "Shorten first"')
   }
@@ -2476,11 +3341,12 @@ REST.scan = 'ok'
   if (keyWarnings.length) fail(`duplicate React keys: ${[...new Set(keyWarnings)].join(', ')}`)
   REST.pending = null
   for (const key of ['memory:abc12345', 'skills:aaa11111']) {
-    const toggle = buttons(cellOf(dup, key), /^Details and changes$/)[0]
+    await toFront(dup.hostEl, key)
+    const toggle = buttons(cellOf(dup, key), /^Show the full review$/)[0]
     const panel = toggle?.getAttribute('aria-controls')
     if (toggle?.getAttribute('aria-expanded') !== 'false' || !panel) fail(`the ${key} Details toggle has no aria-expanded/aria-controls`)
     if (toggle) await click(toggle, 20)
-    const open = buttons(cellOf(dup, key), /^Hide details$/)[0]
+    const open = buttons(cellOf(dup, key), /^Hide the full review$/)[0]
     if (open?.getAttribute('aria-expanded') !== 'true' || !panel || !dup.hostEl.querySelector(`[id="${panel}"]`)) {
       fail(`the open ${key} Details toggle does not point at the details it opened`)
     }
@@ -2489,13 +3355,16 @@ REST.scan = 'ok'
   dup.hostEl.remove()
   console.error = realError
 
+  // The gauges are gone (R2 K21 → M2): the Memory file row's percent and its meter width are one number.
   const mem = await mount('en', 'page')
-  const kpi = [...mem.hostEl.querySelectorAll('.pa-kpis [data-slot]')].map(e => e.textContent).join(' ')
   await click(tab(mem.hostEl, /^Memory/), 60)
-  const said = mem.hostEl.querySelector('[role="tabpanel"]')?.textContent || ''
-  const kpiPct = (mem.hostEl.querySelector('.pa-kpis')?.textContent.match(/(\d+)%/) || [])[1]
-  const tabPct = (said.match(/(\d+)% full/) || [])[1]
-  if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
+  const memRow = mem.hostEl.querySelector('.pa-memrow')
+  const kpi = memRow?.textContent || ''
+  const kpiPct = (kpi.match(/(\d+)%/) || [])[1]
+  const tabPct = (memRow?.querySelector('.pa-meter-fill')?.style.width.match(/(\d+)%/) || [])[1]
+  if (!kpiPct || kpiPct !== tabPct) {
+    fail(`MEMORY.md fill differs: row ${kpiPct}% vs meter ${tabPct}% (${kpi.slice(0, 40)})`)
+  }
   mem.root.unmount()
   mem.hostEl.remove()
 
@@ -2504,6 +3373,7 @@ REST.scan = 'ok'
         hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }] } } : s)) })
   REST.pending = unreviewed([])
   const fixable = await mount('en', 'page')
+  await toFront(fixable.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = sends().length
   const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0]
@@ -2512,7 +3382,8 @@ REST.scan = 'ok'
   }
   if (withFix()) await click(withFix(), 30)
   if (sends().length !== before) fail('the unreviewed fix was sent on the first click (no confirm step)')
-  if (withFix()?.textContent !== 'Apply unreviewed' || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
+  if (name(withFix()) !== 'Apply unreviewed'
+      || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
     fail('the unreviewed fix has no two-step "Apply unreviewed" confirm')
   }
   if (withFix()) await click(withFix(), 80)
@@ -2525,6 +3396,8 @@ REST.scan = 'ok'
 
   REST.pending = unreviewed(['new-skill: still missing the author line.'])
   const partial = await mount('en', 'page')
+  await selectMode(partial.hostEl)
+  await toFront(partial.hostEl, 'skills:aaa11111')
   const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
   const from = sends().length
   if (held) {
@@ -2555,13 +3428,14 @@ REST.scan = 'ok'
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   const look = (h, key) => {
     const b = buttons(cellOf(h, key), /^(Approve with the fix|Apply unreviewed)$/)[0]
-    return { b, state: { text: b?.textContent, variant: b?.getAttribute('data-variant'),
+    return { b, state: { text: name(b), variant: b?.getAttribute('data-variant'),
       held: Boolean(b?.classList.contains('pa-held')), aria: b?.getAttribute('aria-disabled') || null,
       warn: /not checked against your rules/.test(cellOf(h, key)?.textContent || '') } }
   }
   const armedCase = async (label, key, first, next, back) => {
     REST.pending = first
     const h = await mount('en', 'page')
+    await toFront(h.hostEl, key)
     if (look(h, key).b) await click(look(h, key).b, 30)
     if (look(h, key).state.text !== 'Apply unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
     REST.pending = next
@@ -2585,6 +3459,7 @@ REST.scan = 'ok'
     h.hostEl.remove()
     REST.pending = next
     const c = await mount('en', 'page')
+    await toFront(c.hostEl, key)
     const fresh = look(c, key).state
     c.root.unmount()
     c.hostEl.remove()
@@ -2620,12 +3495,14 @@ REST.scan = 'ok'
     groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
   REST.pending = null
 
-  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “History” tab. The list is read again.'
-  for (const [row, button] of [[null, 'Approve'], ['apply', 'Approve'], ['rejected', 'Approve'], ['apply', 'Reject']]) {
-    const applied = row === 'apply' && button === 'Approve'
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.'
+  for (const [row, button] of [[null, 'Save skill'], ['apply', 'Save skill'], ['rejected', 'Save skill'],
+    ['apply', 'Don’t save']]) {
+    const applied = row === 'apply' && button === 'Save skill'
     REST.post = 'latecold'
     REST.coldRow = row
     const cold = await mount('en', 'page')
+    await toFront(cold.hostEl, 'skills:aaa11111')
     const coldReads = cold.flight.total.get('GET /pending') || 0
     await click(buttons(cellOf(cold, 'skills:aaa11111'), new RegExp(`^${button}$`))[0], applied ? 700 : 200)
     const coldSaid = lastSaid()
@@ -2645,8 +3522,9 @@ REST.scan = 'ok'
   REST.history = { entries: [], counts: { total: 0, undoable: 0, applied: 0, failed: 0 } }
   const empty = await mount('en', 'page')
   await wait(60)
+  await toFront(empty.hostEl, 'skills:aaa11111')
   const at = empty.order.length
-  await click(buttons(cellOf(empty, 'skills:aaa11111'), /^Approve$/)[0], 600)
+  await click([primaryBtn(cellOf(empty, 'skills:aaa11111'))].filter(Boolean)[0], 600)
   const seq = empty.order.slice(at).filter(r => !r.includes('/scan'))
   const first = seq.indexOf('POST /decide')
   if (first < 0 || seq.slice(0, first).includes('GET /history?limit=50')) {
@@ -2660,7 +3538,8 @@ REST.scan = 'ok'
   let open = null
   REST.gate = new Promise(r => { open = r })
   const away = await mount('en', 'page')
-  await click(buttons(cellOf(away, 'skills:aaa11111'), /^Approve$/)[0], 30)
+  await toFront(away.hostEl, 'skills:aaa11111')
+  await click([primaryBtn(cellOf(away, 'skills:aaa11111'))].filter(Boolean)[0], 30)
   const pageReg = away.registrations.find(r => r.area === 'routes')
   await act(async () => { away.root.unmount() })
   const back = { hostEl: document.createElement('div') }
@@ -2684,16 +3563,18 @@ REST.scan = 'ok'
   const two = { counts: { memory: 1, skills: 1 }, memory: PENDING.memory, skills: [PENDING.skills[1]] }
   REST.pending = two
   const pair = await mount('en', 'page')
+  await selectMode(pair.hostEl)
   for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
-  if (pair.hostEl.querySelector('.pa-bulk-count')?.textContent !== '2 of 2 selected') fail('setup: two cards could not both be ticked')
+  if (pair.hostEl.querySelector('.pa-sel-count')?.textContent !== '2 selected') fail('setup: two cards could not both be ticked')
   REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
-  await click(buttons(cellOf(pair, 'skills:aaa11111'), /^Approve$/)[0], 700)
+  await toFront(pair.hostEl, 'skills:aaa11111')
+  await click([primaryBtn(cellOf(pair, 'skills:aaa11111'))].filter(Boolean)[0], 700)
   REST.pending = { ...two, skills: [PENDING.skills[0]] }
   await click(pair.hostEl.querySelector('.pa-refresh'), 150)
   const ticked = [...pair.hostEl.querySelectorAll('input.pa-pick')].filter(b => b.checked).map(b => b.getAttribute('aria-label'))
-  const said = pair.hostEl.querySelector('.pa-bulk-count')?.textContent
-  if (ticked.length || said !== '0 of 2 selected') {
-    fail(`a selection outlived the bulk bar: a new record shows "${said}" with ${JSON.stringify(ticked)} pre-ticked`)
+  const said = pair.hostEl.querySelector('.pa-sel-count')?.textContent
+  if (ticked.length || said !== undefined) {
+    fail(`selection mode outlived a one-record queue and came back by itself: "${said}", ${JSON.stringify(ticked)} ticked`)
   }
   REST.pending = null
   pair.root.unmount()
@@ -2709,25 +3590,29 @@ REST.scan = 'ok'
 {
   const cellAt = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const barOf = h => h.hostEl.querySelector('.pa-bulk')
-  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"] input.pa-pick`)
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
+    ?.querySelector('input.pa-pick')
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const doc = dom.window.document
-  const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
-  if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
   const pid = stub.calls.registered.at(-1).id
   const say = (key, ...args) => stub.resolveKey(pid, key, args)
   if (say('pa.hist.clear', 1) !== 'Clear 1 record') fail(`one history row reads ${JSON.stringify(say('pa.hist.clear', 1))}`)
   if (/Delete button/.test(say('pa.memory.readonlyEmpty'))) fail('an empty Memory tab points at a Delete button that is not there')
   const ui = await mount('en', 'page')
+  await selectMode(ui.hostEl)
   await wait(60)
+  const css = [...doc.querySelectorAll('style')].map(x => x.textContent).join('\n')
+  if (!/\.pa-root button:focus-visible[^{]*\{outline:2px solid/.test(css)) fail('keyboard focus has no visible ring')
   const tabs = [...ui.hostEl.querySelectorAll('[role=tab]')].map(x => x.textContent.trim())
-  if (!tabs.some(x => /^History/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
-    fail(`the decided-records tab is not named History: ${JSON.stringify(tabs)}`)
+  if (!tabs.some(x => /^Activity/.test(x)) || tabs.some(x => /^Applied/.test(x))) {
+    fail(`the decided-records tab is not named Activity: ${JSON.stringify(tabs)}`)
   }
-  const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent || ''
+  await toFront(ui.hostEl, 'memory:abc12345')
+  const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-dh .pa-crumb-end')?.textContent || ''
   if (old !== '2 hours ago') fail(`a record staged two hours ago reads ${JSON.stringify(old)}, not "2 hours ago"`)
+  await toFront(ui.hostEl, 'skills:aaa11111')
   const open = cellAt(ui, 'skills:aaa11111')
-  const title = open?.querySelector('.pa-card-title')?.textContent || ''
+  const title = open?.querySelector('.pa-dh [role="heading"]')?.textContent || ''
   const named = open?.querySelector('.pa-card')
   const label = named && doc.getElementById(named.getAttribute('aria-labelledby') || '')
   if (!title || named?.getAttribute('role') !== 'group' || label?.textContent !== title) {
@@ -2735,28 +3620,44 @@ REST.scan = 'ok'
   }
   if (named?.getAttribute('aria-label')) fail('a card repeats its title as aria-label next to its heading')
   if (label?.getAttribute('aria-level') !== '2') fail(`card headings skip a level: ${label?.getAttribute('aria-level')}`)
-  if (!(open?.querySelector('input.pa-pick')?.getAttribute('aria-label') || '').includes(title)) {
+  const rowName = rowOf(ui.hostEl, 'skills:aaa11111')?.querySelector('.pa-row-title')?.textContent || '\u0000'
+  if (!(pickOf(ui, 'skills:aaa11111')?.getAttribute('aria-label') || '').includes(rowName)) {
     fail('the selection checkbox does not name its record')
   }
-  const skillTitles = [...ui.hostEl.querySelectorAll('.pa-cell[data-key^="skills:"] .pa-card-title')].map(x => x.textContent)
-  if (!skillTitles.length || skillTitles.some(x => !/^(New skill|Edit skill): /.test(x))) {
+  const skillTitles = []
+  for (const key of ['skills:def67890', 'skills:aaa11111']) {
+    await toFront(ui.hostEl, key)
+    skillTitles.push(cellAt(ui, key)?.querySelector('.pa-dh [role="heading"]')?.textContent)
+  }
+  if (!skillTitles.length || skillTitles.some(x => !/^(New skill|Edit skill): /.test(x || ''))) {
     fail(`a skill card title does not say whether it creates or edits the skill: ${JSON.stringify(skillTitles)}`)
   }
   if (ui.hostEl.querySelector('.pa-alerts')?.getAttribute('aria-label') !== 'Alerts') {
     fail('the alert switch is read out as "Alerts muted, not pressed": its name changes with its state')
   }
-  const heldBtn = buttons(cellAt(ui, 'skills:def67890'), /^Approve$/)[0]
-  if (!/long text/.test(heldBtn?.getAttribute('aria-description') || '')) {
-    fail('a held Approve does not tell a screen reader why it is held')
-  }
-  const sends = () => stub.calls.posts.filter(x => x.path === '/decide').length
-  const before = sends()
-  if (heldBtn) await click(heldBtn)
-  const heldSaid = lastSaid()
-  if (heldSaid?.kind !== 'warning' || !/long text/.test(heldSaid?.message || '') || sends() !== before) {
-    fail(`a held Approve pressed from the keyboard does not say why: ${JSON.stringify(heldSaid)}`)
+  {
+    const wasMode = REST.mode
+    REST.mode = 'reviewing'
+    const heldHost = await mount('en')
+    await toFront(heldHost.hostEl, 'memory:abc12345')
+    const heldBtn = [primaryBtn(cellAt(heldHost, 'memory:abc12345'))].filter(Boolean)[0]
+    if (!/Approve unlocks when the pre-review has finished/.test(heldBtn?.getAttribute('aria-description') || '')) {
+      fail('a held Approve does not tell a screen reader why it is held')
+    }
+    const sends0 = () => stub.calls.posts.filter(x => x.path === '/decide').length
+    const before0 = sends0()
+    if (heldBtn) await click(heldBtn)
+    const heldSaid = lastSaid()
+    if (heldSaid?.kind !== 'warning' || !/Approve unlocks when the pre-review has finished/.test(heldSaid?.message || '')
+        || sends0() !== before0) {
+      fail(`a held Approve pressed from the keyboard does not say why: ${JSON.stringify(heldSaid)}`)
+    }
+    heldHost.hostEl.remove()
+    REST.mode = wasMode
   }
   await click(buttons(ui.hostEl, /^Select all$/)[0])
+  const sends = () => stub.calls.posts.filter(x => x.path === '/decide').length
+  const before = sends()
   const heldBulk = buttons(barOf(ui), /^Approve 3$/)[0]
   if (!/decision of its own/.test(heldBulk?.getAttribute('aria-description') || '')) {
     fail('the held bulk Approve does not tell a screen reader why it is held')
@@ -2765,13 +3666,13 @@ REST.scan = 'ok'
   if (!/decision of its own/.test(lastSaid()?.message || '')) fail('the held bulk Approve pressed does not say why')
   await click(pickOf(ui, 'skills:def67890'))
   await click(buttons(barOf(ui), /^Approve 2$/)[0])
-  const armed = barOf(ui)?.querySelector('.pa-alert')
+  const armed = barOf(ui)?.querySelector('[role="alert"]')
   if (!armed) fail('bulk Approve did not ask to confirm')
   if (doc.activeElement !== barOf(ui)?.querySelector('.pa-bulk-cancel')) fail('the bulk confirm does not take focus')
   armed?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await wait(20)
   if (/Apply 2 records now\?/.test(barOf(ui)?.textContent || '')) fail('Esc does not close the bulk confirm')
-  if (doc.activeElement?.textContent !== 'Approve 2') {
+  if (name(doc.activeElement) !== 'Approve 2') {
     fail(`closing the bulk confirm drops focus instead of returning it to "Approve 2": ${doc.activeElement?.tagName}`)
   }
   if (sends() !== before) fail('Esc on the bulk confirm sent a decision')
@@ -2779,8 +3680,11 @@ REST.scan = 'ok'
 
   {
     const realNow = Date.now
+    REST.mode = 'reviewing'
     const hw = await mount('en', 'page')
+    await selectMode(hw.hostEl)
     await wait(60)
+    await toFront(hw.hostEl, 'memory:abc12345')
     const onScreen = re => stub.screen.filter(m => m?.kind === 'warning' && re.test(m?.message || '')).length
     const twice = async (btn, re, what) => {
       if (!btn) fail(`the held ${what} Approve is missing from the fixture`)
@@ -2797,10 +3701,12 @@ REST.scan = 'ok'
           `${onScreen(re)} on screen`)
       }
     }
-    await twice(buttons(cellAt(hw, 'skills:def67890'), /^Approve$/)[0], /long text/, 'single')
+    await twice([primaryBtn(cellAt(hw, 'memory:abc12345'))].filter(Boolean)[0],
+      /Approve unlocks when the pre-review has finished/, 'single')
     await click(buttons(hw.hostEl, /^Select all$/)[0])
-    await twice(buttons(barOf(hw), /^Approve 3$/)[0], /decision of its own/, 'bulk')
+    await twice(buttons(barOf(hw), /^Approve 3$/)[0], /decision of their own/, 'bulk')
     hw.hostEl.remove()
+    REST.mode = 'normal'
   }
   {
     const PLAIN_CREATE = 'New skill: e2e-demo — Use when the owner asks for a demo of the approval flow. (158 characters)'
@@ -2830,18 +3736,22 @@ REST.scan = 'ok'
     REST.undoReply = { ok: true, restored: ['skills/e2e-demo/SKILL.md'] }
     const ph = await mount('en', 'page')
     await wait(60)
-    await click(tab(ph.hostEl, /History/), 60)
-    const cardOf = id => [...ph.hostEl.querySelectorAll('.pa-card')].find(c => c.textContent.includes(`#${id}`))
+    await click(tab(ph.hostEl, /Activity/), 60)
+    const cardOf = async id => {
+      await click(actRow(ph.hostEl, id), 20)
+      const d = actDetail(ph.hostEl)
+      return d?.getAttribute('data-entry') === id ? d : null
+    }
     const plainBad = why => fail(`a History summary still reads like code: ${why}`)
     for (const [id, text, raw] of [['e2e0d001', PLAIN_CREATE, RAW_CREATE], ['e2e0d002', PLAIN_PATCH, RAW_PATCH]]) {
-      const card = cardOf(id)
-      const box = card?.querySelector('.pa-summary')
+      const card = await cardOf(id)
+      const box = card?.querySelector('.pa-act-said')
       if (!box?.textContent.includes(text)) plainBad(`#${id} reads ${JSON.stringify(box?.textContent)}`)
       if (box?.closest('[data-slot="log-view"]') || box?.querySelector('[data-slot="log-view"]')) {
         plainBad(`#${id} sits in a monospace LogView`)
       }
-      if (box?.querySelector('[data-slot="panel-block"].pa-prose')?.textContent !== text) {
-        plainBad(`#${id} is not drawn as prose (PanelBlock .pa-prose)`)
+      if (box?.textContent !== text || box?.querySelector('[data-slot="panel-block"]')) {
+        plainBad(`#${id} is not drawn as plain row text (the mockup has no box around it)`)
       }
       if (box?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${raw}`) {
         plainBad(`#${id} does not keep Hermes' own text in its Tip`)
@@ -2849,32 +3759,32 @@ REST.scan = 'ok'
       const label = buttons(card || ph.hostEl, /^Undo$/)[0]?.getAttribute('aria-label') || ''
       if (!label.startsWith(`Undo: ${text.slice(0, 40)}`)) plainBad(`#${id} Undo is read out as ${JSON.stringify(label)}`)
     }
-    const batch = cardOf('e2e0d003')?.querySelector('.pa-summary')
+    const batch = (await cardOf('e2e0d003'))?.querySelector('.pa-act-said')
     if (batch?.textContent !== PLAIN_BATCH) plainBad(`a batch record reads ${JSON.stringify(batch?.textContent)}`)
     if (batch?.closest('[data-tip]')?.getAttribute('data-tip') !== `Hermes recorded it as: ${RAW_BATCH}`) {
       plainBad('a batch record does not keep the text Hermes recorded in its Tip')
     }
-    const odd = cardOf('e2e0d004')?.querySelector('.pa-summary')
+    const odd = (await cardOf('e2e0d004'))?.querySelector('.pa-act-said')
     if (odd?.textContent !== RAW_ODD) plainBad(`a batch with an unknown action is guessed: ${odd?.textContent}`)
-    const memory = cardOf('aa11bb22')?.querySelector('.pa-summary')
+    const memory = (await cardOf('aa11bb22'))?.querySelector('.pa-act-said')
     if (memory?.textContent !== 'MEMORY.md updated' || memory?.closest('[data-tip]')) {
       plainBad('an unmapped summary is not shown unchanged without a Tip')
     }
 
-    const first = buttons(cardOf('e2e0d001') || ph.hostEl, /^Undo$/)[0]
+    const first = buttons((await cardOf('e2e0d001')) || ph.hostEl, /^Undo$/)[0]
     REST.history = undone('e2e0d001')
     first?.focus()
     if (first) await click(first, 40)
     await wait(1600)
     const now = doc.activeElement
-    if (!now?.classList.contains('pa-card') || now.getAttribute('data-entry') !== 'e2e0d001') {
+    if (!now?.classList.contains('pa-act-row') || now.getAttribute('data-entry') !== 'e2e0d001') {
       fail(`after Undo keyboard focus falls to the page top instead of the row: ${now?.outerHTML?.slice(0, 80)}`)
     }
-    const second = buttons(cardOf('e2e0d002') || ph.hostEl, /^Undo$/)[0]
+    const second = buttons((await cardOf('e2e0d002')) || ph.hostEl, /^Undo$/)[0]
     REST.history = undone('e2e0d002')
     second?.focus()
     if (second) await click(second, 40)
-    const moved = tab(ph.hostEl, /Pending/)
+    const moved = tab(ph.hostEl, /Needs you/)
     moved?.focus()
     await wait(1600)
     if (doc.activeElement !== moved) fail('after Undo focus is pulled away from where the user moved it')
@@ -2890,19 +3800,25 @@ REST.scan = 'ok'
   REST.pending = edge
   const ed = await mount('en', 'page')
   await wait(60)
-  const edgeWhen = cellAt(ed, 'memory:abc12345')?.querySelector('.pa-card-when')?.textContent
+  await toFront(ed.hostEl, 'memory:abc12345')
+  const edgeWhen = cellAt(ed, 'memory:abc12345')?.querySelector('.pa-dh .pa-crumb-end')?.textContent
   if (edgeWhen !== '1 hour ago') fail(`a record 59.8 minutes old reads ${JSON.stringify(edgeWhen)}, not "1 hour ago"`)
-  const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-card-title')?.textContent
+  await toFront(ed.hostEl, 'skills:aaa11111')
+  const delTitle = cellAt(ed, 'skills:aaa11111')?.querySelector('.pa-dh [role="heading"]')?.textContent
   if (delTitle !== 'Delete skill: old-skill') fail(`a skill deletion is titled ${JSON.stringify(delTitle)}`)
   const delCell = cellAt(ed, 'skills:aaa11111')
-  if (delCell?.querySelector('.pa-card-head .pa-change-stat')) {
-    fail(`a skill deletion shows a line count by its title: ${delCell.querySelector('.pa-card-head .pa-change-stat').textContent}`)
+  if (delCell?.querySelector('.pa-dh .pa-change-stat')) {
+    fail(`a skill deletion shows a line count by its title: ${
+      delCell.querySelector('.pa-dh .pa-change-stat').textContent}`)
   }
-  const delDetails = buttons(delCell, /^Details/)[0]
+  const delDetails = buttons(delCell, /^Show the full review$/)[0]
   if (delDetails) await click(delDetails, 40)
   const delBody = delCell?.querySelector('.pa-change')?.textContent || ''
   if (!/whole skill/.test(delBody) || !/Deletes the whole skill folder/.test(delBody) || /No text recorded|\+0 −0/.test(delBody)) {
     fail(`a skill deletion's change reads ${JSON.stringify(delBody)}`)
+  }
+  if (declineBtn(delCell)?.getAttribute('data-variant') !== 'destructive') {
+    fail('a skill deletion\'s decline action is not the kit destructive variant')
   }
   REST.pending = null
   ed.root.unmount()
@@ -2913,10 +3829,15 @@ REST.scan = 'ok'
   REST.pending = gd
   const gm = await mount('en', 'page')
   await wait(60)
+  await toFront(gm.hostEl, `skills:${CLEAN_GROUP}`)
   const gCell = cellAt(gm, `skills:${CLEAN_GROUP}`)
-  const gTitle = gCell?.querySelector('.pa-card-title')?.textContent
+  const gTitle = gCell?.querySelector('.pa-dh [role="heading"]')?.textContent
   if (gTitle !== 'alpha-skill · 2 changes · includes deleting the skill') {
     fail(`a set that deletes its skill is titled ${JSON.stringify(gTitle)}`)
+  }
+  {
+    const gsfc = buttons(gCell, /^Show the full review$/)[0]
+    if (gsfc) await click(gsfc, 40)
   }
   const gStat = [...(gCell?.querySelectorAll('.pa-member[data-change="1"] .pa-change-stat') || [])].map(x => x.textContent)
   if (!gStat.includes('whole skill') || gStat.includes('+0 −0')) {
@@ -2930,7 +3851,8 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const fo = await mount('en', 'page')
   await wait(60)
-  const approve = buttons(cellAt(fo, 'skills:aaa11111'), /^Approve$/)[0]
+  await toFront(fo.hostEl, 'skills:aaa11111')
+  const approve = [primaryBtn(cellAt(fo, 'skills:aaa11111'))].filter(Boolean)[0]
   approve?.focus()
   if (approve) await click(approve, 60)
   const said = lastSaid()
@@ -2949,7 +3871,8 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const two = await mount('en', 'page')
   await wait(60)
-  const last = buttons(cellAt(two, 'skills:aaa11111'), /^Approve$/)[0]
+  await toFront(two.hostEl, 'skills:aaa11111')
+  const last = [primaryBtn(cellAt(two, 'skills:aaa11111'))].filter(Boolean)[0]
   last?.focus()
   if (last) await click(last, 60)
   REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [], counts: { memory: 1, skills: 0 } }
@@ -2962,6 +3885,920 @@ REST.scan = 'ok'
   REST.gone = null
   two.root.unmount()
   two.hostEl.remove()
+}
+
+// --- 29) hero-memory → diff + footer meter (R2 K25 → F4, B2): the note is an added line in its file box; a
+// fit is drawn as the "Memory after saving 95% → 97%" meter with widths from `fit`; no fit, no meter ------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const hm = await mount('en')
+  await toFront(hm.hostEl, 'memory:abc12345')
+  const added = [...(cell(hm.hostEl, 'memory:abc12345')?.querySelectorAll('.pa-file .pa-dl[data-k="+"]') || [])]
+    .map(l => l.textContent).join(' | ')
+  must(added, ['A note to add'], 'the memory note as an added line of its file box')
+  if (cell(hm.hostEl, 'memory:abc12345')?.querySelector('.pa-meter-box')) {
+    fail('a memory record with no plain.fit still shows a meter')
+  }
+  hm.hostEl.remove()
+
+  REST.pending = { ...PENDING, memory: [{ ...PENDING.memory[0],
+    plain: { ...PENDING.memory[0].plain, fit: { before: 2100, after: 2152, limit: 2200 } } }] }
+  const fit = await mount('en')
+  await toFront(fit.hostEl, 'memory:abc12345')
+  const box = cell(fit.hostEl, 'memory:abc12345')?.querySelector('.pa-dfoot .pa-dfoot-left .pa-meter-box')
+  if (box?.querySelector('.pa-meter-label')?.textContent !== 'Memory after saving95% → 97%'
+      || box?.querySelector('.pa-meter-value')?.textContent !== '95% → 97%') {
+    fail(`the memory fit meter label is not "Memory after saving 95% → 97%": ${box?.textContent}`)
+  }
+  const used = box?.querySelector('.pa-meter-used')?.style.width
+  const add = box?.querySelector('.pa-meter-add')
+  const near = (css, v) => Math.abs(parseFloat(css) - v * 100 / 2200) < 1e-6
+  if (!near(used, 2100) || !near(add?.style.left, 2100) || !near(add?.style.width, 2152 - 2100)) {
+    fail(`the meter widths do not come from fit: used ${used}, add ${add?.style.left}/${add?.style.width}`)
+  }
+  REST.pending = null
+  fit.hostEl.remove()
+}
+
+// --- 30) hero-why: "Why Hermes wants this: <text>" shows only when plain.why is set (F8) ----------------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const withWhy = await mount('en')
+  await toFront(withWhy.hostEl, 'memory:abc12345')
+  must(cell(withWhy.hostEl, 'memory:abc12345')?.querySelector('.pa-dbody')?.textContent,
+    [`Why Hermes wants this: ${LONG}`], 'the Why row when plain.why is set')
+  withWhy.hostEl.remove()
+
+  REST.pending = { ...PENDING, memory: [{ ...PENDING.memory[0], plain: { ...PENDING.memory[0].plain, why: '' } }] }
+  const noWhy = await mount('en')
+  await toFront(noWhy.hostEl, 'memory:abc12345')
+  if (/Why Hermes wants this/.test(cell(noWhy.hostEl, 'memory:abc12345')?.textContent || '')) {
+    fail('a record with no plain.why still shows a Why row')
+  }
+  REST.pending = null
+  noWhy.hostEl.remove()
+}
+
+// --- 31) checks-pass → verdict chips (R2 V3-V5): a finished clean review shows the four ok chips and the
+// second-opinion model -----------------------------------------------------------------------------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const okChips = c => [...(c?.querySelectorAll('.pa-verdict .pa-chip') || [])]
+    .filter(ch => ch.querySelector('.pa-chip-glyph[data-k="ok"]')).map(ch => ch.textContent)
+  REST.pending = { ...PENDING, memory: [{ ...PENDING.memory[0], review: { ...PENDING.memory[0].review, model: 'gpt-5.5' } }] }
+  const mh = await mount('en')
+  await toFront(mh.hostEl, 'memory:abc12345')
+  const mc = cell(mh.hostEl, 'memory:abc12345')
+  if (okChips(mc).join() !== 'Not a duplicate,No contradiction,Facts hold,Your rules') {
+    fail(`the four ok check chips for a clean memory review: ${JSON.stringify(okChips(mc))}`)
+  }
+  if (mc?.querySelector('.pa-verdict .pa-second')?.textContent !== 'Second opiniongpt-5.5') {
+    fail(`the verdict card does not name the model: ${mc?.querySelector('.pa-verdict .pa-second')?.textContent}`)
+  }
+  REST.pending = null
+  mh.hostEl.remove()
+
+  REST.pending = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s
+    : { ...s, review: { ...s.review, model: 'gpt-5.5' } }) }
+  const sh = await mount('en')
+  await toFront(sh.hostEl, 'skills:aaa11111')
+  if (!okChips(cell(sh.hostEl, 'skills:aaa11111')).includes('Your rules')) fail('the skill rule check chip is missing')
+  REST.pending = null
+  sh.hostEl.remove()
+}
+
+// --- 32) checks-not-run: no ok chip, one "Not checked yet" wait chip, primary gated as block 19 --------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.mode = 'reviewing'
+  const nr = await mount('en')
+  await toFront(nr.hostEl, 'skills:aaa11111')
+  const c = cell(nr.hostEl, 'skills:aaa11111')
+  const okRows = c?.querySelectorAll('.pa-verdict .pa-chip-glyph[data-k="ok"]').length || 0
+  const waitRows = [...(c?.querySelectorAll('.pa-verdict .pa-chip') || [])]
+    .filter(ch => ch.querySelector('.pa-chip-glyph[data-k="wait"]'))
+  if (okRows !== 0 || waitRows.length !== 1) {
+    fail(`an unreviewed record shows ${okRows} ok chips and ${waitRows.length} wait chips, not 0/1`)
+  }
+  must(waitRows[0]?.textContent, ['Not checked yet'], 'the single not-run chip')
+  if ([primaryBtn(c)].filter(Boolean)[0]?.getAttribute('aria-disabled') !== 'true') {
+    fail('an unreviewed record does not gate its primary action as block 19 requires')
+  }
+  nr.hostEl.remove()
+  REST.mode = 'normal'
+}
+
+// --- 33) checks-finding → bad chip (R2 V7): a fix finding is a "!" chip button that opens its finding with
+// the quote and the suggested edit under the verdict card ---------------------------------------------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.mode = 'remedy'
+  const cf = await mount('en')
+  await toFront(cf.hostEl, 'skills:aaa11111')
+  const c = cell(cf.hostEl, 'skills:aaa11111')
+  const badRow = [...(c?.querySelectorAll('.pa-verdict .pa-chip') || [])]
+    .find(ch => ch.querySelector('.pa-chip-glyph[data-k="warn"]'))
+  if (!badRow) fail('a fix finding does not show a ! chip in the warning tone (it needs one edit, it is not a stop)')
+  const btn = badRow?.querySelector('button.pa-chip-btn')
+  if (!btn || btn.getAttribute('aria-expanded') !== 'false') fail('the ! chip is not an activatable, collapsed button')
+  if (btn) await click(btn, 60)
+  if (btn?.getAttribute('aria-expanded') !== 'true') fail('the opened ! chip does not say it is expanded')
+  must(cell(cf.hostEl, 'skills:aaa11111')?.querySelector('.pa-dbody')?.textContent,
+    ['old line', 'other line', 'name: new-skill-x'], 'the activated finding view with its quote and suggested edit')
+  cf.hostEl.remove()
+  REST.mode = 'normal'
+}
+
+// --- 34) Task 3 test `fix-short`: the description-fix record's primary is "Use the short version" -----
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const fs = await mount('en')
+  await toFront(fs.hostEl, 'skills:def67890')
+  const c = cell(fs.hostEl, 'skills:def67890')
+  const primary = primaryBtn(c)
+  if (name(primary) !== 'Use the short version') {
+    fail(`the fix record's primary action reads ${JSON.stringify(name(primary))}`)
+  }
+  must(c?.textContent, [FIX_SUGGESTED, FIX_RAW_DESC], 'the hero shows the short text with the original under it')
+  const before = stub.calls.posts.filter(p => p.path === '/fix').length
+  if (primary) await click(primary, 60)
+  const post = stub.calls.posts.filter(p => p.path === '/fix').at(-1)
+  if (stub.calls.posts.filter(p => p.path === '/fix').length !== before + 1
+      || post?.body.subsystem !== 'skills' || post?.body.id !== 'def67890') {
+    fail(`"Use the short version" did not post /fix as today: ${JSON.stringify(post)}`)
+  }
+  fs.hostEl.remove()
+}
+
+// --- 35) Task 3 test `group-hero`: the group hero names the skill and lists its files (max 4 + N more)
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.mode = 'groups'
+  const gh = await mount('en', 'page')
+  await toFront(gh.hostEl, `skills:${CLEAN_GROUP}`)
+  const clean = cell(gh.hostEl, `skills:${CLEAN_GROUP}`)
+  must(clean?.textContent, ['alpha-skill'], 'the group hero names the skill')
+  await toFront(gh.hostEl, `skills:${STALE_GROUP}`)
+  const stale = cell(gh.hostEl, `skills:${STALE_GROUP}`)
+  must(stale?.textContent, ['SKILL.md'], 'the group hero lists its files')
+  const sfc = buttons(stale, /^Show the full review$/)[0]
+  if (sfc) await click(sfc, 40)
+  if (!stale?.querySelector('.pa-members')) fail('a group record\'s parts are not reachable in "Show the full review"')
+  gh.hostEl.remove()
+  REST.mode = 'normal'
+}
+
+// --- 36) Task 3 test `full-change`: the toggle reveals the change view, Esc returns focus to it -------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const doc = dom.window.document
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+  const fc = await mount('en')
+  await toFront(fc.hostEl, 'skills:aaa11111')
+  const c = cell(fc.hostEl, 'skills:aaa11111')
+  const toggle = buttons(c, /^Show the full review$/)[0]
+  if (!toggle) fail('a record offers no "Show the full review" toggle')
+  if (c?.querySelector('.pa-details')) fail('the full change is visible before the toggle opens it')
+  if (toggle) await click(toggle, 60)
+  const opened = cell(fc.hostEl, 'skills:aaa11111')
+  if (!opened?.querySelector('.pa-details')) fail('opening the toggle does not reveal the change view')
+  const bar = opened?.querySelector('.pa-actions')
+  if (!bar) fail('the action bar left the DOM once the full change opened')
+  if (bar && (bar.getAttribute('aria-hidden') === 'true' || dom.window.getComputedStyle(bar).display === 'none')) {
+    fail('the action bar is hidden once the full change opened')
+  }
+  opened?.querySelector('.pa-details')?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await wait(40)
+  const closed = cell(fc.hostEl, 'skills:aaa11111')
+  if (closed?.querySelector('.pa-details')) fail('Esc does not close the full change')
+  if (doc.activeElement !== buttons(closed, /^Show the full review$/)[0]) {
+    fail(`Esc on the full change drops focus instead of returning it to the toggle: ${doc.activeElement?.tagName}`)
+  }
+  fc.hostEl.remove()
+}
+
+// --- 37) Task 3 test `labels`: every record kind gets its own primaryLabel, the secondary is "Don't save",
+// and no button on the front card reads "Approve" or "Reject" ------------------------------------------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const l = await mount('en')
+  await toFront(l.hostEl, 'memory:abc12345')
+  if (name(primaryBtn(cell(l.hostEl, 'memory:abc12345'))) !== 'Save to memory') {
+    fail(`a memory add's primary action reads ${JSON.stringify(name(primaryBtn(cell(l.hostEl, 'memory:abc12345'))))}`)
+  }
+  if (name(declineBtn(cell(l.hostEl, 'memory:abc12345'))) !== 'Don’t save') {
+    fail('the secondary action does not read "Don\u2019t save"')
+  }
+  await toFront(l.hostEl, 'skills:aaa11111')
+  if (name(primaryBtn(cell(l.hostEl, 'skills:aaa11111'))) !== 'Save skill') {
+    fail(`a new skill's primary action reads ${JSON.stringify(name(primaryBtn(cell(l.hostEl, 'skills:aaa11111'))))}`)
+  }
+  await toFront(l.hostEl, 'skills:def67890')
+  if (name(primaryBtn(cell(l.hostEl, 'skills:def67890'))) !== 'Use the short version') {
+    fail('a fix record\'s primary action does not read "Use the short version"')
+  }
+  if (/\bApprove\b|\bReject\b/.test(cell(l.hostEl, 'skills:def67890')?.querySelector('.pa-actions')?.textContent || '')) {
+    fail('a button on the front card still reads "Approve" or "Reject"')
+  }
+  l.hostEl.remove()
+
+  REST.pending = { ...PENDING, skills: [{ ...PENDING.skills[0], id: 'ccc22222', version: 'v-ccc22222',
+    plain: { ...PENDING.skills[0].plain, fix: null } }] }
+  const upd = await mount('en')
+  await toFront(upd.hostEl, 'skills:ccc22222')
+  if (name(primaryBtn(cell(upd.hostEl, 'skills:ccc22222'))) !== 'Save changes') {
+    fail(`a skill update's primary action reads ${
+      JSON.stringify(name(primaryBtn(cell(upd.hostEl, 'skills:ccc22222'))))}`)
+  }
+  REST.pending = null
+  upd.hostEl.remove()
+
+  REST.pending = { ...PENDING, skills: [{ ...PENDING.skills[0], id: 'ddd33333', version: 'v-ddd33333',
+    ops: [{ action: 'delete', name: 'old-skill', added: 0, removed: 0 }],
+    plain: { ...PENDING.skills[0].plain, fix: null, groups: [{ kind: 'delete', name: 'old-skill', ops: [{ action: 'delete' }] }] } }] }
+  const del = await mount('en')
+  await toFront(del.hostEl, 'skills:ddd33333')
+  if (name(primaryBtn(cell(del.hostEl, 'skills:ddd33333'))) !== 'Delete skill') {
+    fail(`a skill deletion's primary action reads ${
+      JSON.stringify(name(primaryBtn(cell(del.hostEl, 'skills:ddd33333'))))}`)
+  }
+  REST.pending = null
+  del.hostEl.remove()
+}
+
+// --- 38) select-mode (rework 2, item 1; mockup select-mode.html): after "Select" each row's icon tile turns into
+// its checkbox (same 28 px place, accent fill + check when ticked, the row tinted), the list header reads
+// "N selected · Select all · Cancel", the legend reads Space select · Esc done, the detail is an "N records
+// selected" summary (one bordered row per record: tile, title, type · file · +N −M, verdict chip) and the
+// footer holds "Reject N" (outline, not red) and "Approve N" (primary). Esc or Cancel leaves; nothing stays.
+{
+  const sm = await mount('en', 'page')
+  const picksOf = () => [...sm.hostEl.querySelectorAll('input.pa-pick')]
+  const barNow = () => sm.hostEl.querySelector('.pa-bulk')
+  const head = () => sm.hostEl.querySelector('.pa-split .pa-list-head')
+  if (picksOf().length || barNow()) fail('select-mode: checkboxes or the bulk bar show before "Select" is pressed')
+  const on = head()?.querySelector('.pa-select')
+  if (name(on) !== 'Select') fail(`select-mode: "Select" is not in the list header: ${name(on)}`)
+  if (on) await click(on, 40)
+  const tileBoxes = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap[data-picking="1"] > .pa-cb > input.pa-pick')]
+  if (picksOf().length !== 3 || tileBoxes.length !== 3) {
+    fail(`select-mode: each row's tile must turn into its checkbox, got ${tileBoxes.length} of ${picksOf().length}`)
+  }
+  const sheet = sm.hostEl.querySelector('style')?.textContent || ''
+  if (!sheet.includes('.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}')
+      || !/\.pa-cb\{position:absolute;left:14px;top:10px;width:28px;height:28px/.test(sheet)) {
+    fail('select-mode: the checkbox is not drawn in the place of the 28 px icon tile')
+  }
+  must(head()?.textContent, ['0 selected', 'Select all', 'Cancel'], 'select-mode: the list header after Select')
+  const legend = sm.hostEl.querySelector('.pa-split .pa-legend')?.textContent || ''
+  if (legend !== 'SpaceselectEscdone') fail(`select-mode: the legend does not read Space select · Esc done: ${legend}`)
+  if (barNow()) fail('select-mode: a summary is drawn with nothing ticked')
+  const picks = picksOf()
+  for (const box of picks.slice(0, 2)) await click(box, 20)
+  const ticked = [...sm.hostEl.querySelectorAll('.pa-cb[data-on="1"]')]
+  if (ticked.length !== 2 || ticked.some(cb => !cb.querySelector('.pa-cbx svg'))
+      || sm.hostEl.querySelectorAll('.pa-rowwrap[data-picked="1"]').length !== 2) {
+    fail('select-mode: a ticked tile is not filled with its check, or its row is not tinted')
+  }
+  must(head()?.textContent, ['2 selected'], 'select-mode: two picked')
+  const card = sm.hostEl.querySelector('.pa-detail .pa-bulk')
+  if (!card || sm.hostEl.querySelector('.pa-list .pa-bulk')) fail('select-mode: the selection is not summarised in the detail pane')
+  must(card?.textContent, ['2 records selected', 'Each record is decided on its own'], 'select-mode: the summary')
+  const sums = [...(card?.querySelectorAll('.pa-sum-row') || [])]
+  if (sums.length !== 2 || sums.some(r => !r.querySelector('.pa-tile') || !r.querySelector('.pa-sum-chip')
+      || !/ · \+\d+ −\d+$/.test(r.querySelector('.pa-sum-meta')?.textContent || ''))) {
+    fail(`select-mode: a summary row lacks its tile, its "type · file · +N −M" line or its verdict chip: ${
+      sums.map(r => r.textContent).join(' | ')}`)
+  }
+  const foot = card?.querySelector('.pa-dfoot')
+  const rej = buttons(foot, /^Reject 2$/)[0]
+  const app = buttons(foot, /^Approve 2$/)[0]
+  if (rej?.getAttribute('data-variant') !== 'outline' || app?.getAttribute('data-variant') !== 'default') {
+    fail(`select-mode: the footer is not "Reject 2" outline + "Approve 2" primary: ${rej?.getAttribute('data-variant')} / ${
+      app?.getAttribute('data-variant')}`)
+  }
+  const keys = picks.slice(0, 2).map(p => p.closest('.pa-rowwrap')?.querySelector('.pa-row')?.getAttribute('data-key'))
+  if (keys.every(k => k?.startsWith('skills:')) && card?.querySelector('.pa-meter-box')) {
+    fail('select-mode: a "Memory after approving" meter is drawn for a selection without memory numbers')
+  }
+  await keyDown(sm.hostEl.querySelectorAll('.pa-list-rows .pa-row')[2], ' ')
+  must(head()?.textContent, ['3 selected'], 'select-mode: Space on a focused row does not tick it')
+  await keyDown(sm.hostEl.querySelector('.pa-row'), 'Escape')
+  if (picksOf().length || barNow()) fail('select-mode: Esc leaves checkboxes or the summary behind')
+  if (name(dom.window.document.activeElement) !== 'Select') fail('select-mode: after Esc focus is not back on "Select"')
+  await click(buttons(head(), /^Select$/)[0], 40)
+  for (const box of picksOf().slice(0, 1)) await click(box, 20)
+  await click(buttons(head(), /^Cancel$/)[0], 40)
+  if (picksOf().length || barNow()) fail('select-mode: "Cancel" leaves checkboxes or the summary behind')
+  await click(buttons(head(), /^Select$/)[0], 40)
+  must(head()?.textContent, ['0 selected'], 'select-mode: a second Select starts with nothing picked')
+  sm.root.unmount()
+  sm.hostEl.remove()
+}
+
+// --- 39) mockup-match: "Today" instead of a date, Later left of a ruled action bar, rows of one list, a
+// plain detail surface (the Just done rows are checked in 43d, in-row done) ----------------------------
+{
+  const mm = await mount('en', 'page')
+  if (mm.hostEl.querySelector('.pa-date')) fail('mockup-match: the dated headline is back (R2 K20)')
+  if (mm.hostEl.querySelector('.pa-bar .pa-progress > span')?.textContent !== 'Today') {
+    fail('mockup-match: the day progress does not lead with "Today"')
+  }
+  if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
+  const foot = mm.hostEl.querySelector('.pa-cell .pa-dfoot')
+  const later = foot?.querySelector('.pa-later')
+  if (name(later) !== 'Later' || later?.closest('.pa-actions') || !(later.compareDocumentPosition(foot.querySelector('.pa-actions')) & 4)) {
+    fail('mockup-match: "Later" is not first, on the left')
+  }
+  if (foot?.querySelector('.pa-fullchange-toggle')) fail('mockup-match: "Show the full review" sits in the action bar')
+  const sheet = mm.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-dfoot\{[^}]*border-top:/.test(sheet)) fail('mockup-match: the action bar has no rule above it')
+  if (!/\.pa-rowwrap\+\.pa-rowwrap\{border-top:1px solid/.test(sheet)) {
+    fail('mockup-match: list rows are separate bordered cards, not rows of one list')
+  }
+  if (/\.pa-detail[^{]*\{[^}]*background:/.test(sheet)) {
+    fail('mockup-match: the detail is a tinted fill, not the plain surface')
+  }
+  mm.root.unmount()
+  mm.hostEl.remove()
+}
+
+// --- 40) review fixes: bulk decisions are "here", Activity says Undone / Restored, a shrinking note frees --
+{
+  REST.gone = new Set()
+  const bk = await mount('en', 'page')
+  await selectMode(bk.hostEl)
+  for (const box of [...bk.hostEl.querySelectorAll('input.pa-pick')].slice(0, 2)) await click(box, 20)
+  const noticesBefore = stub.calls.notify.length
+  await click(buttons(bk.hostEl.querySelector('.pa-bulk'), /^Reject 2$/)[0], 40)
+  await click(bk.hostEl.querySelector('.pa-bulk-go'), 400)
+  const gone = stub.calls.notify.slice(noticesBefore).filter(m => /decided elsewhere/.test(m?.message || ''))
+  if (gone.length) fail('review: a bulk decision made here is announced as "decided elsewhere"')
+  bk.root.unmount()
+  bk.hostEl.remove()
+  REST.gone = null
+
+  REST.history = { entries: [
+    { id: 'un000001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [], undoable: false, undone: true },
+    { id: 'rs000001', ts: Date.now() / 1000 - 90, kind: 'rejected', subsystem: 'memory', summary: 'a note',
+      files: [], undoable: false, restored: true }
+  ], counts: { applied: 1, failed: 0, undoable: 0 } }
+  const jd = await mount('en', 'page')
+  await click(tab(jd.hostEl, /Activity/), 60)
+  const words = []
+  for (const id of ['un000001', 'rs000001']) {
+    await click(actRow(jd.hostEl, id), 20)
+    words.push(actDetail(jd.hostEl)?.querySelector('.pa-dh .pa-state-chip')?.textContent)
+  }
+  if (words[0] !== 'Undone' || words[1] !== 'Restored') {
+    fail(`review: Activity does not say an entry was undone / restored: ${JSON.stringify(words)}`)
+  }
+  jd.root.unmount()
+  jd.hostEl.remove()
+
+  REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
+  const shrink = { ...PENDING.memory[0], plain: { ...PENDING.memory[0].plain,
+    fit: { file: 'MEMORY.md', before: 2149, after: 2097, limit: 2200, over: 0 } } }
+  REST.pending = { memory: [shrink], skills: [], counts: { memory: 1, skills: 0 } }
+  const fr = await mount('en', 'page')
+  const effect = fr.hostEl.querySelector('.pa-meter-value')?.textContent || ''
+  if (effect !== '98% → 95%' && effect !== '97% → 95%') fail(`review: a shrinking note reads "${effect}"`)
+  const freed = fr.hostEl.querySelector('.pa-meter-add')
+  const near = (css, v) => Math.abs(parseFloat(css) - v * 100 / 2200) < 1e-6
+  if (!near(freed?.style.left, 2097) || !near(freed?.style.width, 2149 - 2097)) {
+    fail('review: the freed part of a shrinking note is not the striped part of the meter')
+  }
+  if (fr.hostEl.querySelector('.pa-done, .pa-clear-last')) {
+    fail('review: a done row or Last line is drawn with no history')
+  }
+  fr.root.unmount()
+  fr.hostEl.remove()
+  // R2 A16: an empty history draws the kit EmptyState across the split, no list column and no row.
+  const none = await mount('en', 'page')
+  await click(tab(none.hostEl, /Activity/), 80)
+  const blank = none.hostEl.querySelector('[data-slot="empty-state"]')
+  if (!blank || !/No records yet/.test(blank.textContent || '')) fail('activity: an empty history draws no kit EmptyState')
+  if (none.hostEl.querySelector('.pa-act-row, .pa-list')) fail('activity: an empty history still draws a list column')
+  none.root.unmount()
+  none.hostEl.remove()
+  REST.pending = null
+  REST.history = null
+}
+
+// --- 41) ui-polish: neutral surfaces, a bounded list column, the Memory tab's file rows -----------------
+{
+  const pg = await mount('en', 'page')
+  const sheet = pg.hostEl.querySelector('style')?.textContent || ''
+  const root = sheet.match(/\.pa-root\{[^}]*\}/)?.[0] || ''
+  if (/--hx-card:var\(--ui-bg-(secondary|tertiary|primary)\)/.test(root)) {
+    fail('ui-polish: cards are painted with an accent-tinted fill (--ui-bg-secondary is 11% accent)')
+  }
+  if (!/\.pa-split\{[^}]*grid-template-columns:300px minmax\(0,1fr\)/.test(sheet)) {
+    fail('ui-polish: the list column is not a fixed 300 px beside a flexible detail')
+  }
+  if (!/@container \(max-width:760px\)\{[^@]*\.pa-split\{grid-template-columns:minmax\(0,1fr\)\}/.test(sheet)) {
+    fail('ui-polish: the list stays beside the detail down to a width where neither fits')
+  }
+  if (/\.pa-alerts-word\{[^}]*display:none/.test(sheet)) {
+    fail('ui-polish: the Alerts switch loses its word at some pane width (labels are never dropped)')
+  }
+  if (!pg.hostEl.querySelector('.pa-bar .pa-refresh')) fail('ui-polish: refresh is not on the top bar')
+  if (!/\.pa-root \.pa-row\{[^}]*border:0;background:transparent/.test(sheet)) {
+    fail('ui-polish: the list row button keeps the browser\u2019s own button look')
+  }
+  await click(tab(pg.hostEl, /Memory/), 60)
+  if (pg.hostEl.querySelector('.pa-gauges')) fail('ui-polish: the Memory tab shows the fill rings twice')
+  const cards = [...pg.hostEl.querySelectorAll('.pa-memrows [role="tab"]')]
+  if (cards.length !== 2 || !cards.every(c => c.classList.contains('pa-memrow'))) {
+    fail(`ui-polish: the file rows are not the file switch (${cards.length} tabs)`)
+  }
+  const full = [...pg.hostEl.querySelectorAll('.pa-alert, .pa-banner')].filter(a => /nearly full/.test(a.textContent))
+  if (full.length > 1) {
+    fail('ui-polish: "Memory is nearly full" is written twice')
+  }
+  const arm = buttons(pg.hostEl.querySelector('[role="tabpanel"]#pa-mem-panel') || pg.hostEl, /^Delete$/)[0]
+  if (arm) await click(arm, 30)
+  const grid = [...pg.hostEl.querySelectorAll('#pa-mem-panel *')].some(el => el.style.gridTemplateColumns === '1fr 1fr')
+  if (grid) fail('ui-polish: the delete confirmation splits the row into two half-width buttons')
+  const narrowCmp = sheet.indexOf('@container (max-width:520px){.pa-cmp{')
+  if (narrowCmp < sheet.indexOf('.pa-cmp{display:grid')) {
+    fail('ui-polish: the narrow one-column comparison rule comes before the two-column rule, so it never applies')
+  }
+  await click(tab(pg.hostEl, /Activity/), 60)
+  const clearAll = buttons(pg.hostEl, /^Clear all/)[0]
+  if (clearAll) await click(clearAll, 30)
+  if ([...pg.hostEl.querySelectorAll('*')].some(el => el.style.gridTemplateColumns === '1fr 1fr')) {
+    fail('ui-polish: the clear-history confirmation splits the row into two half-width buttons')
+  }
+  pg.root.unmount()
+  pg.hostEl.remove()
+}
+
+// --- 42) alignment: equal rows, headings off the lines, the list footer, a tab-switch transition -------
+{
+  const pg = await mount('en', 'page')
+  const sheet = pg.hostEl.querySelector('style')?.textContent || ''
+  const rule = sel => sheet.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}'))?.[0] || ''
+  const rowHeights = [...pg.hostEl.querySelectorAll('.pa-split .pa-list-rows > .pa-rowwrap')].map(r => r.style.height)
+  if (rowHeights.length !== 3 || new Set(rowHeights).size !== 1 || rowHeights[0] !== '78px') {
+    fail(`alignment: the Needs you rows are not one fixed 78 px height: ${JSON.stringify(rowHeights)}`)
+  }
+  if (!/padding:0 14px/.test(rule('.pa-day'))) {
+    fail('alignment: the day heading inside the Activity list has no padding and touches the list border')
+  }
+  if (!/@keyframes pa-in\{/.test(sheet) || !/\.pa-view\{animation:pa-in \d+ms/.test(sheet)) {
+    fail('alignment: switching tabs swaps the content with no transition')
+  }
+  if (!pg.hostEl.querySelector('.pa-view')) fail('alignment: the tab content is not wrapped in the transition class')
+  await click(tab(pg.hostEl, /Memory/), 60)
+  const memHeights = [...pg.hostEl.querySelectorAll('.pa-memrow')].map(r => r.style.height)
+  if (memHeights.length !== 2 || new Set(memHeights).size !== 1) {
+    fail(`alignment: the two Memory file rows size to their own text: ${JSON.stringify(memHeights)}`)
+  }
+  await click(tab(pg.hostEl, /Activity/), 60)
+  const foot = pg.hostEl.querySelector('.pa-activity .pa-list > .pa-list-foot')
+  if (!foot || !buttons(foot, /^Clear all/).length || foot.style.height !== '57px') {
+    fail(`alignment: "Clear all" is not in the Activity list footer row (${foot?.style.height})`)
+  }
+  pg.root.unmount()
+  pg.hostEl.remove()
+}
+
+// --- 43) R12.2 split-layout checks: rows, keyboard, in-row done, fix toggle, checking, word marks, narrow --
+{
+  const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const cur = h => h.hostEl.querySelector('.pa-row[aria-current="true"]')?.getAttribute('data-key')
+  const order = h => [...h.hostEl.querySelectorAll('.pa-list-rows .pa-row')].map(r => r.getAttribute('data-key'))
+  const det = (h, key) => h.hostEl.querySelector(`.pa-detail[data-key="${key}"] > .pa-card`)
+  const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+
+  // 43a) rows: tile, title, preview, 4 dots, status word, short time, one fixed height
+  {
+    const h = await mount('en', 'page')
+    const rows = [...h.hostEl.querySelectorAll('.pa-split .pa-list-rows > .pa-rowwrap')]
+    const keys = rows.map(w => w.querySelector('.pa-row')?.getAttribute('data-key'))
+    if (keys.join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') fail(`rows: list order ${keys}`)
+    const icons = rows.map(w => w.querySelector('.pa-row .pa-tile svg')?.getAttribute('data-icon')).join()
+    if (icons !== 'brain,book,book') fail(`rows: the tiles are not Brain / Book / Book: ${icons}`)
+    if (rows.some(w => !w.querySelector('.pa-row-title')?.textContent)) fail('rows: a row has no title')
+    const previews = rows.map(w => w.querySelector('.pa-row-preview')?.textContent)
+    if (previews[0] !== 'MEMORY.md: updates 1 note' || previews[1] !== LONG || previews[2] !== 'New skill: new-skill') {
+      fail(`rows: the previews are not headline / what[0] / headline: ${JSON.stringify(previews)}`)
+    }
+    const dots = rows.map(w => [...w.querySelectorAll('.pa-dots .pa-dot')].map(d => d.getAttribute('data-k')).join())
+    if (dots.some(d => d !== 'ok,ok,ok,ok')) {
+      fail(`rows: a clean review does not show four ok dots: ${JSON.stringify(dots)}`)
+    }
+    const words = rows.map(w => w.querySelector('.pa-row-word')?.textContent)
+    if (words[1] !== 'Needs one edit' || words[2] !== 'Safe to save') {
+      fail(`rows: status words ${JSON.stringify(words)}`)
+    }
+    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent).join()
+    if (times !== '2h,5m,2m') fail(`rows: the times are not the short form: ${times}`)
+    const heights = rows.map(w => w.style.height)
+    if (new Set(heights).size !== 1 || !heights[0]) fail(`rows: the rows are not one fixed height: ${heights}`)
+    if (rows.some(w => w.getAttribute('role') !== 'listitem')
+        || !rows[0]?.parentElement?.matches('[role="list"]')) fail('rows: the rows are not listitems of a list')
+    h.root.unmount()
+    h.hostEl.remove()
+    REST.mode = 'reviewing'
+    const r = await mount('en', 'page')
+    const waits = [...(rowOf(r.hostEl, 'skills:aaa11111')?.querySelectorAll('.pa-dots .pa-dot') || [])]
+      .map(d => d.getAttribute('data-k'))
+    if (waits.length !== 4) fail(`rows: a running review shows ${waits.length} dots, not 4`)
+    if (!waits.length || waits.some(k => k !== 'wait')) fail(`rows: a running review shows decided dots: ${waits}`)
+    r.root.unmount()
+    r.hostEl.remove()
+    REST.mode = 'normal'
+  }
+
+  // 43b) keyboard: J/K move, A approves with the version, X rejects, L posts nothing, held A warns once,
+  // typing and Ctrl+A send nothing
+  {
+    const h = await mount('en', 'page')
+    const split = h.hostEl.querySelector('.pa-split')
+    if (h.hostEl.querySelector('.pa-list-rows')?.getAttribute('aria-keyshortcuts') !== 'J K') {
+      fail('keyboard: the list does not announce J K')
+    }
+    await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'j')
+    if (cur(h) !== 'skills:def67890') fail(`keyboard: J does not select the next row (${cur(h)})`)
+    if (document.activeElement !== rowOf(h.hostEl, 'skills:def67890')) {
+      fail('keyboard: J from the list does not focus the row')
+    }
+    await keyDown(rowOf(h.hostEl, 'skills:def67890'), 'K')
+    if (cur(h) !== 'memory:abc12345') fail(`keyboard: K does not select the previous row (${cur(h)})`)
+    await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'k')
+    if (cur(h) !== 'memory:abc12345') fail('keyboard: K wraps past the first row')
+    await toFront(h.hostEl, 'skills:aaa11111')
+    const card = det(h, 'skills:aaa11111')
+    const primary = card?.querySelector('[aria-keyshortcuts="A"]')
+    if (!primary || primary.getAttribute('data-variant') !== 'default') fail('keyboard: the primary does not carry A')
+    if (!card?.querySelector('.pa-decline[aria-keyshortcuts="X"]')) fail('keyboard: Don\u2019t save does not carry X')
+    if (!card?.querySelector('.pa-later[aria-keyshortcuts="L"]')) fail('keyboard: Later does not carry L')
+    const text = document.createElement('input')
+    text.type = 'text'
+    card?.appendChild(text)
+    let from = stub.calls.posts.length
+    await keyDown(text, 'a')
+    await keyDown(text, 'x')
+    await keyDown(card, 'a', { ctrlKey: true })
+    if (stub.calls.posts.length !== from) fail('keyboard: a key typed in a text input, or Ctrl+A, sent a request')
+    text.remove()
+    await toFront(h.hostEl, 'skills:def67890')
+    from = stub.calls.posts.length
+    const ordered = order(h)
+    const ev = await keyDown(det(h, 'skills:def67890'), 'l')
+    if (stub.calls.posts.length !== from) fail('keyboard: L posted a request')
+    if (!ev?.defaultPrevented) fail('keyboard: a handled key does not call preventDefault')
+    if (order(h).at(-1) !== 'skills:def67890' || ordered.at(-1) === 'skills:def67890') {
+      fail(`keyboard: L does not move the record last: ${order(h)}`)
+    }
+    await toFront(h.hostEl, 'skills:aaa11111')
+    from = decides().length
+    await keyDown(det(h, 'skills:aaa11111'), 'a')
+    await wait(80)
+    const sent = decides().slice(from)
+    if (sent.length !== 1 || sent[0].body.decision !== 'approve' || sent[0].body.ids.join() !== 'aaa11111'
+        || sent[0].body.versions?.aaa11111 !== 'v-aaa11111') {
+      fail(`keyboard: A is not one approve with the selected version: ${JSON.stringify(sent.map(p => p.body))}`)
+    }
+    h.root.unmount()
+    h.hostEl.remove()
+
+    const x = await mount('en', 'page')
+    await toFront(x.hostEl, 'skills:def67890')
+    from = decides().length
+    await keyDown(det(x, 'skills:def67890'), 'x')
+    await wait(80)
+    const rej = decides().slice(from)
+    if (rej.length !== 1 || rej[0].body.decision !== 'reject' || rej[0].body.ids.join() !== 'def67890') {
+      fail(`keyboard: X does not reject the selected record: ${JSON.stringify(rej.map(p => p.body))}`)
+    }
+    x.root.unmount()
+    x.hostEl.remove()
+
+    REST.mode = 'reviewing'
+    const held = await mount('en', 'page')
+    await toFront(held.hostEl, 'skills:aaa11111')
+    from = decides().length
+    const warnsBefore = stub.calls.notify.filter(m => m?.kind === 'warning').length
+    await keyDown(det(held, 'skills:aaa11111'), 'a')
+    const warns = stub.calls.notify.filter(m => m?.kind === 'warning').length - warnsBefore
+    if (decides().length !== from) fail('keyboard: A on a held record sent a decision')
+    if (warns !== 1) fail(`keyboard: A on a held record warned ${warns} times, not once`)
+    held.root.unmount()
+    held.hostEl.remove()
+    REST.mode = 'normal'
+    if (!split) fail('keyboard: no split root to carry the keys')
+  }
+
+  // 43c) in-row done: approve → "Saved “…”" row → Undo posts /undo with the history id; reject → Restore
+  {
+    REST.gone = new Set()
+    REST.history = { entries: [
+      { id: 'hd000001', ts: Date.now() / 1000 - 5, kind: 'apply', subsystem: 'skills', record_id: 'aaa11111',
+        summary: 'saved', files: [], undoable: true },
+      { id: 'hd000002', ts: Date.now() / 1000 - 9, kind: 'rejected', subsystem: 'skills', record_id: 'def67890',
+        summary: 'not saved', files: [], undoable: false, restorable: true }
+    ], counts: { applied: 1, failed: 0, undoable: 1 } }
+    const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:aaa11111')
+    await click(primaryBtn(det(h, 'skills:aaa11111')), 600)
+    const saved = h.hostEl.querySelector('.pa-list-rows > .pa-done[data-k="approve"]')
+    if (!/^Saved “.+”/.test(saved?.querySelector('.pa-done-text')?.textContent || '')) {
+      fail(`in-row done: an approve leaves no "Saved “…”" row: ${saved?.textContent}`)
+    }
+    const undo = buttons(saved, /^Undo$/)[0]
+    if (!undo) fail('in-row done: the Saved row offers no Undo')
+    if (undo) await click(undo, 60)
+    if (stub.calls.posts.filter(p => p.path === '/undo').at(-1)?.body?.id !== 'hd000001') {
+      fail('in-row done: Undo does not POST /undo with the history id')
+    }
+    await toFront(h.hostEl, 'skills:def67890')
+    await click(declineBtn(det(h, 'skills:def67890')), 600)
+    const notSaved = h.hostEl.querySelector('.pa-list-rows > .pa-done[data-k="reject"]')
+    if (!/^Not saved “.+”/.test(notSaved?.textContent || '')) fail('in-row done: a reject leaves no "Not saved" row')
+    const restore = buttons(notSaved, /^Restore$/)[0]
+    if (restore) await click(restore, 60)
+    if (stub.calls.posts.filter(p => p.path === '/restore').at(-1)?.body?.id !== 'hd000002') {
+      fail('in-row done: Restore does not POST /restore with the history id')
+    }
+    h.root.unmount()
+    h.hostEl.remove()
+    REST.gone = null
+    REST.history = null
+  }
+
+  // 43d) fix toggle: With the fix by default (fix.text → fix.description), As written shows the op lines,
+  // aria-pressed follows, and the choice never changes what "Approve with the fix" sends
+  {
+    const lines = c => [...(c?.querySelectorAll('.pa-dbody .pa-file .pa-dl') || [])]
+      .map(l => `${l.getAttribute('data-k')}${l.textContent}`)
+    const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:def67890')
+    const c = det(h, 'skills:def67890')
+    const group = c?.querySelector('.pa-toggle[role="group"]')
+    if (group?.getAttribute('aria-label') !== 'Show the change') fail('fix toggle: no "Show the change" group')
+    const [fixB, asB] = [...(group?.querySelectorAll('button') || [])]
+    if (name(fixB) !== 'With the fix' || fixB?.getAttribute('aria-pressed') !== 'true'
+        || asB?.getAttribute('aria-pressed') !== 'false') fail('fix toggle: "With the fix" is not the pressed default')
+    const fixLines = lines(c).join(' | ')
+    if (!fixLines.includes(FIX_RAW_DESC.slice(30, 60)) || !fixLines.includes(FIX_SUGGESTED.slice(30))) {
+      fail(`fix toggle: With the fix does not show fix.text → fix.description: ${fixLines.slice(0, 120)}`)
+    }
+    if (asB) await click(asB, 30)
+    if (asB?.getAttribute('aria-pressed') !== 'true') fail('fix toggle: As written does not become pressed')
+    if (!lines(det(h, 'skills:def67890')).some(l => l.startsWith('+') && l.includes('# New file'))) {
+      fail('fix toggle: As written does not show the op lines')
+    }
+    h.root.unmount()
+    h.hostEl.remove()
+
+    REST.mode = 'remedy'
+    const r = await mount('en', 'page')
+    await toFront(r.hostEl, 'skills:aaa11111')
+    const rc = det(r, 'skills:aaa11111')
+    const rAs = buttons(rc?.querySelector('.pa-toggle'), /^As written$/)[0]
+    if (!rAs) fail('fix toggle: a verified suggested edit draws no toggle')
+    if (rAs) await click(rAs, 30)
+    const from = decides().length
+    await click(buttons(det(r, 'skills:aaa11111'), /^Approve with the fix$/)[0], 80)
+    const sent = decides().slice(from)
+    if (sent.length !== 1 || sent[0].body.with_edits !== true) {
+      fail(`fix toggle: As written changed what "Approve with the fix" sends: ${JSON.stringify(sent.map(p => p.body))}`)
+    }
+    r.root.unmount()
+    r.hostEl.remove()
+
+    // word marks: only the changed words, none when a pair shares nothing
+    const w = await mount('en', 'page')
+    await toFront(w.hostEl, 'skills:aaa11111')
+    const wc = det(w, 'skills:aaa11111')
+    const marks = k => [...(wc?.querySelectorAll(`.pa-dl[data-k="${k}"] mark.pa-mark`) || [])].map(m => m.textContent)
+    if (marks('-').join() !== 'new-skill' || marks('+').join() !== 'new-skill-x') {
+      fail(`word marks: not only the changed words are marked: ${JSON.stringify([marks('-'), marks('+')])}`)
+    }
+    await toFront(w.hostEl, 'memory:abc12345')
+    if (det(w, 'memory:abc12345')?.querySelector('mark.pa-mark')) {
+      fail('word marks: a pair that shares nothing is marked')
+    }
+    w.root.unmount()
+    w.hostEl.remove()
+    REST.mode = 'normal'
+  }
+
+  // 43e) checking: seal Loader, four pending steps, primary aria-disabled, a click sends nothing
+  {
+    REST.mode = 'reviewing'
+    const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'memory:abc12345')
+    const c = det(h, 'memory:abc12345')
+    if (!c?.querySelector('.pa-verdict .pa-seal [data-slot="loader"]')) fail('checking: the seal is not the kit Loader')
+    const steps = c?.querySelectorAll('.pa-verdict .pa-steps .pa-step').length || 0
+    if (steps !== 4) fail(`checking: ${steps} pending steps, not 4`)
+    const p = primaryBtn(c)
+    if (p?.getAttribute('aria-disabled') !== 'true') fail('checking: the primary is not aria-disabled')
+    const from = decides().length
+    if (p) await click(p, 60)
+    if (decides().length !== from) fail('checking: a click on the held primary sent a decision')
+    h.root.unmount()
+    h.hostEl.remove()
+    REST.mode = 'normal'
+  }
+
+  // 43f) narrow: a row click opens the detail (data-open="1"), Back closes it and focuses the row, "1 of 3"
+  {
+    const h = await mount('en', 'page')
+    const split = () => h.hostEl.querySelector('.pa-split:not(.pa-activity):not(.pa-memory)')
+    if (split()?.getAttribute('data-open') !== '0') fail('narrow: the list is not the first view')
+    await click(rowOf(h.hostEl, 'memory:abc12345'), 30)
+    if (split()?.getAttribute('data-open') !== '1') fail('narrow: a row click does not open the detail')
+    const back = h.hostEl.querySelector('.pa-detail .pa-back')
+    if (back?.querySelector('.pa-back-pos')?.textContent !== '1 of 3') fail(`narrow: the position is not "1 of 3"`)
+    if (name(back?.querySelector('button')) !== '3 waiting') fail('narrow: Back does not name the list')
+    await click(back?.querySelector('button'), 30)
+    if (split()?.getAttribute('data-open') !== '0') fail('narrow: Back does not return to the list')
+    if (document.activeElement !== rowOf(h.hostEl, 'memory:abc12345')) fail('narrow: Back does not focus the row')
+    h.root.unmount()
+    h.hostEl.remove()
+  }
+}
+
+// --- 50) rework 2 (owner's review of round 2): one check per item, each red on 1d32feb's plugin.js -----
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const sheetOf = h => h.hostEl.querySelector('style')?.textContent || ''
+
+  // item 2: with 0 pending the all-caught-up state fills the body: no list column, list header or legend,
+  // and the J/K/A/X/L keys neither fire nor throw.
+  REST.pending = { counts: { memory: 0, skills: 0 }, memory: [], skills: [] }
+  const clear = await mount('en', 'page')
+  if (!clear.hostEl.querySelector('.pa-clear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
+  if (clear.hostEl.querySelector('.pa-split .pa-list, .pa-split .pa-list-head, .pa-split .pa-legend')) {
+    fail('rework 2 item 2: an empty list column (header, legend) is drawn although nothing waits')
+  }
+  const posted = stub.calls.posts.length
+  for (const k of ['j', 'k', 'a', 'x', 'l']) await keyDown(clear.hostEl.querySelector('.pa-clear') || clear.hostEl, k)
+  if (stub.calls.posts.length !== posted) fail('rework 2 item 2: a shortcut acted with 0 pending')
+  clear.root.unmount()
+  clear.hostEl.remove()
+  REST.pending = null
+
+  // item 3: the Memory tab has two files, so at 760 px and below it is one scroll: the file rows, then the
+  // selected file's banner and notes directly below; no list→detail step and no back bar.
+  const mem = await mount('en', 'page')
+  const memCss = sheetOf(mem)
+  for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;',
+    '.pa-split.pa-memory>.pa-list{display:flex;flex:none;', '.pa-split.pa-memory>.pa-detail{display:flex;flex:none}',
+    '.pa-memory>.pa-list>.pa-list-foot,.pa-memory .pa-back{display:none}']) {
+    const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
+    if (!narrow.includes(rule)) fail(`rework 2 item 3: the narrow Memory tab lacks ${rule}`)
+  }
+
+  // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the primary keeps the top
+  // row at its right end and Later / Review again move to the second row.
+  const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
+  if (!narrow.includes('.pa-dfoot>.pa-actions{order:-1;flex:1 1 100%;flex-wrap:nowrap;margin-left:0}')
+      || /\.pa-actions\{margin-left:0;justify-content:flex-start\}/.test(memCss)) {
+    fail('rework 2 item 4: the narrow footer does not keep the decision buttons together on the first row, right-aligned')
+  }
+  // item 3 (the armed delete): in the one-scroll narrow Memory tab the last note's confirm row can sit below the
+  // fold; arming scrolls it into view (the shot gate replays the call and measures the warning as visible).
+  const scrolled = []
+  const ownScroll = window.HTMLElement.prototype.scrollIntoView
+  window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this) }
+  await click(tab(mem.hostEl, /^Memory/), 60)
+  const memDels = [...(mem.hostEl.querySelector('.pa-detail')?.querySelectorAll('button') || [])]
+    .filter(b => /^Delete$/.test(b.textContent || ''))
+  if (memDels.length) await click(memDels[memDels.length - 1], 60)
+  if (!scrolled.some(el => el.classList?.contains('pa-note-ask'))) {
+    fail(`rework 2 item 3: arming a note delete does not scroll its confirm row into view (${memDels.length} Delete buttons)`)
+  }
+  window.HTMLElement.prototype.scrollIntoView = ownScroll
+  mem.root.unmount()
+  mem.hostEl.remove()
+
+  // item 5 is checked in block 33 (the ! chip) and 11 (the verdict tone): warning, not danger.
+  // item 6: "Reject all N" beside a group's primary is outline, not red.
+  REST.mode = 'groups'
+  const g = await mount('en', 'page')
+  const groupKey = `skills:${CLEAN_GROUP}`
+  await toFront(g.hostEl, groupKey)
+  const rejectAll = buttons(g.hostEl.querySelector('.pa-detail'), /^Reject all \d+/)[0]
+  if (!rejectAll || rejectAll.getAttribute('data-variant') !== 'outline') {
+    fail(`rework 2 item 6: "Reject all N" is not outline: ${rejectAll?.getAttribute('data-variant')} (${groupKey})`)
+  }
+  g.root.unmount()
+  g.hostEl.remove()
+  REST.mode = 'normal'
+
+  // item 7: a failed review says so in one sentence, its seal is the warning tone, and the armed "Apply
+  // unreviewed" is one confirm row in the footer (warning text + Cancel + Apply unreviewed outline), no Later
+  // beside it and no line floating above the footer.
+  REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
+  const nr = await mount('en', 'page')
+  await toFront(nr.hostEl, 'skills:aaa11111')
+  const c = cellOf(nr, 'skills:aaa11111')
+  const chipText = [...(c?.querySelectorAll('.pa-verdict .pa-chip > span:last-child') || [])].map(x => x.textContent)
+    .join(' | ')
+  if (chipText !== 'The check failed — “Review again” retries it.') {
+    fail(`rework 2 item 7: the failed check does not read as one sentence: ${chipText}`)
+  }
+  const verdict = c?.querySelector('.pa-verdict')
+  if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
+    fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
+  }
+  const skip = buttons(c, /^Approve without review$/)[0]
+  if (skip) await click(skip, 40)
+  const foot = c?.querySelector('.pa-dfoot')
+  const warn = foot?.querySelector('.pa-warnline[role="alert"]')
+  const footButtons = [...(foot?.querySelectorAll('button') || [])].map(b => name(b))
+  const confirm = buttons(foot, /^Apply unreviewed$/)[0]
+  if (!warn || c?.querySelector('.pa-card > .pa-warnline') || footButtons.join('|') !== 'Cancel|Apply unreviewed'
+      || confirm?.getAttribute('data-variant') !== 'outline') {
+    fail(`rework 2 item 7: the armed footer is not one confirm row: ${footButtons.join('|')} · ${
+      confirm?.getAttribute('data-variant')} · warning in footer ${Boolean(warn)}`)
+  }
+  if (/background:var\(--ui-red\)/.test((sheetOf(nr).match(/\.pa-warnline::before\{[^}]*\}/) || [''])[0])) {
+    fail('rework 2 item 7: the confirm warning still carries a red dot')
+  }
+  nr.root.unmount()
+  nr.hostEl.remove()
+  REST.pending = null
+
+  // items 10, 11, 12, 13, 14 on the Activity tab and a pending card.
+  const act = await mount('en', 'page')
+  const css = sheetOf(act)
+  const full = buttons(act.hostEl.querySelector('.pa-detail'), /^Show the full review$/)[0]
+  if (full) await click(full, 40)
+  const kitLabel = act.hostEl.querySelector('[data-slot="panel-section-label"]')
+  if (kitLabel || !act.hostEl.querySelector('.pa-review-head .pa-section')) {
+    fail('rework 2 item 10: a heading is still the uppercase kit section label')
+  }
+  if (/text-decoration:underline/.test((css.match(/\.pa-root \.pa-chip-btn\{[^}]*\}/) || [''])[0])) {
+    fail('rework 2 item 13: a failing check in a verdict chip is still underlined like a link')
+  }
+  if (!/@container \(max-width:560px\)\{\s*\.pa-crumb>\.pa-crumb-end\[data-when\]\{display:none\}\s*\.pa-dh-when\{display:block\}/
+    .test(css) || !act.hostEl.querySelector('.pa-dh .pa-dh-when')) {
+    fail('rework 2 item 14: at narrow widths the crumb time does not move under the title')
+  }
+  await click(tab(act.hostEl, /Activity/), 60)
+  const actSeps = [...act.hostEl.querySelectorAll('.pa-activity .pa-dh .pa-crumb-sep')].map(x => x.textContent)
+  if (!actSeps.length || actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
+  const noFiles = [...act.hostEl.querySelectorAll('.pa-activity .pa-row[data-entry]')]
+  let plain = null
+  for (const row of noFiles) {
+    await click(row, 20)
+    const none = act.hostEl.querySelector('.pa-activity .pa-act-nofiles')
+    if (none) { plain = none; break }
+  }
+  if (!plain || plain.closest('.pa-act-files') || plain.textContent !== 'No file changes') {
+    fail('rework 2 item 12: "No file changes" is not plain muted text outside the monospace file box')
+  }
+  act.root.unmount()
+  act.hostEl.remove()
+}
+
+// --- 51) owner's look at round 3: narrow meters keep their names, a failed check has no "…" mark, the
+// primary of a heavy fix ends the button row ------------------------------------------------------------
+{
+  const narrowAt = (css, w) => css.slice(css.indexOf(`@container (max-width:${w}px){`)).split('}}')[0]
+  const m = await mount('en', 'page')
+  const css = m.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-gm-word/.test(narrowAt(css, 480)) || !m.hostEl.querySelector('.pa-bar .pa-gm .pa-gm-word')) {
+    fail('round 3: at 480 px the bar meters lose their Memory / Profile words (two bare percents)')
+  }
+  if (!/\.pa-bar \.pa-progress/.test(narrowAt(css, 480))) {
+    fail('round 3: at 480 px the bar keeps the day progress, so the title, the count and the named meters collide')
+  }
+  m.root.unmount()
+  m.hostEl.remove()
+
+  REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
+  const f = await mount('en', 'page')
+  await toFront(f.hostEl, 'skills:aaa11111')
+  const glyphs = [...(f.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+    ?.querySelectorAll('.pa-verdict .pa-chip-glyph') || [])].map(g => `${g.getAttribute('data-k')}:${g.textContent}`)
+  if (glyphs.length !== 1 || glyphs[0].startsWith('wait') || glyphs[0].includes('…')) {
+    fail(`round 3: a failed check still opens with the waiting mark: ${glyphs.join(' ')}`)
+  }
+  f.root.unmount()
+  f.hostEl.remove()
+  REST.pending = null
+
+  REST.mode = 'fixloss'
+  const h = await mount('en', 'page')
+  await toFront(h.hostEl, 'skills:aaa11111')
+  const row = [...(h.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-dfoot .pa-actions')
+    ?.querySelectorAll('button') || [])]
+  const last = row[row.length - 1]
+  if (!last || last.getAttribute('data-variant') !== 'default' || !/^Approve as written/.test(name(last))) {
+    fail(`round 3: a heavy fix's primary is not the last button of the row: ${row.map(b => name(b)).join(' | ')}`)
+  }
+  h.root.unmount()
+  h.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 if (problems.length) {

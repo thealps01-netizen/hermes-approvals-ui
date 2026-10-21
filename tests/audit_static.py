@@ -80,11 +80,29 @@ LANG_PATTERNS = (
 )
 
 # Color literals are banned: the app flips themes through variables, so a fixed color yields an
-# unreadable surface in the other theme. Only `var(--ui-*)` and `color-mix(...)` may carry color.
-COLOR_PROP_RE = re.compile(
-    r"\b(?:background|backgroundColor|border|borderTop|borderRight|borderBottom|borderLeft|color"
-    r"|outline)\s*:\s*'([^']*)'")
-COLOR_LITERAL_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
+# unreadable surface in the other theme. Only `var(--ui-*)`, the plugin tokens and `color-mix(...)`
+# of them may carry color. Hex and functional colours are found anywhere in the file (minus
+# comments); `#${…}` (an id text) is not a hex value. A NAMED colour is only looked for in a value:
+# a sheet declaration (`prop:value` ending in `;`/`}`) or a style-object key that carries colour.
+COLOR_LITERAL_RE = re.compile(r"#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9A-Za-z_$])"
+                              r"|\brgba?\(|\bhsla?\(")
+NAMED_COLORS = ("white", "black", "red", "green", "blue", "gray", "grey", "orange", "yellow", "purple",
+                "pink", "brown", "silver", "navy", "teal", "maroon", "olive", "lime", "aqua", "fuchsia",
+                "cyan", "magenta", "gold", "indigo", "violet", "crimson", "coral", "salmon", "beige",
+                "ivory", "khaki", "lavender", "tomato", "turquoise", "tan", "plum", "orchid", "sienna",
+                "chocolate", "darkgray", "lightgray", "darkgrey", "lightgrey", "whitesmoke", "gainsboro")
+NAMED_COLOR_RE = re.compile(r"(?<![\w$-])(?:" + "|".join(NAMED_COLORS) + r")(?![\w$-])", re.I)
+CSS_DECL_RE = re.compile(r"(?<![\w-])([a-z-]+)\s*:\s*((?:\$\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[^;{}$]|\$(?!\{))*)"
+                         r"(?=[;}])")
+STYLE_PROP_RE = re.compile(
+    r"(?<![\w$])(\w*(?:color|Color|background|Background|border|Border|outline|Outline|shadow|Shadow"
+    r"|mask|Mask|fill|stroke|Stroke)\w*)\s*:\s*'([^'\n]*)'")
+# The chat widget's variable names (what the mockups were drawn with). A desktop panel does not get
+# them, so a rule copied from a mockup silently styles nothing.
+CHAT_WIDGET_VARS = {"--foreground", "--background", "--card", "--card-foreground", "--accent",
+                    "--accent-foreground", "--border", "--muted", "--muted-foreground", "--primary",
+                    "--primary-foreground", "--secondary", "--secondary-foreground", "--popover",
+                    "--popover-foreground", "--destructive", "--input", "--ring"}
 
 problems: list[str] = []
 
@@ -205,19 +223,28 @@ def check_motion_table() -> None:
 
 
 def check_card_surface_from_table() -> None:
-    """The card surface is defined once, not twice. The CSS rules that paint cards must read the
-    same constants the JS `cardBase` uses (the card ground, the hairline stroke, `${R.card}px` and
-    `${LIT_EDGE}`): a literal `12px` in the sheet is how the class and the constant drift apart."""
+    """The app frame's surfaces are defined once, not twice. Since the split layout (2026-10) there is
+    no floating card: the frame is the segmented tab track, its active pill and the tinted list
+    column (spec R1.2, R10). Each sheet rule reads its ground, stroke and radius from the shared
+    constants (`--hx-field`/`--hx-raised`, `${HAIRLINE}`, `${R.*}px`, `tint(...)`): a literal `8px`
+    or a hand-written stroke in the sheet is how the class and the constant drift apart."""
     js = JS.read_text(encoding="utf-8")
-    for rule in (".pa-card{",):
+    for rule, needles in ((".pa-root{", (("box-shadow:${LIT_EDGE}", "the lit edge"),)),
+                          (".pa-tabs{", (("var(--hx-field)", "the track ground"),
+                                         ("border-radius:${R.box}px", "the track radius"))),
+                          (".pa-root .pa-tab{", (("border-radius:${R.ctl}px", "the tab radius"),)),
+                          ('.pa-root .pa-tab[data-on="1"]{', (("var(--hx-raised)", "the active tab ground"),
+                                                              ("var(--ui-stroke-secondary)",
+                                                               "the active tab ring"))),
+                          (".pa-list{", (("border-right:${HAIRLINE}", "the hairline stroke"),
+                                         ("${tint('var(--ui-text-primary)', 1.5)}", "the list ground"))),
+                          (".pa-verdict{", (("border-radius:${R.verdict}px", "the verdict radius"),)),
+                          (".pa-file{", (("border-radius:${R.file}px", "the file box radius"),))):
         if rule not in js:
-            _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the card surface lost its class")
+            _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the app frame lost its class")
             continue
         body = js.split(rule, 1)[-1].split("\n.", 1)[0]
-        for needle, why in (("var(--hx-card)", "the card ground"),
-                            ("var(--ui-stroke-tertiary)", "the hairline stroke"),
-                            ("${R.card}px", "the card radius"),
-                            ("${LIT_EDGE}", "the lit edge")):
+        for needle, why in needles:
             if needle not in body:
                 _report(f"plugin.js: {rule[:-1]} does not read {why} from the shared constant")
 
@@ -515,16 +542,145 @@ def check_no_native_title() -> None:
                     "hover-only detail and `aria-label` for an icon-only control")
 
 
+def _js_without_comments(src: str) -> str:
+    """The RAW JavaScript with comments removed and every string/template body KEPT (the colour and
+    variable rules read values, and the values live inside strings). Newlines are kept so a line
+    number read from the result is the source line."""
+    out: list[str] = []
+    i, n = 0, len(src)
+    while i < n:
+        ch = src[i]
+        if ch in "'\"`":
+            j = i + 1
+            while j < n and src[j] != ch:
+                j += 2 if src[j] == "\\" else 1
+            out.append(src[i:j + 1])
+            i = j + 1
+            continue
+        if src.startswith("//", i):
+            end = src.find("\n", i)
+            i = n if end < 0 else end
+            continue
+        if src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            out.append("\n" * src.count("\n", i, end))
+            i = end
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _style_sheet(src: str) -> tuple[int, str]:
+    """(offset, body) of the one `STYLE` template (the panel's sheet); (0, '') when it is gone."""
+    head = src.find("const STYLE = `")
+    if head < 0:
+        return 0, ""
+    start = head + len("const STYLE = `")
+    end = src.find("\n`", start)
+    return start, src[start:end if end >= 0 else len(src)]
+
+
 def check_colors() -> None:
-    """Colors come from the theme: only `var(--ui-*)` and `color-mix(...)`; no fixed color literal."""
+    """Colors come from the theme (spec R10/R11.1), over the WHOLE plugin.js minus comments: the
+    `STYLE` sheet and every style object. Only `var(--ui-*)`, the plugin tokens (`var(--hx-*)`,
+    `var(--pa-*)`, `TONE`, `DIFF_*`, `HAIRLINE`, `tint()`), `color-mix()` of those, `transparent`,
+    `currentColor` and `inherit` may carry colour. A hex value, `rgb()`/`rgba()`/`hsl()`/`hsla()`
+    or a CSS named colour is a fixed colour: it stays the same when the app flips its theme, so the
+    surface turns unreadable in the other one (the old masks were `#000` and `black`)."""
+    src = _js_without_comments(JS.read_text(encoding="utf-8"))
+    seen: set[int] = set()
+
+    def hit(pos: int, text: str) -> None:
+        line = src.count("\n", 0, pos) + 1
+        if line in seen:
+            return
+        seen.add(line)
+        _report(f"plugin.js:{line}: a fixed color is written ({text.strip()[:60]!r}) — surfaces, "
+                "borders and text take their color from the theme variables")
+
+    for m in COLOR_LITERAL_RE.finditer(src):
+        hit(m.start(), src[m.start():m.start() + 40].split("\n")[0])
+    offset, sheet = _style_sheet(src)
+    for m in CSS_DECL_RE.finditer(sheet):
+        if NAMED_COLOR_RE.search(m.group(2)):
+            hit(offset + m.start(), m.group(0))
+    for m in STYLE_PROP_RE.finditer(src):
+        if NAMED_COLOR_RE.search(m.group(2)):
+            hit(m.start(), m.group(0))
+
+
+def check_theme_vars() -> None:
+    """Every `var(--x)` in plugin.js is one of the app's (`--ui-*`) or the plugin's own (`--hx-*`,
+    `--pa-*`) (spec R11.2). The mockups were drawn with the chat-widget names (`--foreground`,
+    `--card`, `--muted-foreground` …); those are not defined on a desktop panel, so a copied rule
+    styles nothing — an invisible text or a missing surface, not an error."""
+    src = _js_without_comments(JS.read_text(encoding="utf-8"))
+    for m in re.finditer(r"var\(\s*(--[A-Za-z0-9_-]+)", src):
+        name = m.group(1)
+        if name.startswith(("--ui-", "--hx-", "--pa-")):
+            continue
+        line = src.count("\n", 0, m.start()) + 1
+        if name in CHAT_WIDGET_VARS:
+            _report(f"plugin.js:{line}: {name} is a chat-widget variable — panels read --ui-*")
+        else:
+            _report(f"plugin.js:{line}: {name} is not a theme variable — panels read --ui-* "
+                    "(or the plugin's own --hx-*/--pa-*)")
+
+
+def check_no_media() -> None:
+    """No `@media` in plugin.js (spec R1.6/R11.3): the panel is one pane among others, so the
+    WINDOW width says nothing about its own width — every width answer is an `@container` query on
+    `.pa-root`."""
+    src = _js_without_comments(JS.read_text(encoding="utf-8"))
+    for m in re.finditer(r"@media\b", src):
+        line = src.count("\n", 0, m.start()) + 1
+        _report(f"plugin.js:{line}: an @media rule — size by the pane: use @container")
+
+
+def check_app_layout() -> None:
+    """The split-layout promises the keyboard and the screen reader rely on (spec R4.1, R6, R7.2).
+
+    * The Needs-you keys (J/K/A/X/L) never fire while the user types: a text-entry guard (`typing`:
+      textarea, select, contenteditable, role=textbox, a non-checkbox input) and a modifier guard
+      (Ctrl/Meta/Alt, an already handled event) sit before any key is read — without them Ctrl+A
+      or an `a` typed into a field approves a record.
+    * The footer's primary carries `aria-keyshortcuts` `A`, so the key is announced and the handler
+      finds the very button a click would press (held state included).
+    * The fix toggle's buttons carry `aria-pressed`: without it the two states read the same.
+    * The selected list row carries `aria-current`: it is the only way to know which record the
+      detail column shows.
+    """
     src = JS.read_text(encoding="utf-8")
-    stripped = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
-    stripped = re.sub(r"//[^\n]*", " ", stripped)
-    for m in COLOR_PROP_RE.finditer(stripped):
-        if COLOR_LITERAL_RE.search(m.group(1)):
-            line = stripped.count("\n", 0, m.start()) + 1
-            _report(f"plugin.js:{line}: a fixed color is written ({m.group(0)[:60]!r}) — surfaces, "
-                    "borders and text take their color from the theme variables")
+    typing = src.split("const typing = el => {", 1)[-1].split("\n}\n", 1)[0] \
+        if "const typing = el => {" in src else ""
+    listing = _function_body(src, "NeedsYou")
+    row = _function_body(src, "QueueRow")
+    detail = _function_body(src, "RecordDetail")
+    keys = listing.split("const onKeyDown = e => {", 1)[-1].split("\n  }\n", 1)[0] \
+        if "const onKeyDown = e => {" in listing else ""
+    if ("if (typing(e.target)) return" not in keys
+            or "textarea, select, [contenteditable=\"\"], [contenteditable=\"true\"], [role=\"textbox\"]"
+            not in typing
+            or "!['checkbox', 'radio', 'button'].includes(" not in typing):
+        _report("plugin.js: the Needs-you key handler lost its text-entry guard — a key typed into a "
+                "field would approve or reject a record")
+    if "if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return" not in keys:
+        _report("plugin.js: the Needs-you key handler lost its modifier guard — Ctrl+A would approve "
+                "a record")
+    if "className: 'pa-split'," not in listing or "    onKeyDown,\n" not in listing:
+        _report("plugin.js: the Needs-you keys are not handled on the split root — they would act "
+                "outside the tab or not at all")
+    if "'aria-keyshortcuts': hot ? 'A' : undefined" not in src \
+            or "hot === 'primary' ? t('pa.key.a') : ''" not in detail:
+        _report("plugin.js: the primary action lost aria-keyshortcuts A — the key is not announced "
+                "and finds no button")
+    if "'aria-pressed': view === id" not in detail:
+        _report("plugin.js: the fix toggle lost aria-pressed — With the fix and As written read the same")
+    if "'aria-current': on ? 'true' : undefined" not in row:
+        _report("plugin.js: the selected list row lost aria-current — nothing says which record the "
+                "detail shows")
 
 
 def check_two_step_actions() -> None:
@@ -562,14 +718,15 @@ def check_two_step_actions() -> None:
                         ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is bulk-approvable"),
                         ("const [skipArmed, setSkipArmed] = useState(false)",
                          "approving without a pre-review has no confirmation state"),
-                        ("onClick: skipArmed ? () => void decideAndLeave('approve', [], true) : () => setSkipArmed(true)",
+                        ("onClick: () => setSkipArmed(true), children: t('pa.btn.skipReview')",
                          "the first \"Approve without review\" click does not arm"),
                         ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
                         ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",
                          "a record that can no longer be applied keeps Approve open"),
-                        ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(fix)",
+                        ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? "
+                         "fixesInGroup.length : fixSingle)",
                          "a suggested fix can be approved before the review finished or while it leaves a problem"),
-                        ("approveBtn('fixed', t('pa.btn.approveFixed')",
+                        ("heldButton(busy, t, 'fixed', t('pa.btn.approveFixed')",
                          "a card with a suggested edit lost \"Approve with the fix\""),
                         ("with_edits: Boolean(withEdits)", "the suggested edits do not reach the backend"),
                         ("edit?.ok ? jsx(EditView, { edit, t }, 'edit') : null",
@@ -624,8 +781,9 @@ def check_review_integrity_panel() -> None:
 def check_skill_groups_panel() -> None:
     """The 1.11.0 panel promises (Docs/skill-groups-contract.md, "Panel behaviour").
 
-    * A skill group is ONE card: `units` folds the members into their group (once, at the first
-      member) and the list draws the group card for that unit, so no member gets a card of its own.
+    * A skill group is ONE unit: `units` folds the members into their group (once, at the first
+      member) and the list draws one row and, when selected, one detail for that unit, so no member
+      gets a row of its own.
     * The group's Approve is held by the group gate, the same `pickable` rule bulk uses, fed with
       the group's review, its `stale` list and any member's description fix.
     * `/decide` sends a group under `groups` (with its version) and only lone records under `ids`.
@@ -634,18 +792,22 @@ def check_skill_groups_panel() -> None:
     """
     src = JS.read_text(encoding="utf-8")
     units = _function_body(src, "units")
-    listing = _function_body(src, "PendingList")
-    group = _function_body(src, "GroupCard")
+    listing = _function_body(src, "NeedsYou")
+    card = _function_body(src, "RecordDetail")
     chip = _function_body(src, "Chip")
     for needle in ("if (drawn.has(group.id)) continue", "parts, plain: { stale: group.stale || [], fix }"):
         if needle not in units:
             _report(f"plugin.js: units() lost {needle!r} — a skill group is not folded into one card")
-    if "const items = units(data)" not in listing or "jsx(item.parts ? GroupCard : PendingCard, {" not in listing:
-        _report("plugin.js: the pending list does not draw ONE group card per skill group — its members "
+    # Split layout: one unit = one list row (`QueueRow`) and, when selected, one detail
+    # (`RecordDetail`); both are drawn from the folded `units(data)` queue, never from the raw members.
+    if ("units(data)" not in listing or "...order.map(u => jsx(QueueRow, {" not in listing
+            or "jsx(RecordDetail, {" not in listing):
+        _report("plugin.js: the pending list does not draw ONE front card per skill group — its members "
                 "would be cards of their own")
-    if "const groupBlocked = !pickable(item)" not in group or "groupBlocked, heldWhy, () => decideGroup('approve'))" \
-            not in group:
-        _report("plugin.js: the group's Approve is not held by the group gate — a group with a stale change, "
+    if "const heldByRule = isGroup ? fixesInGroup.length > 0" not in card \
+            or "const primaryBlocked = isFix ? false : approveBlocked" not in card \
+            or "primaryBlocked, heldWhy, onPrimary, " not in card:
+        _report("plugin.js: the group's primary action is not held by the group gate — a group with a stale change, "
                 "a rule check or an unfinished review could be approved")
     if "groups: items.filter(item => item.parts).map(item => item.id)," not in src \
             or "ids: items.filter(item => !item.parts).map(item => item.id)," not in src:
@@ -862,8 +1024,8 @@ def check_visual_scale() -> None:
     for m in re.finditer(r"font-size:\d", src):
         line = src.count("\n", 0, m.start()) + 1
         _report(f"plugin.js:{line}: a literal font-size in the sheet — read it from ${{FS.*}}px")
-    if "container-type:inline-size" not in src or "@container (max-width:640px)" not in src:
-        _report("plugin.js: the pane lost its container query — the Memory grid no longer answers the pane width")
+    if "container-type:inline-size" not in src or "@container (max-width:" not in src:
+        _report("plugin.js: the pane lost its container query — the page no longer answers the pane width")
     if "`%${" in src:
         _report("plugin.js: a percent sign is written before its number — write `${n}%`")
 
@@ -876,16 +1038,23 @@ def check_round3_surface() -> None:
     js = JS.read_text(encoding="utf-8")
     if ("paddingTop: pad, paddingBottom: pad" not in js or "const pad = height ? inset(height, 2)" not in js):
         _report("plugin.js: a fixed text box can cut a line — its line height/padding no longer come from LINE/inset")
-    if ('.pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(' not in js
-            or "mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent)}" not in js):
-        _report("plugin.js: an overflowing fixed box has no bottom fade — it reads as clipped")
+    fade = "linear-gradient(to bottom,var(--ui-base) calc(100% - var(--pa-fade)),transparent)"
+    if ('.pa-fade[data-more="1"]{-webkit-mask-image:' + fade not in js
+            or f"  mask-image:{fade}}}" not in js):
+        _report("plugin.js: an overflowing fixed box has no bottom fade — it reads as clipped "
+                "(the mask is opaque var(--ui-base) fading to transparent)")
     for m in re.finditer(r"jsx\(Badge, \{", js):
         head = js[m.end():m.end() + 80]
         if "className: 'pa-tag'" not in head:
             line = js.count("\n", 0, m.start()) + 1
             _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
-    if ".pa-two>:last-child:nth-child(odd){grid-column:1/-1}" not in js or js.count("'pa-cols pa-two'") != 1:
-        _report("plugin.js: a lone last card sits in half the grid (the .pa-two lone-card rule is gone)")
+    history = _function_body(js, "HistoryList")
+    if (".pa-list{display:flex;flex-direction:column" not in js
+            or js.count("className: 'pa-list pa-activity-list'") != 1
+            or "className: 'pa-list pa-activity-list'" not in history
+            or "jsx(ActRow, {" not in history
+            or re.search(r"\.pa-activity-list\{[^}]*display:\s*grid", js)):
+        _report("plugin.js: Activity is a grid of big cards again, not one list of short rows")
 
 
 def check_version_consistency() -> None:
@@ -949,6 +1118,9 @@ def main() -> int:
     check_jsx_key_form()
     check_no_native_title()
     check_colors()
+    check_theme_vars()
+    check_no_media()
+    check_app_layout()
     check_two_step_actions()
     check_review_integrity_panel()
     check_skill_groups_panel()
@@ -976,7 +1148,11 @@ def main() -> int:
           "no comment or docstring, code lines within 120 characters, no trailing whitespace, no tab "
           "indent, single-quoted strings, loader imports allowed, jsx third argument is a key, no "
           "native `title` on a button (the themed Tip / aria-label owns hover text), theme "
-          "colors only, CSS variables defined, type sizes from one FS table, a container-query KPI row, "
+          "colors only (no hex, rgb/hsl or named colour anywhere in plugin.js), only --ui-*/--hx-*/--pa-* "
+          "variables and every --ui-* defined, no @media (the pane answers through @container), the "
+          "Needs-you keys guarded against typing and modifiers, aria-keyshortcuts on the primary, "
+          "aria-pressed on the fix toggle, aria-current on the selected row, type sizes from one FS table, "
+          "a container-query KPI row, "
           "number-first percentages, the two-step clear/delete/force-undo unchanged, a record that "
           "cannot be applied never bulk-approvable (bulk Approve locked, every card still tickable for "
           "bulk Reject), the status chip on /count, every /decide carrying its versions, one card and one "
