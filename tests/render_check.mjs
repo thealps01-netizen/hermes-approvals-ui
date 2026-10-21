@@ -4239,6 +4239,9 @@ REST.scan = 'ok'
   if (!/@container \(max-width:760px\)\{[^@]*\.pa-split\{grid-template-columns:minmax\(0,1fr\)\}/.test(sheet)) {
     fail('ui-polish: the list stays beside the detail down to a width where neither fits')
   }
+  if (/\.pa-alerts-word\{[^}]*display:none/.test(sheet)) {
+    fail('ui-polish: the Alerts switch loses its word at some pane width (labels are never dropped)')
+  }
   if (!pg.hostEl.querySelector('.pa-bar .pa-refresh')) fail('ui-polish: refresh is not on the top bar')
   if (!/\.pa-root \.pa-row\{[^}]*border:0;background:transparent/.test(sheet)) {
     fail('ui-polish: the list row button keeps the browser\u2019s own button look')

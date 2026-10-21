@@ -970,7 +970,7 @@ const STYLE = `
   .pa-btn-kbd{display:none}
   .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
   .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}}
-@container (max-width:480px){.pa-pips{display:none}.pa-alerts-word{display:none}}
+@container (max-width:480px){.pa-pips{display:none}}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
