@@ -772,7 +772,7 @@ const STYLE = `
 .pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
   flex-wrap:wrap}
 .pa-crumb>.pa-crumb-end{margin-left:auto}
-.pa-crumb-sep{color:var(--ui-text-tertiary)}
+.pa-crumb-sep{color:var(--ui-text-secondary)}
 .pa-crumb-icon{display:inline-flex;color:var(--ui-text-secondary)}
 .pa-dtitle{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;font-size:${FS.detail}px;font-weight:600;
   letter-spacing:-.015em;color:var(--ui-text-primary);min-width:0}
@@ -792,7 +792,7 @@ const STYLE = `
 .pa-chip-glyph{display:inline-grid;place-items:center;width:12px;flex:none;font-weight:700}
 .pa-chip-glyph[data-k="ok"]{color:var(--ui-green)}
 .pa-chip-glyph[data-k="bad"]{color:var(--ui-red)}
-.pa-chip-glyph[data-k="wait"]{color:var(--ui-text-tertiary)}
+.pa-chip-glyph[data-k="wait"]{color:var(--ui-text-secondary)}
 .pa-steps{display:flex;flex-direction:column;gap:6px;margin-top:4px;font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-step{display:flex;align-items:center;gap:8px}
 .pa-step-ring{width:9px;height:9px;border-radius:50%;border:2px solid ${tint('var(--ui-text-primary)', 25)};flex:none}
