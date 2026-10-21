@@ -2040,7 +2040,7 @@ function FileDiff({ path, rows, op, badge, deleted }) {
             children: [
               jsx('span', { className: 'pa-file-path', children: path }, 'path'),
               badge ? jsx('span', { className: 'pa-pill', children: badge }, 'badge') : null,
-              gone
+              gone && !badge
                 ? jsx('span', { className: 'pa-file-n pa-file-del', children: t('pa.file.deleted') }, 'deleted')
                 : jsxs('span', {
                     className: 'pa-file-n',

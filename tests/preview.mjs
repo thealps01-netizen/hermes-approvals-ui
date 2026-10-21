@@ -322,8 +322,8 @@ async function frame(actions, start = PENDING, history = HISTORY) {
           const ids = [...(opts.body.ids || []), ...(opts.body.groups || [])]
           const gone = new Set(ids)
           const keep = list => list.filter(r => !gone.has(r.id))
-          pending = { ...pending, memory: keep(pending.memory), skills: keep(pending.skills),
-            counts: { memory: keep(pending.memory).length, skills: keep(pending.skills).length } }
+          pending = pendingOf(keep(pending.memory), keep(pending.skills),
+            pending.groups.skills.filter(g => !gone.has(g.id)))
           hist = { ...hist, entries: [...ids.map((id, i) => ({
             id: `hd00000${i}`, ts: Date.now() / 1000 - 2, subsystem: opts.body.subsystem, record_id: id,
             kind: opts.body.decision === 'reject' ? 'rejected' : 'apply', summary: 'saved', files: [],
@@ -429,7 +429,8 @@ add('f05', 'Needs you — checking: a group whose review runs, a deleted file bo
   await frame(async hostEl => {
     const card = await pick(hostEl, `skills:${GROUP_ID}`)
     need(card?.querySelector('.pa-verdict[data-k="running"]'), 'f05: the running group has no checking verdict')
-    need(card?.querySelector('.pa-file-n.pa-file-del'), 'f05: no deleted file box')
+    need([...(card?.querySelectorAll('.pa-file .pa-pill') || [])].some(p => p.textContent === 'Deleted'),
+      'f05: no deleted file box')
   }, CHECKING))
 
 add('f06', 'Needs you — all caught up: 0 pending, the day pips, the Last line with Undo', await frame(async hostEl => {

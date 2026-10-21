@@ -504,8 +504,11 @@ app.whenReady().then(async () => {
       await new Promise(r => setTimeout(r, 120))
     }
     // A hidden window runs no animation frames, so an entrance animation stays at its first frame
-    // (4 px down, transparent) and every height below it reads 4 px too tall: finish them first.
-    await win.webContents.executeJavaScript('document.getAnimations().forEach(a => a.finish()); true')
+    // (4 px down, transparent): every height below it reads 4 px too tall and the crops come out dim.
+    // The panel's own reduced-motion switch (`data-still`) stops them, then the rest are finished.
+    await win.webContents.executeJavaScript(
+      "document.querySelectorAll('.pa-root').forEach(r => r.setAttribute('data-still', '1'));"
+      + ' document.getAnimations().forEach(a => a.finish()); true')
     await new Promise(r => setTimeout(r, 60))
     const m = await win.webContents.executeJavaScript(MEASURE)
     // One crop per frame: scroll the frame into the viewport, then capture its rectangle (no
