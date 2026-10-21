@@ -36,7 +36,7 @@ const BUNDLES = {
         headlineClear: 'You’re all caught up',
         countsMemory: n => `${n} memory`,
         countsSkills: n => `${n} skills`,
-        countsFix: n => `${n} needs a fix`,
+        countsFix: n => `${n} ${Number(n) === 1 ? 'needs' : 'need'} a fix`,
         savedToday: n => `${n} saved today`,
       },
       action: {
@@ -257,6 +257,8 @@ const BUNDLES = {
         wordsSkill: 'Saved skill',
         wordsNotSaved: 'Not saved',
         wordsFailed: 'Couldn’t save',
+        wordsUndone: 'Undone',
+        wordsRestored: 'Back in Needs you',
         dayToday: 'Today',
         dayYesterday: 'Yesterday',
         headSaved: n => `${n} saved`,
@@ -373,6 +375,8 @@ const BUNDLES = {
       effect: {
         memory: (added, before, after) =>
           `Adds ${plural(added, 'character', 'characters')} · memory goes from ${before}% to ${after}%`,
+        memoryLess: (freed, before, after) =>
+          `Frees ${plural(freed, 'character', 'characters')} · memory goes from ${before}% to ${after}%`,
       },
       check: {
         title: 'Checked for you',
@@ -412,6 +416,7 @@ let historyRead = false
 let paneRefresh = null
 const seenHistory = new Set()
 const held = new Map()
+const decidedHere = new Set()
 const heldListeners = new Set()
 const leaveTimers = new Set()
 const setHeld = (key, value) => {
@@ -1343,10 +1348,11 @@ const effectLine = (subsystem, item) => {
   if (subsystem === 'memory') {
     const fit = plain.fit
     if (!fit || typeof fit.before !== 'number' || typeof fit.after !== 'number' || !fit.limit) return null
-    const added = Math.max(0, fit.after - fit.before)
+    const delta = fit.after - fit.before
     const before = fill({ chars: fit.before, limit: fit.limit }).pct
     const after = fill({ chars: fit.after, limit: fit.limit }).pct
-    return say('pa.effect.memory', added, before, after)
+    return delta < 0 ? say('pa.effect.memoryLess', -delta, before, after)
+      : say('pa.effect.memory', delta, before, after)
   }
   return plain.effect || null
 }
@@ -2382,6 +2388,7 @@ function BulkBar({ items, picked, setPicked, onChanged }) {
       return
     }
     setBusy(true)
+    for (const c of chosen) decidedHere.add(queueKey(c))
     let ok = 0
     const bad = []
     try {
@@ -2612,7 +2619,6 @@ function UpNext({ units: upcoming, t, onPick, picked, onTogglePick, selecting, o
                 className: 'pa-select',
                 variant: 'text',
                 size: 'sm',
-                'aria-pressed': selecting,
                 onClick: onSelect,
                 children: t(selecting ? 'pa.stage.selectDone' : 'pa.stage.select')
               }, 'select')
@@ -2654,7 +2660,11 @@ function JustDoneRow({ entry, t, onChanged }) {
       jsxs('div', {
         className: 'pa-justdone-text',
         children: [
-          jsx('span', { className: 'pa-justdone-title', children: historyWords(t, entry) }, 'title'),
+          jsx('span', {
+            className: 'pa-justdone-title',
+            children: entry.undone ? t('pa.hist.wordsUndone') : entry.restored ? t('pa.hist.wordsRestored')
+              : historyWords(t, entry)
+          }, 'title'),
           jsx('span', {
             className: 'pa-justdone-meta', children: [plainGist(t, said), when(t, entry.ts)].filter(Boolean).join(' · ')
           }, 'meta')
@@ -2672,6 +2682,7 @@ function JustDoneRow({ entry, t, onChanged }) {
 
 function JustDone({ entries, t, onChanged }) {
   const list = entries.slice(0, 5)
+  if (!list.length) return null
   return jsxs('div', {
     className: 'pa-side-section pa-justdone',
     children: [
@@ -2715,6 +2726,9 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
   const items = data ? units(data) : []
   const canSelect = items.length > 1
   const selecting = selectOn && canSelect
+  useEffect(() => {
+    if (selectOn && !canSelect) setSelectOn(false)
+  }, [selectOn, canSelect])
   const toggleSelect = () => {
     if (selecting) setPicked(new Set())
     setSelectOn(!selecting)
@@ -2744,8 +2758,9 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
     const prevKey = prevFrontKey.current
     if (prevKey && prevKey !== frontKey) {
       const stillThere = queue.order.some(u => queueKey(u) === prevKey)
-      const decidedHere = Boolean(held.get(prevKey)?.leaving || held.get(prevKey)?.busy)
-      if (!stillThere && !decidedHere) {
+      const mine = Boolean(held.get(prevKey)?.leaving || held.get(prevKey)?.busy) || decidedHere.has(prevKey)
+      decidedHere.delete(prevKey)
+      if (!stillThere && !mine) {
         host.notify({ kind: 'info', message: t('pa.notify.frontGone') })
         if (lost()) stageRef.current?.querySelector('.pa-cell .pa-card')?.focus()
       }
@@ -3137,10 +3152,11 @@ function Pane() {
   const counts = data?.counts || {}
   const entries = hist.data?.entries || []
   const hc = hist.data?.counts || {}
-  const applied = hc.applied ?? entries.filter(e => e.kind === 'apply' || e.kind === 'external').length
+  const todayKey = dayKey(Date.now() / 1000)
+  const applied = entries.filter(e => (e.kind === 'apply' || e.kind === 'external') && dayKey(e.ts) === todayKey).length
   const muted = useAlertsMuted()
   const fixCount = units(data).filter(({ item }) => (
-    (item.review?.hard || []).length || (item.plain?.stale || []).length
+    (item.review?.hard || []).length || (item.plain?.stale || []).length || (item.plain || {}).fix
   )).length
 
   return jsxs('div', {

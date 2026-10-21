@@ -108,6 +108,13 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
   thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
 
+* **Fixes found in review.** "N saved today" counts today's saves, not every save ever. Deciding the
+  front record from the bulk bar no longer says it was "decided elsewhere". "Just done" says "Undone" or
+  "Back in Needs you" for entries taken back. A note that makes memory smaller reads "Frees N
+  characters". The "needs a fix" count includes records that need shortening ("2 need a fix"). Selection
+  mode ends when only one record is left, instead of coming back by itself later. "Just done" is hidden
+  when there is no history yet.
+
 * **The page matches the approved mockup more closely.** The date is in English ("Tuesday, 20
   October"). The two gauges are thin rings. The front card sits on the plain card surface, with the
   second card peeking out underneath; a clean record shows no "Looks fine" badge (the dot and the ✓

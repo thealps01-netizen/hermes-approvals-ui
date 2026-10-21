@@ -560,6 +560,11 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Bulk decisions mark their keys in `decidedHere`.** The "front left the queue" notice treats a front
+  record as decided here only when this page decided it. Single cards do that through `held`; the bulk
+  bar never set `held`, so its decisions looked like decisions made elsewhere. The bar now adds each
+  chosen key to `decidedHere`, and the check consumes it.
+- **"Saved today" is counted from today's history entries.** The backend's `counts.applied` is all-time.
 - **Gauge rings use a `closest-side` mask.** `radial-gradient(circle, … calc(50% - 4px) …)` sizes the
   gradient to the far corner of the box, so "50%" was about 25px on a 36px ring and the band came out
   about 9px thick. `closest-side` makes 100% the ring's radius, so `calc(100% - 4px)` is a 4px band.

@@ -1583,7 +1583,9 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const headlineText = en.hostEl.querySelector('.pa-headline')?.textContent || ''
   if (headlineText !== '3 things need you') fail(`headline wrong for 3 pending: ${JSON.stringify(headlineText)}`)
   const countsText = en.hostEl.querySelector('.pa-counts')?.textContent || ''
-  if (countsText !== '1 memory · 2 skills') fail(`counts line wrong (no hard finding here): ${JSON.stringify(countsText)}`)
+  if (countsText !== '1 memory · 2 skills · 1 needs a fix') {
+    fail(`counts line leaves out the shortening-fix record: ${JSON.stringify(countsText)}`)
+  }
 
   REST.mode = 'remedy'
   const remedy = await mount('en')
@@ -1606,12 +1608,17 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   REST.pending = null
 
   REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
-  REST.history = { entries: [], counts: { applied: 2, failed: 0, undoable: 0 } }
+  REST.history = { entries: [
+    { id: 'td000001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'today', files: [] },
+    { id: 'td000002', ts: Date.now() / 1000 - 3 * 86400, kind: 'apply', subsystem: 'memory', summary: 'old', files: [] }
+  ], counts: { applied: 47, failed: 0, undoable: 0 } }
   const clear = await mount('en')
   const clearHeadline = clear.hostEl.querySelector('.pa-headline')?.textContent || ''
   if (clearHeadline !== 'You’re all caught up') fail(`all-clear headline wrong: ${JSON.stringify(clearHeadline)}`)
   const clearCounts = clear.hostEl.querySelector('.pa-counts')?.textContent || ''
-  if (clearCounts !== '2 saved today') fail(`all-clear counts line wrong: ${JSON.stringify(clearCounts)}`)
+  if (clearCounts !== '1 saved today') {
+    fail(`"saved today" counts all-time saves, not today's: ${JSON.stringify(clearCounts)}`)
+  }
   if (clear.hostEl.querySelector('[role="heading"][aria-level="1"]')?.getAttribute('aria-live') !== 'polite') {
     fail('the headline is not a polite live region')
   }
@@ -3319,8 +3326,8 @@ REST.scan = 'ok'
   await click(pair.hostEl.querySelector('.pa-refresh'), 150)
   const ticked = [...pair.hostEl.querySelectorAll('input.pa-pick')].filter(b => b.checked).map(b => b.getAttribute('aria-label'))
   const said = pair.hostEl.querySelector('.pa-bulk-count')?.textContent
-  if (ticked.length || said !== '0 of 2 selected') {
-    fail(`a selection outlived the bulk bar: a new record shows "${said}" with ${JSON.stringify(ticked)} pre-ticked`)
+  if (ticked.length || said !== undefined) {
+    fail(`selection mode outlived a one-record queue and came back by itself: "${said}", ${JSON.stringify(ticked)} ticked`)
   }
   REST.pending = null
   pair.root.unmount()
@@ -3870,7 +3877,7 @@ REST.scan = 'ok'
   if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
   const jd = mm.hostEl.querySelector('.pa-justdone-row')
   const jdTitle = jd?.querySelector('.pa-justdone-title')?.textContent || ''
-  if (!/^(Saved|Not saved|Couldn’t save|Undone|Restored|Changed)/.test(jdTitle)) {
+  if (!/^(Saved|Not saved|Couldn’t save|Undone|Back in Needs you|Changed outside)/.test(jdTitle)) {
     fail(`mockup-match: a Just done row does not lead with its outcome: ${jdTitle}`)
   }
   if (!(jd?.querySelector('.pa-justdone-meta')?.textContent || '').includes(' · ')) {
@@ -3889,6 +3896,49 @@ REST.scan = 'ok'
   }
   mm.root.unmount()
   mm.hostEl.remove()
+}
+
+// --- 40) review fixes: bulk decisions are "here", Just done says Undone, a shrinking note frees ------
+{
+  REST.gone = new Set()
+  const bk = await mount('en', 'page')
+  await selectMode(bk.hostEl)
+  for (const box of [...bk.hostEl.querySelectorAll('input.pa-pick')].slice(0, 2)) await click(box, 20)
+  const noticesBefore = stub.calls.notify.length
+  await click(buttons(bk.hostEl.querySelector('.pa-bulk'), /^Reject 2$/)[0], 40)
+  await click(bk.hostEl.querySelector('.pa-bulk-go'), 400)
+  const gone = stub.calls.notify.slice(noticesBefore).filter(m => /decided elsewhere/.test(m?.message || ''))
+  if (gone.length) fail('review: a bulk decision made here is announced as "decided elsewhere"')
+  bk.root.unmount()
+  bk.hostEl.remove()
+  REST.gone = null
+
+  REST.history = { entries: [
+    { id: 'un000001', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'MEMORY.md updated',
+      files: [], undoable: false, undone: true },
+    { id: 'rs000001', ts: Date.now() / 1000 - 90, kind: 'rejected', subsystem: 'memory', summary: 'a note',
+      files: [], undoable: false, restored: true }
+  ], counts: { applied: 1, failed: 0, undoable: 0 } }
+  const jd = await mount('en', 'page')
+  const words = [...jd.hostEl.querySelectorAll('.pa-justdone-title')].map(e => e.textContent)
+  if (words[0] !== 'Undone' || words[1] !== 'Back in Needs you') {
+    fail(`review: Just done does not say an entry was undone / restored: ${JSON.stringify(words)}`)
+  }
+  jd.root.unmount()
+  jd.hostEl.remove()
+
+  REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
+  const shrink = { ...PENDING.memory[0], plain: { ...PENDING.memory[0].plain,
+    fit: { file: 'MEMORY.md', before: 2149, after: 2097, limit: 2200, over: 0 } } }
+  REST.pending = { memory: [shrink], skills: [], counts: { memory: 1, skills: 0 } }
+  const fr = await mount('en', 'page')
+  const effect = fr.hostEl.querySelector('.pa-effect')?.textContent || ''
+  if (effect !== 'Frees 52 characters · memory goes from 97% to 95%') fail(`review: a shrinking note reads "${effect}"`)
+  if (fr.hostEl.querySelector('.pa-justdone')) fail('review: an empty Just done section is drawn with no history')
+  fr.root.unmount()
+  fr.hostEl.remove()
+  REST.pending = null
+  REST.history = null
 }
 
 
