@@ -99,6 +99,7 @@ const PENDING = {
       notes: [{ label: 'What the note means', text: 'The note keeps the gate and the corrected schedule.' }],
       what: ['Adds one note about the write-approval gate', 'Rewrites the calendar sentence', 'Nothing is deleted'],
       effect: 'MEMORY.md is rewritten and the previous copy is stored, so the History tab can take it back.',
+      fit: { file: 'MEMORY.md', before: 2097, after: 2149, limit: 2200, over: 0 },
       stale: [], groups: [],
       recommendation: { verdict: 'Approve', reason: 'Both changes match what was said in the last session.' }
     }

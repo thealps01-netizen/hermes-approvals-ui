@@ -46,7 +46,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
     ("a MOTION job nobody uses", JS, "const MOTION = {",
      "const MOTION = {\n  deadjob: { ms: 120, ease: 'standard' },", 1, "is never used"),
     ("the card surface reads its constants", JS, "border-radius:${R.card}px;",
-     "border-radius:12px;", 2, "does not read the card radius"),
+     "border-radius:12px;", 3, "does not read the card radius"),
     ("no comment in the panel", JS, ID_LINE, "// canary comment\n" + ID_LINE, 1,
      "a comment came back"),
     ("no docstring in the backend", API,

@@ -326,6 +326,33 @@ export function PanelEmpty({ title, description, icon = 'inbox', action, classNa
   })
 }
 
+export function Switch({ checked, onCheckedChange, size = 'default', className, ...rest }) {
+  const on = Boolean(checked)
+  return jsx('button', {
+    ...rest,
+    type: 'button',
+    role: 'switch',
+    'aria-checked': on,
+    'data-slot': 'switch',
+    'data-state': on ? 'checked' : 'unchecked',
+    'data-size': size,
+    className,
+    onClick: () => onCheckedChange?.(!on),
+    style: {
+      position: 'relative', width: size === 'xs' ? 28 : 36, height: size === 'xs' ? 16 : 20, padding: 0, flex: 'none',
+      borderRadius: 999, border: '1px solid ' + UI.stroke, cursor: 'pointer',
+      background: on ? UI.accent : UI.tint(UI.primary, 10)
+    },
+    children: jsx('span', {
+      'data-slot': 'switch-thumb',
+      style: {
+        position: 'absolute', top: 1, left: on ? (size === 'xs' ? 13 : 17) : 1, width: size === 'xs' ? 12 : 16,
+        height: size === 'xs' ? 12 : 16, borderRadius: '50%', background: on ? UI.ink : UI.primary
+      }
+    }, 'thumb')
+  })
+}
+
 export function ErrorState({ title, description, children, icon, className }) {
   return jsxs('div', {
     'data-slot': 'error-state',
@@ -1131,9 +1158,7 @@ for (const mounted of [en, other]) {
   }
   await toFront(en.hostEl, 'skills:aaa11111')
   const clean = badgeOf('skills:aaa11111')
-  if (clean?.textContent !== 'Looks fine' || clean?.getAttribute('data-variant') !== 'success') {
-    fail(`a clean record is not drawn as approvable: ${clean?.textContent}`)
-  }
+  if (clean) fail(`a clean front card still wears a state badge (the mockup has only the dot): ${clean.textContent}`)
   const newCell = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
   if (!(newCell?.textContent || '').includes('Hermes wants to add a new skill:')) fail('a new skill does not say so in its ask line')
   if (!(newCell?.querySelector('.pa-kind-label')?.textContent || '').includes('new-skill')) {
@@ -1417,17 +1442,18 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save, '
     + 'reason kept on its own line in the body')
   const failedCard = act.hostEl.querySelector('.pa-card[data-entry="act10005"]')
-  const failedBadge = failedCard?.querySelector('.pa-tag')?.textContent || ''
+  const failedBadge = failedCard?.querySelector('.pa-act-word')?.textContent || ''
   if (failedBadge !== 'Couldn\u2019t save') {
     fail(`activity-words: the failed badge must carry only the short family word, got ${JSON.stringify(failedBadge)}`)
   }
   const list = act.hostEl.querySelector('.pa-activity-list')
   if (!list) fail('activity-rows: Activity is a grid of big cards again, not one list of short rows (the mockup)')
   const rows = [...act.hostEl.querySelectorAll('.pa-card[data-entry]')]
-  const odd = rows.filter(r => !r.classList.contains('pa-act-row') || !r.querySelector('.pa-act-line .pa-tag')
-    || !r.querySelector('.pa-act-line .pa-card-when') || !r.querySelector('.pa-act-line .pa-pill-id'))
+  const odd = rows.filter(r => !r.classList.contains('pa-act-row') || !r.querySelector('.pa-act-line .pa-act-word')
+    || r.querySelector('.pa-act-line [data-slot="badge"]')
+    || !r.querySelector('.pa-act-sub .pa-card-when') || !r.querySelector('.pa-act-sub .pa-pill-id'))
   if (rows.length !== 5 || odd.length) {
-    fail(`activity-rows: a row does not put word, #id and time on one line: ${odd.map(r => r.dataset.entry)}`)
+    fail(`activity-rows: not word on top, summary · time · #id under it: ${odd.map(r => r.dataset.entry)}`)
   }
   if (act.hostEl.textContent.includes('Affected files')) fail('activity-rows: the big "Affected files" box is back')
   if (!/skills\/new-skill\/SKILL\.md/.test(rows[2]?.textContent || '')) fail('activity-rows: a row lost its file')
@@ -1504,8 +1530,11 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const ringRule = (sheet.match(/\.pa-gauge-ring\{[^}]*\}/) || [''])[0]
   const ringSize = Number(ringRule.match(/width:([\d.]+)px/)?.[1] || 0)
   const holeRule = sheet.match(/\.pa-gauge-ring::before\{[^}]*\}/)?.[0] || ''
-  const hole = Number(holeRule.match(/transparent calc\(50% - ([\d.]+)px\)/)?.[1] || 0)
-  if (!ringSize || !hole) fail(`could not read the ring/hole sizes: ${JSON.stringify({ ringRule, holeRule })}`)
+  const hole = Number(holeRule.match(/closest-side,transparent calc\(100% - ([\d.]+)px\)/)?.[1] || 0)
+  if (!ringSize || !hole) {
+    fail(`ring mask is not sized from closest-side (a bare circle mask measures from the far corner, band ~9px): ${
+      JSON.stringify({ ringRule, holeRule })}`)
+  }
   const ringWidth = hole
   if (ringWidth < 3 || ringWidth > 5) fail(`ring band is not ~4px wide: ${ringWidth}px`)
   const margin = (ringSize / 2 - hole) - pctSize / 2
@@ -1524,7 +1553,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const bad = await mount('en', 'page')
   await click(tab(bad.hostEl, /Activity/), 60)
   const card = bad.hostEl.querySelector('.pa-card[data-entry="act20001"]')
-  const badge = card?.querySelector('.pa-tag')?.textContent || ''
+  const badge = card?.querySelector('.pa-act-word')?.textContent || ''
   if (badge !== 'Couldn\u2019t save') {
     fail(`activity-badge-short: the failed badge must be the short family word only, got ${JSON.stringify(badge)}`)
   }
@@ -1603,8 +1632,10 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail('the old footer hint / pending count text is still in the DOM')
   }
   const toggle = footer?.querySelector('.pa-alerts')
-  if (!toggle || toggle.getAttribute('aria-pressed') !== 'true' || toggle.textContent !== 'Alerts on') {
-    fail(`footer alert switch wrong: ${toggle?.getAttribute('aria-pressed')} ${toggle?.textContent}`)
+  if (toggle?.getAttribute('role') !== 'switch' || toggle.getAttribute('aria-checked') !== 'true'
+      || !(footer?.querySelector('.pa-alerts-row')?.textContent || '').includes('Alerts')) {
+    const said = `${toggle?.getAttribute('role')} ${toggle?.getAttribute('aria-checked')}`
+    fail(`footer Alerts is not the host switch, on: ${said}`)
   }
 }
 
@@ -1625,13 +1656,12 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
     fail('unmuted: the new records raised no in-app or OS alert')
   }
   const toggle = en.hostEl.querySelector('.pa-alerts')
-  if (toggle?.getAttribute('aria-pressed') !== 'true' || toggle?.textContent !== 'Alerts on') {
-    fail(`footer alert switch wrong: ${toggle?.getAttribute('aria-pressed')} ${toggle?.textContent}`)
-  }
+  const onNow = toggle?.getAttribute('aria-checked')
+  if (onNow !== 'true') fail(`footer alert switch wrong: ${onNow}`)
   if (toggle) await click(toggle)
   if (STORE.get('muted') !== true) fail('muting did not reach ctx.storage')
   if (alerts?.detail?.() !== 'muted') fail('the palette row does not read the muted state')
-  if (toggle?.textContent !== 'Alerts muted') fail('the footer switch did not follow the mute')
+  if (toggle?.getAttribute('aria-checked') !== 'false') fail('the footer switch did not follow the mute')
   const said = stub.calls.notify.length
   const osSaid = stub.calls.os.length
   const quiet = await mount('en')
@@ -2033,8 +2063,9 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   REST.history = HISTORY
   const h = await mount('en', 'page')
   if (h.hostEl.querySelector('.pa-cell')) fail('all-clear: a front card is drawn with 0 pending')
-  const empty = h.hostEl.querySelector('.pa-stage [data-slot="panel-empty"]')
+  const empty = h.hostEl.querySelector('.pa-stage .pa-clear')
   if (!empty?.textContent.includes('All clear')) fail('all-clear: the title is missing')
+  if (empty?.querySelector('.pa-clear-mark')?.textContent !== '✓') fail('all-clear: the green check mark is missing')
   if (!empty?.textContent.includes('Nothing is waiting. Hermes will ask here before it writes again.')) {
     fail('all-clear: the spec sentence is missing')
   }
@@ -2380,7 +2411,7 @@ REST.scan = 'ok'
   {
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .map(el => (el.tagName === 'INPUT' ? 'checkbox' : el.textContent.trim()))
-    const want = ['Review again', 'Hide the full change', 'Later', 'Don’t save', 'Save skill']
+    const want = ['Hide the full change', 'Review again', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -2495,8 +2526,8 @@ REST.scan = 'ok'
   await toFront(g.hostEl, ck(CLEAN_GROUP))
   const clean = () => cell(g.hostEl, ck(CLEAN_GROUP))
   const cleanHead = clean()?.querySelector('.pa-kind')
-  must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1', 'Looks fine'], 'clean group header')
-  if (cleanHead?.querySelectorAll('[data-slot="badge"]').length !== 1) fail('a group header wears more than one badge')
+  must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1'], 'clean group header')
+  if (cleanHead?.querySelectorAll('[data-slot="badge"]').length) fail('a clean group header wears a state badge')
   if (!cleanHead?.querySelector('input[type="checkbox"]')) fail('a group header has no checkbox')
 
   await toFront(g.hostEl, ck(STALE_GROUP))
@@ -3829,6 +3860,35 @@ REST.scan = 'ok'
   must(barNow()?.textContent, ['0 of 3 selected'], 'select-mode: a second Select starts with nothing picked')
   sm.root.unmount()
   sm.hostEl.remove()
+}
+
+// --- 39) mockup-match: date in English, outcome words in Just done, Later left of a ruled action bar --
+{
+  const mm = await mount('en', 'page')
+  const date = mm.hostEl.querySelector('.pa-date')?.textContent || ''
+  if (!/^[A-Z][a-z]+day, \d{1,2} [A-Z][a-z]+$/.test(date)) fail(`mockup-match: date not like "Tuesday, 20 October": ${date}`)
+  if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
+  const jd = mm.hostEl.querySelector('.pa-justdone-row')
+  const jdTitle = jd?.querySelector('.pa-justdone-title')?.textContent || ''
+  if (!/^(Saved|Not saved|Couldn’t save|Undone|Restored|Changed)/.test(jdTitle)) {
+    fail(`mockup-match: a Just done row does not lead with its outcome: ${jdTitle}`)
+  }
+  if (!(jd?.querySelector('.pa-justdone-meta')?.textContent || '').includes(' · ')) {
+    fail('mockup-match: a Just done row lost its summary · time line')
+  }
+  const foot = mm.hostEl.querySelector('.pa-cell .pa-foot')
+  if (foot?.querySelector('button')?.textContent !== 'Later') fail('mockup-match: "Later" is not first, on the left')
+  if (foot?.querySelector('.pa-fullchange-toggle')) fail('mockup-match: "Show the full change" sits in the action bar')
+  const sheet = mm.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-foot\{[^}]*border-top:/.test(sheet)) fail('mockup-match: the action bar has no rule above it')
+  if (!/\.pa-activity-list>\.pa-act-row\{border:none;border-bottom:/.test(sheet)) {
+    fail('mockup-match: Activity rows are separate bordered cards, not rows of one list')
+  }
+  if (!sheet.includes('.pa-stage-main .pa-card{background:var(--ui-bg-editor)}')) {
+    fail('mockup-match: the front card is a tinted fill, not the plain card surface')
+  }
+  mm.root.unmount()
+  mm.hostEl.remove()
 }
 
 

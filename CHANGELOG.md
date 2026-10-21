@@ -108,6 +108,16 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
   thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
 
+* **The page matches the approved mockup more closely.** The date is in English ("Tuesday, 20
+  October"). The two gauges are thin rings. The front card sits on the plain card surface, with the
+  second card peeking out underneath; a clean record shows no "Looks fine" badge (the dot and the ✓
+  checks say it). "Show the full change" sits above the action bar; the bar has a rule above it, with
+  "Later" on the left and "Don't save" and the main button on the right. "Just done" rows lead with
+  what happened ("Saved to memory", "Not saved"), then the summary and time. Activity rows lead with the
+  same words in plain text, with the summary, time and record number under them and Undo / Restore as
+  a quiet text button. "All clear" shows a green check. The Alerts control in the footer is the app's
+  own on/off switch. Texts that pointed to a "Pending" tab now say "Needs you".
+
 * **Selecting several records starts with "Select".** Checkboxes and the bulk bar no longer sit on
   the page all the time. "Select" at the top of "Up next" adds a checkbox to the front card and to
   each waiting row and shows the bulk bar, with its confirmation step unchanged; "Done" clears the

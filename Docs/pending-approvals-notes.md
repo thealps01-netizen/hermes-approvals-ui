@@ -560,6 +560,17 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Gauge rings use a `closest-side` mask.** `radial-gradient(circle, … calc(50% - 4px) …)` sizes the
+  gradient to the far corner of the box, so "50%" was about 25px on a 36px ring and the band came out
+  about 9px thick. `closest-side` makes 100% the ring's radius, so `calc(100% - 4px)` is a 4px band.
+- **The date is formatted in English on purpose.** The UI has one `en` bundle; `toLocaleDateString`
+  with the system locale printed "20 Ekim Salı" on a Turkish machine next to English text.
+- **A clean front card has no state badge.** The mockup carries "looks fine" in the dot and the ✓ rows;
+  every other state (rule failed, stale, shorten first, unreviewed, …) keeps its badge.
+- **All clear is drawn by the panel, not `PanelEmpty`.** `PanelEmpty` draws a muted codicon; the spec
+  asks for a green check, as in the mockup.
+- **Alerts uses the SDK `Switch`** (exported since v0.22.0); the core's own guidance is "a Switch, never
+  an Off/On pill".
 - **Selection is a mode (Needs you, Task 4).** With one record in front, permanent checkboxes and a
   bulk bar were noise for the common case of deciding one thing. "Select" in the Up next head turns
   on checkboxes (front card + Up next rows) and the unchanged BulkBar; "Done" clears the picks. A lone

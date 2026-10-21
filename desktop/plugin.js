@@ -1,6 +1,6 @@
 import {
-  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
-  PanelSectionLabel, Tip, haptic, host, icons, usePluginI18n
+  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelMeta,
+  PanelSectionLabel, Switch, Tip, haptic, host, icons, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -13,8 +13,8 @@ const AREA_SIDEBAR_NAV = 'sidebar.nav'
 const AREA_PALETTE = 'palette'
 
 const KIT = {
-  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
-  PanelSectionLabel, Tip
+  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelMeta,
+  PanelSectionLabel, Switch, Tip
 }
 const kitMissing = Object.keys(KIT).filter(k => !KIT[k])
 if (kitMissing.length) console.log('[pending-approvals] SDK kit components missing:', kitMissing.join(', '))
@@ -313,8 +313,8 @@ const BUNDLES = {
         deleteCancel: 'Cancel',
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
-        readonly: 'Add notes by asking in chat (the write lands under Pending); delete one here with the Delete button.',
-        readonlyEmpty: 'Add notes by asking in chat; the write lands under Pending.',
+        readonly: 'Add notes by asking in chat (the write lands under Needs you); delete one here with Delete.',
+        readonlyEmpty: 'Add notes by asking in chat; the write lands under Needs you.',
         entries: n => plural(n, 'note', 'notes'),
         files: 'Memory files',
         lastChange: when => `Last change: ${when}`,
@@ -351,15 +351,13 @@ const BUNDLES = {
         noFiles: 'no changed files',
         rejected: 'Rejected — you can restore it from the “Activity” tab',
         stale: 'This record changed since it was shown — the list is read again.',
-        restored: id => (id ? `The record is back under Pending as #${id}.` : 'The record is back under Pending.'),
-        restoredAll: ids => `The changes are back under Pending as ${ids}.`,
+        restored: id => (id ? `The record is back under Needs you as #${id}.` : 'The record is back under Needs you.'),
+        restoredAll: ids => `The changes are back under Needs you as ${ids}.`,
         restoreFailed: 'Could not restore the record',
         frontGone: 'It left the queue while you were away from it — it may have been decided elsewhere. The next record is now in front.',
       },
       footer: {
-        alertsOn: 'Alerts on',
         alerts: 'Alerts',
-        alertsOff: 'Alerts muted',
         promise: 'Nothing is written to your memory or skills without you.',
       },
       ask: {
@@ -535,6 +533,8 @@ const historyWords = (t, entry) => {
   const key = HIST_KEY[entry.kind]
   return key ? t(key) : entry.kind
 }
+const longDate = d => `${d.toLocaleDateString('en-GB', { weekday: 'long' })}, ${
+  d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`
 const dayKey = ts => new Date(ts * 1000).toDateString()
 const dayHeading = (t, ts) => {
   const d = new Date(ts * 1000)
@@ -543,7 +543,7 @@ const dayHeading = (t, ts) => {
   const y = new Date(now)
   y.setDate(now.getDate() - 1)
   if (dayKey(ts) === dayKey(y.getTime() / 1000)) return t('pa.hist.dayYesterday')
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  return longDate(d)
 }
 const groupByDay = entries => {
   const groups = []
@@ -647,8 +647,8 @@ const STYLE = `
 .pa-gauge-ring{width:36px;height:36px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
 .pa-gauge-ring::before{content:'';position:absolute;inset:0;border-radius:50%;
   background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0);
-  -webkit-mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px));
-  mask:radial-gradient(circle,transparent calc(50% - 4px),#000 calc(50% - 4px))}
+  -webkit-mask:radial-gradient(closest-side,transparent calc(100% - 4px),#000 calc(100% - 4px));
+  mask:radial-gradient(closest-side,transparent calc(100% - 4px),#000 calc(100% - 4px))}
 .pa-gauge-pct{position:relative;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
   font-size:${FS.gauge}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -658,17 +658,23 @@ const STYLE = `
 .pa-mem-rings{display:flex;gap:${G.base}px;flex-wrap:wrap}
 .pa-gauge-lg{gap:${G.sm}px;padding:${G.sm}px ${G.base}px}
 .pa-gauge-ring-lg{width:64px;height:64px}
-.pa-gauge-ring-lg::before{-webkit-mask:radial-gradient(circle,transparent calc(50% - 7px),#000 calc(50% - 7px));
-  mask:radial-gradient(circle,transparent calc(50% - 7px),#000 calc(50% - 7px))}
+.pa-gauge-ring-lg::before{-webkit-mask:radial-gradient(closest-side,transparent calc(100% - 6px),#000 calc(100% - 6px));
+  mask:radial-gradient(closest-side,transparent calc(100% - 6px),#000 calc(100% - 6px))}
 .pa-gauge-pct-lg{width:40px;height:40px;font-size:${FS.title}px}
 .pa-gauge-line{font-size:${FS.body}px;color:var(--ui-text-primary);max-width:260px}
 .pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xs}px}
 .pa-activity-today{font-size:${FS.lead}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-activity-totals{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-activity-list{display:flex;flex-direction:column;gap:${G.xs}px}
+.pa-activity-list{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.card}px;
+  background:var(--ui-bg-editor);overflow:hidden}
+.pa-activity-list>.pa-act-row{border:none;border-bottom:${HAIRLINE};border-radius:0;box-shadow:none;background:none}
+.pa-activity-list>.pa-act-row:last-child{border-bottom:none}
 .pa-act-row{display:flex;flex-direction:column;gap:${G.xxs}px;padding:${G.xs}px ${G.sm}px}
 .pa-act-line{display:flex;align-items:center;gap:${G.xs}px;min-width:0}
-.pa-act-said{font-size:${FS.body}px;line-height:1.5;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-act-word{font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-act-gap{flex:1}
+.pa-act-sub{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px ${G.xs}px;min-width:0}
+.pa-act-said{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary);overflow-wrap:anywhere;min-width:0}
 .pa-act-files{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-act-note{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-day-heading{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
@@ -676,6 +682,7 @@ const STYLE = `
 .pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
   border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
   color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pa-alerts-row{margin-left:auto;display:flex;align-items:center;gap:8px;cursor:pointer}
 .pa-footer-promise{display:flex;align-items:center;gap:6px;min-width:0}
 .pa-footer-lock{width:16px;height:16px;border-radius:5px;flex:none;background:var(--ui-bg-tertiary);
   display:grid;place-items:center;font-size:${FS.micro}px}
@@ -700,7 +707,9 @@ const STYLE = `
 .pa-advice-foot>div{flex:1;min-width:0}
 .pa-advice-foot>button{flex-shrink:0}
 .pa-finding{display:flex;flex-direction:column;gap:${G.xxs}px;padding-top:${G.xs}px;border-top:${HAIRLINE}}
-.pa-foot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;min-width:0}
+.pa-foot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;min-width:0;
+  margin:${G.xs}px -${G.sm}px 0;padding:${G.sm}px ${G.sm}px 0;border-top:${HAIRLINE}}
+.pa-fullchange-toggle{align-self:flex-start}
 .pa-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:${G.xs}px;margin-left:auto;min-width:0}
 .pa-actions [data-slot="button"]{height:28px}
 .pa-held{opacity:.5;cursor:not-allowed}
@@ -747,8 +756,10 @@ const STYLE = `
 .pa-stage-main{position:relative;flex:1 1 0;min-width:0}
 .pa-stage-main>.pa-cell{position:relative;z-index:1}
 .pa-cell.pa-cell-stacked .pa-card{position:relative}
-.pa-cell.pa-cell-stacked .pa-card::after{content:'';position:absolute;inset:8px -8px -8px 8px;z-index:-1;
-  border:${HAIRLINE};border-radius:inherit;background:var(--hx-card);opacity:.55;pointer-events:none}
+.pa-cell.pa-cell-stacked .pa-card::after{content:'';position:absolute;inset:10px 14px -10px 14px;z-index:-1;
+  border:${HAIRLINE};border-radius:inherit;background:var(--ui-bg-editor);pointer-events:none}
+.pa-stage-main .pa-card{background:var(--ui-bg-editor)}
+.pa-stage-main .pa-hero-box{background:color-mix(in srgb,var(--ui-text-primary) 4%,transparent);border:${HAIRLINE}}
 .pa-side{display:flex;flex-direction:column;gap:${G.sm}px;width:260px;flex:none;min-width:0}
 .pa-side-section{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-side-title{font-size:${FS.micro}px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
@@ -762,9 +773,13 @@ const STYLE = `
 .pa-upnext-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-upnext-state{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.pa-justdone{display:flex;flex-direction:column}
-.pa-justdone-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:${HAIRLINE}}
-.pa-justdone-row:last-child{border-bottom:none}
+.pa-justdone{display:flex;flex-direction:column;gap:6px}
+.pa-justdone-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:${R.box}px;
+  background:color-mix(in srgb,var(--ui-text-primary) 4%,transparent)}
+.pa-clear{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:64px 20px}
+.pa-clear-mark{margin-bottom:10px}
+.pa-clear-title{font-size:${FS.title}px;font-weight:650;color:var(--ui-text-primary)}
+.pa-clear-body{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-justdone-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .pa-justdone-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-justdone-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
@@ -1055,7 +1070,7 @@ const fill = f => {
   return { pct, tone }
 }
 const clock = ms => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-const dateLabel = () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+const dateLabel = () => longDate(new Date())
 
 function Headline({ n, counts, saved }) {
   const t = usePluginI18n(ID)
@@ -2007,7 +2022,9 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
                   jsx('span', { className: 'pa-position-dot', 'data-on': i === position - 1 ? '1' : '0' }, i))
               }, 'positions')
             : null,
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
+          stateVariant === 'success'
+            ? null
+            : jsx(Badge, { className: 'pa-tag', style: TAG, variant: stateVariant, children: t(stateKey) }, 'state')
         ]
       }, 'kind'),
 
@@ -2064,21 +2081,27 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
         ? jsx('div', { style: { fontSize: FS.micro, color: 'var(--ui-red)' }, children: t('pa.review.skipWarn') }, 'skipWarn')
         : null,
 
+      jsx(Button, {
+        variant: 'text',
+        size: 'sm',
+        className: 'pa-fullchange-toggle',
+        disabled: leaving,
+        'aria-expanded': open,
+        'aria-controls': detailsId,
+        onClick: () => setOpen(v => !v),
+        children: t(open ? 'pa.btn.fullChangeHide' : 'pa.btn.fullChange')
+      }, 'details'),
+
       fullChange,
 
       jsxs('div', {
         className: 'pa-foot',
         children: [
-          jsx(Button, {
-            variant: 'text',
-            size: 'sm',
-            className: 'pa-fullchange-toggle',
-            disabled: leaving,
-            'aria-expanded': open,
-            'aria-controls': detailsId,
-            onClick: () => setOpen(v => !v),
-            children: t(open ? 'pa.btn.fullChangeHide' : 'pa.btn.fullChange')
-          }, 'details'),
+          onLater
+            ? jsx(Button, {
+                variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
+              }, 'later')
+            : null,
           (canSkip && skipArmed) || fixArmed
             ? jsx(Button, {
                 variant: 'text', size: 'sm', disabled: leaving,
@@ -2099,11 +2122,6 @@ function FrontCard({ subsystem, item, onChanged, picked, onPick, onLater, positi
           jsxs('div', {
             className: 'pa-actions',
             children: [
-              onLater
-                ? jsx(Button, {
-                    variant: 'text', size: 'sm', disabled: leaving, onClick: () => onLater(), children: t('pa.btn.later')
-                  }, 'later')
-                : null,
               jsx(Button, {
                 variant: declineIsDelete ? 'destructive' : 'outline',
                 size: 'sm',
@@ -2214,7 +2232,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
 
   const action = entry.undoable
       ? jsx(Button, {
-          variant: conflict ? 'destructive' : 'outline',
+          variant: conflict ? 'destructive' : 'textStrong',
           size: 'sm',
           loading: busy,
           onClick: () => void undo(Boolean(conflict)),
@@ -2224,7 +2242,7 @@ function HistoryCard({ entry, onChanged, onRestored }) {
       : restorable
         ? jsx(Button, {
             className: 'pa-restore',
-            variant: 'outline',
+            variant: 'textStrong',
             size: 'sm',
             loading: busy,
             onClick: () => void restore(),
@@ -2245,19 +2263,22 @@ function HistoryCard({ entry, onChanged, onRestored }) {
       jsxs('div', {
         className: 'pa-act-line',
         children: [
-          jsx(Badge, {
-            className: 'pa-tag',
-            style: TAG,
-            variant: KIND_VARIANT[entry.kind] || 'muted',
-            children: historyWords(t, entry)
+          jsx('span', {
+            className: 'pa-act-word', 'data-kind': KIND_VARIANT[entry.kind] || 'muted', children: historyWords(t, entry)
           }, 'kind'),
-          jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
-          jsx('span', { className: 'pa-card-when', style: { marginLeft: 'auto' }, children: when(t, entry.ts) }, 'at'),
+          jsx('span', { className: 'pa-act-gap' }, 'gap'),
           action
         ]
       }, 'head'),
 
-      jsx(Summary, { text: plainGist(t, said), raw: said }, 'summary'),
+      jsxs('div', {
+        className: 'pa-act-sub',
+        children: [
+          jsx(Summary, { text: plainGist(t, said), raw: said }, 'summary'),
+          jsx('span', { className: 'pa-card-when', children: when(t, entry.ts) }, 'at'),
+          jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id')
+        ]
+      }, 'sub'),
 
       jsx('div', {
         className: 'pa-act-files',
@@ -2633,8 +2654,10 @@ function JustDoneRow({ entry, t, onChanged }) {
       jsxs('div', {
         className: 'pa-justdone-text',
         children: [
-          jsx('span', { className: 'pa-justdone-title', children: plainGist(t, said) }, 'title'),
-          jsx('span', { className: 'pa-justdone-meta', children: when(t, entry.ts) }, 'meta')
+          jsx('span', { className: 'pa-justdone-title', children: historyWords(t, entry) }, 'title'),
+          jsx('span', {
+            className: 'pa-justdone-meta', children: [plainGist(t, said), when(t, entry.ts)].filter(Boolean).join(' · ')
+          }, 'meta')
         ]
       }, 'text'),
       canUndo
@@ -2662,10 +2685,22 @@ function JustDone({ entries, t, onChanged }) {
 }
 
 function AllClear({ t }) {
-  return jsx(PanelEmpty, {
-    icon: 'check',
-    title: t('pa.stage.allClearTitle'),
-    description: t('pa.stage.allClearBody')
+  return jsxs('div', {
+    className: 'pa-clear',
+    role: 'status',
+    children: [
+      jsx('div', {
+        className: 'pa-clear-mark',
+        'aria-hidden': true,
+        children: jsx(Badge, {
+          className: 'pa-tag', variant: 'success',
+          style: { ...TAG, width: 64, height: 64, padding: 0, borderRadius: '50%', justifyContent: 'center', fontSize: FS.hero },
+          children: '✓'
+        }, 'badge')
+      }, 'mark'),
+      jsx('div', { className: 'pa-clear-title', children: t('pa.stage.allClearTitle') }, 'title'),
+      jsx('div', { className: 'pa-clear-body', children: t('pa.stage.allClearBody') }, 'body')
+    ]
   }, 'all-clear')
 }
 
@@ -3198,15 +3233,18 @@ function Pane() {
               jsx('span', { children: t('pa.footer.promise') }, 'text')
             ]
           }, 'promise'),
-          jsx(Button, {
-            className: 'pa-alerts',
-            variant: 'text',
-            size: 'sm',
-            style: { marginLeft: 'auto' },
-            'aria-pressed': !muted,
-            'aria-label': t('pa.footer.alerts'),
-            onClick: () => setAlertsMuted(!muted),
-            children: t(muted ? 'pa.footer.alertsOff' : 'pa.footer.alertsOn')
+          jsxs('label', {
+            className: 'pa-alerts-row',
+            children: [
+              jsx('span', { children: t('pa.footer.alerts') }, 'word'),
+              jsx(Switch, {
+                className: 'pa-alerts',
+                size: 'xs',
+                checked: !muted,
+                'aria-label': t('pa.footer.alerts'),
+                onCheckedChange: on => setAlertsMuted(!on)
+              }, 'switch')
+            ]
           }, 'alerts')
         ]
       }, 'footer')
