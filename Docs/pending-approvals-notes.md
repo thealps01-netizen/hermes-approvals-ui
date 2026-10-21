@@ -560,6 +560,17 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+- **Surfaces are neutral, not `--ui-bg-secondary`.** The app's `--ui-bg-secondary/tertiary` fills mix
+  in 11% / 8% of the accent (`styles.css`, `--theme-fill-*-accent-mix`); the app itself almost never
+  paints a surface with them. `--hx-card` is transparent and `--hx-field` is 4% of the text colour, so a
+  card reads like the app's own rows in both themes.
+- **Glyphs come from the kit's icon set.** A `✓` or a colour emoji depends on the system font: the
+  preview once drew `*` for the check, and the lock emoji blurs at 16px. `icons.Check` / `icons.Lock` are
+  vectors; the text glyph stays only as a fallback when the icon set lacks them.
+- **The narrow `.pa-cmp` rule sits after the two-column rule.** Both have the same specificity, so the
+  later one wins; placed before it, the one-column rule never applied.
+- **Memory file cards are the tablist.** `Tabs` takes `listClass`/`tabClass`, so the file cards keep the
+  tablist keyboard model (arrows, Home/End) while looking like cards.
 - **Bulk decisions mark their keys in `decidedHere`.** The "front left the queue" notice treats a front
   record as decided here only when this page decided it. Single cards do that through `held`; the bulk
   bar never set `held`, so its decisions looked like decisions made elsewhere. The bar now adds each

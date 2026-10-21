@@ -20,6 +20,8 @@ const kitMissing = Object.keys(KIT).filter(k => !KIT[k])
 if (kitMissing.length) console.log('[pending-approvals] SDK kit components missing:', kitMissing.join(', '))
 
 const RefreshIcon = icons?.RefreshCw || null
+const CheckIcon = icons?.Check || null
+const LockIcon = icons?.Lock || null
 
 let ctxRef = null
 
@@ -299,13 +301,13 @@ const BUNDLES = {
           : 'The pre-reviews could not be started. The next refresh tries again.'),
       },
       memory: {
-        warnTitle: 'Memory is nearly full',
         warnBody: 'A new note fits only if an older one is shortened or merged. Hermes can propose which.',
         ringOk: 'has room',
         ringWarn: 'is nearly full',
         ringBad: 'is full',
-        ringLine: (label, state, notes, chars, limit) =>
-          `${label} ${state} · ${plural(notes, 'note', 'notes')} · ${chars} / ${limit} characters`,
+        ringTitle: (label, state) => `${label} ${state}`,
+        ringSub: (file, notes, chars, limit) =>
+          `${file} · ${plural(notes, 'note', 'notes')} · ${chars} / ${limit} characters`,
         draftMerge: 'Draft a merge request',
         draftHint: 'Writes a request into the chat box without sending it. The proposal still lands here for your approval.',
         drafted: 'Merge request is in the chat box — read it, then send.',
@@ -595,7 +597,7 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
-const FS = { gauge: 9.5, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, hero: 21, headline: 34 }
+const FS = { gauge: 11, micro: 11, meta: 11.5, body: 12.5, lead: 13.5, title: 16, hero: 21, headline: 34 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80
@@ -634,7 +636,8 @@ const STYLE = `
 .pa-root [role="button"]:focus-visible,.pa-root .pa-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
 .pa-root{container-type:inline-size;
-  --hx-card:var(--ui-bg-secondary);--hx-field:var(--ui-bg-tertiary);--hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
+  --hx-card:transparent;--hx-field:color-mix(in srgb,var(--ui-text-primary) 4%,transparent);
+  --hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-top{display:flex;align-items:flex-start;justify-content:space-between;gap:${G.base}px;flex-wrap:wrap}
 .pa-date{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-headline{margin:4px 0 6px;font-size:${FS.headline}px;font-weight:650;letter-spacing:-.02em;line-height:1.1;
@@ -649,24 +652,42 @@ const STYLE = `
 .pa-gauge[data-tone="warn"]{--pa-tone:var(--ui-orange)}
 .pa-gauge[data-tone="bad"]{--pa-tone:var(--ui-red)}
 .pa-gauge[data-tone="off"]{--pa-tone:var(--ui-text-tertiary)}
-.pa-gauge-ring{width:36px;height:36px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
+.pa-gauge-ring{width:40px;height:40px;border-radius:50%;flex:none;position:relative;display:grid;place-items:center}
 .pa-gauge-ring::before{content:'';position:absolute;inset:0;border-radius:50%;
   background:conic-gradient(var(--pa-tone) var(--pa-pct,0%),var(--ui-stroke-tertiary) 0);
-  -webkit-mask:radial-gradient(closest-side,transparent calc(100% - 4px),#000 calc(100% - 4px));
-  mask:radial-gradient(closest-side,transparent calc(100% - 4px),#000 calc(100% - 4px))}
-.pa-gauge-pct{position:relative;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  -webkit-mask:radial-gradient(closest-side,transparent calc(100% - 4.5px),#000 calc(100% - 3.5px));
+  mask:radial-gradient(closest-side,transparent calc(100% - 4.5px),#000 calc(100% - 3.5px))}
+.pa-gauge-pct{position:relative;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;
   font-size:${FS.gauge}px;font-weight:650;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
 .pa-gauge-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-gauge-label{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.pa-mem-rings{display:flex;gap:${G.base}px;flex-wrap:wrap}
-.pa-gauge-lg{gap:${G.sm}px;padding:${G.sm}px ${G.base}px}
-.pa-gauge-ring-lg{width:64px;height:64px}
-.pa-gauge-ring-lg::before{-webkit-mask:radial-gradient(closest-side,transparent calc(100% - 6px),#000 calc(100% - 6px));
-  mask:radial-gradient(closest-side,transparent calc(100% - 6px),#000 calc(100% - 6px))}
-.pa-gauge-pct-lg{width:40px;height:40px;font-size:${FS.title}px}
-.pa-gauge-line{font-size:${FS.body}px;color:var(--ui-text-primary);max-width:260px}
+.pa-gauge-file{font-size:${FS.micro}px;color:var(--ui-text-secondary);overflow-wrap:anywhere;max-width:100%}
+.pa-mem-rings{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:${G.sm}px;overflow:visible}
+.pa-filecard{display:flex;align-items:center;gap:${G.sm}px;margin:0;padding:${G.sm}px ${G.base}px ${G.sm}px ${G.sm}px;
+  border:${HAIRLINE};border-radius:${R.card}px;background:transparent;font:inherit;text-align:left;cursor:pointer;
+  color:inherit;min-width:0;transition:${move('hover', 'border-color, background-color')}}
+.pa-filecard:hover{background:var(--hx-field)}
+.pa-filecard[data-on="1"]{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
+.pa-filecard:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.pa-gauge-ring-lg{width:52px;height:52px}
+.pa-gauge-ring-lg::before{
+  -webkit-mask:radial-gradient(closest-side,transparent calc(100% - 5.5px),#000 calc(100% - 4.5px));
+  mask:radial-gradient(closest-side,transparent calc(100% - 5.5px),#000 calc(100% - 4.5px))}
+.pa-gauge-pct-lg{width:40px;height:40px;font-size:${FS.lead}px}
+.pa-gauge-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pa-gauge-line{font-size:${FS.lead}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-gauge-sub{font-size:${FS.meta}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-notes{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.card}px;overflow:hidden}
+.pa-note-row{display:flex;flex-direction:column;gap:${G.xxs}px;padding:${G.sm}px ${G.base}px;border-bottom:${HAIRLINE}}
+.pa-note-row:last-child{border-bottom:none}
+.pa-note-text{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);white-space:pre-wrap;
+  overflow-wrap:anywhere}
+.pa-note-meta{display:flex;align-items:center;flex-wrap:wrap;gap:${G.xxs}px ${G.sm}px;min-height:24px;
+  font-size:${FS.micro}px;color:var(--ui-text-secondary)}
+.pa-note-meta>.pa-note-gap{flex:1}
+.pa-note-ask{flex:1 1 220px;font-size:${FS.meta}px;color:var(--ui-text-primary)}
+.pa-note-btns{display:flex;gap:${G.xs}px;margin-left:auto}
+.pa-mem-head{display:flex;flex-wrap:wrap;gap:${G.xxs}px ${G.sm}px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-activity-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:${G.xs}px}
 .pa-activity-today{font-size:${FS.lead}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-activity-totals{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
@@ -684,17 +705,19 @@ const STYLE = `
 .pa-act-note{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-day-heading{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary);
   margin-top:${G.xs}px}
-.pa-updated{margin-left:auto;height:24px;padding:0 8px;display:inline-flex;align-items:center;
-  border:1px solid var(--ui-stroke-tertiary);border-radius:${R.ctl}px;font-size:${FS.micro}px;
-  color:var(--ui-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pa-updated{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.pa-tabbar{display:flex;align-items:center;gap:${G.xs}px;border-bottom:${HAIRLINE};min-width:0}
+.pa-tabbar>.pa-top-actions{flex:none}
 .pa-alerts-row{margin-left:auto;display:flex;align-items:center;gap:8px;cursor:pointer}
 .pa-footer-promise{display:flex;align-items:center;gap:6px;min-width:0}
-.pa-footer-lock{width:16px;height:16px;border-radius:5px;flex:none;background:var(--ui-bg-tertiary);
-  display:grid;place-items:center;font-size:${FS.micro}px}
-@container (max-width:560px){.pa-top{flex-direction:column}.pa-top-side{align-items:flex-start;width:100%;flex-shrink:1}
-  .pa-gauges{flex-direction:column;align-items:stretch;width:100%}
-  .pa-gauge{width:100%;min-width:0}.pa-gauge-meta{min-width:0}}
-@container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
+.pa-footer-lock{display:inline-flex;flex:none;color:var(--ui-text-tertiary)}
+.pa-wrapw{width:100%;max-width:1080px;margin:0 auto;min-width:0}
+@container (max-width:760px){.pa-top{flex-direction:column;gap:${G.sm}px}
+  .pa-top-side{align-items:stretch;width:100%;flex-shrink:1}
+  .pa-gauges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+  .pa-gauge{min-width:0}.pa-gauge-meta{min-width:0}}
+@container (max-width:380px){.pa-gauges{grid-template-columns:minmax(0,1fr)}}
 .pa-free{max-height:none !important;overflow:visible !important}
 .pa-fade{--pa-fade:${LINE}px}
 .pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,black calc(100% - var(--pa-fade)),transparent);
@@ -706,6 +729,7 @@ const STYLE = `
 .pa-leaving{opacity:0;pointer-events:none;transform:scale(.96);transition:${move('exit', 'opacity, transform')}}
 .pa-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
 .pa-cmp>*{min-width:0}
+@container (max-width:520px){.pa-cmp{grid-template-columns:minmax(0,1fr)}}
 .pa-prose{font-family:inherit;font-size:${FS.body}px}
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
 .pa-advice-foot{display:flex;align-items:center;gap:${G.sm}px;padding-top:${G.xxs}px}
@@ -719,7 +743,7 @@ const STYLE = `
 .pa-actions [data-slot="button"]{height:28px}
 .pa-held{opacity:.5;cursor:not-allowed}
 .pa-pill{display:inline-flex;align-items:center;height:${TAG.height}px;padding:${TAG.padding};
-  border-radius:${TAG.borderRadius}px;border:1px solid transparent;background:var(--ui-bg-tertiary);
+  border-radius:${TAG.borderRadius}px;border:${HAIRLINE};background:transparent;
   color:var(--ui-text-secondary);font-size:${TAG.fontSize}px;font-weight:${TAG.fontWeight};
   letter-spacing:${TAG.letterSpacing};line-height:1;white-space:nowrap;flex-shrink:0}
 .pa-pill-id{font-variant-numeric:tabular-nums}
@@ -765,7 +789,7 @@ const STYLE = `
   border:${HAIRLINE};border-radius:inherit;background:var(--ui-bg-editor);pointer-events:none}
 .pa-stage-main .pa-card{background:var(--ui-bg-editor)}
 .pa-stage-main .pa-hero-box{background:color-mix(in srgb,var(--ui-text-primary) 4%,transparent);border:${HAIRLINE}}
-.pa-side{display:flex;flex-direction:column;gap:${G.sm}px;width:260px;flex:none;min-width:0}
+.pa-side{display:flex;flex-direction:column;gap:${G.sm}px;width:280px;flex:none;min-width:0}
 .pa-side-section{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-side-title{font-size:${FS.micro}px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ui-text-secondary)}
@@ -773,6 +797,9 @@ const STYLE = `
 .pa-upnext-head{display:flex;align-items:center;justify-content:space-between;gap:${G.xs}px;min-height:24px}
 .pa-upnext-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:${HAIRLINE};
   border-radius:${R.box}px;background:var(--hx-card);text-align:left;cursor:pointer;min-width:0;width:100%}
+.pa-upnext-btn{display:flex;align-items:center;gap:8px;min-width:0;flex:1;margin:0;padding:0;border:0;
+  background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.pa-upnext-row:hover{background:var(--hx-field)}
 .pa-upnext-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ui-text-tertiary)}
 .pa-upnext-text{display:flex;flex-direction:column;min-width:0;gap:1px}
 .pa-upnext-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
@@ -781,22 +808,24 @@ const STYLE = `
 .pa-justdone{display:flex;flex-direction:column;gap:6px}
 .pa-justdone-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:${R.box}px;
   background:color-mix(in srgb,var(--ui-text-primary) 4%,transparent)}
-.pa-clear{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:64px 20px}
+.pa-clear{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:56px 20px}
 .pa-clear-mark{margin-bottom:10px}
 .pa-clear-title{font-size:${FS.title}px;font-weight:650;color:var(--ui-text-primary)}
 .pa-clear-body{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-justdone-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .pa-justdone-title{font-size:${FS.body}px;color:var(--ui-text-primary);overflow-wrap:anywhere}
 .pa-justdone-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary)}
-@container (max-width:560px){.pa-stage{flex-direction:column}.pa-side{width:100%}
+@container (max-width:760px){.pa-stage{flex-direction:column;align-items:stretch}.pa-side{width:100%}
+  .pa-clear{padding:24px 16px}
   .pa-cell.pa-cell-stacked .pa-card::after{display:none}}
+.pa-stage-main .pa-foot{position:sticky;bottom:0;z-index:1;background:var(--ui-bg-editor);
+  padding-bottom:${G.sm}px;margin-bottom:-${G.sm}px;border-radius:0 0 ${R.card}px ${R.card}px}
 .pa-note{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
 .pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
-  background:color-mix(in srgb,var(--ui-orange) 12%,transparent);
-  border-left:3px solid var(--ui-orange);padding:8px 12px}
+  background:var(--hx-field);border-left:3px solid var(--ui-orange);padding:8px 12px}
 .pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
 .pa-stale>span{flex:1 1 220px;min-width:0}
-.pa-alert-danger{background:color-mix(in srgb,var(--ui-red) 12%,transparent);border-left-color:var(--ui-red)}
+.pa-alert-danger{border-left-color:var(--ui-red)}
 .pa-tabs{display:flex;align-items:center;min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
 .pa-tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 4px;margin-right:16px;
   font:inherit;font-size:${FS.body}px;color:var(--ui-text-secondary);cursor:pointer;white-space:nowrap;flex-shrink:0}
@@ -1004,20 +1033,30 @@ function MemoryRing({ label, store }) {
   const t = usePluginI18n(ID)
   const { pct, tone } = store ? fill(store) : { pct: null, tone: 'off' }
   const stateWord = t(FILL_WORD_KEY[tone] || 'pa.memory.ringOk')
-  const line = store
-    ? t('pa.memory.ringLine', label, stateWord, store.entries?.length || 0, store.chars ?? 0, store.limit ?? 0)
-    : label
-  return jsxs('div', {
-    className: 'pa-gauge pa-gauge-lg',
+  return jsxs('span', {
+    className: 'pa-gauge-lg',
     'data-tone': tone,
+    style: { display: 'contents' },
     children: [
-      jsx('div', {
+      jsx('span', {
         className: 'pa-gauge-ring pa-gauge-ring-lg',
         style: { '--pa-tone': TONE_COLOR[tone], '--pa-pct': `${pct ?? 0}%` },
         'aria-hidden': true,
         children: jsx('span', { className: 'pa-gauge-pct pa-gauge-pct-lg', children: pct === null ? '—' : `${pct}%` }, 'pct')
       }, 'ring'),
-      jsx('span', { className: 'pa-gauge-line', children: line }, 'line')
+      jsxs('span', {
+        className: 'pa-gauge-text',
+        children: [
+          jsx('span', { className: 'pa-gauge-line', children: t('pa.memory.ringTitle', label, stateWord) }, 'line'),
+          store
+            ? jsx('span', {
+                className: 'pa-gauge-sub',
+                children: t('pa.memory.ringSub', store.file, store.entries?.length || 0, store.chars ?? 0,
+                  store.limit ?? 0)
+              }, 'sub')
+            : null
+        ]
+      }, 'text')
     ]
   })
 }
@@ -1137,7 +1176,7 @@ function useLeave(key) {
   return { leaving, leave }
 }
 
-function Tabs({ label: name, items, value, onSelect, idBase }) {
+function Tabs({ label: name, items, value, onSelect, idBase, listClass = 'pa-tabs', tabClass = 'pa-tab' }) {
   const refs = useRef({})
   const keys = items.map(item => item.id)
   const onKeyDown = e => {
@@ -1152,8 +1191,8 @@ function Tabs({ label: name, items, value, onSelect, idBase }) {
   return jsx('div', {
     role: 'tablist',
     'aria-label': name,
-    className: 'pa-tabs',
-    style: { overflowX: 'auto', flex: '1 1 auto' },
+    className: listClass,
+    style: listClass === 'pa-tabs' ? { overflowX: 'auto', flex: '1 1 auto' } : undefined,
     onKeyDown,
     children: items.map(item =>
       jsx('button', {
@@ -1164,7 +1203,7 @@ function Tabs({ label: name, items, value, onSelect, idBase }) {
         'aria-selected': value === item.id,
         'aria-controls': `${idBase}-panel`,
         tabIndex: value === item.id ? 0 : -1,
-        className: 'pa-tab',
+        className: tabClass,
         'data-on': value === item.id ? '1' : '0',
         onClick: () => onSelect(item.id),
         children: item.label
@@ -2584,7 +2623,7 @@ function UpNextRow({ subsystem, item, t, onPick, picked, onTogglePick }) {
         : null,
       jsx('button', {
         type: 'button',
-        style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, textAlign: 'left' },
+        className: 'pa-upnext-btn',
         'aria-label': `${typeLabel}: ${title || key}`,
         onClick: onPick,
         children: jsxs('span', {
@@ -2672,7 +2711,7 @@ function JustDoneRow({ entry, t, onChanged }) {
       }, 'text'),
       canUndo
         ? jsx(Button, {
-            variant: 'text', size: 'xs', loading: busy, onClick: () => void undo(),
+            variant: 'textStrong', size: 'xs', loading: busy, onClick: () => void undo(),
             children: t('pa.btn.undo')
           }, 'undo')
         : null
@@ -2706,9 +2745,9 @@ function AllClear({ t }) {
         children: jsx(Badge, {
           className: 'pa-tag', variant: 'success',
           style: {
-            ...TAG, width: 64, height: 64, padding: 0, borderRadius: '50%', justifyContent: 'center', fontSize: FS.hero
+            ...TAG, width: 56, height: 56, padding: 0, borderRadius: '50%', justifyContent: 'center', fontSize: FS.hero
           },
-          children: '✓'
+          children: CheckIcon ? jsx(CheckIcon, { size: 26, strokeWidth: 2.5 }, 'icon') : '✓'
         }, 'badge')
       }, 'mark'),
       jsx('div', { className: 'pa-clear-title', children: t('pa.stage.allClearTitle') }, 'title'),
@@ -2912,7 +2951,7 @@ function HistoryList({ data, error, refresh, onChanged }) {
                   children: t('pa.hist.clearConfirm', all)
                 }, 'copy'),
                 jsxs('div', {
-                  style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: G.xs },
+                  style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: G.xs },
                   children: [
                     jsx(Button, {
                       variant: 'outline',
@@ -3008,109 +3047,92 @@ function MemoryView({ data, error, refresh, onChanged }) {
     style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: G.sm },
     children: [
       staleNotice(t, error, refresh),
-      jsxs('div', {
-        className: 'pa-mem-rings',
-        children: [
-          jsx(MemoryRing, { label: t('pa.kpi.memoryLabel'), store: data?.memory }, 'memory'),
-          jsx(MemoryRing, { label: t('pa.kpi.profileLabel'), store: data?.user }, 'profile')
+      jsx(Tabs, {
+        label: t('pa.memory.files'),
+        idBase: 'pa-mem',
+        listClass: 'pa-mem-rings',
+        tabClass: 'pa-filecard',
+        value: target,
+        onSelect: nm => { setTarget(nm); setConfirming(null) },
+        items: [
+          { id: 'memory', label: jsx(MemoryRing, { label: t('pa.kpi.memoryLabel'), store: data?.memory }, 'ring') },
+          { id: 'user', label: jsx(MemoryRing, { label: t('pa.kpi.profileLabel'), store: data?.user }, 'ring') }
         ]
-      }, 'rings'),
+      }, 'files'),
+      pct >= 90 &&
+        jsxs('div', {
+          className: 'pa-alert pa-stale',
+          children: [
+            jsx('span', { children: t('pa.memory.warnBody') }, 'body'),
+            jsx(Tip, {
+              label: t('pa.memory.draftHint'),
+              children: jsx(Button, {
+                className: 'pa-draft-merge',
+                variant: 'outline',
+                size: 'sm',
+                onClick: () => void draftMerge(),
+                children: t('pa.memory.draftMerge')
+              }, 'draft')
+            }, 'tip')
+          ]
+        }, 'warn'),
       jsxs('div', {
-        style: { display: 'flex', alignItems: 'center', gap: G.sm, minWidth: 0 },
-        children: [
-          jsx(Tabs, {
-            label: t('pa.memory.files'),
-            idBase: 'pa-mem',
-            value: target,
-            onSelect: nm => { setTarget(nm); setConfirming(null) },
-            items: ['memory', 'user'].map(nm => ({ id: nm, label: data?.[nm]?.file || nm }))
-          }, 'tabs'),
-          jsx(RefreshButton, { label: t('pa.action.refresh'), onClick: refresh }, 'refresh')
-        ]
-      }, 'tabs'),
-      jsxs('div', {
-        style: { display: 'flex', flexWrap: 'wrap', gap: G.sm, fontSize: FS.meta, color: 'var(--ui-text-secondary)' },
+        className: 'pa-mem-head',
         children: [
           jsx('span', { children: t('pa.memory.entries', store.entries.length) }, 'count'),
           store.updated ? jsx('span', { children: t('pa.memory.lastChange', when(t, store.updated)) }, 'updated') : null
         ]
       }, 'meta'),
-      pct >= 90 &&
-        jsxs('div', {
-          className: 'pa-alert',
-          children: [
-            jsx('div', { style: { fontWeight: 600, color: 'var(--ui-text-primary)' }, children: t('pa.memory.warnTitle') }, 'title'),
-            t('pa.memory.warnBody'),
-            jsxs('div', {
-              style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: G.xs, marginTop: G.xs },
-              children: [
-                jsx(Tip, {
-                  label: t('pa.memory.draftHint'),
-                  children: jsx(Button, {
-                    className: 'pa-draft-merge',
-                    variant: 'outline',
-                    size: 'sm',
-                    onClick: () => void draftMerge(),
-                    children: t('pa.memory.draftMerge')
-                  }, 'draft')
-                }, 'tip')
-              ]
-            }, 'actions')
-          ]
-        }, 'warn'),
       jsx('div', {
         role: 'tabpanel',
         id: 'pa-mem-panel',
         'aria-labelledby': `pa-mem-${target}`,
-        style: { display: 'flex', flexDirection: 'column', gap: G.sm },
-        children: store.entries.map((entry, i) => {
-        return jsxs('div', {
-          className: 'pa-card',
-          style: { display: 'flex', flexDirection: 'column', gap: G.xs, padding: G.sm },
+        className: store.entries.length ? 'pa-notes' : undefined,
+        children: store.entries.map((entry, i) => jsxs('div', {
+          className: 'pa-note-row',
           children: [
-            jsx(PanelSectionLabel, { children: t('pa.memory.note', i + 1, entry.length) }, 'label'),
-            jsx(PanelBlock, { className: 'pa-prose', children: entry }, 'text'),
+            jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
             armed(i, entry)
               ? jsxs('div', {
-                  style: { display: 'flex', flexDirection: 'column', gap: G.xs, borderTop: HAIRLINE, paddingTop: G.xs },
+                  className: 'pa-note-meta',
                   children: [
-                    jsx('div', {
-                      className: 'pa-alert pa-alert-danger',
-                      children: t('pa.memory.deleteConfirm')
-                    }, 'copy'),
-                    jsxs('div', {
-                      style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 },
+                    jsx('span', { className: 'pa-note-ask', children: t('pa.memory.deleteConfirm') }, 'copy'),
+                    jsxs('span', {
+                      className: 'pa-note-btns',
                       children: [
                         jsx(Button, {
                           variant: 'outline',
-                          size: 'sm',
+                          size: 'xs',
                           disabled: busy,
                           onClick: () => setConfirming(null),
                           children: t('pa.memory.deleteCancel')
                         }, 'cancel'),
                         jsx(Button, {
                           variant: 'destructive',
-                          size: 'sm',
+                          size: 'xs',
                           loading: busy,
                           onClick: () => void removeEntry(entry),
                           children: t('pa.memory.delete')
                         }, 'confirm')
                       ]
-                    }, 'row')
+                    }, 'btns')
                   ]
                 }, 'confirming')
-              : jsx('div', {
-                  style: { display: 'flex', justifyContent: 'flex-end', borderTop: HAIRLINE, paddingTop: G.xs },
-                  children: jsx(Button, {
-                    variant: 'text',
-                    size: 'sm',
-                    onClick: () => setConfirming({ target, i, text: entry }),
-                    children: t('pa.memory.delete')
-                  }, 'arm')
-                }, 'arm-row')
+              : jsxs('div', {
+                  className: 'pa-note-meta',
+                  children: [
+                    jsx('span', { children: t('pa.memory.note', i + 1, entry.length) }, 'label'),
+                    jsx('span', { className: 'pa-note-gap' }, 'gap'),
+                    jsx(Button, {
+                      variant: 'text',
+                      size: 'xs',
+                      onClick: () => setConfirming({ target, i, text: entry }),
+                      children: t('pa.memory.delete')
+                    }, 'arm')
+                  ]
+                }, 'idle')
           ]
-        }, i)
-      })
+        }, i))
       }, 'notes'),
       jsx('div', {
         style: { fontSize: FS.meta, lineHeight: 1.55, color: 'var(--ui-text-secondary)' },
@@ -3171,6 +3193,7 @@ function Pane() {
       jsx('style', { children: STYLE }, 'css'),
 
       jsxs('div', {
+        className: 'pa-wrapw',
         style: { display: 'flex', flexDirection: 'column', gap: G.sm, padding: '16px 16px 0' },
         children: [
           jsxs('div', {
@@ -3184,17 +3207,7 @@ function Pane() {
               jsxs('div', {
                 className: 'pa-top-side',
                 children: [
-                  jsxs('div', {
-                    className: 'pa-top-actions',
-                    children: [
-                      at ? jsx('span', { className: 'pa-updated', children: t('pa.pane.updated', clock(at)) }, 'updated') : null,
-                      jsx(RefreshButton, {
-                        label: t('pa.action.refresh'),
-                        onClick: refreshAll
-                      }, 'refresh')
-                    ]
-                  }, 'actions'),
-                  jsxs('div', {
+                  view === 'memory' ? null : jsxs('div', {
                     className: 'pa-gauges',
                     children: [
                       jsx(Gauge, { file: mem.data?.memory?.file || 'MEMORY.md', label: t('pa.kpi.memoryLabel'), f: mem.data?.memory }, 'memory'),
@@ -3205,18 +3218,32 @@ function Pane() {
               }, 'side')
             ]
           }, 'top'),
-          jsx('div', {
-            style: { display: 'flex', alignItems: 'center', borderBottom: HAIRLINE, minWidth: 0 },
-            children: jsx(Tabs, {
-              label: t('pa.tab.label'),
-              idBase: 'pa-view',
-              value: view,
-              onSelect: setView,
-              items: ['pending', 'history', 'memory'].map(id => ({
-                id,
-                label: id === 'pending' && n ? [t(TAB_KEY[id]), pendingBadge(n)] : t(TAB_KEY[id])
-              }))
-            }, 'tabs')
+          jsxs('div', {
+            className: 'pa-tabbar',
+            children: [
+              jsx(Tabs, {
+                label: t('pa.tab.label'),
+                idBase: 'pa-view',
+                value: view,
+                onSelect: setView,
+                items: ['pending', 'history', 'memory'].map(id => ({
+                  id,
+                  label: id === 'pending' && n ? [t(TAB_KEY[id]), pendingBadge(n)] : t(TAB_KEY[id])
+                }))
+              }, 'tabs'),
+              jsxs('div', {
+                className: 'pa-top-actions',
+                children: [
+                  at
+                    ? jsx('span', { className: 'pa-updated', children: t('pa.pane.updated', clock(at)) }, 'updated')
+                    : null,
+                  jsx(RefreshButton, {
+                    label: t('pa.action.refresh'),
+                    onClick: refreshAll
+                  }, 'refresh')
+                ]
+              }, 'actions')
+            ]
           }, 'tabs')
         ]
       }, 'top'),
@@ -3226,45 +3253,53 @@ function Pane() {
         id: 'pa-view-panel',
         'aria-labelledby': `pa-view-${view}`,
         style: { minHeight: 0, flex: 1, overflow: 'auto' },
-        children: view === 'memory'
-          ? jsx(MemoryView, {
-            data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane
-          }, 'memory')
-          : view === 'history'
-            ? jsx(HistoryList, {
-              data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
-            }, 'history')
-            : jsx(NeedsYou, { data, error, refresh, onChanged: refreshPane, hist }, 'pending')
+        children: jsx('div', {
+          className: 'pa-wrapw',
+          children: view === 'memory'
+            ? jsx(MemoryView, {
+              data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane
+            }, 'memory')
+            : view === 'history'
+              ? jsx(HistoryList, {
+                data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
+              }, 'history')
+              : jsx(NeedsYou, { data, error, refresh, onChanged: refreshPane, hist }, 'pending')
+        }, 'wrap')
       }, 'body'),
 
-      jsxs('div', {
+      jsx('div', {
         className: 'pa-footer',
-        style: {
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${G.xxs}px ${G.sm}px`, borderTop: HAIRLINE,
-          padding: '8px 16px', fontSize: FS.meta, color: 'var(--ui-text-secondary)'
-        },
-        children: [
-          jsxs('span', {
-            className: 'pa-footer-promise',
-            children: [
-              jsx('span', { className: 'pa-footer-lock', 'aria-hidden': true, children: '🔒' }, 'lock'),
-              jsx('span', { children: t('pa.footer.promise') }, 'text')
-            ]
-          }, 'promise'),
-          jsxs('label', {
-            className: 'pa-alerts-row',
-            children: [
-              jsx('span', { children: t('pa.footer.alerts') }, 'word'),
-              jsx(Switch, {
-                className: 'pa-alerts',
-                size: 'xs',
-                checked: !muted,
-                'aria-label': t('pa.footer.alerts'),
-                onCheckedChange: on => setAlertsMuted(!on)
-              }, 'switch')
-            ]
-          }, 'alerts')
-        ]
+        style: { borderTop: HAIRLINE, padding: '8px 16px', fontSize: FS.meta, color: 'var(--ui-text-secondary)' },
+        children: jsxs('div', {
+          className: 'pa-wrapw',
+          style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${G.xxs}px ${G.sm}px` },
+          children: [
+            jsxs('span', {
+              className: 'pa-footer-promise',
+              children: [
+                LockIcon
+                  ? jsx('span', {
+                      className: 'pa-footer-lock', 'aria-hidden': true, children: jsx(LockIcon, { size: 13 }, 'icon')
+                    }, 'lock')
+                  : null,
+                jsx('span', { children: t('pa.footer.promise') }, 'text')
+              ]
+            }, 'promise'),
+            jsxs('label', {
+              className: 'pa-alerts-row',
+              children: [
+                jsx('span', { children: t('pa.footer.alerts') }, 'word'),
+                jsx(Switch, {
+                  className: 'pa-alerts',
+                  size: 'xs',
+                  checked: !muted,
+                  'aria-label': t('pa.footer.alerts'),
+                  onCheckedChange: on => setAlertsMuted(!on)
+                }, 'switch')
+              ]
+            }, 'alerts')
+          ]
+        }, 'row')
       }, 'footer')
     ]
   })

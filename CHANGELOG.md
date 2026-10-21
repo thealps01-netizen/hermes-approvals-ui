@@ -108,6 +108,17 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   "Shorten description" in the card and "Use the short version" at the bottom, both doing the same
   thing; only "Use the short version" is left. A group keeps its per-skill "Shorten description".
 
+* **The page looks like the rest of Hermes.** Cards, rows and gauges no longer carry the blue/lilac
+  accent tint; surfaces are plain with thin lines, and the accent stays on the main button and the
+  selected tab. Warnings keep their coloured edge on a neutral ground. Item numbers are outlined tags.
+  The page stops at a readable width on wide windows; below about 760px the side column moves under the
+  card and the two gauges sit side by side. "Updated" and refresh sit on the tab bar. The All clear check
+  and the footer lock are drawn as icons (no font glyph or colour emoji), and the percent inside the
+  rings is larger.
+* **Memory tab is simpler.** The two file cards are the file switch (no second row of tabs); each says
+  once how full it is. Notes are rows in one list in normal text size, with a quiet Delete; the two-step
+  delete asks on the same row with small buttons. The header gauges are hidden on this tab.
+
 * **Fixes found in review.** "N saved today" counts today's saves, not every save ever. Deciding the
   front record from the bulk bar no longer says it was "decided elsewhere". "Just done" says "Undone" or
   "Back in Needs you" for entries taken back. A note that makes memory smaller reads "Frees N

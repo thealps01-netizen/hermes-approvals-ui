@@ -140,6 +140,19 @@ export const icons = {
       jsx('path', { d: 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16' }, 'c'),
       jsx('path', { d: 'M8 16H3v5' }, 'd')
     ]
+  }),
+  Check: () => jsx('svg', {
+    'data-icon': 'check', viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor',
+    strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    children: jsx('path', { d: 'M20 6 9 17l-5-5' }, 'a')
+  }),
+  Lock: () => jsx('svg', {
+    'data-icon': 'lock', viewBox: '0 0 24 24', width: 13, height: 13, fill: 'none', stroke: 'currentColor',
+    strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    children: [
+      jsx('rect', { x: 3, y: 11, width: 18, height: 11, rx: 2 }, 'a'),
+      jsx('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' }, 'b')
+    ]
   })
 }
 
@@ -1072,7 +1085,7 @@ for (const mounted of [en, other]) {
     if (en.hostEl.textContent.includes(gone)) fail(`the removed card section "${gone}" is back`)
   }
   if (en.hostEl.querySelector('.pa-cols.pa-two')) fail('the pending list is a two-column grid again (cards stretch to their neighbour)')
-  const footer = en.hostEl.querySelector('.pa-footer')
+  const footer = en.hostEl.querySelector('.pa-footer > .pa-wrapw')
   if (!footer || footer.style.flexWrap !== 'wrap') fail('the footer row cannot wrap')
   await toFront(en.hostEl, 'memory:abc12345')
 }
@@ -1290,13 +1303,13 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 
 // --- 10c) memory-ring: a big ring per file, "<File> is nearly full · N notes · C / L characters" ----
 {
-  must(en.hostEl.textContent, ['Memory is nearly full · 2 notes · 2189 / 2200 characters'],
-    'the Memory tab\u2019s big ring sentence (state word from the fill rule, note count, chars/limit)')
+  must(en.hostEl.textContent, ['Memory is nearly full', 'MEMORY.md · 2 notes · 2189 / 2200 characters'],
+    'the Memory tab\u2019s file card (state word from the fill rule, then file, note count, chars/limit)')
   const rings = [...en.hostEl.querySelectorAll('.pa-mem-rings > *')]
   if (rings.length !== 2) fail(`expected 2 big rings (Memory, Profile), found ${rings.length}`)
   if (!rings.every(r => r.querySelector('.pa-gauge-ring-lg'))) fail('the Memory tab rings are not the bigger ring variant')
   const profileText = rings[1]?.textContent || ''
-  if (!/Profile (has room|is nearly full|is full) · 1 note · 1158 \/ 1375 characters/.test(profileText)) {
+  if (!/Profile (has room|is nearly full|is full)USER\.md · 1 note · 1158 \/ 1375 characters/.test(profileText)) {
     fail(`the Profile ring does not read \u2018likewise\u2019: ${profileText}`)
   }
 }
@@ -1526,7 +1539,7 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   const pctRule = sheet.match(/\.pa-gauge-pct\{[^}]*\}/)?.[0] || ''
   const pctFont = Number(pctRule.match(/font-size:([\d.]+)px/)?.[1] || 0)
   const pctSize = Number(pctRule.match(/width:([\d.]+)px/)?.[1] || 0)
-  if (!pctFont || pctFont > 10) fail(`gauge percent text is not a smaller font: ${JSON.stringify(pctRule)}`)
+  if (!pctFont || pctFont < 11) fail(`gauge percent text is below the readable 11px: ${JSON.stringify(pctRule)}`)
   const ringRule = (sheet.match(/\.pa-gauge-ring\{[^}]*\}/) || [''])[0]
   const ringSize = Number(ringRule.match(/width:([\d.]+)px/)?.[1] || 0)
   const holeRule = sheet.match(/\.pa-gauge-ring::before\{[^}]*\}/)?.[0] || ''
@@ -2072,7 +2085,9 @@ must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its fir
   if (h.hostEl.querySelector('.pa-cell')) fail('all-clear: a front card is drawn with 0 pending')
   const empty = h.hostEl.querySelector('.pa-stage .pa-clear')
   if (!empty?.textContent.includes('All clear')) fail('all-clear: the title is missing')
-  if (empty?.querySelector('.pa-clear-mark')?.textContent !== '✓') fail('all-clear: the green check mark is missing')
+  if (!empty?.querySelector('.pa-clear-mark svg[data-icon="check"]')) {
+    fail('all-clear: the check mark is not the kit\u2019s Check icon (a text glyph depends on the font)')
+  }
   if (!empty?.textContent.includes('Nothing is waiting. Hermes will ask here before it writes again.')) {
     fail('all-clear: the spec sentence is missing')
   }
@@ -3115,8 +3130,8 @@ REST.scan = 'ok'
 
   const mem = await mount('en', 'page')
   const kpi = (mem.hostEl.querySelector('.pa-gauges')?.textContent || '')
+  const kpiPct = (kpi.match(/(\d+)%/) || [])[1]
   await click(tab(mem.hostEl, /^Memory/), 60)
-  const kpiPct = (mem.hostEl.querySelector('.pa-gauges')?.textContent.match(/(\d+)%/) || [])[1]
   const tabPct = (mem.hostEl.querySelector('.pa-mem-rings')?.textContent.match(/(\d+)%/) || [])[1]
   if (!kpiPct || kpiPct !== tabPct) fail(`MEMORY.md fill differs: KPI ${kpiPct}% vs Memory tab ${tabPct}% (${kpi.slice(0, 40)})`)
   mem.root.unmount()
@@ -3939,6 +3954,59 @@ REST.scan = 'ok'
   fr.hostEl.remove()
   REST.pending = null
   REST.history = null
+}
+
+// --- 41) ui-polish: neutral surfaces, a bounded page width, the Memory tab's file cards ------------
+{
+  const pg = await mount('en', 'page')
+  const sheet = pg.hostEl.querySelector('style')?.textContent || ''
+  const root = sheet.match(/\.pa-root\{[^}]*\}/)?.[0] || ''
+  if (/--hx-card:var\(--ui-bg-(secondary|tertiary|primary)\)/.test(root)) {
+    fail('ui-polish: cards are painted with an accent-tinted fill (--ui-bg-secondary is 11% accent)')
+  }
+  if (!/\.pa-wrapw\{[^}]*max-width:\d+px/.test(sheet)) {
+    fail('ui-polish: the page has no width cap (cards stretch edge to edge)')
+  }
+  if (!/@container \(max-width:760px\)\{\.pa-stage\{flex-direction:column/.test(sheet)) {
+    fail('ui-polish: the side column stays beside the card down to a width where neither fits')
+  }
+  if (!pg.hostEl.querySelector('.pa-tabbar .pa-updated, .pa-tabbar .pa-refresh')) {
+    fail('ui-polish: "Updated" and refresh are not on the tab bar')
+  }
+  if (pg.hostEl.querySelector('.pa-footer-lock')?.textContent.includes('\u{1F512}')) {
+    fail('ui-polish: the footer lock is a colour emoji, not the kit icon')
+  }
+  const btn = pg.hostEl.querySelector('.pa-upnext-row button')
+  if (btn && !btn.classList.contains('pa-upnext-btn')) {
+    fail('ui-polish: the Up next button keeps the browser\u2019s own button look')
+  }
+  await click(tab(pg.hostEl, /Memory/), 60)
+  if (pg.hostEl.querySelector('.pa-gauges')) fail('ui-polish: the Memory tab shows the fill rings twice')
+  const cards = [...pg.hostEl.querySelectorAll('.pa-mem-rings [role="tab"]')]
+  if (cards.length !== 2 || !cards.every(c => c.classList.contains('pa-filecard'))) {
+    fail(`ui-polish: the file cards are not the file switch (${cards.length} tabs)`)
+  }
+  if (pg.hostEl.textContent.includes('Memory is nearly full') &&
+    pg.hostEl.querySelectorAll('.pa-alert').length && /Memory is nearly full/.test(
+      [...pg.hostEl.querySelectorAll('.pa-alert')].map(a => a.textContent).join(' '))) {
+    fail('ui-polish: "Memory is nearly full" is written twice (card and warning)')
+  }
+  const arm = buttons(pg.hostEl.querySelector('[role="tabpanel"]#pa-mem-panel') || pg.hostEl, /^Delete$/)[0]
+  if (arm) await click(arm, 30)
+  const grid = [...pg.hostEl.querySelectorAll('#pa-mem-panel *')].some(el => el.style.gridTemplateColumns === '1fr 1fr')
+  if (grid) fail('ui-polish: the delete confirmation splits the row into two half-width buttons')
+  const narrowCmp = sheet.indexOf('@container (max-width:520px){.pa-cmp{')
+  if (narrowCmp < sheet.indexOf('.pa-cmp{display:grid')) {
+    fail('ui-polish: the narrow one-column comparison rule comes before the two-column rule, so it never applies')
+  }
+  await click(tab(pg.hostEl, /Activity/), 60)
+  const clearAll = buttons(pg.hostEl, /^Clear all/)[0]
+  if (clearAll) await click(clearAll, 30)
+  if ([...pg.hostEl.querySelectorAll('*')].some(el => el.style.gridTemplateColumns === '1fr 1fr')) {
+    fail('ui-polish: the clear-history confirmation splits the row into two half-width buttons')
+  }
+  pg.root.unmount()
+  pg.hostEl.remove()
 }
 
 
