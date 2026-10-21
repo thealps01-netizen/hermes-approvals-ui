@@ -43,10 +43,12 @@ Run from the repo root with `PYTHONUTF8=1` and the variables above:
 ## Seeing the page
 
 There is no dev server. The panel is drawn from fake data by `tests/preview.mjs` and painted and
-measured in the app's own Electron by `tests/shot.mjs` (contrast, overflow, clipping):
+measured in the app's own Electron by `tests/shot.mjs` (contrast, overflow, clipping, alignment):
 
 `cd tests && HERMES_AGENT_DIR=<a core checkout with apps/desktop/dist and node_modules/electron>
 node preview.mjs && node shot.mjs preview.html <name>.png` (repeat with `preview-light.html`).
+The frames are drawn 1000 px wide; `PA_WIDTH=640 node preview.mjs` and
+`PA_WIDTH=420 node preview.mjs` redraw them at those pane widths (shoot both pages again after each).
 
 Page and output paths must be relative. Write screenshots to an untracked name; `preview.png` and
 `preview-light.png` are committed evidence and change only when the panel's look changes on purpose.

@@ -17,8 +17,13 @@
  *   rawKeys        a raw `pa.*` i18n key printed on screen
  *   kit traces     `[data-slot="button"]` count 0, `[data-variant="destructive"]` (Reject) absent,
  *                  the four frames / the card and tab counters missing
- *   layers         a declared fixed layer height (80 · 168 · 96 · 340 · 58 · 38 · 30) that does not
- *                  render at its declared px — the preflight/box-sizing lie
+ *   layers         a declared fixed height of the split layout (bar 48 · list head 38 · footers 57 ·
+ *                  back bar 36 · rows 78/58/72/38 · day 30 · prose 80) that does not render at its
+ *                  declared px — the preflight/box-sizing lie
+ *   alignment      the app's geometry: one left edge (top bar, list column, notice strip); every row
+ *                  of one list has one width and one height; text keeps >= 8 px off the list and
+ *                  detail column edges; the row times end on one right edge; no visible text box
+ *                  crosses another (text over text)
  *   contrast       WCAG AA on every text node that is really painted: text vs the background the
  *                  engine composited under it, 4.5:1 for normal text and 3:1 for LARGE text
  *                  (>= 18.7px, or >= 14px at weight 700+). Each failure is printed with its own
@@ -55,7 +60,8 @@
  *   node preview.mjs           # draws the frames into preview.html
  *   node shot.mjs preview.html preview.png
  *
- * Output: the measurement JSON on stdout + `preview.png`; exit 0 only when every gate key is clean.
+ * Output: the measurement JSON on stdout + `preview.png` + one crop per frame (`preview.f01.png` …);
+ * exit 0 only when every gate key is clean.
  */
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs')
@@ -70,19 +76,25 @@ const MEASURE = `(() => {
   const qa = sel => [...document.querySelectorAll(sel)]
   const txt = el => ((el && el.textContent) || '').replace(/\\\\s+/g, ' ').trim()
   const box = el => el.getBoundingClientRect()
-  const LAYERS = [80, 168, 96, 340, 58, 38, 30]
+  const LAYERS = [48, 38, 57, 36, 78, 58, 72, 30, 80]
   // A designed scroll region (the panel's fixed-layer text boxes) is NOT a clip; a hidden or
-  // ellipsis box whose content is bigger than its window IS one.
+  // ellipsis box whose content is bigger than its window IS one. The one exception is a list row's
+  // one-line ellipsis: the row is a pointer to the record, whose full text the detail column draws
+  // (the panel convention: long text is ellipsised, never swapped). Those are counted in rowEllipsis.
+  const rowCut = el => el.closest('.pa-list-rows') && getComputedStyle(el).textOverflow === 'ellipsis'
+    && el.scrollHeight <= el.clientHeight + 1
   const clip = el => {
     const s = getComputedStyle(el)
     if (s.overflowY === 'auto' || s.overflowY === 'scroll') return null
+    if (rowCut(el)) return null
     const cuts = s.overflow === 'hidden' || s.overflowX === 'hidden' || s.textOverflow === 'ellipsis'
     if (!cuts) return null
     if (!txt(el)) return null
     const hCut = el.scrollWidth > el.clientWidth + 1
     const vCut = el.scrollHeight > el.clientHeight + 1
     if (!hCut && !vCut) return null
-    return { text: txt(el).slice(0, 40), w: Math.round(box(el).width),
+    return { frame: el.closest('.pa-frame-wrap') ? el.closest('.pa-frame-wrap').getAttribute('data-frame') : null,
+      text: txt(el).slice(0, 40), w: Math.round(box(el).width),
       scrollW: el.scrollWidth, scrollH: el.scrollHeight, clientH: el.clientHeight,
       axis: hCut ? 'x' : 'y' }
   }
@@ -91,6 +103,7 @@ const MEASURE = `(() => {
     const pane = frame ? frame.querySelector(':scope > div') : null
     return {
       n: i + 1,
+      id: wrap.getAttribute('data-frame'),
       label: txt(wrap.querySelector('.pa-frame-label')).slice(0, 64),
       frameW: frame ? Math.round(box(frame).width) : null,
       frameH: frame ? Math.round(box(frame).height) : null,
@@ -108,6 +121,7 @@ const MEASURE = `(() => {
   const layers = qa('[style*="height"]').map(el => {
     const declared = parseInt(el.style.height, 10)
     if (!LAYERS.includes(declared)) return null
+    if (box(el).width < 1) return null
     return { declared, rendered: Math.round(box(el).height), overflowY: getComputedStyle(el).overflowY,
       cut: el.scrollWidth > el.clientWidth + 1 }
   }).filter(Boolean)
@@ -250,7 +264,7 @@ const MEASURE = `(() => {
     groups[k].lowest = Math.min(groups[k].lowest, row.ratio)
   }
   // --- one pill language + the comparison-card grid ----------------------------------------------
-  const pills = qa('.pa-pill').map(el => {
+  const pills = qa('.pa-pill').filter(el => box(el).width > 0).map(el => {
     const s = getComputedStyle(el)
     return { text: txt(el).slice(0, 20), h: Math.round(box(el).height), r: s.borderTopLeftRadius,
       pad: s.paddingTop + '/' + s.paddingRight + '/' + s.paddingBottom + '/' + s.paddingLeft,
@@ -311,6 +325,7 @@ const MEASURE = `(() => {
     overflowPx: frames.map(f => f.overflowPx),
     hiddenWarnings,
     clipped: qa('.pa-frame-wrap *').map(clip).filter(Boolean),
+    rowEllipsis: qa('.pa-frame-wrap *').filter(el => txt(el) && el.scrollWidth > el.clientWidth + 1 && rowCut(el)).length,
     // A card wider than its grid cell draws over its neighbour (one long unbreakable path did it).
     cardSpill: qa('.pa-cell').filter(c => c.firstElementChild &&
       box(c.firstElementChild).width > box(c).width + 1).map(c => c.getAttribute('data-key')),
@@ -323,44 +338,97 @@ const MEASURE = `(() => {
       c.scrollWidth > c.clientWidth + 1)
       .map(c => ({ text: txt(c).slice(0, 60), w: c.clientWidth, scrollW: c.scrollWidth,
         entry: c.getAttribute('data-entry') })),
-    // Designer's-eye geometry the overflow keys never see: the page's left edge (headline, the
-    // first card or list of every tab) is one line; side-by-side cards of one kind are one width;
-    // text inside a framed list keeps off the frame; row actions end on one right edge.
+    // Designer's-eye geometry the overflow keys never see: the top bar, the list column and the
+    // notice strip start on one x; the rows of one list are one width and one height; text inside the
+    // list and detail columns keeps off their edges; the row times end on one right edge.
     alignment: qa('.pa-frame').flatMap((f, i) => {
       const out = []
       const frame = i + 1
-      const head = f.querySelector('.pa-headline')
-      const x = head ? box(head).left : null
-      for (const el of f.querySelectorAll('.pa-stage-main, .pa-activity-list, .pa-activity-head, .pa-mem-rings, .pa-bulk')) {
-        if (x !== null && Math.abs(box(el).left - x) > 1) {
+      const bar = f.querySelector('.pa-bar')
+      const x = bar ? box(bar).left : null
+      for (const el of f.querySelectorAll('.pa-list, .pa-strip')) {
+        if (x !== null && box(el).width > 0 && Math.abs(box(el).left - x) > 1) {
           out.push({ frame, what: 'left edge', el: el.className, off: Math.round(box(el).left - x) })
         }
       }
-      for (const row of f.querySelectorAll('.pa-gauges, .pa-mem-rings')) {
-        const kids = [...row.children].map(box).filter(b => b.width > 0)
-        const tops = new Set(kids.map(b => Math.round(b.top)))
-        if (tops.size === 1 && kids.length > 1) {
-          const ws = kids.map(b => Math.round(b.width))
-          if (Math.max(...ws) - Math.min(...ws) > 1) out.push({ frame, what: 'unequal cards', el: row.className, ws })
+      for (const list of f.querySelectorAll('.pa-list-rows')) {
+        const kinds = {}
+        for (const row of list.querySelectorAll(':scope > *, :scope > * > .pa-row')) {
+          const k = String(row.className).split(' ').slice(0, 2).join('.')
+          const b = box(row)
+          if (b.width < 1 || row.querySelector('.pa-row')) continue
+          ;(kinds[k] = kinds[k] || []).push(b)
+        }
+        for (const k of Object.keys(kinds)) {
+          const ws = kinds[k].map(b => Math.round(b.width))
+          const hs = kinds[k].map(b => Math.round(b.height))
+          if (Math.max(...ws) - Math.min(...ws) > 1 || Math.max(...hs) - Math.min(...hs) > 1) {
+            out.push({ frame, what: 'unequal rows', el: k, ws, hs })
+          }
+        }
+        const ends = [...list.querySelectorAll('.pa-row-time')].map(e => Math.round(box(e).right))
+        if (ends.length > 1 && Math.max(...ends) - Math.min(...ends) > 1) {
+          out.push({ frame, what: 'ragged row times', el: list.className, ends })
         }
       }
-      for (const list of f.querySelectorAll('.pa-activity-list, .pa-side-list, .pa-notes')) {
-        const edge = box(list)
-        const walker = document.createTreeWalker(list, NodeFilter.SHOW_TEXT)
+      for (const col of f.querySelectorAll('.pa-list, .pa-detail')) {
+        const edge = box(col)
+        if (edge.width < 1) continue
+        const walker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT)
         let n
         while ((n = walker.nextNode())) {
           if (!n.textContent.trim()) continue
           const r = document.createRange()
           r.selectNodeContents(n)
           const b = r.getBoundingClientRect()
-          if (b.width < 1) continue
-          const gap = Math.min(b.left - edge.left, edge.right - b.right)
-          if (gap < 8) out.push({ frame, what: 'text on the frame', el: list.className, text: n.textContent.trim().slice(0, 40), gap: Math.round(gap) })
+          if (b.width < 1 || b.bottom < edge.top || b.top > edge.bottom) continue
+          // Text an ancestor clips (an ellipsis, a scroll box) is drawn only inside that ancestor.
+          let left = b.left
+          let right = b.right
+          for (let p = n.parentElement; p && p !== col; p = p.parentElement) {
+            if (getComputedStyle(p).overflowX === 'visible') continue
+            left = Math.max(left, box(p).left)
+            right = Math.min(right, box(p).right)
+          }
+          const gap = Math.min(left - edge.left, edge.right - right)
+          if (gap < 8) {
+            out.push({ frame, what: 'text on the frame', el: String(col.className).split(' ')[0],
+              text: n.textContent.trim().slice(0, 40), gap: Math.round(gap) })
+          }
         }
-        const ends = [...list.querySelectorAll(':scope > * > .pa-act-line > :last-child')]
-          .map(e => Math.round(box(e).right))
-        if (ends.length > 1 && Math.max(...ends) - Math.min(...ends) > 1) {
-          out.push({ frame, what: 'ragged row actions', el: list.className, ends })
+      }
+      // Two texts painted over each other (the narrow bar once drew "Approvals" across "5 of 7 decided"):
+      // every visible text box of the frame, cut to its clipping ancestors, must not cross another one.
+      const boxes = []
+      const tw = document.createTreeWalker(f, NodeFilter.SHOW_TEXT)
+      let tn
+      while ((tn = tw.nextNode())) {
+        const host = tn.parentElement
+        if (!tn.textContent.trim() || !host || getComputedStyle(host).visibility !== 'visible') continue
+        const r = document.createRange()
+        r.selectNodeContents(tn)
+        for (const b of r.getClientRects()) {
+          let [l, t, rt, bt] = [b.left, b.top, b.right, b.bottom]
+          for (let p = tn.parentElement; p && p !== f; p = p.parentElement) {
+            const cs = getComputedStyle(p)
+            if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+            const c = box(p)
+            l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); bt = Math.min(bt, c.bottom)
+          }
+          if (rt - l > 1 && bt - t > 1) boxes.push({ n: tn, l, t, rt, bt })
+        }
+      }
+      for (let a = 0; a < boxes.length; a++) {
+        for (let b = a + 1; b < boxes.length; b++) {
+          const p = boxes[a]
+          const q = boxes[b]
+          if (p.n === q.n) continue
+          const w = Math.min(p.rt, q.rt) - Math.max(p.l, q.l)
+          const h = Math.min(p.bt, q.bt) - Math.max(p.t, q.t)
+          if (w > 2 && h > 2) {
+            out.push({ frame, what: 'text over text', el: p.n.textContent.trim().slice(0, 30),
+              over: q.n.textContent.trim().slice(0, 30), w: Math.round(w), h: Math.round(h) })
+          }
         }
       }
       return out
@@ -377,6 +445,23 @@ const MEASURE = `(() => {
     }),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
+    // Rework 2 item 4: a footer's decision buttons (.pa-actions) sit on ONE row, the primary at its right end,
+    // at every pane width; Later and Review again may take a second row, never a split decision pair.
+    footSplit: qa('.pa-frame-wrap .pa-dfoot').flatMap(ft => {
+      const acts = ft.querySelector(':scope > .pa-actions')
+      const bs = acts ? [...acts.querySelectorAll('button')].filter(b => box(b).width > 0) : []
+      if (!bs.length) return []
+      const mid = b => (box(b).top + box(b).bottom) / 2
+      const mids = bs.map(mid)
+      const tops = { size: Math.max(...mids) - Math.min(...mids) < 4 ? 1 : 2 }
+      const last = bs[bs.length - 1]
+      const rowRight = Math.max(...[...ft.querySelectorAll('button')].filter(b => box(b).width > 0
+        && Math.abs(mid(b) - mid(last)) < 4).map(b => box(b).right))
+      return tops.size > 1 || Math.round(box(last).right) < Math.round(rowRight)
+        ? [{ buttons: bs.map(txt), rows: tops.size, frame: ft.closest('.pa-frame-wrap')?.getAttribute('data-frame') }]
+        : []
+    }),
+    footsMeasured: qa('.pa-frame-wrap .pa-dfoot > .pa-actions').length,
     nativeTitles: qa('[title]').length,
     nativeSelects: qa('select').length,
     languagePickers: qa('[class*="lang"], [data-lang], [id*="lang"]').length,
@@ -388,13 +473,13 @@ const MEASURE = `(() => {
       rejectLabels: qa('[data-slot="button"][data-variant="destructive"]').map(txt),
       badges: qa('[data-slot="badge"]').length,
       panelMeta: qa('[data-slot="panel-meta"]').length,
-      sectionLabels: qa('[data-slot="panel-section-label"]').length,
       blocks: qa('[data-slot="panel-block"]').length,
       logViews: qa('[data-slot="log-view"]').length,
       tips: qa('[data-tip]').length
     },
     cards: qa('.pa-card').length,
     cells: qa('.pa-cell').length,
+    rows: qa('.pa-list-rows .pa-row').length,
     tabs: qa('.pa-tab').length,
     kpis: qa('.pa-kpis > *').length,
     framePanels: qa('.pa-frame > div').length,
@@ -457,19 +542,57 @@ const CANARY = `(() => {
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
-    width: 980, height: 1200, show: false, backgroundColor: '#0d1117',
+    width: 1100, height: 1200, show: false, backgroundColor: '#0d1117',
     webPreferences: { javascript: true }
   })
   try {
     win.webContents.on('render-process-gone', (e, d) => console.error('[renderer gone]', JSON.stringify(d)))
     await win.loadFile(pagePath)
     await new Promise(r => setTimeout(r, 700))
+    // Replay the scrollIntoView calls preview.mjs recorded (data-shot-reveal): a static frame keeps no scroll.
+    await win.webContents.executeJavaScript(
+      "document.querySelectorAll('[data-shot-reveal]').forEach(el => el.scrollIntoView({ block: "
+      + "el.getAttribute('data-shot-reveal'), inline: 'nearest' })); window.scrollTo(0, 0); true")
     if (process.env.PA_CONTRAST_CANARY) {
       const injected = await win.webContents.executeJavaScript(CANARY)
       console.log(`contrast canary injected: ${injected} (PA_CONTRAST_CANARY=1)`)
       await new Promise(r => setTimeout(r, 120))
     }
+    // A hidden window runs no animation frames, so an entrance animation stays at its first frame
+    // (4 px down, transparent): every height below it reads 4 px too tall and the crops come out dim.
+    // The panel's own reduced-motion switch (`data-still`) stops them, then the rest are finished.
+    await win.webContents.executeJavaScript(
+      "document.querySelectorAll('.pa-root').forEach(r => r.setAttribute('data-still', '1'));"
+      + ' document.getAnimations().forEach(a => a.finish()); true')
+    await new Promise(r => setTimeout(r, 60))
     const m = await win.webContents.executeJavaScript(MEASURE)
+    // One crop per frame: scroll the frame into the viewport, then capture its rectangle (no
+    // captureBeyondViewport, no device-metrics override — both made earlier captures unreliable).
+    const crops = []
+    // A hidden window paints only when asked: the first capture after a scroll (or after
+    // `data-still`) can hand back the PREVIOUS paint — the first frame came out dim, at the old
+    // scroll position. invalidate() and a first, discarded capture force the paint the crop keeps.
+    for (const f of m.frames) {
+      const rect = await win.webContents.executeJavaScript(`(() => {
+        const el = document.querySelectorAll('.pa-frame-wrap')[${f.n - 1}]
+        el.scrollIntoView({ block: 'start' })
+        const r = el.getBoundingClientRect()
+        return { x: Math.max(0, Math.floor(r.left)), y: Math.max(0, Math.floor(r.top)),
+          width: Math.ceil(r.width), height: Math.min(Math.ceil(r.height), window.innerHeight - Math.floor(r.top)) }
+      })()`)
+      win.webContents.invalidate()
+      await new Promise(r => setTimeout(r, 120))
+      await win.webContents.capturePage(rect)
+      await new Promise(r => setTimeout(r, 60))
+      const crop = await win.webContents.capturePage(rect)
+      const name = outPath.replace(/\.png$/i, '') + '.' + (f.id || 'f' + String(f.n).padStart(2, '0')) + '.png'
+      fs.writeFileSync(name, crop.toPNG())
+      crops.push(path.basename(name))
+    }
+    // The crops scrolled an inner box, which window.scrollTo(0, 0) does not reach: bring the page
+    // top back into view, or the whole-page PNG shows the last frames instead of the first.
+    await win.webContents.executeJavaScript(
+      "document.querySelector('body > *').scrollIntoView({ block: 'start' }); window.scrollTo(0, 0); true")
     // The window shrinks to its content so the PNG holds no empty space.
     win.setContentSize(Math.min(1400, m.pageW + 16), Math.min(2400, m.pageH + 16))
     await new Promise(r => setTimeout(r, 400))
@@ -483,6 +606,7 @@ app.whenReady().then(async () => {
     const size = image.getSize()
     console.log(JSON.stringify(m, null, 1))
     console.log(`png: ${outPath} (${png.length} bytes · ${size.width}x${size.height} px) · measurement: ${jsonPath}`)
+    console.log(`crops: ${crops.length} (${crops[0]} … ${crops[crops.length - 1]})`)
 
     const bad = []
     if (m.frames.some(f => Number(f.overflowPx) > 0)) bad.push(`overflowPx=${JSON.stringify(m.overflowPx)}`)
@@ -503,6 +627,8 @@ app.whenReady().then(async () => {
     if (m.languagePickers + m.languageButtons > 0) bad.push(`languagePickers=${m.languagePickers} languageButtons=${m.languageButtons}`)
     if (m.rawKeys.length) bad.push(`rawKeys=${m.rawKeys.join(',')}`)
     if (m.layerMismatch > 0) bad.push(`layerMismatch=${m.layerMismatch}`)
+    if (m.footSplit.length) bad.push(`footSplit=${m.footSplit.length} ${JSON.stringify(m.footSplit.slice(0, 2))}`)
+    if (!m.footsMeasured) bad.push('footsMeasured=0 (no detail footer is drawn, the footer rule measures nothing)')
     if (!m.declaredFrames || m.frameCount !== m.declaredFrames) {
       bad.push(`frames=${m.frameCount} but the page declares ${m.declaredFrames}`)
     }
@@ -511,8 +637,12 @@ app.whenReady().then(async () => {
         `"${w.text}" (${w.height}px) cut by a ${w.window}px window at ${w.clippedBy}`)
       bad.push(`hiddenWarnings=${m.hiddenWarnings.length}: ${named.join(' · ')}`)
     }
-    if (m.tabs < 3) bad.push(`tabs=${m.tabs}`)
-    if (m.cells < 3) bad.push(`cells=${m.cells}`)
+    // Floors re-pinned from a fresh render of the 17 split-layout frames (51 tabs, 17 cells, 50 rows, 51-83 layers,
+    // 27 pills, 1 comparison grid at 1000 px); each floor is non-zero so a lost surface fails.
+    if (m.tabs < 45) bad.push(`tabs=${m.tabs}`)
+    if (m.cells < 12) bad.push(`cells=${m.cells}`)
+    if (m.rows < 30) bad.push(`rows=${m.rows} (the list rows are not drawn)`)
+    if (m.layers.length < 45) bad.push(`layers=${m.layers.length} (the fixed heights are not drawn)`)
     if (m.kit.buttons === 0) bad.push('kit.buttons=0 (the kit is not drawn)')
     if (m.kit.destructive === 0) bad.push('kit.destructive=0 (Reject is not a destructive kit Button)')
     if (!m.appStylesheet.twVarsOnButton) bad.push('appStylesheet.twVarsOnButton=null (the app stylesheet is not in force)')
@@ -525,14 +655,14 @@ app.whenReady().then(async () => {
       const named = m.toneText.nodes.map(n => `"${n.text}" wears ${n.tone} as text (${n.where})`)
       bad.push(`toneText=${m.toneText.count}: ${named.join(' · ')}`)
     }
-    if (m.pills.length >= 3) {
+    if (m.pills.length >= 10) {
       if (m.pillLang.heights.length !== 1) bad.push(`pill heights=${JSON.stringify(m.pillLang.heights)}`)
       if (m.pillLang.radii.length !== 1) bad.push(`pill radii=${JSON.stringify(m.pillLang.radii)}`)
       if (m.pillLang.paddings.length !== 1) bad.push(`pill paddings=${JSON.stringify(m.pillLang.paddings)}`)
     } else {
       bad.push(`pills=${m.pills.length} (the op list carries no uniform pill)`)
     }
-    if (m.compare.length < 2) bad.push(`compare=${m.compare.length} (no comparison-card grid is drawn)`)
+    if (m.compare.length < 1) bad.push(`compare=${m.compare.length} (no comparison-card grid is drawn)`)
     if (m.compareBad > 0) bad.push(`compareBad=${m.compareBad} ${JSON.stringify(m.compare)}`)
     if (bad.length) {
       console.error(`MEASUREMENT FAILED: ${bad.join(' · ')}`)

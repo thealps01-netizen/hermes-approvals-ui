@@ -11,6 +11,44 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 
 ### Changed
 
+* **Selecting several records works like the design.** After "Select" each record's icon turns into
+  its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
+  you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all
+  write to one memory file). Space ticks the focused row and Esc leaves.
+
+* **"Needs one edit" and "Not reviewed" are a warning (amber), not an alarm (red).** Red now means
+  only "stop": a broken rule, a record that cannot be applied, a delete. Reject and "Apply unreviewed"
+  are plain outline buttons. A failed review says "The check failed — “Review again” retries it.",
+  and "Approve without review" asks in one row: the warning, Cancel, then "Apply unreviewed".
+
+* **The top bar shows how full Memory and Profile are on every tab.** The Activity bar no longer
+  shows its own "saved · failed" count, which disagreed with the list's count.
+
+* **Smaller fixes from the owner's review.** With nothing waiting the "All caught up" screen fills the
+  page (no empty list). On a narrow pane the Memory tab is one scroll, the decision buttons stay on one
+  row with the main one at the right, the time moves under the title, and arming a note delete scrolls
+  its confirmation into view. Headings are in sentence
+  case, path parts are separated by "›", "No file changes" is plain text and failing checks are no
+  longer underlined like links.
+
+* **The top bar no longer draws text over text on a narrow pane.** At 640 px "Approvals" ran into
+  "Today" and the day count into "Memory"; at 420 px the meters were two bare percents. Now the small
+  bars and day dots step aside below 760 px, the day count steps aside below 480 px, and the meters
+  always keep their names ("Memory 99%", "Profile 84%").
+
+* **A heavy fix keeps the main button at the right end.** When the suggested fix would delete most of
+  the new text, "Approve as written" is the main button and now sits last, after "Approve with the fix".
+  A failed review's line starts with the warning mark instead of a waiting "…".
+
+* **The page is now an app: a list on the left and the record on the right, in all three tabs.**
+  "Needs you" lists what is waiting and opens the selected record beside it; its verdict comes first
+  ("Safe to save", "Needs one edit", "Checking…"), then the change, then the decision with its effect
+  ("Memory after saving 95% → 97%"). The keys J and K move through the list, A approves, X rejects and
+  L puts a record last. The top bar shows today's progress ("5 of 10 decided"). A decided record turns
+  into a "Saved … Undo" (or "Not saved … Restore") row in the list. A record the reviewer can fix
+  shows the change "With the fix" or "As written" with one click. Activity and Memory use the same
+  list and detail. The headline, the memory rings and the footer strip are gone.
+
 * **The top of the page now leads with a headline, not four boxes.** Where the panel used to show
   four separate "Pending / Applied / Failed / Undoable" count boxes, it now opens with today's date,
   a plain-language headline ("3 things need you", "1 thing needs you", or "You're all caught up"),

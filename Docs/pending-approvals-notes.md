@@ -1269,3 +1269,111 @@ to seven with the contrast negative control.
   now also draws it directly (next to the effect line, always visible when the card is closed) in
   addition to the copy inside "Show the full change" — the duplication when expanded is accepted as
   the smaller cost against hiding it by default.
+
+## App layout — list and detail (2026-10)
+
+The page became an app: in every tab a 300 px list on the left and the selected record on the right,
+under one 48 px top bar (title, tabs, today's progress, Alerts, Refresh). The owner asked for it after
+the "newspaper" top (headline, rings, footer strip) kept pushing the record itself below the fold.
+Below is the why of every row the closed inventory (job spec R2) did not draw exactly as the mockup.
+
+**Data the backend does not have, so the panel does not invent it.**
+
+* No line numbers (F3) and no section tag such as "frontmatter" (F9): an op's `lines` are
+  `[mark, text]` pairs. The diff grid is `mark │ text`.
+* The fold row reads "Unchanged lines" with no count (F7): the backend's `'…'` row carries none.
+* "Checking…" without "2 of 4" (L7), and the four check steps all drawn pending (C3): a review
+  exposes no per-check progress. The one spinner is the verdict seal's.
+* "Why Hermes wants this" is the backend's origin + summary sentence (F8), not an evidence sentence;
+  the skill effect sentence (F11) sits under it in the same style.
+* The fix note gives counts only (X4): what the fix keeps in prose is not in the data.
+* Activity entries carry no written text (A11): the detail shows the plain summary instead.
+
+**Rules that outrank the mockup.**
+
+* Full labels on a narrow pane (N4): long text is ellipsised or wrapped, never swapped for a shorter
+  variant. The narrow footer may take a second row, but only for Later and Review again: the decision
+  buttons stay on one row with the primary at its right end (rework 2 item 4).
+* "Use the short version" stays the label of a description fix (X6): `/fix` stages the shortened
+  text and does not approve it.
+* The note delete reads "About to delete — undoable from the Activity tab", not the mockup's "It
+  cannot be undone" (M6): `/memory/delete` records a snapshot, so the delete is undoable and the
+  mockup sentence would be false.
+* No drop shadow on the active tab (T2) and no glow on the primary (B5): the shadow has no theme
+  source, and the glow is inside a kit Button the panel may not restyle.
+
+**Moved, not lost.**
+
+* Alerts went into the bar (T6, K15) because the global footer that held it is gone (K22); the
+  footer's promise is the Memory list footer (M3) and the All caught up line (E3).
+* "Updated 12:03" is in the Refresh Tip (K23). The day is the progress (T4), the count the badge (T3).
+* The rings became the Memory file rows with meters (M2, M8) and the "Memory after saving" meter (B2).
+* Up next and Just done became the list rows, the in-row "Saved … Undo" row (L11), the All caught up
+  Last line (E5) and Activity (K24). Group changes, the as-staged comparison and the Force undo
+  alert live in the Activity detail body (A12-A14).
+* The full review is behind one "Show the full review" toggle (K9): the diff is always shown.
+* The position dots and "2 of 3" are dropped in the wide layout (K19, C5): the list shows the
+  position. The narrow Back bar reads "‹ 3 waiting · 1 of 3" (N2).
+* The narrow bar has no "4 of 4 checks fine" line (N5): the verdict card is drawn in narrow too. The
+  mini memory gauge (N3) came back with rework 2: the bar carries the Memory and Profile meters on
+  every tab, and at 480 px and below only their percents.
+* "Nothing waiting · Open Activity" (E6) gave way to the approved All caught up screen; the last
+  change and read-only sentences of the Memory tab (M7) were not in the approved design.
+
+**The keyboard guard.** J/K move, A approves, X rejects, L puts the record last — only on the
+Needs you split; never while focus is in a text field (an input other than a checkbox, radio or
+button, a textarea, a select or an editable region), never with Ctrl, Alt or Meta, never while a
+two-step warning or the armed bulk footer is open, and A/X do not repeat when the key is held. A on a
+held record warns once and sends nothing: a key must not be a quieter way past the gate than the
+button.
+
+**Narrow mode.** Under 760 px of PANE width (`@container`, never `@media`, which measures the window)
+the split shows one column: the list, or the detail with its 36 px Back bar. The tabs get their own
+row.
+
+**The measured gate.** A hidden Electron window runs no animation frames, so an entrance animation
+stays at its first frame (4 px down, transparent) and the frames read 4 px too tall and dim. The gate
+sets the panel's own `data-still` before measuring. A list row's one-line ellipsis is not counted as
+a clip: the row points at the record, whose full text is the detail's title.
+
+**Rework 2 (the owner's review of round 2).**
+
+* Select mode follows `select-mode.html`: the row's 28 px tile becomes its checkbox (the same place,
+  so the row does not shift), the list header is the one count ("2 selected · Select all · Cancel"),
+  and the detail pane is the selection: one bordered row per record, the "Memory after approving"
+  meter when every ticked record writes to the same memory file, and "Reject N" / "Approve N" in the
+  footer. Clicking a row while selecting opens that record to read it (the ticks stay); a new tick
+  returns to the summary. The bar inside the list is gone because it duplicated the header's count.
+* Warning tone (`WARN`, `--ui-yellow`) means "you can still approve, read this first": "Needs one
+  edit", "Not reviewed", a fixable chip, the 90 % memory meter, the confirm warning. Red stays for a
+  stop (a rule check, a held record, a delete). A Reject or "Apply unreviewed" is outline: it is a
+  decision, not a danger; only a skill delete keeps the destructive Reject.
+* A failed review says one sentence ("The check failed — “Review again” retries it.") rather than
+  "Not checked yet — the second opinion failed", which read as two states.
+* The armed footer is one row: the warning sentence, Cancel, the confirm. Later and Review again are
+  hidden while armed, because they are not answers to the question asked.
+* The footer keeps its decision buttons on one row with the primary at the right end at every pane
+  width; Later / Review again take the second row. The shot gate measures it (`footSplit`).
+* Section headings are the panel's own sentence-case `.pa-section`; the kit `PanelSectionLabel` is
+  uppercase and tracked, which the owner read as shouting.
+* The bar carries the two memory meters on every tab (decision 2); the Activity bar no longer counts
+  "N saved · N failed", which disagreed with the list header's count.
+* With nothing waiting the "All caught up" screen fills the body: an empty list column with a
+  "Waiting · 0" header and key legend was a list of nothing.
+* The narrow Memory tab is one scroll (files, then the selected file's notes): two rows do not need a
+  list→detail step.
+* At 560 px and below the crumb time moves under the title, so the crumb keeps its path.
+* Narrow select mode shows the list with the bulk footer under it (the summary rows are the ticked
+  list rows); the footer's card must not take `flex:1 1 0` there, or it collapses to 0 px and the
+  footer is pushed out of the pane (the shot gate's `clipped` caught it at 640 and 420).
+* Arming a note delete scrolls its confirm row into view: in the one-scroll narrow Memory tab the
+  last note's row sits at the fold. `preview.mjs` records the panel's `scrollIntoView` calls on the
+  element (`data-shot-reveal`) and `shot.cjs` replays them, since a static frame keeps no scroll.
+* The bar steps down in two stages: below 760 px the day dots and the meter bars go, below 480 px the
+  day count goes. The meter names stay at every width: "99% 84%" alone does not say which file is
+  full. Round 3 shipped "Approvals" painted across "Today" at 640 px; no gate measured text drawn over
+  text, so `shot.cjs` now does (`alignment`: `text over text`, every visible text box of a frame cut to
+  its clipping ancestors).
+* The primary decision button ends its row: for a heavy fix "Approve as written" is the primary and
+  "Approve with the fix" (outline) comes before it. A failed review's chip carries the warning glyph;
+  "…" means "still waiting" and only queued or unassigned reviews wear it.
