@@ -31,6 +31,15 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   case, path parts are separated by "›", "No file changes" is plain text and failing checks are no
   longer underlined like links.
 
+* **The top bar no longer draws text over text on a narrow pane.** At 640 px "Approvals" ran into
+  "Today" and the day count into "Memory"; at 420 px the meters were two bare percents. Now the small
+  bars and day dots step aside below 760 px, the day count steps aside below 480 px, and the meters
+  always keep their names ("Memory 99%", "Profile 84%").
+
+* **A heavy fix keeps the main button at the right end.** When the suggested fix would delete most of
+  the new text, "Approve as written" is the main button and now sits last, after "Approve with the fix".
+  A failed review's line starts with the warning mark instead of a waiting "…".
+
 * **The page is now an app: a list on the left and the record on the right, in all three tabs.**
   "Needs you" lists what is waiting and opens the selected record beside it; its verdict comes first
   ("Safe to save", "Needs one edit", "Checking…"), then the change, then the decision with its effect

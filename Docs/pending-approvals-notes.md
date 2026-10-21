@@ -1369,3 +1369,11 @@ a clip: the row points at the record, whose full text is the detail's title.
 * Arming a note delete scrolls its confirm row into view: in the one-scroll narrow Memory tab the
   last note's row sits at the fold. `preview.mjs` records the panel's `scrollIntoView` calls on the
   element (`data-shot-reveal`) and `shot.cjs` replays them, since a static frame keeps no scroll.
+* The bar steps down in two stages: below 760 px the day dots and the meter bars go, below 480 px the
+  day count goes. The meter names stay at every width: "99% 84%" alone does not say which file is
+  full. Round 3 shipped "Approvals" painted across "Today" at 640 px; no gate measured text drawn over
+  text, so `shot.cjs` now does (`alignment`: `text over text`, every visible text box of a frame cut to
+  its clipping ancestors).
+* The primary decision button ends its row: for a heavy fix "Approve as written" is the primary and
+  "Approve with the fix" (outline) comes before it. A failed review's chip carries the warning glyph;
+  "…" means "still waiting" and only queued or unassigned reviews wear it.

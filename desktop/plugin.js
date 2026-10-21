@@ -1019,7 +1019,8 @@ const STYLE = `
   .pa-btn-kbd{display:none}
   .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
   .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}}
-@container (max-width:480px){.pa-pips,.pa-gm-word,.pa-gm-bar{display:none}}
+@container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
+@container (max-width:480px){.pa-bar .pa-progress{display:none}}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -2299,7 +2300,8 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       jsx('span', { children: text }, 'text')]
   }, keyName)
   const chips = status === 'running' ? null : status !== 'done'
-    ? [chip('…', 'wait', checks[0]?.text || '', 'wait')]
+    ? [status === 'failed' ? chip(icon(AlertIcon, 12), 'warn', checks[0]?.text || '', 'wait')
+        : chip('…', 'wait', checks[0]?.text || '', 'wait')]
     : bad.length
       ? [...bad.map(row => jsxs('span', {
           className: 'pa-chip',
@@ -2689,12 +2691,14 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 ? heldButton(busy, t, 'approve', t('pa.btn.approveAsIs'), 'outline', true, heldWhy,
                     () => decide('approve'))
                 : null,
-              heldButton(busy, t, primaryKey, labelPrimary, isFix ? 'default' : asIsVariant,
-                primaryBlocked, heldWhy, onPrimary, hot === 'primary' ? t('pa.key.a') : ''),
-              !edits || isFix ? null
-                : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed,
-                    fixWhy, fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true),
-                    hot === 'fixed' ? t('pa.key.a') : '')
+              ...[
+                heldButton(busy, t, primaryKey, labelPrimary, isFix ? 'default' : asIsVariant,
+                  primaryBlocked, heldWhy, onPrimary, hot === 'primary' ? t('pa.key.a') : ''),
+                !edits || isFix ? null
+                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed,
+                      fixWhy, fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true),
+                      hot === 'fixed' ? t('pa.key.a') : '')
+              ][hot === 'fixed' || isFix || !edits ? 'slice' : 'reverse']()
             ]
           }, 'actions')
         ]

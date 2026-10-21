@@ -1569,8 +1569,9 @@ const actFind = async (hostEl, text) => {
     }
   }
   const narrowCss = act.hostEl.querySelector('style')?.textContent || ''
-  if (!narrowCss.includes('@container (max-width:480px){.pa-pips,.pa-gm-word,.pa-gm-bar{display:none}}')) {
-    fail('at 480 px and below the bar meters do not drop to their percents')
+  if (!narrowCss.includes('@container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}')
+      || !narrowCss.includes('@container (max-width:480px){.pa-bar .pa-progress{display:none}}')) {
+    fail('at 480 px and below the bar does not make room for the named meters (day progress and meter bars off)')
   }
   if (act.hostEl.querySelector('.pa-bar .pa-progress')) fail('the Activity bar still shows the day progress')
   act.root.unmount()
@@ -4757,6 +4758,47 @@ REST.scan = 'ok'
   }
   act.root.unmount()
   act.hostEl.remove()
+}
+
+// --- 51) owner's look at round 3: narrow meters keep their names, a failed check has no "…" mark, the
+// primary of a heavy fix ends the button row ------------------------------------------------------------
+{
+  const narrowAt = (css, w) => css.slice(css.indexOf(`@container (max-width:${w}px){`)).split('}}')[0]
+  const m = await mount('en', 'page')
+  const css = m.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-gm-word/.test(narrowAt(css, 480)) || !m.hostEl.querySelector('.pa-bar .pa-gm .pa-gm-word')) {
+    fail('round 3: at 480 px the bar meters lose their Memory / Profile words (two bare percents)')
+  }
+  if (!/\.pa-bar \.pa-progress/.test(narrowAt(css, 480))) {
+    fail('round 3: at 480 px the bar keeps the day progress, so the title, the count and the named meters collide')
+  }
+  m.root.unmount()
+  m.hostEl.remove()
+
+  REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
+  const f = await mount('en', 'page')
+  await toFront(f.hostEl, 'skills:aaa11111')
+  const glyphs = [...(f.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
+    ?.querySelectorAll('.pa-verdict .pa-chip-glyph') || [])].map(g => `${g.getAttribute('data-k')}:${g.textContent}`)
+  if (glyphs.length !== 1 || glyphs[0].startsWith('wait') || glyphs[0].includes('…')) {
+    fail(`round 3: a failed check still opens with the waiting mark: ${glyphs.join(' ')}`)
+  }
+  f.root.unmount()
+  f.hostEl.remove()
+  REST.pending = null
+
+  REST.mode = 'fixloss'
+  const h = await mount('en', 'page')
+  await toFront(h.hostEl, 'skills:aaa11111')
+  const row = [...(h.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-dfoot .pa-actions')
+    ?.querySelectorAll('button') || [])]
+  const last = row[row.length - 1]
+  if (!last || last.getAttribute('data-variant') !== 'default' || !/^Approve as written/.test(name(last))) {
+    fail(`round 3: a heavy fix's primary is not the last button of the row: ${row.map(b => name(b)).join(' | ')}`)
+  }
+  h.root.unmount()
+  h.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 if (problems.length) {

@@ -22,7 +22,8 @@
  *                  declared px — the preflight/box-sizing lie
  *   alignment      the app's geometry: one left edge (top bar, list column, notice strip); every row
  *                  of one list has one width and one height; text keeps >= 8 px off the list and
- *                  detail column edges; the row times end on one right edge
+ *                  detail column edges; the row times end on one right edge; no visible text box
+ *                  crosses another (text over text)
  *   contrast       WCAG AA on every text node that is really painted: text vs the background the
  *                  engine composited under it, 4.5:1 for normal text and 3:1 for LARGE text
  *                  (>= 18.7px, or >= 14px at weight 700+). Each failure is printed with its own
@@ -393,6 +394,40 @@ const MEASURE = `(() => {
           if (gap < 8) {
             out.push({ frame, what: 'text on the frame', el: String(col.className).split(' ')[0],
               text: n.textContent.trim().slice(0, 40), gap: Math.round(gap) })
+          }
+        }
+      }
+      // Two texts painted over each other (the narrow bar once drew "Approvals" across "5 of 7 decided"):
+      // every visible text box of the frame, cut to its clipping ancestors, must not cross another one.
+      const boxes = []
+      const tw = document.createTreeWalker(f, NodeFilter.SHOW_TEXT)
+      let tn
+      while ((tn = tw.nextNode())) {
+        const host = tn.parentElement
+        if (!tn.textContent.trim() || !host || getComputedStyle(host).visibility !== 'visible') continue
+        const r = document.createRange()
+        r.selectNodeContents(tn)
+        for (const b of r.getClientRects()) {
+          let [l, t, rt, bt] = [b.left, b.top, b.right, b.bottom]
+          for (let p = tn.parentElement; p && p !== f; p = p.parentElement) {
+            const cs = getComputedStyle(p)
+            if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+            const c = box(p)
+            l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); bt = Math.min(bt, c.bottom)
+          }
+          if (rt - l > 1 && bt - t > 1) boxes.push({ n: tn, l, t, rt, bt })
+        }
+      }
+      for (let a = 0; a < boxes.length; a++) {
+        for (let b = a + 1; b < boxes.length; b++) {
+          const p = boxes[a]
+          const q = boxes[b]
+          if (p.n === q.n) continue
+          const w = Math.min(p.rt, q.rt) - Math.max(p.l, q.l)
+          const h = Math.min(p.bt, q.bt) - Math.max(p.t, q.t)
+          if (w > 2 && h > 2) {
+            out.push({ frame, what: 'text over text', el: p.n.textContent.trim().slice(0, 30),
+              over: q.n.textContent.trim().slice(0, 30), w: Math.round(w), h: Math.round(h) })
           }
         }
       }
