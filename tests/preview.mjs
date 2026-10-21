@@ -187,7 +187,9 @@ const REJECT_REC = {
     edits: 1, cut: [{ part: 'target', chars: 12400 }], siblings: 1,
     model: 'gpt-5.5', usage: { input: 9822, output: 512, cost_usd: 0, cost_status: 'included' }
   },
-  ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
+  ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' },
+    { action: 'write_file', name: 'hermes-agent', file: 'references/panels.md', lines_total: 140, added: 140, removed: 0,
+      lines: Array.from({ length: 24 }, (_, i) => ['+', `Panel rule ${i + 1}: one fixed-height row per record.`]) }],
   diff: '---\nname: new-skill\ndescription: "..."\n---\n',
   plain: {
     kind_label: 'Skill file', target: 'new-skill', headline: 'New skill: new-skill',
@@ -259,7 +261,9 @@ const FIXLOSS = pendingOf([MEMORY_REC], [FIX_REC, {
   ...REJECT_REC, review: { ...REJECT_REC.review, status: 'done', verdict: 'fix', edits: 1, fix_effect: { added: 54, kept: 3 } }
 }])
 const UNCHECKED = pendingOf([{
-  ...MEMORY_REC, review: { status: 'failed', error: 'the reviewer model timed out after 120 s', hard: [], findings: [] }
+  ...MEMORY_REC, review: { status: 'failed', error: 'the reviewer model timed out after 120 s', hard: [], findings: [] },
+  ops: [{ ...MEMORY_REC.ops[0],
+    old_current_note: 'The file now says: “Calendar reminders run weekly, on Sundays at 10:00.”' }]
 }], [EDIT_REC])
 const EMPTY = pendingOf([], [])
 
@@ -267,6 +271,7 @@ const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', record_id: 'r0000001', summary: 'MEMORY.md updated — 2 notes',
     files: [{ path: 'memories/MEMORY.md' }], undoable: true,
     amended: {
+      added: 24, kept: 18,
       written: ['The write-approval gate is on: a memory or skill write waits for a click in the Approvals panel. Calendar reminders run hourly, not weekly (corrected after the tool change).'],
       applied: ['The write-approval gate is on: a memory or skill write waits for a click. Calendar reminders run hourly.'],
       why: ['The reviewer trimmed a duplicate clause before it applied this note.']
@@ -275,7 +280,11 @@ const HISTORY = { entries: [
     summary: "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)",
     files: [{ path: 'skills/e2e-demo/SKILL.md' }, { path: `skills/e2e-demo/${LONG_PATH}` }], undoable: true },
   { id: 'bb22cc33', ts: NOW - 3600, kind: 'rejected', subsystem: 'skills', record_id: 'r0000003',
-    summary: 'batch(3 ops: create, patch, delete) on hermes-desktop-plugin-dev', files: [], undoable: false, restorable: true },
+    summary: 'batch(3 ops: create, patch, delete) on hermes-desktop-plugin-dev', files: [], undoable: false, restorable: true,
+    group: ['g0000001', 'g0000002', 'g0000003'], changes: [
+      "create 'hermes-desktop-plugin-dev' — Use when building a Hermes desktop plugin.",
+      'patch hermes-desktop-plugin-dev/SKILL.md — the tab bar is 24 px tall',
+      'delete hermes-desktop-plugin-dev/references/old-notes.md'] },
   { id: 'ee55ff66', ts: NOW - 5400, kind: 'rejected', subsystem: 'memory', record_id: 'r0000004',
     summary: 'MEMORY.md: a note about the old calendar schedule', files: [], undoable: false, restored: '9a8b7c6d' },
   { id: 'cc33dd44', ts: NOW - 7200, kind: 'external', subsystem: 'memory', record_id: 'r0000005',
@@ -451,6 +460,7 @@ add('f09', 'Activity — day sections, an apply entry selected, files, Compare o
   await click(findTab(hostEl, /^Activity/), 'the Activity tab')
   await click(byText(hostEl, /^Compare with the write as staged$/), 'Compare with the write as staged')
   need(byText(hostEl, /^Hide the comparison$/), 'f09: the comparison did not open')
+  need(hostEl.querySelector('.pa-detail [data-amended="effect"]'), 'f09: the amended entry draws no fix-effect line')
   need(hostEl.querySelectorAll('.pa-day').length >= 1, 'f09: the older day has no section heading')
 }))
 
@@ -465,6 +475,8 @@ add('f11', 'Activity — a restorable rejected entry selected, Clear all armed',
   const row = [...hostEl.querySelectorAll('.pa-act-row')].find(r => /hermes-desktop-plugin-dev/.test(r.textContent))
   await click(row, 'the rejected Activity row')
   need(byText(hostEl.querySelector('.pa-detail'), /^Restore$/), 'f11: the rejected entry has no Restore')
+  await click(byText(hostEl.querySelector('.pa-detail'), /^Changes \(3\)$/), 'the group changes fold')
+  need(byText(hostEl.querySelector('.pa-detail'), /^Hide changes$/), 'f11: the group changes fold did not open')
   await click(byText(hostEl.querySelector('.pa-list-foot'), /^Clear/), 'Clear all')
   need(hostEl.querySelector('.pa-clear-arm'), 'f11: Clear all did not arm')
 }))
@@ -503,8 +515,10 @@ add('f15', 'Needs you — a suggested fix that deletes most of the new text: the
 
 add('f16', 'Needs you — the full review open: an unverified finding, the cut and siblings lines', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')
+  await click(byText(card, /^As written$/), 'As written (the long op box)')
   await click(byText(card, /^Show the full review$/), 'Show the full review')
   need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Hide the full review$/), 'f16: the full review did not open')
+  need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Show 120 more lines$/), 'f16: the long op has no “Show N more lines”')
 }))
 
 add('f17', 'Needs you — not checked (the review failed): “Approve without review” armed with its warning',
@@ -512,6 +526,8 @@ add('f17', 'Needs you — not checked (the review failed): “Approve without re
     const card = await pick(hostEl, 'memory:abc12345')
     await click(byText(card, /^Approve without review$/), 'Approve without review')
     need(hostEl.querySelector('.pa-warnline'), 'f17: arming “Approve without review” drew no warning line')
+    need(/The file now says/.test(detailOf(hostEl, 'memory:abc12345')?.textContent || ''),
+      'f17: the op’s note about the current file is not drawn')
   }, UNCHECKED))
 
 for (const f of frames) {

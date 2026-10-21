@@ -522,6 +522,10 @@ app.whenReady().then(async () => {
         return { x: Math.max(0, Math.floor(r.left)), y: Math.max(0, Math.floor(r.top)),
           width: Math.ceil(r.width), height: Math.min(Math.ceil(r.height), window.innerHeight - Math.floor(r.top)) }
       })()`)
+      // The first frame is already in view, so scrolling paints nothing new and capturePage hands
+      // back the frame painted BEFORE `data-still` (the entrance animation's dim first frame).
+      // invalidate() forces a fresh paint for every crop.
+      win.webContents.invalidate()
       await new Promise(r => setTimeout(r, 120))
       const crop = await win.webContents.capturePage(rect)
       const name = outPath.replace(/\.png$/i, '') + '.' + (f.id || 'f' + String(f.n).padStart(2, '0')) + '.png'

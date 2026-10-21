@@ -4213,6 +4213,14 @@ REST.scan = 'ok'
   }
   fr.root.unmount()
   fr.hostEl.remove()
+  // R2 A16: an empty history draws the kit EmptyState across the split, no list column and no row.
+  const none = await mount('en', 'page')
+  await click(tab(none.hostEl, /Activity/), 80)
+  const blank = none.hostEl.querySelector('[data-slot="empty-state"]')
+  if (!blank || !/No records yet/.test(blank.textContent || '')) fail('activity: an empty history draws no kit EmptyState')
+  if (none.hostEl.querySelector('.pa-act-row, .pa-list')) fail('activity: an empty history still draws a list column')
+  none.root.unmount()
+  none.hostEl.remove()
   REST.pending = null
   REST.history = null
 }
