@@ -87,6 +87,12 @@ committed — they are the measured evidence and the README's screenshots.
   once after a fresh checkout.
 * `render_check.mjs` ends with `process.exit(0)`: the panel's polling timers stay open and the process
   would otherwise hang after printing OK.
+* The split layout (app-layout R12): every waiting record is a `.pa-row[data-key]` in the Needs you list
+  and the selected one is the `.pa-detail.pa-cell[data-key]` card; `toFront()` selects by clicking the
+  row. Button names are read through `name()`, which drops the aria-hidden `.pa-kbd` key hint. Section 43
+  holds the R12.2 checks (rows, J/K/A/X/L keys, in-row done with Undo/Restore, fix toggle, word marks,
+  checking, narrow Back); sections 12 (shell), 11 (Activity list + detail), 10c (Memory list + detail)
+  and 13f/13g (Last line, All caught up) replace the gauges, the Applied cards and the Just done strip.
 * `jsdom`, `react` and `react-dom` are dev dependencies of this folder (`package.json`, `node_modules`);
   run `npm install --no-audit --no-fund` here if they are missing.
 * The jsdom engine computes no layout, so the card-height and FLIP checks compare the values the panel

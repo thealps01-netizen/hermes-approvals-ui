@@ -21,7 +21,6 @@ if (kitMissing.length) console.log('[pending-approvals] SDK kit components missi
 
 const RefreshIcon = icons?.RefreshCw || null
 const CheckIcon = icons?.Check || null
-const LockIcon = icons?.Lock || null
 const AlertIcon = icons?.AlertCircle || null
 const BackIcon = icons?.ChevronLeft || null
 const BrainIcon = icons?.Brain || null
@@ -157,6 +156,11 @@ const BUNDLES = {
         staleWhy: 'Hermes cannot apply this write as staged: the text it changes is no longer in the file. Reject it; the change can be staged again against the current file.',
         fixFirst: 'Shorten first',
         failedBefore: 'Approve failed',
+      },
+      state: {
+        newSkill: 'New skill',
+        editSkill: 'Edit skill',
+        deleteSkill: 'Delete skill',
       },
       group: {
         new: 'New skill',
@@ -427,18 +431,6 @@ const BUNDLES = {
         alerts: 'Alerts',
         promise: 'Nothing is written to your memory without you.',
       },
-      ask: {
-        memory: 'Hermes wants to remember:',
-        skillNew: 'Hermes wants to add a new skill:',
-        skillUpdate: 'Hermes wants to change a skill:',
-        skillDelete: 'Hermes wants to delete a skill:',
-      },
-      effect: {
-        memory: (added, before, after) =>
-          `Adds ${plural(added, 'character', 'characters')} · memory goes from ${before}% to ${after}%`,
-        memoryLess: (freed, before, after) =>
-          `Frees ${plural(freed, 'character', 'characters')} · memory goes from ${before}% to ${after}%`,
-      },
       check: {
         duplicateMemory: 'Not already in your memory',
         duplicateSkill: 'Not already a skill like it',
@@ -651,7 +643,7 @@ const KIND_VARIANT = { apply: 'success', rejected: 'muted', external: 'warn', fa
 const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
-const R = { tag: 4, box: 8, ctl: 6, card: 12, pill: 999 }
+const R = { tag: 4, box: 8, ctl: 6, file: 9, verdict: 10, pill: 999 }
 const FS = {
   micro: 11, meta: 11.5, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 10, detail: 17, empty: 15
 }
@@ -688,8 +680,8 @@ const THIN_SCROLL = 'scrollbar-width:thin;'
   + 'scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 45%,transparent) transparent'
 const MONO = 'font-family:ui-monospace,\'Cascadia Code\',Consolas,monospace'
 const STYLE = `
-.pa-root{container-type:inline-size;
-  --hx-card:transparent;--hx-field:color-mix(in srgb,var(--ui-text-primary) 6%,transparent);
+.pa-root{container-type:inline-size;box-shadow:${LIT_EDGE};
+  --hx-field:color-mix(in srgb,var(--ui-text-primary) 6%,transparent);
   --hx-raised:var(--ui-bg-elevated);--hx-line:var(--ui-stroke-tertiary)}
 .pa-root[data-still="1"] *,.pa-root[data-still="1"] *::before,.pa-root[data-still="1"] *::after{
   transition:none !important;animation:none !important}
@@ -785,7 +777,7 @@ const STYLE = `
 .pa-dtitle{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;font-size:${FS.detail}px;font-weight:600;
   letter-spacing:-.015em;color:var(--ui-text-primary);min-width:0}
 .pa-verdict{margin:14px 20px 0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;
-  padding:12px 14px;border:${HAIRLINE};border-radius:10px;flex:none;
+  padding:12px 14px;border:${HAIRLINE};border-radius:${R.verdict}px;flex:none;
   background:linear-gradient(90deg,color-mix(in srgb,var(--pa-tone) 9%,transparent),transparent 55%)}
 .pa-verdict[data-k="running"]{background:linear-gradient(90deg,transparent,${tint('var(--ui-accent)', 14)},transparent)}
 .pa-seal{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--pa-tone);
@@ -810,7 +802,7 @@ const STYLE = `
 .pa-dbody{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 20px;display:flex;flex-direction:column;
   gap:10px;${THIN_SCROLL}}
 .pa-dbody>*{flex:none}
-.pa-file{border:${HAIRLINE};border-radius:9px;overflow:hidden;min-width:0}
+.pa-file{border:${HAIRLINE};border-radius:${R.file}px;overflow:hidden;min-width:0}
 .pa-file-head{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:${FS.meta}px;
   color:var(--ui-text-secondary);border-bottom:${HAIRLINE};background:${tint('var(--ui-text-primary)', 3)};min-width:0}
 .pa-file-path{${MONO};min-width:0;flex:1;overflow-wrap:anywhere}
@@ -1115,6 +1107,19 @@ const pendingBadge = n => jsx(Badge, {
   className: 'pa-tag', style: { ...TAG, marginLeft: G.xxs }, variant: 'default', children: String(n)
 }, 'badge')
 
+const errText = e => {
+  const text = String(e?.message || e || '')
+  const at = text.indexOf('{')
+  if (at >= 0) {
+    try {
+      return JSON.parse(text.slice(at)).error || text
+    } catch {
+      return text
+    }
+  }
+  return text
+}
+
 function Loading({ label: text }) {
   return jsx('div', {
     style: { display: 'grid', padding: 12, placeItems: 'center' },
@@ -1155,8 +1160,6 @@ const fill = f => {
   return { pct, tone }
 }
 const clock = ms => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-const dateLabel = () => longDate(new Date())
-
 function useHeld(key) {
   const [, bump] = useState(0)
   useEffect(() => {
@@ -1282,7 +1285,6 @@ const cardState = (hard, stale, fix, failedBefore, status, verdict) => (hard ? [
               : verdict === 'fix' ? ['pa.status.fix', 'warn']
                 : ['pa.status.approve', 'success'])
 const TONE = { destructive: 'var(--ui-red)', success: 'var(--ui-accent)', muted: 'var(--ui-text-tertiary)' }
-const toneOf = variant => TONE[variant] || 'var(--ui-orange)'
 const tally = (ops, mark) => ops.reduce((n, op) =>
   n + ((mark === '+' ? op.added : op.removed) ?? lineRows(op).filter(r => r[0] === mark).length), 0)
 const alertBox = (key, children, danger) =>
@@ -1366,39 +1368,6 @@ const primaryLabel = (subsystem, item) => {
   if (subsystem === 'memory') return say('pa.btn.saveMemory')
   const kind = skillKindOf(item)
   return say(kind === 'delete' ? 'pa.btn.deleteSkill' : kind === 'new' ? 'pa.btn.saveSkill' : 'pa.btn.saveChanges')
-}
-const askLine = (subsystem, item) => {
-  if (subsystem === 'memory') return say('pa.ask.memory')
-  const kind = skillKindOf(item)
-  return say(kind === 'delete' ? 'pa.ask.skillDelete' : kind === 'new' ? 'pa.ask.skillNew' : 'pa.ask.skillUpdate')
-}
-const heroOf = (subsystem, item) => {
-  const plain = item.plain || {}
-  if (!item.parts && plain.fix) return { lines: [{ text: plain.fix.description, replaced: plain.fix.text }] }
-  if (subsystem === 'memory') {
-    const notes = (item.ops || []).filter(o => o.new)
-    const lines = notes.length ? notes.map(o => ({ text: o.new, replaced: o.old || null }))
-      : [{ text: plain.headline || '', replaced: null }]
-    return { lines }
-  }
-  const sourceOps = item.parts ? item.parts.flatMap(p => p.ops || []) : (item.ops || [])
-  const files = [...new Set(sourceOps.map(o => o.file || o.name).filter(Boolean))]
-  const name = item.parts ? (item.names || []).join(', ')
-    : (plain.target || (plain.groups || []).map(g => g.name).join(', '))
-  return { name, files: files.slice(0, 4), more: Math.max(0, files.length - 4) }
-}
-const effectLine = (subsystem, item) => {
-  const plain = item.plain || {}
-  if (subsystem === 'memory') {
-    const fit = plain.fit
-    if (!fit || typeof fit.before !== 'number' || typeof fit.after !== 'number' || !fit.limit) return null
-    const delta = fit.after - fit.before
-    const before = fill({ chars: fit.before, limit: fit.limit }).pct
-    const after = fill({ chars: fit.after, limit: fit.limit }).pct
-    return delta < 0 ? say('pa.effect.memoryLess', -delta, before, after)
-      : say('pa.effect.memory', delta, before, after)
-  }
-  return plain.effect || null
 }
 const checkRows = (subsystem, item) => {
   const review = item.review || {}
@@ -1575,59 +1544,6 @@ const lineRows = op => {
   return [...split(op.old).map(l => ['-', l]), ...split(op.new).map(l => ['+', l])]
 }
 
-function Change({ op, where, t, badge }) {
-  const [all, setAll] = useState(false)
-  const rows = lineRows(op)
-  const total = op.lines_total || rows.length
-  const shown = all ? rows : rows.slice(0, CHANGE_PEEK)
-  const hidden = total - shown.length
-  const added = op.added ?? rows.filter(r => r[0] === '+').length
-  const removed = op.removed ?? rows.filter(r => r[0] === '-').length
-  return jsxs('div', {
-    className: 'pa-change',
-    children: [
-      jsxs('div', {
-        className: 'pa-change-head',
-        children: [
-          jsx('span', { className: 'pa-change-file', children: [op.name, op.file].filter(Boolean).join(' · ') || where }, 'file'),
-          badge ? jsx('span', { className: 'pa-pill', children: badge }, 'badge') : null,
-          jsx('span', {
-            className: 'pa-change-stat',
-            children: op.action === 'delete' ? t('pa.op.wholeSkill') : t('pa.op.lines', added, removed)
-          }, 'stat')
-        ]
-      }, 'head'),
-      op.action === 'delete' && !rows.length ? jsx('div', { style: hintLine, children: t('pa.op.deletesSkill') }, 'gone') :
-      rows.length
-        ? jsx(LogView, {
-            className: 'pa-free pa-change-body',
-            children: shown.map((r, i) =>
-              jsxs('div', {
-                className: 'pa-ln',
-                'data-k': r[0],
-                style: r[0] === '+' ? DIFF_NEW : r[0] === '-' ? DIFF_OLD : null,
-                children: [
-                  jsx('span', { className: 'pa-ln-mark', children: r[0] === ' ' ? '' : r[0] }, 'mark'),
-                  jsx('span', { className: 'pa-ln-text', children: r[1] || ' ' }, 'text')
-                ]
-              }, i))
-          }, 'body')
-        : jsx('div', { style: hintLine, children: t('pa.op.noText') }, 'none'),
-      hidden > 0 && shown.length < rows.length
-        ? jsx(Button, {
-            variant: 'text', size: 'inline', onClick: () => setAll(true), children: t('pa.op.more', hidden)
-          }, 'more')
-        : null,
-      all && rows.length > CHANGE_PEEK
-        ? jsx(Button, {
-            variant: 'text', size: 'inline', onClick: () => setAll(false), children: t('pa.op.less')
-          }, 'less')
-        : null,
-      all && total > rows.length ? jsx('div', { style: hintLine, children: t('pa.op.capped', rows.length, total) }, 'cap') : null,
-      op.old_current_note ? jsx('div', { style: hintLine, children: op.old_current_note }, 'note') : null
-    ]
-  })
-}
 
 function ReviewSection({ review, facts, tone, busy, onAgain }) {
   const t = usePluginI18n(ID)
@@ -1893,23 +1809,27 @@ function BackBar({ label: text, pos, onBack }) {
   }, 'back')
 }
 
-const recordTitle = (subsystem, item) => {
-  if (subsystem === 'memory') {
-    const plain = item.plain || {}
-    return plain.headline || plain.target || ''
-  }
-  if (item.parts) return (item.names || []).join(', ')
+const SKILL_KINDS = [['new', 'pa.state.newSkill'], ['update', 'pa.state.editSkill'], ['delete', 'pa.state.deleteSkill']]
+const groupDeletes = item => (item.parts || []).some(p => (p.ops || []).some(o => o.action === 'delete'))
+const recordTitle = (t, subsystem, item) => {
   const plain = item.plain || {}
+  if (subsystem === 'memory') return plain.headline || plain.target || ''
+  if (item.parts) {
+    return [(item.names || []).join(', '), t('pa.grp.changes', item.parts.length),
+      groupDeletes(item) ? t('pa.grp.withDelete') : ''].filter(Boolean).join(' · ')
+  }
   const groups = plain.groups || []
-  return plain.target || groups.map(g => g.name).join(', ')
+  return SKILL_KINDS.map(([kind, key]) => [key, groups.filter(g => (g.kind || 'update') === kind)])
+    .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${list.map(g => g.name).join(', ')}`)
+    .join(' · ') || plain.target || ''
 }
-const rowTitle = (t, subsystem, item) => (item.summary ? plainGist(t, item.summary) : recordTitle(subsystem, item))
+const rowTitle = (t, subsystem, item) => (item.summary ? plainGist(t, item.summary) : recordTitle(t, subsystem, item))
   || t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
 const rowPreview = (t, subsystem, item) => {
   const plain = item.plain || {}
   if (item.parts) {
-    const deletes = item.parts.some(p => (p.ops || []).some(o => o.action === 'delete'))
-    return [t('pa.grp.changes', item.parts.length), deletes ? t('pa.grp.withDelete') : ''].filter(Boolean).join(' · ')
+    return [t('pa.grp.changes', item.parts.length), groupDeletes(item) ? t('pa.grp.withDelete') : '']
+      .filter(Boolean).join(' · ')
   }
   if (subsystem === 'memory') return plain.headline || ''
   return (plain.what || [])[0] || plain.headline || ''
