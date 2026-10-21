@@ -2294,14 +2294,17 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       ? [...bad.map(row => jsxs('span', {
           className: 'pa-chip',
           children: [
-            jsx('span', { className: 'pa-chip-glyph', 'data-k': 'bad', 'aria-hidden': true, children: '!' }, 'g'),
+            jsx('span', {
+              className: 'pa-chip-glyph', 'data-k': 'bad', 'aria-hidden': true, children: icon(AlertIcon, 12)
+            }, 'g'),
             jsx('button', {
               type: 'button', className: 'pa-chip-btn', 'aria-expanded': expandedChecks.has(row.key),
               onClick: () => toggleCheck(row.key), children: row.text
             }, 'btn')
           ]
-        }, row.key)), ok.length ? chip('✓', 'ok', t('pa.verdict.othersFine', ok.length), 'others') : null]
-      : ok.map(row => chip('✓', 'ok', t(FAMILY_CHIP[row.key] || 'pa.chip.rule'), row.key))
+        }, row.key)),
+        ok.length ? chip(icon(CheckIcon, 12), 'ok', t('pa.verdict.othersFine', ok.length), 'others') : null]
+      : ok.map(row => chip(icon(CheckIcon, 12), 'ok', t(FAMILY_CHIP[row.key] || 'pa.chip.rule'), row.key))
   const steps = status === 'running'
     ? jsx('div', {
         className: 'pa-steps',
