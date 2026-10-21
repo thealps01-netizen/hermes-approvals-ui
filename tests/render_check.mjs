@@ -1111,9 +1111,9 @@ for (const mounted of [en, other]) {
   }
   if (en.hostEl.querySelector('.pa-cols.pa-two')) fail('the pending list is a two-column grid again (cards stretch to their neighbour)')
   const sheet5 = en.hostEl.querySelector('style')?.textContent || ''
-  if (!/\.pa-dfoot\{[^}]*flex-wrap:wrap/.test(sheet5) || !/\.pa-actions\{[^}]*flex-wrap:wrap/.test(sheet5)) {
-    fail('the detail footer row cannot wrap')
-  }
+  // Rework 2 item 4: the footer may take a second row (Later, Review again), the decision buttons never split.
+  if (!/\.pa-dfoot\{[^}]*flex-wrap:wrap/.test(sheet5)) fail('the detail footer row cannot wrap')
+  if (!/\.pa-actions\{[^}]*flex-wrap:nowrap/.test(sheet5)) fail('the footer decision buttons can split over two rows')
   await toFront(en.hostEl, 'memory:abc12345')
 }
 
@@ -1202,7 +1202,7 @@ for (const mounted of [en, other]) {
   await toFront(en.hostEl, 'skills:def67890')
   const fixable = verdictOf('skills:def67890')
   if (vtitle(fixable) !== 'Needs one edit — Hermes already drafted it' || fixable?.getAttribute('data-k') !== 'edit'
-      || fixable?.style.getPropertyValue('--pa-tone') !== 'var(--ui-orange)') {
+      || fixable?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
     fail(`a record with a description fix is not marked "Needs one edit": ${vtitle(fixable)}`)
   }
   await toFront(en.hostEl, 'skills:aaa11111')
@@ -1384,7 +1384,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
     fail(`the Profile file row does not read likewise: ${prof?.textContent}`)
   }
   const meter = r => r?.querySelector('.pa-meter.pa-meter-thin')
-  if (meter(mem)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-orange)'
+  if (meter(mem)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)'
       || meter(mem)?.querySelector('.pa-meter-fill')?.style.width !== '99%') {
     fail('the Memory row meter is not 99% wide in the warn tone')
   }
@@ -1548,9 +1548,29 @@ const actFind = async (hostEl, text) => {
   await click(tab(act.hostEl, /Activity/), 60)
   must(act.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent,
     ['Today · 3 saved · 1 not saved · 1 failed'], 'activity header: today\u2019s counts in words, no count left out')
-  // The old KPI boxes' overall counts moved into the bar (R2 T7): "N saved · N failed".
-  if (act.hostEl.querySelector('.pa-bar .pa-bar-counts')?.textContent !== '2 saved · 1 failed') {
-    fail('the overall applied/failed counts are not shown in the bar of the Activity tab')
+  // Rework 2 item 8: the bar's "2 saved · 1 failed" disagreed with the list header; the header is the one
+  // count on screen and the bar carries the memory meters instead (decision 2).
+  const barText = act.hostEl.querySelector('.pa-bar')?.textContent || ''
+  if (act.hostEl.querySelector('.pa-bar .pa-bar-counts') || /\d+ saved/.test(barText)) {
+    fail('the Activity bar still counts saved records beside the list header (two sources, two wordings)')
+  }
+  // Decision 2: every tab's bar shows "Memory ▬ 99%" and "Profile ▬ 84%" (label, 44 px bar, bold percent), the
+  // tone following the file's fill exactly as the Memory tab does (>= 90 % warning tone).
+  for (const view of [/Activity/, /Needs you/, /^Memory/]) {
+    await click(tab(act.hostEl, view), 40)
+    const gms = [...act.hostEl.querySelectorAll('.pa-bar .pa-gms > .pa-gm')]
+    const read = gms.map(g => `${g.querySelector('.pa-gm-word')?.textContent}|${g.querySelector('b')?.textContent}|${
+      g.style.getPropertyValue('--pa-tone')}|${g.querySelector('.pa-gm-bar > i')?.style.width}`)
+    if (read.join(' ') !== 'Memory|99%|var(--ui-yellow)|99% Profile|84%|var(--ui-green)|84%') {
+      fail(`the bar's memory meters do not read Memory 99 % (warning) · Profile 84 % in ${view}: ${read.join(' ')}`)
+    }
+    if (gms.some(g => !/^(Memory|Profile) \d+% full$/.test(g.getAttribute('aria-label') || ''))) {
+      fail('a bar meter has no spoken name')
+    }
+  }
+  const narrowCss = act.hostEl.querySelector('style')?.textContent || ''
+  if (!narrowCss.includes('@container (max-width:480px){.pa-pips,.pa-gm-word,.pa-gm-bar{display:none}}')) {
+    fail('at 480 px and below the bar meters do not drop to their percents')
   }
   if (act.hostEl.querySelector('.pa-bar .pa-progress')) fail('the Activity bar still shows the day progress')
   act.root.unmount()
@@ -1862,12 +1882,10 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
 {
   const bulk = await mount('en')
   await selectMode(bulk.hostEl)
-  const barOf = h => h.hostEl.querySelector('.pa-bulk')
+  const barOf = h => h.hostEl.querySelector('.pa-split')
+  const cardOf = h => h.hostEl.querySelector('.pa-detail .pa-bulk')
   const bar = barOf(bulk)
-  if (!bar) fail('no bulk bar over three pending records')
-  if (!bar?.closest('.pa-split .pa-list') || !bar?.previousElementSibling?.classList.contains('pa-list-head')) {
-    fail('the bulk bar is not drawn under the list header')
-  }
+  if (bulk.hostEl.querySelector('.pa-list .pa-bulk')) fail('the bulk actions are still drawn inside the list')
   const picks = [...bulk.hostEl.querySelectorAll('input.pa-pick')]
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
@@ -1876,13 +1894,14 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
-  must(bar?.textContent, ['0 of 3 selected', 'Select all'], 'bulk bar idle')
+  must(bulk.hostEl.querySelector('.pa-list-head')?.textContent, ['0 selected', 'Select all', 'Cancel'], 'bulk bar idle')
   if (/cannot be applied as staged/.test(bar?.textContent || '')) fail('the old "left out of the selection" note is back')
-  if (buttons(bar, /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
+  if (buttons(cardOf(bulk), /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = posts().length
   await click(buttons(bar, /^Select all$/)[0])
-  must(barOf(bulk)?.textContent, ['3 of 3 selected', 'Clear selection'], 'bulk all')
+  must(barOf(bulk)?.textContent, ['3 selected', 'Clear selection', '3 records selected'], 'bulk all')
+  if (!cardOf(bulk)) fail('no selection summary in the detail pane over three ticked records')
   const lockedApprove = buttons(barOf(bulk), /^Approve 3$/)[0]
   if (lockedApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a flagged record selected')
   if (lockedApprove?.disabled) fail('the locked bulk Approve is a disabled button: its Tip can never be reached')
@@ -1894,19 +1913,19 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (/Apply 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
   if (posts().length !== before) fail('the locked bulk Approve sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['2 of 3 selected'], 'bulk flagged unticked')
+  must(barOf(bulk)?.textContent, ['2 selected'], 'bulk flagged unticked')
   const openApprove = buttons(barOf(bulk), /^Approve 2$/)[0]
   if (!openApprove || openApprove.getAttribute('aria-disabled') === 'true') fail('bulk Approve stays locked once every selected record is approvable')
   if (openApprove?.closest('[data-tip]')) fail('an open bulk Approve still carries the "needs a decision" Tip')
   await click(openApprove)
   must(barOf(bulk)?.textContent, ['Apply 2 records now?'], 'bulk arming')
   if (posts().length !== before) fail('bulk approve fired before Confirm')
-  await click(buttons(barOf(bulk), /^Cancel$/)[0])
+  await click(bulk.hostEl.querySelector('.pa-bulk-cancel'))
   if (posts().length !== before) fail('Cancel still sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['3 of 3 selected'], 'bulk flagged ticked again')
+  must(barOf(bulk)?.textContent, ['3 selected'], 'bulk flagged ticked again')
   await click(buttons(barOf(bulk), /^Reject 3$/)[0])
-  const arm = bulk.hostEl.querySelector('.pa-bulk .pa-alert-danger')
+  const arm = bulk.hostEl.querySelector('.pa-bulk [role="alert"]')
   if (!arm || !/Reject 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
     fail('bulk reject does not arm with its own warning (and the way back through Restore)')
   }
@@ -2407,15 +2426,15 @@ REST.scan = 'ok'
     fail('the short-version primary action must not be locked by the pre-review')
   }
   await toFront(gate.hostEl, 'memory:abc12345')
+  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Select all$/)[0])
   const gateBar = gate.hostEl.querySelector('.pa-bulk')
   if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
-  if (gateBar) await click(buttons(gateBar, /^Select all$/)[0])
   const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Approve 3$/)[0]
   if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
   if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
     fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
   }
-  if (gateBar) await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Clear selection$/)[0])
+  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
     .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
   await openFull(gate.hostEl, 'skills:def67890')
@@ -2841,7 +2860,8 @@ REST.scan = 'ok'
     if (cb) await click(cb)
   }
   const bar = () => g.hostEl.querySelector('.pa-bulk')
-  must(bar()?.textContent, ['2 of 4 selected', 'Approve 2'], 'a group is one selectable unit')
+  must(g.hostEl.querySelector('.pa-list-head')?.textContent, ['2 selected'], 'a group is one selectable unit')
+  must(bar()?.textContent, ['2 records selected', 'Approve 2'], 'a group is one selectable unit')
   sent = postsTo('/decide').length
   await click(buttons(bar(), /^Approve 2$/)[0])
   await click(buttons(bar(), /^Confirm$/)[0], 80)
@@ -3544,14 +3564,14 @@ REST.scan = 'ok'
   const pair = await mount('en', 'page')
   await selectMode(pair.hostEl)
   for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
-  if (pair.hostEl.querySelector('.pa-bulk-count')?.textContent !== '2 of 2 selected') fail('setup: two cards could not both be ticked')
+  if (pair.hostEl.querySelector('.pa-sel-count')?.textContent !== '2 selected') fail('setup: two cards could not both be ticked')
   REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
   await toFront(pair.hostEl, 'skills:aaa11111')
   await click([primaryBtn(cellOf(pair, 'skills:aaa11111'))].filter(Boolean)[0], 700)
   REST.pending = { ...two, skills: [PENDING.skills[0]] }
   await click(pair.hostEl.querySelector('.pa-refresh'), 150)
   const ticked = [...pair.hostEl.querySelectorAll('input.pa-pick')].filter(b => b.checked).map(b => b.getAttribute('aria-label'))
-  const said = pair.hostEl.querySelector('.pa-bulk-count')?.textContent
+  const said = pair.hostEl.querySelector('.pa-sel-count')?.textContent
   if (ticked.length || said !== undefined) {
     fail(`selection mode outlived a one-record queue and came back by itself: "${said}", ${JSON.stringify(ticked)} ticked`)
   }
@@ -3645,7 +3665,7 @@ REST.scan = 'ok'
   if (!/decision of its own/.test(lastSaid()?.message || '')) fail('the held bulk Approve pressed does not say why')
   await click(pickOf(ui, 'skills:def67890'))
   await click(buttons(barOf(ui), /^Approve 2$/)[0])
-  const armed = barOf(ui)?.querySelector('.pa-alert')
+  const armed = barOf(ui)?.querySelector('[role="alert"]')
   if (!armed) fail('bulk Approve did not ask to confirm')
   if (doc.activeElement !== barOf(ui)?.querySelector('.pa-bulk-cancel')) fail('the bulk confirm does not take focus')
   armed?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -3976,8 +3996,8 @@ REST.scan = 'ok'
   await toFront(cf.hostEl, 'skills:aaa11111')
   const c = cell(cf.hostEl, 'skills:aaa11111')
   const badRow = [...(c?.querySelectorAll('.pa-verdict .pa-chip') || [])]
-    .find(ch => ch.querySelector('.pa-chip-glyph[data-k="bad"]'))
-  if (!badRow) fail('a fix finding does not show a ! chip')
+    .find(ch => ch.querySelector('.pa-chip-glyph[data-k="warn"]'))
+  if (!badRow) fail('a fix finding does not show a ! chip in the warning tone (it needs one edit, it is not a stop)')
   const btn = badRow?.querySelector('button.pa-chip-btn')
   if (!btn || btn.getAttribute('aria-expanded') !== 'false') fail('the ! chip is not an activatable, collapsed button')
   if (btn) await click(btn, 60)
@@ -4105,33 +4125,72 @@ REST.scan = 'ok'
   del.hostEl.remove()
 }
 
-// --- 38) select-mode: checkboxes and the bulk bar appear only after "Select" in the list header --------
+// --- 38) select-mode (rework 2, item 1; mockup select-mode.html): after "Select" each row's icon tile turns into
+// its checkbox (same 28 px place, accent fill + check when ticked, the row tinted), the list header reads
+// "N selected · Select all · Cancel", the legend reads Space select · Esc done, the detail is an "N records
+// selected" summary (one bordered row per record: tile, title, type · file · +N −M, verdict chip) and the
+// footer holds "Reject N" (outline, not red) and "Approve N" (primary). Esc or Cancel leaves; nothing stays.
 {
   const sm = await mount('en', 'page')
   const picksOf = () => [...sm.hostEl.querySelectorAll('input.pa-pick')]
   const barNow = () => sm.hostEl.querySelector('.pa-bulk')
+  const head = () => sm.hostEl.querySelector('.pa-split .pa-list-head')
   if (picksOf().length || barNow()) fail('select-mode: checkboxes or the bulk bar show before "Select" is pressed')
-  const on = sm.hostEl.querySelector('.pa-split .pa-list-head .pa-select')
+  const on = head()?.querySelector('.pa-select')
   if (name(on) !== 'Select') fail(`select-mode: "Select" is not in the list header: ${name(on)}`)
   if (on) await click(on, 40)
-  const rowPicks = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap > input.pa-pick')]
-  if (picksOf().length !== 3 || rowPicks.length !== 3) {
-    fail(`select-mode: each list row needs a checkbox, got ${picksOf().length}`)
+  const tileBoxes = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap[data-picking="1"] > .pa-cb > input.pa-pick')]
+  if (picksOf().length !== 3 || tileBoxes.length !== 3) {
+    fail(`select-mode: each row's tile must turn into its checkbox, got ${tileBoxes.length} of ${picksOf().length}`)
   }
-  if (!sm.hostEl.querySelector('.pa-row[aria-current="true"]')?.closest('.pa-rowwrap')
-    ?.querySelector('input.pa-pick')) {
-    fail('select-mode: the selected row has no checkbox')
+  const sheet = sm.hostEl.querySelector('style')?.textContent || ''
+  if (!sheet.includes('.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}')
+      || !/\.pa-cb\{position:absolute;left:14px;top:10px;width:28px;height:28px/.test(sheet)) {
+    fail('select-mode: the checkbox is not drawn in the place of the 28 px icon tile')
   }
-  must(barNow()?.textContent, ['0 of 3 selected', 'Select all'], 'select-mode: the bulk bar after Select')
-  for (const box of picksOf().slice(0, 2)) await click(box, 20)
-  must(barNow()?.textContent, ['2 of 3 selected', 'Reject 2'], 'select-mode: two picked')
-  const done = buttons(sm.hostEl.querySelector('.pa-split .pa-list-head'), /^Done$/)[0]
-  if (!done) fail('select-mode: "Select" does not turn into "Done"')
-  if (done) await click(done, 40)
-  if (picksOf().length || barNow()) fail('select-mode: "Done" leaves checkboxes or the bulk bar behind')
-  const again = buttons(sm.hostEl, /^Select$/)[0]
-  if (again) await click(again, 40)
-  must(barNow()?.textContent, ['0 of 3 selected'], 'select-mode: a second Select starts with nothing picked')
+  must(head()?.textContent, ['0 selected', 'Select all', 'Cancel'], 'select-mode: the list header after Select')
+  const legend = sm.hostEl.querySelector('.pa-split .pa-legend')?.textContent || ''
+  if (legend !== 'SpaceselectEscdone') fail(`select-mode: the legend does not read Space select · Esc done: ${legend}`)
+  if (barNow()) fail('select-mode: a summary is drawn with nothing ticked')
+  const picks = picksOf()
+  for (const box of picks.slice(0, 2)) await click(box, 20)
+  const ticked = [...sm.hostEl.querySelectorAll('.pa-cb[data-on="1"]')]
+  if (ticked.length !== 2 || ticked.some(cb => !cb.querySelector('.pa-cbx svg'))
+      || sm.hostEl.querySelectorAll('.pa-rowwrap[data-picked="1"]').length !== 2) {
+    fail('select-mode: a ticked tile is not filled with its check, or its row is not tinted')
+  }
+  must(head()?.textContent, ['2 selected'], 'select-mode: two picked')
+  const card = sm.hostEl.querySelector('.pa-detail .pa-bulk')
+  if (!card || sm.hostEl.querySelector('.pa-list .pa-bulk')) fail('select-mode: the selection is not summarised in the detail pane')
+  must(card?.textContent, ['2 records selected', 'Each record is decided on its own'], 'select-mode: the summary')
+  const sums = [...(card?.querySelectorAll('.pa-sum-row') || [])]
+  if (sums.length !== 2 || sums.some(r => !r.querySelector('.pa-tile') || !r.querySelector('.pa-sum-chip')
+      || !/ · \+\d+ −\d+$/.test(r.querySelector('.pa-sum-meta')?.textContent || ''))) {
+    fail(`select-mode: a summary row lacks its tile, its "type · file · +N −M" line or its verdict chip: ${
+      sums.map(r => r.textContent).join(' | ')}`)
+  }
+  const foot = card?.querySelector('.pa-dfoot')
+  const rej = buttons(foot, /^Reject 2$/)[0]
+  const app = buttons(foot, /^Approve 2$/)[0]
+  if (rej?.getAttribute('data-variant') !== 'outline' || app?.getAttribute('data-variant') !== 'default') {
+    fail(`select-mode: the footer is not "Reject 2" outline + "Approve 2" primary: ${rej?.getAttribute('data-variant')} / ${
+      app?.getAttribute('data-variant')}`)
+  }
+  const keys = picks.slice(0, 2).map(p => p.closest('.pa-rowwrap')?.querySelector('.pa-row')?.getAttribute('data-key'))
+  if (keys.every(k => k?.startsWith('skills:')) && card?.querySelector('.pa-meter-box')) {
+    fail('select-mode: a "Memory after approving" meter is drawn for a selection without memory numbers')
+  }
+  await keyDown(sm.hostEl.querySelectorAll('.pa-list-rows .pa-row')[2], ' ')
+  must(head()?.textContent, ['3 selected'], 'select-mode: Space on a focused row does not tick it')
+  await keyDown(sm.hostEl.querySelector('.pa-row'), 'Escape')
+  if (picksOf().length || barNow()) fail('select-mode: Esc leaves checkboxes or the summary behind')
+  if (name(dom.window.document.activeElement) !== 'Select') fail('select-mode: after Esc focus is not back on "Select"')
+  await click(buttons(head(), /^Select$/)[0], 40)
+  for (const box of picksOf().slice(0, 1)) await click(box, 20)
+  await click(buttons(head(), /^Cancel$/)[0], 40)
+  if (picksOf().length || barNow()) fail('select-mode: "Cancel" leaves checkboxes or the summary behind')
+  await click(buttons(head(), /^Select$/)[0], 40)
+  must(head()?.textContent, ['0 selected'], 'select-mode: a second Select starts with nothing picked')
   sm.root.unmount()
   sm.hostEl.remove()
 }
@@ -4146,7 +4205,8 @@ REST.scan = 'ok'
   }
   if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
   const foot = mm.hostEl.querySelector('.pa-cell .pa-dfoot')
-  if (name(foot?.querySelector('.pa-actions button')) !== 'Later') {
+  const later = foot?.querySelector('.pa-later')
+  if (name(later) !== 'Later' || later?.closest('.pa-actions') || !(later.compareDocumentPosition(foot.querySelector('.pa-actions')) & 4)) {
     fail('mockup-match: "Later" is not first, on the left')
   }
   if (foot?.querySelector('.pa-fullchange-toggle')) fail('mockup-match: "Show the full review" sits in the action bar')
@@ -4562,6 +4622,141 @@ REST.scan = 'ok'
     h.root.unmount()
     h.hostEl.remove()
   }
+}
+
+// --- 50) rework 2 (owner's review of round 2): one check per item, each red on 1d32feb's plugin.js -----
+{
+  const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
+  const sheetOf = h => h.hostEl.querySelector('style')?.textContent || ''
+
+  // item 2: with 0 pending the all-caught-up state fills the body: no list column, list header or legend,
+  // and the J/K/A/X/L keys neither fire nor throw.
+  REST.pending = { counts: { memory: 0, skills: 0 }, memory: [], skills: [] }
+  const clear = await mount('en', 'page')
+  if (!clear.hostEl.querySelector('.pa-clear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
+  if (clear.hostEl.querySelector('.pa-split .pa-list, .pa-split .pa-list-head, .pa-split .pa-legend')) {
+    fail('rework 2 item 2: an empty list column (header, legend) is drawn although nothing waits')
+  }
+  const posted = stub.calls.posts.length
+  for (const k of ['j', 'k', 'a', 'x', 'l']) await keyDown(clear.hostEl.querySelector('.pa-clear') || clear.hostEl, k)
+  if (stub.calls.posts.length !== posted) fail('rework 2 item 2: a shortcut acted with 0 pending')
+  clear.root.unmount()
+  clear.hostEl.remove()
+  REST.pending = null
+
+  // item 3: the Memory tab has two files, so at 760 px and below it is one scroll: the file rows, then the
+  // selected file's banner and notes directly below; no list→detail step and no back bar.
+  const mem = await mount('en', 'page')
+  const memCss = sheetOf(mem)
+  for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;',
+    '.pa-split.pa-memory>.pa-list{display:flex;flex:none;', '.pa-split.pa-memory>.pa-detail{display:flex;flex:none}',
+    '.pa-memory>.pa-list>.pa-list-foot,.pa-memory .pa-back{display:none}']) {
+    const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
+    if (!narrow.includes(rule)) fail(`rework 2 item 3: the narrow Memory tab lacks ${rule}`)
+  }
+
+  // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the primary keeps the top
+  // row at its right end and Later / Review again move to the second row.
+  const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
+  if (!narrow.includes('.pa-dfoot>.pa-actions{order:-1;flex:1 1 100%;flex-wrap:nowrap;margin-left:0}')
+      || /\.pa-actions\{margin-left:0;justify-content:flex-start\}/.test(memCss)) {
+    fail('rework 2 item 4: the narrow footer does not keep the decision buttons together on the first row, right-aligned')
+  }
+  // item 3 (the armed delete): in the one-scroll narrow Memory tab the last note's confirm row can sit below the
+  // fold; arming scrolls it into view (the shot gate replays the call and measures the warning as visible).
+  const scrolled = []
+  const ownScroll = window.HTMLElement.prototype.scrollIntoView
+  window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this) }
+  await click(tab(mem.hostEl, /^Memory/), 60)
+  const memDels = [...(mem.hostEl.querySelector('.pa-detail')?.querySelectorAll('button') || [])]
+    .filter(b => /^Delete$/.test(b.textContent || ''))
+  if (memDels.length) await click(memDels[memDels.length - 1], 60)
+  if (!scrolled.some(el => el.classList?.contains('pa-note-ask'))) {
+    fail(`rework 2 item 3: arming a note delete does not scroll its confirm row into view (${memDels.length} Delete buttons)`)
+  }
+  window.HTMLElement.prototype.scrollIntoView = ownScroll
+  mem.root.unmount()
+  mem.hostEl.remove()
+
+  // item 5 is checked in block 33 (the ! chip) and 11 (the verdict tone): warning, not danger.
+  // item 6: "Reject all N" beside a group's primary is outline, not red.
+  REST.mode = 'groups'
+  const g = await mount('en', 'page')
+  const groupKey = `skills:${CLEAN_GROUP}`
+  await toFront(g.hostEl, groupKey)
+  const rejectAll = buttons(g.hostEl.querySelector('.pa-detail'), /^Reject all \d+/)[0]
+  if (!rejectAll || rejectAll.getAttribute('data-variant') !== 'outline') {
+    fail(`rework 2 item 6: "Reject all N" is not outline: ${rejectAll?.getAttribute('data-variant')} (${groupKey})`)
+  }
+  g.root.unmount()
+  g.hostEl.remove()
+  REST.mode = 'normal'
+
+  // item 7: a failed review says so in one sentence, its seal is the warning tone, and the armed "Apply
+  // unreviewed" is one confirm row in the footer (warning text + Cancel + Apply unreviewed outline), no Later
+  // beside it and no line floating above the footer.
+  REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
+  const nr = await mount('en', 'page')
+  await toFront(nr.hostEl, 'skills:aaa11111')
+  const c = cellOf(nr, 'skills:aaa11111')
+  const chipText = [...(c?.querySelectorAll('.pa-verdict .pa-chip > span:last-child') || [])].map(x => x.textContent)
+    .join(' | ')
+  if (chipText !== 'The check failed — “Review again” retries it.') {
+    fail(`rework 2 item 7: the failed check does not read as one sentence: ${chipText}`)
+  }
+  const verdict = c?.querySelector('.pa-verdict')
+  if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
+    fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
+  }
+  const skip = buttons(c, /^Approve without review$/)[0]
+  if (skip) await click(skip, 40)
+  const foot = c?.querySelector('.pa-dfoot')
+  const warn = foot?.querySelector('.pa-warnline[role="alert"]')
+  const footButtons = [...(foot?.querySelectorAll('button') || [])].map(b => name(b))
+  const confirm = buttons(foot, /^Apply unreviewed$/)[0]
+  if (!warn || c?.querySelector('.pa-card > .pa-warnline') || footButtons.join('|') !== 'Cancel|Apply unreviewed'
+      || confirm?.getAttribute('data-variant') !== 'outline') {
+    fail(`rework 2 item 7: the armed footer is not one confirm row: ${footButtons.join('|')} · ${
+      confirm?.getAttribute('data-variant')} · warning in footer ${Boolean(warn)}`)
+  }
+  if (/background:var\(--ui-red\)/.test((sheetOf(nr).match(/\.pa-warnline::before\{[^}]*\}/) || [''])[0])) {
+    fail('rework 2 item 7: the confirm warning still carries a red dot')
+  }
+  nr.root.unmount()
+  nr.hostEl.remove()
+  REST.pending = null
+
+  // items 10, 11, 12, 13, 14 on the Activity tab and a pending card.
+  const act = await mount('en', 'page')
+  const css = sheetOf(act)
+  const full = buttons(act.hostEl.querySelector('.pa-detail'), /^Show the full review$/)[0]
+  if (full) await click(full, 40)
+  const kitLabel = act.hostEl.querySelector('[data-slot="panel-section-label"]')
+  if (kitLabel || !act.hostEl.querySelector('.pa-review-head .pa-section')) {
+    fail('rework 2 item 10: a heading is still the uppercase kit section label')
+  }
+  if (/text-decoration:underline/.test((css.match(/\.pa-root \.pa-chip-btn\{[^}]*\}/) || [''])[0])) {
+    fail('rework 2 item 13: a failing check in a verdict chip is still underlined like a link')
+  }
+  if (!/@container \(max-width:560px\)\{\s*\.pa-crumb>\.pa-crumb-end\[data-when\]\{display:none\}\s*\.pa-dh-when\{display:block\}/
+    .test(css) || !act.hostEl.querySelector('.pa-dh .pa-dh-when')) {
+    fail('rework 2 item 14: at narrow widths the crumb time does not move under the title')
+  }
+  await click(tab(act.hostEl, /Activity/), 60)
+  const actSeps = [...act.hostEl.querySelectorAll('.pa-activity .pa-dh .pa-crumb-sep')].map(x => x.textContent)
+  if (!actSeps.length || actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
+  const noFiles = [...act.hostEl.querySelectorAll('.pa-activity .pa-row[data-entry]')]
+  let plain = null
+  for (const row of noFiles) {
+    await click(row, 20)
+    const none = act.hostEl.querySelector('.pa-activity .pa-act-nofiles')
+    if (none) { plain = none; break }
+  }
+  if (!plain || plain.closest('.pa-act-files') || plain.textContent !== 'No file changes') {
+    fail('rework 2 item 12: "No file changes" is not plain muted text outside the monospace file box')
+  }
+  act.root.unmount()
+  act.hostEl.remove()
 }
 
 if (problems.length) {

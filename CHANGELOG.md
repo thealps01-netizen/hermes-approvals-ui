@@ -11,6 +11,26 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 
 ### Changed
 
+* **Selecting several records works like the design.** After "Select" each record's icon turns into
+  its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
+  you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all
+  write to one memory file). Space ticks the focused row and Esc leaves.
+
+* **"Needs one edit" and "Not reviewed" are a warning (amber), not an alarm (red).** Red now means
+  only "stop": a broken rule, a record that cannot be applied, a delete. Reject and "Apply unreviewed"
+  are plain outline buttons. A failed review says "The check failed — “Review again” retries it.",
+  and "Approve without review" asks in one row: the warning, Cancel, then "Apply unreviewed".
+
+* **The top bar shows how full Memory and Profile are on every tab.** The Activity bar no longer
+  shows its own "saved · failed" count, which disagreed with the list's count.
+
+* **Smaller fixes from the owner's review.** With nothing waiting the "All caught up" screen fills the
+  page (no empty list). On a narrow pane the Memory tab is one scroll, the decision buttons stay on one
+  row with the main one at the right, the time moves under the title, and arming a note delete scrolls
+  its confirmation into view. Headings are in sentence
+  case, path parts are separated by "›", "No file changes" is plain text and failing checks are no
+  longer underlined like links.
+
 * **The page is now an app: a list on the left and the record on the right, in all three tabs.**
   "Needs you" lists what is waiting and opens the selected record beside it; its verdict comes first
   ("Safe to save", "Needs one edit", "Checking…"), then the change, then the decision with its effect

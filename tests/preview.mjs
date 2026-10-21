@@ -66,6 +66,11 @@ writeFileSync(`${HERE}plugin-preview.mjs`, src)
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true })
 global.window = dom.window
 global.document = dom.window.document
+// jsdom has no layout, so a panel's own scrollIntoView call is recorded on the element; shot.cjs replays it
+// in Electron before measuring (the armed note delete in f12 is scrolled into view by the panel).
+dom.window.HTMLElement.prototype.scrollIntoView = function (opts) {
+  this.setAttribute('data-shot-reveal', opts?.block || 'start')
+}
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true })
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -491,12 +496,15 @@ add('f12', 'Memory — files with meters, MEMORY.md at 99 % with its banner, not
     'f12: the note delete did not arm its two-step confirmation')
 }))
 
-add('f13', 'Needs you — select mode: 3 checkboxes, the bulk bar “2 of 3 selected”', await frame(async hostEl => {
+add('f13', 'Needs you — select mode: tile checkboxes, “2 selected · Select all · Cancel”, the summary',
+  await frame(async hostEl => {
   await click(byText(hostEl.querySelector('.pa-list-head'), /^Select$/), 'Select in the list header')
   const boxes = [...hostEl.querySelectorAll('.pa-list input.pa-pick')]
   need(boxes.length === 3, `f13: select mode draws ${boxes.length} list checkboxes, not 3`)
   for (const box of boxes.slice(0, 2)) await click(box, 'a selection checkbox')
-  need(/2 of 3 selected/.test(hostEl.querySelector('.pa-bulk')?.textContent || ''), 'f13: the bulk bar does not count 2')
+  need(/2 selected/.test(hostEl.querySelector('.pa-list-head')?.textContent || ''), 'f13: the list header does not count 2')
+  need(/2 records selected/.test(hostEl.querySelector('.pa-detail .pa-bulk')?.textContent || ''),
+    'f13: the detail pane does not summarise the 2 picked records')
 }))
 
 add('f14', 'Needs you — a skill group selected: result boxes, members, the stale #3 alert, Reject #n, a scan issue strip',
@@ -522,7 +530,10 @@ add('f16', 'Needs you — the full review open: an unverified finding, the cut a
 add('f17', 'Needs you — not checked (the review failed): “Approve without review” armed with its warning',
   await frame(async hostEl => {
     const card = await pick(hostEl, 'memory:abc12345')
-    await click(byText(card, /^Approve without review$/), 'Approve without review')
+    if (hostEl.querySelector('.pa-split')?.getAttribute('data-open') === '0') {
+      await click(rowOf(hostEl, 'memory:abc12345'), 'the list row memory:abc12345 (narrow: open the detail)')
+    }
+    await click(byText(detailOf(hostEl, 'memory:abc12345') || card, /^Approve without review$/), 'Approve without review')
     need(hostEl.querySelector('.pa-warnline'), 'f17: arming “Approve without review” drew no warning line')
     need(/The file now says/.test(detailOf(hostEl, 'memory:abc12345')?.textContent || ''),
       'f17: the op’s note about the current file is not drawn')
@@ -536,7 +547,7 @@ for (const f of frames) {
   if (!/<[^>]*data-slot="button"/.test(f.html)) problems.push(`${f.label}: no kit Button is drawn`)
 }
 const all = frames.map(f => f.html).join('\n')
-for (const mark of ['panel-section-label', 'panel-block', 'badge', 'log-view']) {
+for (const mark of ['panel-block', 'badge', 'log-view']) {
   if (!all.includes(`data-slot="${mark}"`)) problems.push(`the kit ${mark} is not drawn in any frame`)
 }
 const tips = (all.match(/data-tip=/g) || []).length
@@ -656,5 +667,5 @@ if (problems.length) {
 }
 console.log(`preview.html written: ${HERE}preview.html (${page.length} bytes) · preview-light.html (${lightPage.length} bytes)`)
 console.log(`  style: ${kitStyles} + theme + dark seeds (dark page) / theme light values (light page)`)
-console.log(`  frames: ${frames.length} at ${WIDE} px (f07/f08 at ${NARROW} px) · kit marks: button/badge/section-label/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
+console.log(`  frames: ${frames.length} at ${WIDE} px (f07/f08 at ${NARROW} px) · kit marks: button/badge/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
 process.exit(0)

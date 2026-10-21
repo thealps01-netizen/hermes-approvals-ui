@@ -410,6 +410,23 @@ const MEASURE = `(() => {
     }),
     layers,
     layerMismatch: layers.filter(l => l.rendered !== l.declared).length,
+    // Rework 2 item 4: a footer's decision buttons (.pa-actions) sit on ONE row, the primary at its right end,
+    // at every pane width; Later and Review again may take a second row, never a split decision pair.
+    footSplit: qa('.pa-frame-wrap .pa-dfoot').flatMap(ft => {
+      const acts = ft.querySelector(':scope > .pa-actions')
+      const bs = acts ? [...acts.querySelectorAll('button')].filter(b => box(b).width > 0) : []
+      if (!bs.length) return []
+      const mid = b => (box(b).top + box(b).bottom) / 2
+      const mids = bs.map(mid)
+      const tops = { size: Math.max(...mids) - Math.min(...mids) < 4 ? 1 : 2 }
+      const last = bs[bs.length - 1]
+      const rowRight = Math.max(...[...ft.querySelectorAll('button')].filter(b => box(b).width > 0
+        && Math.abs(mid(b) - mid(last)) < 4).map(b => box(b).right))
+      return tops.size > 1 || Math.round(box(last).right) < Math.round(rowRight)
+        ? [{ buttons: bs.map(txt), rows: tops.size, frame: ft.closest('.pa-frame-wrap')?.getAttribute('data-frame') }]
+        : []
+    }),
+    footsMeasured: qa('.pa-frame-wrap .pa-dfoot > .pa-actions').length,
     nativeTitles: qa('[title]').length,
     nativeSelects: qa('select').length,
     languagePickers: qa('[class*="lang"], [data-lang], [id*="lang"]').length,
@@ -421,7 +438,6 @@ const MEASURE = `(() => {
       rejectLabels: qa('[data-slot="button"][data-variant="destructive"]').map(txt),
       badges: qa('[data-slot="badge"]').length,
       panelMeta: qa('[data-slot="panel-meta"]').length,
-      sectionLabels: qa('[data-slot="panel-section-label"]').length,
       blocks: qa('[data-slot="panel-block"]').length,
       logViews: qa('[data-slot="log-view"]').length,
       tips: qa('[data-tip]').length
@@ -498,6 +514,10 @@ app.whenReady().then(async () => {
     win.webContents.on('render-process-gone', (e, d) => console.error('[renderer gone]', JSON.stringify(d)))
     await win.loadFile(pagePath)
     await new Promise(r => setTimeout(r, 700))
+    // Replay the scrollIntoView calls preview.mjs recorded (data-shot-reveal): a static frame keeps no scroll.
+    await win.webContents.executeJavaScript(
+      "document.querySelectorAll('[data-shot-reveal]').forEach(el => el.scrollIntoView({ block: "
+      + "el.getAttribute('data-shot-reveal'), inline: 'nearest' })); window.scrollTo(0, 0); true")
     if (process.env.PA_CONTRAST_CANARY) {
       const injected = await win.webContents.executeJavaScript(CANARY)
       console.log(`contrast canary injected: ${injected} (PA_CONTRAST_CANARY=1)`)
@@ -572,6 +592,8 @@ app.whenReady().then(async () => {
     if (m.languagePickers + m.languageButtons > 0) bad.push(`languagePickers=${m.languagePickers} languageButtons=${m.languageButtons}`)
     if (m.rawKeys.length) bad.push(`rawKeys=${m.rawKeys.join(',')}`)
     if (m.layerMismatch > 0) bad.push(`layerMismatch=${m.layerMismatch}`)
+    if (m.footSplit.length) bad.push(`footSplit=${m.footSplit.length} ${JSON.stringify(m.footSplit.slice(0, 2))}`)
+    if (!m.footsMeasured) bad.push('footsMeasured=0 (no detail footer is drawn, the footer rule measures nothing)')
     if (!m.declaredFrames || m.frameCount !== m.declaredFrames) {
       bad.push(`frames=${m.frameCount} but the page declares ${m.declaredFrames}`)
     }

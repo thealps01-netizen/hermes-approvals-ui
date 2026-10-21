@@ -718,7 +718,7 @@ def check_two_step_actions() -> None:
                         ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is bulk-approvable"),
                         ("const [skipArmed, setSkipArmed] = useState(false)",
                          "approving without a pre-review has no confirmation state"),
-                        ("onClick: skipArmed ? () => void decide('approve', [], true) : () => setSkipArmed(true)",
+                        ("onClick: () => setSkipArmed(true), children: t('pa.btn.skipReview')",
                          "the first \"Approve without review\" click does not arm"),
                         ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
                         ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",

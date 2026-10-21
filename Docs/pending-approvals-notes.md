@@ -1292,7 +1292,8 @@ Below is the why of every row the closed inventory (job spec R2) did not draw ex
 **Rules that outrank the mockup.**
 
 * Full labels on a narrow pane (N4): long text is ellipsised or wrapped, never swapped for a shorter
-  variant. The narrow footer wraps.
+  variant. The narrow footer may take a second row, but only for Later and Review again: the decision
+  buttons stay on one row with the primary at its right end (rework 2 item 4).
 * "Use the short version" stays the label of a description fix (X6): `/fix` stages the shortened
   text and does not approve it.
 * The note delete reads "About to delete — undoable from the Activity tab", not the mockup's "It
@@ -1313,15 +1314,16 @@ Below is the why of every row the closed inventory (job spec R2) did not draw ex
 * The full review is behind one "Show the full review" toggle (K9): the diff is always shown.
 * The position dots and "2 of 3" are dropped in the wide layout (K19, C5): the list shows the
   position. The narrow Back bar reads "‹ 3 waiting · 1 of 3" (N2).
-* The narrow bar has no mini memory gauge (N3) and no "4 of 4 checks fine" line (N5): the approved
-  bar does not carry it, and the verdict card is drawn in narrow too.
+* The narrow bar has no "4 of 4 checks fine" line (N5): the verdict card is drawn in narrow too. The
+  mini memory gauge (N3) came back with rework 2: the bar carries the Memory and Profile meters on
+  every tab, and at 480 px and below only their percents.
 * "Nothing waiting · Open Activity" (E6) gave way to the approved All caught up screen; the last
   change and read-only sentences of the Memory tab (M7) were not in the approved design.
 
 **The keyboard guard.** J/K move, A approves, X rejects, L puts the record last — only on the
 Needs you split; never while focus is in a text field (an input other than a checkbox, radio or
 button, a textarea, a select or an editable region), never with Ctrl, Alt or Meta, never while a
-two-step warning or the armed bulk bar is open, and A/X do not repeat when the key is held. A on a
+two-step warning or the armed bulk footer is open, and A/X do not repeat when the key is held. A on a
 held record warns once and sends nothing: a key must not be a quieter way past the gate than the
 button.
 
@@ -1333,3 +1335,37 @@ row.
 stays at its first frame (4 px down, transparent) and the frames read 4 px too tall and dim. The gate
 sets the panel's own `data-still` before measuring. A list row's one-line ellipsis is not counted as
 a clip: the row points at the record, whose full text is the detail's title.
+
+**Rework 2 (the owner's review of round 2).**
+
+* Select mode follows `select-mode.html`: the row's 28 px tile becomes its checkbox (the same place,
+  so the row does not shift), the list header is the one count ("2 selected · Select all · Cancel"),
+  and the detail pane is the selection: one bordered row per record, the "Memory after approving"
+  meter when every ticked record writes to the same memory file, and "Reject N" / "Approve N" in the
+  footer. Clicking a row while selecting opens that record to read it (the ticks stay); a new tick
+  returns to the summary. The bar inside the list is gone because it duplicated the header's count.
+* Warning tone (`WARN`, `--ui-yellow`) means "you can still approve, read this first": "Needs one
+  edit", "Not reviewed", a fixable chip, the 90 % memory meter, the confirm warning. Red stays for a
+  stop (a rule check, a held record, a delete). A Reject or "Apply unreviewed" is outline: it is a
+  decision, not a danger; only a skill delete keeps the destructive Reject.
+* A failed review says one sentence ("The check failed — “Review again” retries it.") rather than
+  "Not checked yet — the second opinion failed", which read as two states.
+* The armed footer is one row: the warning sentence, Cancel, the confirm. Later and Review again are
+  hidden while armed, because they are not answers to the question asked.
+* The footer keeps its decision buttons on one row with the primary at the right end at every pane
+  width; Later / Review again take the second row. The shot gate measures it (`footSplit`).
+* Section headings are the panel's own sentence-case `.pa-section`; the kit `PanelSectionLabel` is
+  uppercase and tracked, which the owner read as shouting.
+* The bar carries the two memory meters on every tab (decision 2); the Activity bar no longer counts
+  "N saved · N failed", which disagreed with the list header's count.
+* With nothing waiting the "All caught up" screen fills the body: an empty list column with a
+  "Waiting · 0" header and key legend was a list of nothing.
+* The narrow Memory tab is one scroll (files, then the selected file's notes): two rows do not need a
+  list→detail step.
+* At 560 px and below the crumb time moves under the title, so the crumb keeps its path.
+* Narrow select mode shows the list with the bulk footer under it (the summary rows are the ticked
+  list rows); the footer's card must not take `flex:1 1 0` there, or it collapses to 0 px and the
+  footer is pushed out of the pane (the shot gate's `clipped` caught it at 640 and 420).
+* Arming a note delete scrolls its confirm row into view: in the one-scroll narrow Memory tab the
+  last note's row sits at the fold. `preview.mjs` records the panel's `scrollIntoView` calls on the
+  element (`data-shot-reveal`) and `shot.cjs` replays them, since a static frame keeps no scroll.
