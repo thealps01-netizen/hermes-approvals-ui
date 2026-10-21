@@ -132,11 +132,12 @@ const EDIT_REC = {
       edit: { find: 'Tabs are 28 px tall.', replace: 'Tabs are 24 px tall.', ok: true, label: 'plugin-notes/SKILL.md' } }],
     model: 'gpt-5.5', usage: { input: 6120, output: 330, cost_usd: 0, cost_status: 'included' }
   },
-  ops: [{ action: 'patch', name: 'plugin-notes', file: 'SKILL.md', added: 2, removed: 0,
+  ops: [{ action: 'patch', name: 'plugin-notes', file: 'SKILL.md', added: 21, removed: 0, lines_total: 140,
     lines: [[' ', '## Layout'], ['+', 'Tabs are 28 px tall.'], ['+', 'Keep one header row; align numbers right.'],
+      ...Array.from({ length: 19 }, (_, i) => ['+', `Panel rule ${i + 1}: one fixed-height row per record.`]),
       ['…', ''], [' ', '## Testing']] }],
-  plain: { kind_label: 'Skill file', target: 'plugin-notes', headline: 'plugin-notes: 2 lines are added', why: LONG,
-    notes: [], what: ['Adds two lines under “Layout”', `Reads ${LONG_PATH}`], effect: '', stale: [],
+  plain: { kind_label: 'Skill file', target: 'plugin-notes', headline: 'plugin-notes: 21 lines are added', why: LONG,
+    notes: [], what: ['Adds 21 lines under “Layout”', `Reads ${LONG_PATH}`], effect: '', stale: [],
     groups: [{ kind: 'update', name: 'plugin-notes', ops: [{ action: 'patch' }] }] }
 }
 
@@ -187,9 +188,7 @@ const REJECT_REC = {
     edits: 1, cut: [{ part: 'target', chars: 12400 }], siblings: 1,
     model: 'gpt-5.5', usage: { input: 9822, output: 512, cost_usd: 0, cost_status: 'included' }
   },
-  ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' },
-    { action: 'write_file', name: 'hermes-agent', file: 'references/panels.md', lines_total: 140, added: 140, removed: 0,
-      lines: Array.from({ length: 24 }, (_, i) => ['+', `Panel rule ${i + 1}: one fixed-height row per record.`]) }],
+  ops: [{ action: 'create', name: 'new-skill', file: 'SKILL.md', new: '---\nname: new-skill\n' }],
   diff: '---\nname: new-skill\ndescription: "..."\n---\n',
   plain: {
     kind_label: 'Skill file', target: 'new-skill', headline: 'New skill: new-skill',
@@ -425,6 +424,7 @@ add('f03', 'Needs you — the same record, “As written” pressed', await fram
   await click(byText(card, /^As written$/), 'As written')
   need(detailOf(hostEl, 'skills:ed170001')?.querySelector('.pa-toggle-btn[aria-pressed="true"]')?.textContent
     === 'As written', 'f03: “As written” did not press')
+  need(byText(detailOf(hostEl, 'skills:ed170001'), /^Show 120 more lines$/), 'f03: the long op has no “Show N more lines”')
 }))
 
 add('f04', 'Needs you — a description fix: the fix diff, “Use the short version”, held “Approve as written”',
@@ -515,10 +515,8 @@ add('f15', 'Needs you — a suggested fix that deletes most of the new text: the
 
 add('f16', 'Needs you — the full review open: an unverified finding, the cut and siblings lines', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')
-  await click(byText(card, /^As written$/), 'As written (the long op box)')
   await click(byText(card, /^Show the full review$/), 'Show the full review')
   need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Hide the full review$/), 'f16: the full review did not open')
-  need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Show 120 more lines$/), 'f16: the long op has no “Show N more lines”')
 }))
 
 add('f17', 'Needs you — not checked (the review failed): “Approve without review” armed with its warning',

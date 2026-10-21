@@ -514,6 +514,9 @@ app.whenReady().then(async () => {
     // One crop per frame: scroll the frame into the viewport, then capture its rectangle (no
     // captureBeyondViewport, no device-metrics override — both made earlier captures unreliable).
     const crops = []
+    // A hidden window paints only when asked: the first capture after a scroll (or after
+    // `data-still`) can hand back the PREVIOUS paint — the first frame came out dim, at the old
+    // scroll position. invalidate() and a first, discarded capture force the paint the crop keeps.
     for (const f of m.frames) {
       const rect = await win.webContents.executeJavaScript(`(() => {
         const el = document.querySelectorAll('.pa-frame-wrap')[${f.n - 1}]
@@ -522,17 +525,19 @@ app.whenReady().then(async () => {
         return { x: Math.max(0, Math.floor(r.left)), y: Math.max(0, Math.floor(r.top)),
           width: Math.ceil(r.width), height: Math.min(Math.ceil(r.height), window.innerHeight - Math.floor(r.top)) }
       })()`)
-      // The first frame is already in view, so scrolling paints nothing new and capturePage hands
-      // back the frame painted BEFORE `data-still` (the entrance animation's dim first frame).
-      // invalidate() forces a fresh paint for every crop.
       win.webContents.invalidate()
       await new Promise(r => setTimeout(r, 120))
+      await win.webContents.capturePage(rect)
+      await new Promise(r => setTimeout(r, 60))
       const crop = await win.webContents.capturePage(rect)
       const name = outPath.replace(/\.png$/i, '') + '.' + (f.id || 'f' + String(f.n).padStart(2, '0')) + '.png'
       fs.writeFileSync(name, crop.toPNG())
       crops.push(path.basename(name))
     }
-    await win.webContents.executeJavaScript('window.scrollTo(0, 0)')
+    // The crops scrolled an inner box, which window.scrollTo(0, 0) does not reach: bring the page
+    // top back into view, or the whole-page PNG shows the last frames instead of the first.
+    await win.webContents.executeJavaScript(
+      "document.querySelector('body > *').scrollIntoView({ block: 'start' }); window.scrollTo(0, 0); true")
     // The window shrinks to its content so the PNG holds no empty space.
     win.setContentSize(Math.min(1400, m.pageW + 16), Math.min(2400, m.pageH + 16))
     await new Promise(r => setTimeout(r, 400))
