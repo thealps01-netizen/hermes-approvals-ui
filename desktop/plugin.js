@@ -2694,7 +2694,9 @@ function AllClear({ t }) {
         'aria-hidden': true,
         children: jsx(Badge, {
           className: 'pa-tag', variant: 'success',
-          style: { ...TAG, width: 64, height: 64, padding: 0, borderRadius: '50%', justifyContent: 'center', fontSize: FS.hero },
+          style: {
+            ...TAG, width: 64, height: 64, padding: 0, borderRadius: '50%', justifyContent: 'center', fontSize: FS.hero
+          },
           children: '✓'
         }, 'badge')
       }, 'mark'),

@@ -3866,7 +3866,7 @@ REST.scan = 'ok'
 {
   const mm = await mount('en', 'page')
   const date = mm.hostEl.querySelector('.pa-date')?.textContent || ''
-  if (!/^[A-Z][a-z]+day, \d{1,2} [A-Z][a-z]+$/.test(date)) fail(`mockup-match: date not like "Tuesday, 20 October": ${date}`)
+  if (!/^[A-Z][a-z]+day, \d{1,2} [A-Z][a-z]+$/.test(date)) fail(`mockup-match: date not "Tuesday, 20 October": ${date}`)
   if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
   const jd = mm.hostEl.querySelector('.pa-justdone-row')
   const jdTitle = jd?.querySelector('.pa-justdone-title')?.textContent || ''
