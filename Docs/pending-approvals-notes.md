@@ -1422,3 +1422,18 @@ A second critique covered the screens the first one skipped. What changed and wh
   The chip says "Undo needs force" so it no longer contradicts the alert.
 - **Narrow Memory hides the "Files" list head.** In the one-scroll layout below 760 px it scrolled
   under the tab bar and showed half a word; the file rows need no heading there.
+
+## Activity detail in the Needs you language (2026-10-22)
+
+The Activity detail had its own vocabulary: the outcome ("Saved to memory") as the heading, which only
+repeated the selected row; a bordered state chip; "Changed" / "What happened" section labels; and the
+reviewer's shortening hidden behind "Compare", drawn as two grey prose blocks. It now reuses what Needs
+you already draws:
+
+- the head (crumb with the place and time, the change itself as the heading);
+- the verdict card (`.pa-verdict.pa-outcome`: seal, status title, chips) for the outcome, with tones from
+  `OUTCOME` — green saved, neutral not saved, amber failed, accent for an outside change; the chips carry
+  "Your choice", the undo state (its dot keeps the old chip's tone) and the fix effect;
+- the `FileDiff` box for asked-for → saved, so the changed words get the same marks as a pending diff.
+
+A summary longer than `TITLE_MAX` is cut in the heading and shown whole in the body.
