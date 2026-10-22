@@ -36,6 +36,7 @@
  * `applyTheme()`. A missing build is reported as "kit stylesheet NOT FOUND" and does NOT fail the run
  * (the kit classes are then unstyled and the picture is not representative).
  */
+import './clock.mjs'
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
@@ -258,6 +259,15 @@ const MAIN = pendingOf([FIRST, MEMORY_REC], [EDIT_REC, ...MEMBERS], [GROUP_RUNNI
 const PENDING = pendingOf([MEMORY_REC], [EDIT_REC, REJECT_REC])
 const GROUPED = pendingOf([], [...MEMBERS], [GROUP_DONE])
 const CHECKING = pendingOf([MEMORY_REC], [...MEMBERS], [GROUP_RUNNING])
+// f30: the same group with a description fix staged on member #2: the side-by-side comparison card.
+const FIX_MEMBERS = MEMBERS.map(m => (m.change !== 2 ? m : { ...m, plain: { ...m.plain, fix: {
+  name: 'plugin-notes', before: 172, after: 53, limit: 60, text: FIX_RAW, description: FIX_SUGGESTED,
+  content: `---
+name: plugin-notes
+description: "${FIX_SUGGESTED}"
+---
+` } } }))
+const GROUPED_FIX = pendingOf([], [...FIX_MEMBERS], [GROUP_DONE])
 const FIXREADY = pendingOf([MEMORY_REC], [FIX_REC, REJECT_REC])
 // A fix whose suggested edit deletes most of the new text (Docs/pending-approvals-notes.md's "Task 5"
 // section) — the detail must draw the heavy-fix-loss alert with its count.
@@ -468,11 +478,11 @@ add('f08', 'Needs you — a narrow 420 px pane, the detail view with its back ba
   need(/3 waiting/.test(hostEl.querySelector('.pa-back')?.textContent || ''), 'f08: the back bar does not read “3 waiting”')
 }), true)
 
-add('f09', 'Activity — day sections, an apply entry selected, files, Compare open, Undo', await frame(async hostEl => {
+add('f09', 'Activity — day sections, an apply entry selected: the outcome card, the asked-for → saved diff, Undo', await frame(async hostEl => {
   await click(findTab(hostEl, /^Activity/), 'the Activity tab')
-  await click(byText(hostEl, /^Compare with what Hermes asked for$/), 'Compare with what Hermes asked for')
-  need(byText(hostEl, /^Hide the comparison$/), 'f09: the comparison did not open')
-  need(hostEl.querySelector('.pa-detail [data-amended="effect"]'), 'f09: the amended entry draws no fix-effect line')
+  need(hostEl.querySelector('.pa-activity .pa-detail .pa-file'), 'f09: the asked-for → saved comparison is not drawn')
+  need(/removed \d+ of the \d+ new words/.test(hostEl.querySelector('.pa-detail .pa-outcome')?.textContent || ''),
+    'f09: the amended entry draws no fix-effect chip')
   need(hostEl.querySelectorAll('.pa-day').length >= 1, 'f09: the older day has no section heading')
 }))
 
@@ -582,6 +592,12 @@ add('f14', 'Needs you — a skill group selected: result boxes, members, the sta
   need(hostEl.querySelector('.pa-strip .pa-alert') && !hostEl.querySelector('.pa-strip .pa-alert-danger'),
     'f14: the scan issue has no amber notice strip')
 }, { ...GROUPED, issues: ['Could not read one skill folder: skills/private-notes (permission denied).'] }))
+
+add('f30', 'Needs you — a group member with a description fix: the side-by-side comparison card',
+  await frame(async hostEl => {
+    const card = await pick(hostEl, `skills:${GROUP_ID}`)
+    need(card?.querySelector('.pa-cmp'), 'f30: the member fix draws no comparison card')
+  }, GROUPED_FIX))
 
 add('f15', 'Needs you — a suggested fix that deletes most of the new text: the amber alert, “As written” first', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')

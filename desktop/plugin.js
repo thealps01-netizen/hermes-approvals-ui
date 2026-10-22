@@ -26,6 +26,7 @@ const BackIcon = icons?.ChevronLeft || null
 const BrainIcon = icons?.Brain || null
 const UsersIcon = icons?.Users || null
 const BookIcon = icons?.Book || null
+const CrossIcon = icons?.X || null
 
 let ctxRef = null
 
@@ -118,15 +119,12 @@ const BUNDLES = {
         full: (word, pct) => `${word} is ${pct}% full — tidy it up before it runs out of room.`,
       },
       act: {
-        files: 'Changed',
-        what: 'What happened',
         canUndo: 'Can be undone',
         canRestore: 'Can be restored',
         undone: 'Undone',
         restored: 'Restored',
         cannot: 'Can’t be undone',
-        byYouApproved: 'saved by you',
-        byYouRejected: 'not saved by you',
+        byYou: 'Your choice',
         hintUndo: 'Undo puts the files back exactly as they were before.',
         hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
         hintRestore: 'Restore puts it back under Needs you.',
@@ -349,11 +347,8 @@ const BUNDLES = {
         restored: 'Restored',
         changesHide: 'Hide changes',
         fixEffect: (removed, added) => `The reviewer’s fix removed ${removed} of the ${added} new words.`,
-        asWritten: 'Compare with what Hermes asked for',
-        asWrittenHide: 'Hide the comparison',
-        written: n => `What Hermes asked for (${grouped(n)} characters)`,
-        applied: n => `What was saved (${grouped(n)} characters)`,
-        why: text => `Why: ${text}`,
+        cmpBadge: 'Asked for → saved',
+        whyLabel: 'Reviewer’s note:',
         noCopy: 'The as-written copy is no longer kept.',
         wordsProfile: 'Saved to Profile',
         wordsMemory: 'Saved to memory',
@@ -914,20 +909,20 @@ const STYLE = `
 .pa-state>*{max-width:48ch}
 .pa-state-label{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-tech{display:flex;flex-direction:column;align-items:flex-start;gap:${G.xs}px;min-width:0}
-.pa-act-places{display:flex;flex-direction:column;gap:2px;font-size:${FS.body}px;color:var(--ui-text-primary)}
+.pa-act-places{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pa-clear-body{font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-clear-last{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
   font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-act-files{border:${HAIRLINE};border-radius:${R.box}px;padding:8px 12px;${MONO};font-size:${FS.meta}px;
   color:var(--ui-text-primary);overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
 .pa-act-said{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);overflow-wrap:anywhere;min-width:0}
+.pa-dtitle .pa-act-said{font:inherit;line-height:1.35}
 .pa-act-hint{font-size:${FS.meta}px;color:var(--ui-text-secondary);flex:1 1 200px;min-width:0}
 .pa-day{display:flex;align-items:center;padding:0 14px;box-sizing:border-box;flex:none;
   border-top:${HAIRLINE};border-bottom:${HAIRLINE};background:${tint('var(--ui-text-primary)', 3)};
   font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
-.pa-state-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border:${HAIRLINE};
-  border-radius:${R.pill}px;font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-primary);white-space:nowrap}
-.pa-state-chip::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--pa-tone)}
+.pa-outcome{margin:2px 20px 0}
+.pa-chip-dot{width:6px;height:6px;border-radius:50%;background:var(--pa-tone)}
 .pa-section{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-memrows{display:flex;flex-direction:column;min-width:0}
 .pa-root .pa-memrow{display:flex;flex-direction:column;justify-content:center;gap:6px;margin:0;padding:0 14px;border:0;
@@ -1172,9 +1167,11 @@ function Raw({ children, height, tone, className }) {
   }, 'fade')
 }
 
-function Summary({ text, raw }) {
+function Summary({ text, raw, heading }) {
   const t = usePluginI18n(ID)
-  const line = jsx('div', { className: 'pa-act-said', children: text }, 'text')
+  const line = heading
+    ? jsx('span', { className: 'pa-act-said', role: 'heading', 'aria-level': 2, children: text }, 'text')
+    : jsx('div', { className: 'pa-act-said', children: text }, 'text')
   return text === raw ? line : jsx(Tip, { label: t('pa.hist.rawAs', raw), children: line }, 'tip')
 }
 
@@ -3363,6 +3360,13 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
 
 const histTile = entry => tileOf(entry.subsystem === 'skills' ? 'skills' : 'memory',
   (entry.files || []).map(f => f.path).find(isProfile) || '')
+const TITLE_MAX = 140
+const OUTCOME = {
+  apply: ['var(--ui-green)', CheckIcon],
+  rejected: ['var(--ui-text-secondary)', CrossIcon],
+  failed: [WARN, AlertIcon],
+  external: ['var(--ui-accent)', AlertIcon]
+}
 const histChip = entry => (entry.undoable && !entry.undone ? ['pa.act.canUndo', 'var(--ui-green)']
   : entry.kind === 'rejected' && entry.restorable === true && !entry.restored ? ['pa.act.canRestore', 'var(--ui-accent)']
     : entry.undone ? ['pa.act.undone', 'var(--ui-text-tertiary)']
@@ -3405,26 +3409,12 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   const [conflict, setConflict] = useState(null)
   const [busy, setBusy] = useState(false)
   const [fold, setFold] = useState(false)
-  const [cmp, setCmp] = useState(false)
   const own = useRef(null)
   const files = entry.files || []
   const changes = entry.changes || []
   const amended = entry.amended && typeof entry.amended === 'object' ? entry.amended : null
   const written = amended ? amended.written : []
   const applied = (amended && amended.applied) || []
-  const sides = (text, i) => jsxs('div', {
-    className: 'pa-cmp',
-    children: [
-      jsx(Field, {
-        label: t('pa.hist.written', text.length),
-        children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: text }, 'text')
-      }, 'written'),
-      jsx(Field, {
-        label: t('pa.hist.applied', String(applied[i] || '').length),
-        children: jsx(PanelBlock, { className: 'pa-free pa-prose', children: String(applied[i] || '') }, 'text')
-      }, 'applied')
-    ]
-  }, `p${i}`)
   const restorable = entry.kind === 'rejected' && entry.restorable === true && !entry.restored
   const said = entry.kind === 'external' && files.length ? t('pa.hist.externalDetail', files.length)
     : String(entry.summary || '')
@@ -3494,8 +3484,56 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
             : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
         }, 'note')
   const [chipKey, chipTone] = conflict ? ['pa.act.needsForce', WARN] : histChip(entry)
-  const actor = entry.kind === 'apply' ? t('pa.act.byYouApproved') : entry.kind === 'rejected' ? t('pa.act.byYouRejected') : ''
+  const actor = entry.kind === 'apply' || entry.kind === 'rejected' ? t('pa.act.byYou') : ''
   const hint = entry.undoable ? t(conflict ? 'pa.act.hintForce' : 'pa.act.hintUndo') : restorable ? t('pa.act.hintRestore') : ''
+  const places = files.length ? placeNames(t, files.map(f => f.path))
+    : [t(entry.subsystem === 'skills' ? 'pa.stage.typeSkill' : 'pa.stage.typeMemory')]
+  const when = `${dayHeading(t, entry.ts)} ${clock(entry.ts * 1000)}`
+  const gist = plainGist(t, said)
+  const long = gist.length > TITLE_MAX
+  const [tone, mark] = OUTCOME[entry.kind] || OUTCOME.external
+  const chip = (glyph, k, text, key) => jsxs('span', {
+    className: 'pa-chip',
+    children: [
+      glyph ? jsx('span', { className: 'pa-chip-glyph', 'data-k': k, 'aria-hidden': true, children: glyph }, 'g') : null,
+      jsx('span', { children: text }, 't')
+    ]
+  }, key)
+  const dot = jsx('span', { className: 'pa-chip-dot', style: { '--pa-tone': chipTone } }, 'dot')
+  const outcome = jsxs('div', {
+    className: 'pa-verdict pa-outcome',
+    'data-k': entry.kind,
+    style: { '--pa-tone': tone },
+    children: [
+      jsx('span', { className: 'pa-seal', 'aria-hidden': true, children: icon(mark, 17) }, 'seal'),
+      jsxs('div', {
+        className: 'pa-vtext',
+        children: [
+          jsx('div', { className: 'pa-vtitle', role: 'status', children: historyWords(t, entry) }, 'title'),
+          jsx('div', {
+            className: 'pa-chips',
+            children: [
+              actor ? chip(null, 'wait', actor, 'by') : null,
+              chip(dot, 'wait', t(chipKey), 'state'),
+              !files.length && entry.kind !== 'external' ? chip(null, 'wait', t('pa.hist.noFiles'), 'none') : null,
+              amended && Number(amended.added) > 0
+                ? chip(null, 'wait', t('pa.hist.fixEffect', amended.added - amended.kept, amended.added), 'fix')
+                : null
+            ]
+          }, 'chips')
+        ]
+      }, 'text')
+    ]
+  }, 'outcome')
+  const compared = amended && Array.isArray(written)
+    ? written.map((text, i) => jsx(FileDiff, {
+        path: places[0], badge: t('pa.hist.cmpBadge'),
+        rows: [
+          ...splitLines(String(text || '')).map(l => ['-', l]),
+          ...splitLines(String(applied[i] || '')).map(l => ['+', l])
+        ]
+      }, `cmp${i}`))
+    : []
   return jsxs('div', {
     ref: own,
     className: 'pa-card',
@@ -3510,27 +3548,20 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
             className: 'pa-crumb',
             children: [
               jsx('span', { className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(histTile(entry), 13) }, 'icon'),
-              jsx('span', { children: t(entry.subsystem === 'skills' ? 'pa.stage.typeSkill' : 'pa.stage.typeMemory') }, 'type'),
-              jsx('span', {
-                className: 'pa-crumb-end',
-                'data-when': '1',
-                children: [`${dayHeading(t, entry.ts)} ${clock(entry.ts * 1000)}`, actor].filter(Boolean).join(' · ')
-              }, 'when')
+              jsx('span', { className: 'pa-act-places', children: places.join(', ') }, 'place'),
+              jsx('span', { className: 'pa-crumb-end', 'data-when': '1', children: when }, 'when')
             ]
           }, 'crumb'),
-          jsxs('div', {
-            className: 'pa-dtitle',
-            children: [
-              jsx('span', { role: 'heading', 'aria-level': 2, children: historyWords(t, entry) }, 'title'),
-              jsx('span', { className: 'pa-state-chip', style: { '--pa-tone': chipTone }, children: t(chipKey) }, 'chip')
-            ]
-          }, 'title'),
           jsx('div', {
-            className: 'pa-dh-when',
-            children: [`${dayHeading(t, entry.ts)} ${clock(entry.ts * 1000)}`, actor].filter(Boolean).join(' · ')
-          }, 'when')
+            className: 'pa-dtitle',
+            children: long
+              ? jsx('span', { role: 'heading', 'aria-level': 2, children: `${gist.slice(0, TITLE_MAX).trimEnd()}…` }, 'title')
+              : jsx(Summary, { text: gist, raw: said, heading: true }, 'title')
+          }, 'title'),
+          jsx('div', { className: 'pa-dh-when', children: when }, 'when')
         ]
       }, 'head'),
+      outcome,
       jsxs('div', {
         className: 'pa-dbody',
         children: [
@@ -3539,15 +3570,12 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                 className: 'pa-alert', role: 'alert', children: t('pa.hist.conflict', placeNames(t, conflict).join(', '))
               }, 'conflict')
             : null,
-          jsx('div', { className: 'pa-section', children: t('pa.act.files') }, 'filesLabel'),
-          files.length
-            ? jsx('div', {
-                className: 'pa-act-places',
-                children: placeNames(t, files.map(f => f.path)).map(name => jsx('span', { children: name }, name))
-              }, 'files')
-            : jsx('div', { className: 'pa-why pa-act-nofiles', children: t('pa.hist.noFiles') }, 'files'),
-          jsx('div', { className: 'pa-section', children: t('pa.act.what') }, 'whatLabel'),
-          jsx(Summary, { text: plainGist(t, said), raw: said }, 'summary'),
+          long ? jsx(Summary, { text: gist, raw: said }, 'summary') : null,
+          amended && !Array.isArray(written) ? jsx('div', { className: 'pa-aside', children: t('pa.hist.noCopy') }, 'gone') : null,
+          ...compared,
+          ...(amended?.why || []).map((w, i) => jsxs('div', {
+            className: 'pa-why', children: [jsx('b', { children: t('pa.hist.whyLabel') }, 'b'), ' ', w]
+          }, `w${i}`)),
           changes.length
             ? jsxs('div', {
                 className: 'pa-hist-list',
@@ -3562,34 +3590,6 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                   }, `c${i}`)) : [])
                 ]
               }, 'changes')
-            : null,
-          amended && Number(amended.added) > 0
-            ? jsx('div', {
-                className: 'pa-aside', 'data-amended': 'effect',
-                children: t('pa.hist.fixEffect', amended.added - amended.kept, amended.added)
-              }, 'effect')
-            : null,
-          amended
-            ? jsxs('div', {
-                className: 'pa-hist-list',
-                'data-amended': 'copy',
-                children: [
-                  !Array.isArray(written)
-                    ? jsx('div', { className: 'pa-aside', children: t('pa.hist.noCopy') }, 'gone')
-                    : written.length
-                      ? jsx(Button, {
-                          variant: 'text', size: 'inline', style: { alignSelf: 'flex-start' }, 'aria-expanded': cmp,
-                          onClick: () => setCmp(v => !v),
-                          children: t(cmp ? 'pa.hist.asWrittenHide' : 'pa.hist.asWritten')
-                        }, 'cmp')
-                      : null,
-                  ...(cmp && Array.isArray(written) ? [
-                    ...(amended.why || []).map((w, i) => jsx('div', { className: 'pa-aside', children: t('pa.hist.why', w) },
-                      `w${i}`)),
-                    ...written.map((text, i) => sides(String(text || ''), i))
-                  ] : [])
-                ]
-              }, 'amended')
             : null,
           jsx(TechDetails, {
             t,

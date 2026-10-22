@@ -41,6 +41,7 @@
  *      the label rows are kit `PanelSectionLabel`s — and there is NO native `title=` anywhere (the
  *      themed `Tip` / an `aria-label` owns hover text; every button keeps an accessible name).
  */
+import './clock.mjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
@@ -161,6 +162,7 @@ export const icons = {
   }),
   AlertCircle: glyph('alert-circle', ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 8v4', 'M12 16h.01']),
   ChevronLeft: glyph('chevron-left', ['M15 6l-6 6l6 6']),
+  X: glyph('x', ['M18 6l-12 12', 'M6 6l12 12']),
   Book: glyph('book', ['M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6v13',
     'M12 6v13', 'M21 6v13']),
   Users: glyph('users', ['M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2',
@@ -1471,7 +1473,7 @@ const actFind = async (hostEl, text) => {
     fail(`the conflict that arms “Force undo” is not stated in plain words as an alert on the card: ${line?.textContent}`)
   }
   if (line?.classList.contains('pa-alert-danger')) fail('the undo conflict (a warning) is drawn red')
-  if (forcedCard?.querySelector('.pa-state-chip')?.textContent !== 'Undo needs force') {
+  if (forcedCard?.querySelector('.pa-outcome .pa-chip-dot')?.closest('.pa-chip')?.textContent !== 'Undo needs force') {
     fail('next to the conflict the chip still says the record can be undone')
   }
   if (line && line.parentElement?.firstElementChild !== line) {
@@ -1650,8 +1652,22 @@ const actFind = async (hostEl, text) => {
   if (!/skills\/new-skill\/SKILL\.md/.test(actDetail(act.hostEl)?.querySelector('.pa-tech .pa-act-files')?.textContent || '')) {
     fail('activity-rows: a row lost its file (under Details)')
   }
-  must(actDetail(act.hostEl)?.textContent, ['Skill', '#act10003', 'saved by you', 'Saved skill', 'Can be undone', 'Changed',
-    'What happened', 'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
+  must(actDetail(act.hostEl)?.textContent, ['Skill “new-skill”', '#act10003', 'Your choice', 'Saved skill', 'Can be undone',
+    'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
+  {
+    // The detail speaks the Needs you language: the head names the change itself, the outcome sits in the same
+    // verdict card (seal, title, chips) as a review, and the old section labels are gone.
+    const card = actDetail(act.hostEl)
+    const outcome = card?.querySelector('.pa-dh + .pa-verdict.pa-outcome')
+    if (!outcome?.querySelector('.pa-seal svg[data-icon="check"]')
+        || outcome?.querySelector('.pa-vtitle[role="status"]')?.textContent !== 'Saved skill') {
+      fail('activity: the outcome is not a verdict card (seal + status title) under the head')
+    }
+    if (card?.querySelector('.pa-dtitle')?.textContent === 'Saved skill') {
+      fail('activity: the head repeats the outcome instead of naming the change')
+    }
+    if (card?.querySelector('.pa-section, .pa-state-chip')) fail('activity: the old “Changed” / “What happened” labels or chip are back')
+  }
   act.root.unmount()
   act.hostEl.remove()
   REST.history = null
@@ -3139,12 +3155,19 @@ REST.scan = 'ok'
   const fixedRow = await actFind(hist.hostEl, 'patch in user profile')
   must(fixedRow?.textContent, ['The reviewer’s fix removed 51 of the 54 new words.'],
     'a fixed history row states the effect')
-  const cmp = buttons(fixedRow || hist.hostEl, /^Compare with what Hermes asked for$/)[0]
-  if (!cmp) fail('a fixed history row offers no comparison with the write as staged')
-  if ((fixedRow?.textContent || '').includes(WRITTEN_TEXT)) fail('the as-written text is shown before it is asked for')
-  if (cmp) await click(cmp, 40)
-  must(actDetail(hist.hostEl)?.textContent, [`What Hermes asked for (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
-    'What was saved (13 characters)', 'APPLIED-short', 'Why: AMEND-WHY', 'Hide the comparison'], 'the comparison')
+  {
+    // The asked-for → saved comparison is the Needs you diff box (− asked for, + saved), open from the start.
+    const box = fixedRow?.querySelector('.pa-file')
+    if (!(box?.querySelector('.pa-file-head')?.textContent || '').includes('Asked for → saved')) {
+      fail('a fixed history row does not draw the asked-for → saved diff box')
+    }
+    const lines = k => [...(box?.querySelectorAll(`.pa-dl[data-k="${k}"]`) || [])].map(l => l.textContent).join('|')
+    if (!lines('-').includes(WRITTEN_TEXT.trim()) || !lines('+').includes('APPLIED-short')) {
+      fail(`the diff box does not read − asked for / + saved: ${lines('-')} // ${lines('+')}`)
+    }
+    if (buttons(fixedRow || hist.hostEl, /^Compare with/).length) fail('the comparison still hides behind a Compare button')
+    must(fixedRow?.textContent, ['Reviewer’s note: AMEND-WHY'], 'the reviewer’s note')
+  }
   must((await actFind(hist.hostEl, 'an older fixed write'))?.textContent, ['The as-written copy is no longer kept.'],
     'a pruned copy')
   const plainRow = await actFind(hist.hostEl, 'a plain write')
@@ -4338,7 +4361,7 @@ REST.scan = 'ok'
   const words = []
   for (const id of ['un000001', 'rs000001']) {
     await click(actRow(jd.hostEl, id), 20)
-    words.push(actDetail(jd.hostEl)?.querySelector('.pa-dh .pa-state-chip')?.textContent)
+    words.push(actDetail(jd.hostEl)?.querySelector('.pa-outcome .pa-chip-dot')?.closest('.pa-chip')?.textContent)
   }
   if (words[0] !== 'Undone' || words[1] !== 'Restored') {
     fail(`review: Activity does not say an entry was undone / restored: ${JSON.stringify(words)}`)
@@ -4875,11 +4898,12 @@ REST.scan = 'ok'
   let plain = null
   for (const row of noFiles) {
     await click(row, 20)
-    const none = act.hostEl.querySelector('.pa-activity .pa-act-nofiles')
+    const none = [...act.hostEl.querySelectorAll('.pa-activity .pa-outcome .pa-chip')]
+      .find(c => c.textContent === 'Nothing was written')
     if (none) { plain = none; break }
   }
-  if (!plain || plain.closest('.pa-act-files') || plain.textContent !== 'Nothing was written') {
-    fail('rework 2 item 12: "Nothing was written" is not plain muted text outside the monospace file box')
+  if (!plain || plain.closest('.pa-act-files')) {
+    fail('rework 2 item 12: "Nothing was written" is not a plain chip of the outcome card')
   }
   act.root.unmount()
   act.hostEl.remove()

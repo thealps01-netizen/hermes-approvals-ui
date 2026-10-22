@@ -41,6 +41,11 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   record number and the file paths moved under "Details". "Draft a merge request" is now "Ask Hermes
   to combine notes", and the undo conflict is an amber warning with the chip "Undo needs force".
 
+* **An Activity entry reads like a Needs you card.** The heading names the change itself; below it,
+  the same result card as a review shows "Saved" or "Not saved" with your choice and whether it can
+  be undone. When the reviewer shortened a write, what Hermes asked for and what was saved are shown
+  line by line in the usual change box, without a "Compare" click.
+
 * **Selecting several records works like the design.** After "Select" each record's icon turns into
   its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
   you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all
