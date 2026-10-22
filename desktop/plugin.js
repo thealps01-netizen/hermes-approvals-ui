@@ -1,5 +1,5 @@
 import {
-  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelMeta,
+  Badge, Button, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
   Switch, Tip, haptic, host, icons, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
@@ -13,7 +13,7 @@ const AREA_SIDEBAR_NAV = 'sidebar.nav'
 const AREA_PALETTE = 'palette'
 
 const KIT = {
-  Badge, Button, EmptyState, ErrorState, Loader, LogView, PanelBlock, PanelMeta,
+  Badge, Button, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
   Switch, Tip
 }
 const kitMissing = Object.keys(KIT).filter(k => !KIT[k])
@@ -112,9 +112,13 @@ const BUNDLES = {
         decided: n => `${n} decided today · nothing written without you`,
         none: 'Nothing decided today · nothing written without you',
         last: (said, words, at) => `Last: “${said}” · ${words} · ${at}`,
+        firstTitle: 'Nothing waiting',
+        firstBody: 'When Hermes wants to change its memory or a skill, the change waits here until you decide. '
+          + 'Nothing is written without you.',
+        full: (word, pct) => `${word} is ${pct}% full — tidy it up before it runs out of room.`,
       },
       act: {
-        files: 'Files',
+        files: 'Changed',
         what: 'What happened',
         canUndo: 'Can be undone',
         canRestore: 'Can be restored',
@@ -126,6 +130,18 @@ const BUNDLES = {
         hintUndo: 'Undo puts the files back exactly as they were before.',
         hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
         hintRestore: 'Restore puts it back under Needs you.',
+        needsForce: 'Undo needs force',
+        placeSkill: name => `Skill “${name}”`,
+      },
+      tech: {
+        show: 'Details',
+        hide: 'Hide details',
+        record: 'Record',
+        files: 'Files',
+        cause: 'Cause',
+        file: 'File',
+        size: 'Size',
+        sizeValue: (chars, limit) => `${grouped(chars)} / ${grouped(limit)} characters`,
       },
       stage: {
         select: 'Select',
@@ -137,6 +153,7 @@ const BUNDLES = {
         memoryLabel: 'Memory',
         profileLabel: 'Profile',
         meter: (word, pct) => `${word} ${pct}% full`,
+        reading: word => `${word}: reading…`,
       },
       tab: {
         memory: 'Memory',
@@ -301,6 +318,8 @@ const BUNDLES = {
         fullReview: 'Show the full review',
         fullReviewHide: 'Hide the full review',
         useShort: 'Use the short version',
+        openMemory: 'Open Memory',
+        openNeeds: 'Go to Needs you',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -315,27 +334,26 @@ const BUNDLES = {
         apply: 'Saved',
         rejected: 'Not saved',
         clear: n => (n === 1 ? 'Clear 1 record' : n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
-        clearConfirm: n => `Clearing deletes all ${plural(n, 'record', 'records')} of the history, not only the ones `
-          + 'shown, and drops their undo copies — those records can no longer be taken back.',
+        clearConfirm: n => `Deletes all ${plural(n, 'record', 'records')}, including ones not shown. `
+          + 'They can no longer be undone or restored.',
         clearCancel: 'Cancel',
         cleared: n => `Cleared ${plural(n, 'record', 'records')}`,
         clearFailed: 'Could not clear the history',
-        external: 'Changed outside the pane',
-        externalDetail: n => `${plural(n, 'file', 'files')} changed outside the pane`,
+        external: 'Changed outside Approvals',
+        externalDetail: n => `${plural(n, 'file', 'files')} changed outside Approvals`,
         failed: 'Save failed',
         undone: 'Undone — the files are back to the state before this record',
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
-        noFiles: 'No file changes',
+        noFiles: 'Nothing was written',
         notUndoable: 'This record cannot be undone',
         restored: 'Restored',
         changesHide: 'Hide changes',
-        fixEffect: (removed, added) => `The suggested fix removed ${removed} of the ${added} new words in the text ` +
-          'it edited.',
-        asWritten: 'Compare with the write as staged',
+        fixEffect: (removed, added) => `The reviewer’s fix removed ${removed} of the ${added} new words.`,
+        asWritten: 'Compare with what Hermes asked for',
         asWrittenHide: 'Hide the comparison',
-        written: n => `As written (${grouped(n)} characters)`,
-        applied: n => `Applied (${grouped(n)} characters)`,
-        why: text => `Reviewer: ${text}`,
+        written: n => `What Hermes asked for (${grouped(n)} characters)`,
+        applied: n => `What was saved (${grouped(n)} characters)`,
+        why: text => `Why: ${text}`,
         noCopy: 'The as-written copy is no longer kept.',
         wordsProfile: 'Saved to Profile',
         wordsMemory: 'Saved to memory',
@@ -362,16 +380,18 @@ const BUNDLES = {
         rawAs: text => `Hermes recorded it as: ${text}`,
       },
       empty: {
-        errorTitle: 'The pane could not read its data',
-        errorBody: 'Retry reads it again; if it keeps failing, the Hermes log names the reason.',
+        errorTitle: 'The waiting changes could not be read',
+        errorBody: 'Try again in a moment. If it keeps failing, Details says what went wrong.',
         retry: 'Retry',
-        loadingData: 'Reading…',
-        historyTitle: 'No records yet',
-        historyBody: 'Everything you save or don’t save, and every change made outside this pane, collects here; undo lives here too.',
-        loading: 'Reading memory…',
-        historyError: 'The history could not be read.',
-        memoryError: 'Memory could not be read.',
-        scanFailed: why => `Changes made outside this pane could not be checked${why ? `: ${why}` : ''}. `
+        loadingPending: 'Reading what is waiting…',
+        loadingHistory: 'Reading activity…',
+        historyTitle: 'No activity yet',
+        historyBody: 'Every save, every “Don’t save” and every change made outside Approvals shows up here, '
+          + 'and you can undo from here.',
+        loading: 'Reading your memory files…',
+        historyError: 'Activity could not be read',
+        memoryError: 'Memory could not be read',
+        scanFailed: why => `Changes made outside Approvals could not be checked${why ? `: ${why}` : ''}. `
           + 'The pending list is current; an outside change may be missing from “Activity” until a check succeeds.',
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
@@ -381,19 +401,23 @@ const BUNDLES = {
       },
       memory: {
         warnBody: 'A new note fits only if an older one is shortened or merged. Hermes can propose which.',
-        rowSub: (file, notes, chars, limit) => `${file} · ${plural(notes, 'note', 'notes')} · ${chars} / ${limit}`,
+        rowSub: (notes, chars, limit) => `${plural(notes, 'note', 'notes')} · ${grouped(chars)} / ${grouped(limit)}`,
         fill: pct => `${pct}% full`,
         title: (name, n) => `${name} · ${plural(n, 'note', 'notes')}`,
-        draftMerge: 'Draft a merge request',
-        draftHint: 'Writes a request into the chat box without sending it. The proposal still lands here for your approval.',
-        drafted: 'Merge request is in the chat box — read it, then send.',
+        draftMerge: 'Ask Hermes to combine notes',
+        draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits under Needs you.',
+        drafted: 'The request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
         deleteConfirm: 'About to delete — you can undo this from the “Activity” tab',
         deleteCancel: 'Cancel',
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
-        readonlyEmpty: 'Add notes by asking in chat; the write lands under Needs you.',
+        emptyTitle: name => `No notes in ${name} yet`,
+        emptyMemory: 'Memory holds what Hermes knows about your work. Ask in chat to add a note — it waits under '
+          + 'Needs you first.',
+        emptyProfile: 'Profile holds what Hermes knows about you. Ask in chat to add a note — it waits under '
+          + 'Needs you first.',
         files: 'Files',
         note: (i, len) => `Note ${i} · ${plural(len, 'character', 'characters')}`,
       },
@@ -881,6 +905,16 @@ const STYLE = `
   color:var(--ui-green);background:${tint('var(--ui-green)', 16)};
   box-shadow:0 0 0 6px ${tint('var(--ui-green)', 8)},0 0 0 12px ${tint('var(--ui-green)', 4)}}
 .pa-clear-title{font-size:${FS.empty}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-clear-warn{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
+  font-size:${FS.preview}px;color:var(--ui-text-secondary)}
+.pa-clear-warn>span::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:${WARN};
+  margin-right:6px;vertical-align:middle}
+.pa-state{flex:1;min-width:0;display:grid;place-items:center;align-content:center;gap:${G.sm}px;padding:${G.lg}px;
+  text-align:center}
+.pa-state>*{max-width:48ch}
+.pa-state-label{font-size:${FS.body}px;color:var(--ui-text-secondary)}
+.pa-tech{display:flex;flex-direction:column;align-items:flex-start;gap:${G.xs}px;min-width:0}
+.pa-act-places{display:flex;flex-direction:column;gap:2px;font-size:${FS.body}px;color:var(--ui-text-primary)}
 .pa-clear-body{font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-clear-last{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
   font-size:${FS.preview}px;color:var(--ui-text-secondary)}
@@ -1005,7 +1039,7 @@ const STYLE = `
   .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;${THIN_SCROLL}}
   .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:${HAIRLINE}}
   .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
-  .pa-memory>.pa-list>.pa-list-foot,.pa-memory .pa-back{display:none}
+  .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
   .pa-memory>.pa-detail>.pa-card{flex:none}
   .pa-memory .pa-dbody{flex:none;overflow:visible}
   .pa-back{display:flex}
@@ -1173,25 +1207,55 @@ const errText = e => {
 }
 
 function Loading({ label: text }) {
-  return jsx('div', {
-    style: { display: 'grid', padding: 12, placeItems: 'center' },
-    children: jsx(Loader, { label: text, type: 'lemniscate-bloom' }, 'loader')
+  return jsxs('div', {
+    className: 'pa-state',
+    children: [
+      jsx(Loader, { label: text, type: 'lemniscate-bloom' }, 'loader'),
+      jsx('div', { className: 'pa-state-label', 'aria-hidden': true, children: text }, 'label')
+    ]
   }, 'loading')
+}
+
+function TechDetails({ t, rows }) {
+  const [open, setOpen] = useState(false)
+  const shown = rows.filter(row => row.value)
+  if (!shown.length) return null
+  return jsxs('div', {
+    className: 'pa-tech',
+    children: [
+      jsx(Button, {
+        variant: 'text', size: 'inline', className: 'pa-tech-fold', 'aria-expanded': open,
+        onClick: () => setOpen(v => !v), children: t(open ? 'pa.tech.hide' : 'pa.tech.show')
+      }, 'fold'),
+      open ? jsx(PanelMeta, { className: 'pa-tech-rows', rows: shown }, 'rows') : null
+    ]
+  }, 'tech')
 }
 
 function LoadError({ title: heading, error, onRetry }) {
   const t = usePluginI18n(ID)
-  return jsx(ErrorState, {
-    title: heading,
-    description: [errText(error), t('pa.empty.errorBody')].filter(Boolean).join(' — '),
-    children: jsx(Button, {
-      variant: 'outline',
-      size: 'sm',
-      onClick: onRetry,
-      children: t('pa.empty.retry')
-    }, 'retry')
+  return jsx('div', {
+    className: 'pa-state',
+    children: jsx(ErrorState, {
+      title: heading,
+      description: t('pa.empty.errorBody'),
+      children: [
+        jsx(Button, { variant: 'outline', size: 'sm', onClick: onRetry, children: t('pa.empty.retry') }, 'retry'),
+        jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech')
+      ]
+    }, 'error')
   }, 'error')
 }
+
+const placeName = (t, path) => {
+  const p = String(path || '')
+  const mem = p.match(/(?:^|\/)memories\/(MEMORY|USER)\.md$/)
+  if (mem) return t(mem[1] === 'USER' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
+  const skill = p.match(/(?:^|\/)skills\/(?:.*\/)?([^/]+)\/SKILL\.md$/)
+  if (skill) return t('pa.act.placeSkill', skill[1])
+  return p.split('/').pop() || p
+}
+const placeNames = (t, paths) => [...new Set(paths.map(p => placeName(t, p)))]
 
 const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
   className: 'pa-alert pa-stale',
@@ -1805,7 +1869,26 @@ const restoreEntry = async (t, entry, onChanged) => {
   }
 }
 
-function BarMeters({ data, t }) {
+function BarMeters({ data, t, reading }) {
+  if (reading) {
+    return jsx('span', {
+      className: 'pa-gms',
+      children: ['memory', 'user'].map(id => {
+        const word = t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
+        return jsxs('span', {
+          className: 'pa-gm', 'data-file': id, 'data-reading': '1', role: 'img',
+          'aria-label': t('pa.kpi.reading', word), style: { '--pa-tone': TONE_COLOR.off },
+          children: [
+            jsx('span', { className: 'pa-gm-word', 'aria-hidden': true, children: word }, 'word'),
+            jsx('span', {
+              className: 'pa-gm-bar', 'aria-hidden': true, children: jsx('i', { style: { width: 0 } }, 'fill')
+            }, 'bar'),
+            jsx('b', { 'aria-hidden': true, children: '—' }, 'pct')
+          ]
+        }, id)
+      })
+    }, 'meters')
+  }
   const rows = ['memory', 'user'].filter(id => data?.[id])
   if (!rows.length) return null
   return jsx('span', {
@@ -2982,20 +3065,26 @@ function useQueue(list) {
   return { order: resolved, later }
 }
 
-function AllClear({ t, entries, onChanged }) {
+function AllClear({ t, entries, onChanged, mem, onOpen }) {
   const [busy, setBusy] = useState(false)
   const n = decidedToday(entries).length
   const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
   const canUndo = Boolean(last?.undoable) && !last?.undone
   const said = last ? plainGist(t, String(last.summary || '')) : ''
+  const first = !n && !last
+  const full = ['memory', 'user'].map(id => (mem?.[id] ? { id, ...fill(mem[id]) } : null))
+    .filter(f => f && f.pct >= 90).sort((a, b) => b.pct - a.pct)[0]
   return jsxs('div', {
     className: 'pa-clear',
     role: 'status',
     children: [
       jsx('div', { className: 'pa-clear-seal', 'aria-hidden': true, children: icon(CheckIcon, 24) }, 'seal'),
-      jsx('div', { className: 'pa-clear-title', children: t('pa.stage.allClearTitle') }, 'title'),
       jsx('div', {
-        className: 'pa-clear-body', children: n ? t('pa.clear.decided', n) : t('pa.clear.none')
+        className: 'pa-clear-title', children: t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
+      }, 'title'),
+      jsx('div', {
+        className: 'pa-clear-body',
+        children: first ? t('pa.clear.firstBody') : n ? t('pa.clear.decided', n) : t('pa.clear.none')
       }, 'body'),
       n ? jsx(DayProgress, { entries, n: 0, compact: true }, 'pips') : null,
       last
@@ -3021,12 +3110,28 @@ function AllClear({ t, entries, onChanged }) {
                 : null
             ]
           }, 'last')
+        : null,
+      full
+        ? jsxs('div', {
+            className: 'pa-clear-warn',
+            children: [
+              jsx('span', {
+                children: t('pa.clear.full', t(full.id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel'),
+                  full.pct)
+              }, 'text'),
+              onOpen
+                ? jsx(Button, {
+                    variant: 'outline', size: 'sm', onClick: () => onOpen('memory'), children: t('pa.btn.openMemory')
+                  }, 'open')
+                : null
+            ]
+          }, 'full')
         : null
     ]
   }, 'all-clear')
 }
 
-function NeedsYou({ data, error, refresh, onChanged, hist }) {
+function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   const t = usePluginI18n(ID)
   const rootAt = useRef(null)
   const [sel, setSel] = useState(null)
@@ -3153,7 +3258,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
   }
 
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
-  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingPending') }, 'loading')
   const entries = hist?.data?.entries || []
   if (!keys.length) {
     return jsx('div', {
@@ -3161,7 +3266,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
       className: 'pa-split pa-split-clear',
       'data-open': '1',
       children: jsx('div', {
-        className: 'pa-detail pa-cell', 'data-key': '', children: jsx(AllClear, { t, entries, onChanged }, 'empty')
+        className: 'pa-detail pa-cell', 'data-key': '', children: jsx(AllClear, { t, entries, onChanged, mem, onOpen }, 'empty')
       }, 'detail')
     }, 'split')
   }
@@ -3244,7 +3349,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist }) {
           onLater: () => later(selKey), onBack: back,
           back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, keys.length) }
         }, selKey)
-      : jsx(AllClear, { t, entries, onChanged }, 'empty')
+      : jsx(AllClear, { t, entries, onChanged, mem, onOpen }, 'empty')
   }, 'detail')
   return jsxs('div', {
     ref: rootAt,
@@ -3388,10 +3493,9 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
           children: entry.undone ? t('pa.hist.undone')
             : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
         }, 'note')
-  const [chipKey, chipTone] = histChip(entry)
+  const [chipKey, chipTone] = conflict ? ['pa.act.needsForce', WARN] : histChip(entry)
   const actor = entry.kind === 'apply' ? t('pa.act.byYouApproved') : entry.kind === 'rejected' ? t('pa.act.byYouRejected') : ''
   const hint = entry.undoable ? t(conflict ? 'pa.act.hintForce' : 'pa.act.hintUndo') : restorable ? t('pa.act.hintRestore') : ''
-  const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
   return jsxs('div', {
     ref: own,
     className: 'pa-card',
@@ -3407,8 +3511,6 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
             children: [
               jsx('span', { className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(histTile(entry), 13) }, 'icon'),
               jsx('span', { children: t(entry.subsystem === 'skills' ? 'pa.stage.typeSkill' : 'pa.stage.typeMemory') }, 'type'),
-              sep(1),
-              jsx('span', { className: 'pa-pill pa-pill-id', children: `#${entry.id}` }, 'id'),
               jsx('span', {
                 className: 'pa-crumb-end',
                 'data-when': '1',
@@ -3434,13 +3536,14 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
         children: [
           conflict
             ? jsx('div', {
-                className: 'pa-alert pa-alert-danger', role: 'alert', children: t('pa.hist.conflict', conflict.join(', '))
+                className: 'pa-alert', role: 'alert', children: t('pa.hist.conflict', placeNames(t, conflict).join(', '))
               }, 'conflict')
             : null,
           jsx('div', { className: 'pa-section', children: t('pa.act.files') }, 'filesLabel'),
           files.length
             ? jsx('div', {
-                className: 'pa-act-files', children: files.map(f => jsx('span', { children: f.path }, f.path))
+                className: 'pa-act-places',
+                children: placeNames(t, files.map(f => f.path)).map(name => jsx('span', { children: name }, name))
               }, 'files')
             : jsx('div', { className: 'pa-why pa-act-nofiles', children: t('pa.hist.noFiles') }, 'files'),
           jsx('div', { className: 'pa-section', children: t('pa.act.what') }, 'whatLabel'),
@@ -3487,7 +3590,21 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                   ] : [])
                 ]
               }, 'amended')
-            : null
+            : null,
+          jsx(TechDetails, {
+            t,
+            rows: [
+              { label: t('pa.tech.record'), value: `#${entry.id}` },
+              {
+                label: t('pa.tech.files'),
+                value: files.length
+                  ? jsx('div', {
+                      className: 'pa-act-files', children: files.map(f => jsx('span', { children: f.path }, f.path))
+                    }, 'paths')
+                  : null
+              }
+            ]
+          }, 'tech')
         ]
       }, 'body'),
       jsxs('div', {
@@ -3502,7 +3619,7 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   })
 }
 
-function HistoryList({ data, error, refresh, onChanged }) {
+function HistoryList({ data, error, refresh, onChanged, onOpen }) {
   const t = usePluginI18n(ID)
   const [sel, setSel] = useState(null)
   const [open, setOpen] = useState(false)
@@ -3542,12 +3659,18 @@ function HistoryList({ data, error, refresh, onChanged }) {
   }
 
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
-  if (!data) return jsx(Loading, { label: t('pa.empty.loadingData') }, 'loading')
+  if (!data) return jsx(Loading, { label: t('pa.empty.loadingHistory') }, 'loading')
   if (!entries.length) {
     return jsx('div', {
-      className: 'pa-empty-wrap',
-      style: { display: 'grid', placeItems: 'center', flex: 1, padding: G.lg },
-      children: jsx(EmptyState, { title: t('pa.empty.historyTitle'), description: t('pa.empty.historyBody') }, 'empty')
+      className: 'pa-state',
+      children: jsx(PanelEmpty, {
+        icon: 'history', title: t('pa.empty.historyTitle'), description: t('pa.empty.historyBody'),
+        action: onOpen
+          ? jsx(Button, {
+              variant: 'outline', size: 'sm', onClick: () => onOpen('pending'), children: t('pa.btn.openNeeds')
+            }, 'go')
+          : null
+      }, 'empty')
     }, 'empty')
   }
   const rows = groups.flatMap(g => [
@@ -3644,7 +3767,7 @@ function MemFileRow({ label: name, store, t }) {
       }, 'meter'),
       jsx('span', {
         className: 'pa-memrow-sub',
-        children: store ? t('pa.memory.rowSub', store.file, store.entries?.length || 0, store.chars ?? 0, store.limit ?? 0)
+        children: store ? t('pa.memory.rowSub', store.entries?.length || 0, store.chars ?? 0, store.limit ?? 0)
           : ''
       }, 'sub')
     ]
@@ -3745,10 +3868,10 @@ function MemoryView({ data, error, refresh, onChanged }) {
                     jsx('span', {
                       className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(target === 'user' ? UsersIcon : BrainIcon, 13)
                     }, 'icon'),
-                    jsx('span', { children: t('pa.stage.typeMemory') }, 'type'),
-                    jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, 'sep'),
-                    jsx('span', { children: store.file }, 'file'),
-                    jsx('span', { className: 'pa-crumb-end', children: t('pa.memory.fill', pct) }, 'pct')
+                    jsx('span', { children: labelOf(target) }, 'type'),
+                    store.entries.length
+                      ? jsx('span', { className: 'pa-crumb-end', children: t('pa.memory.fill', pct) }, 'pct')
+                      : null
                   ]
                 }, 'crumb'),
                 jsx('div', {
@@ -3817,7 +3940,17 @@ function MemoryView({ data, error, refresh, onChanged }) {
                         ]
                       }, i))
                     }, `notes-${target}`)
-                  : jsx('div', { className: 'pa-why', children: t('pa.memory.readonlyEmpty') }, 'empty')
+                  : jsx(PanelEmpty, {
+                      icon: 'note', title: t('pa.memory.emptyTitle', labelOf(target)),
+                      description: t(target === 'user' ? 'pa.memory.emptyProfile' : 'pa.memory.emptyMemory')
+                    }, 'empty'),
+                jsx(TechDetails, {
+                  t,
+                  rows: [
+                    { label: t('pa.tech.file'), value: store.file },
+                    { label: t('pa.tech.size'), value: t('pa.tech.sizeValue', store.chars ?? 0, store.limit ?? 0) }
+                  ]
+                }, `tech-${target}`)
               ]
             }, 'body')
           ]
@@ -3878,7 +4011,7 @@ function Pane() {
   ].filter(Boolean)
   const side = [
     view === 'pending' ? jsx(DayProgress, { entries, n }, 'progress') : null,
-    jsx(BarMeters, { data: mem.data, t }, 'meters')
+    jsx(BarMeters, { data: mem.data, t, reading: !mem.data && !mem.error }, 'meters')
   ]
 
   return jsxs('div', {
@@ -3946,9 +4079,11 @@ function Pane() {
           ? jsx(MemoryView, { data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane }, 'memory')
           : view === 'history'
             ? jsx(HistoryList, {
-                data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane
+                data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane, onOpen: setView
               }, 'history')
-            : jsx(NeedsYou, { data, error, refresh, onChanged: refreshPane, hist }, 'pending')
+            : jsx(NeedsYou, {
+                data, error, refresh, onChanged: refreshPane, hist, mem: mem.data, onOpen: setView
+              }, 'pending')
       }, `view-${view}`)
     ]
   })

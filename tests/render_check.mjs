@@ -599,7 +599,7 @@ const stub = await import(`${HERE_URL.href}sdk-stub.mjs`)
 const lastSaid = () => stub.calls.notify.filter(m => !(m?.kind === 'info' && /awaits? your approval/.test(m?.message || ''))).at(-1)
 
 const REST = { mode: 'normal', gets: 0, post: 'normal', scan: 'ok', count: null, delay: 0, gone: null, pending: null,
-  history: null }
+  history: null, memory: null }
 const GETS = []
 
 // --- 1.11.0 skill groups (Docs/skill-groups-contract.md) ------------------------------------------
@@ -838,7 +838,7 @@ async function mount(appLocale, parts = 'both') {
         '/history?limit=50': REST.history ? REST.history : REST.mode === 'restore' ? HISTORY_RESTORE
           : REST.mode === 'grouphist' ? HISTORY_GROUP
             : REST.mode === 'amendhist' ? HISTORY_AMENDED : HISTORY,
-        '/memory': MEMORY
+        '/memory': REST.memory || MEMORY
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
       return table[path]
@@ -1310,7 +1310,7 @@ for (const mounted of [en, other]) {
 const memoryTab = tab(en.hostEl, /Memory/)
 if (!memoryTab) fail('the Memory tab is missing')
 await click(memoryTab, 60)
-must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', 'MEMORY.md · 2 notes · 2189 / 2200', 'USER.md',
+must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', '2 notes · 2,189 / 2,200', 'Profile',
   'Nothing is written to your memory without you.'], 'memory tab')
 {
   const labels = [...en.hostEl.querySelectorAll('.pa-note-del')].map(b => b.getAttribute('aria-label'))
@@ -1344,13 +1344,13 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 
 // --- 10b) The merge draft -----------------------------------------------------------------------
 {
-  const draft = buttons(en.hostEl, /^Draft a merge request$/)[0]
+  const draft = buttons(en.hostEl, /^Ask Hermes to combine notes$/)[0]
   if (!draft) fail('the nearly-full memory warning offers no merge draft')
   const banner = draft?.closest('.pa-banner')
   if (!banner || !banner.textContent.includes('A new note fits only if an older one is shortened or merged')) {
     fail('the merge draft sits outside the nearly-full banner')
   }
-  if (!String(draft?.closest('[data-tip]')?.getAttribute('data-tip')).includes('Writes a request into the chat box')) {
+  if (!String(draft?.closest('[data-tip]')?.getAttribute('data-tip')).includes('Puts a request into the chat box')) {
     fail('the merge draft carries no Tip saying it only writes into the chat box')
   }
   const decided = stub.calls.posts.filter(p => p.path === '/decide').length
@@ -1360,7 +1360,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   must(put?.text, ['MEMORY.md is 99% full', 'Stage the change through the memory tool', 'not an approval'], 'merge draft text')
   if (/approv(al|e) to apply|this click is the approval/i.test(put?.text || '')) fail('the draft text treats the click as an approval')
   if (stub.calls.posts.filter(p => p.path === '/decide').length !== decided) fail('drafting a merge decided something')
-  if (lastSaid()?.message !== 'Merge request is in the chat box — read it, then send.') {
+  if (lastSaid()?.message !== 'The request is in the chat box — read it, then send.') {
     fail('placing the draft was not confirmed')
   }
   stub.state.composerLive = false
@@ -1377,10 +1377,10 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   if (rows.length !== 2) fail(`expected 2 file rows (Memory, Profile), found ${rows.length}`)
   const [mem, prof] = rows
   const memText = mem?.textContent || ''
-  if (!/^Memory99%/.test(memText) || !memText.includes('MEMORY.md · 2 notes · 2189 / 2200')) {
-    fail(`the Memory file row does not read name, percent, file · notes · chars / limit: ${mem?.textContent}`)
+  if (!/^Memory99%/.test(memText) || !memText.includes('2 notes · 2,189 / 2,200') || memText.includes('.md')) {
+    fail(`the Memory file row does not read name, percent, notes · chars / limit: ${mem?.textContent}`)
   }
-  if (!/^Profile84%USER\.md · 1 note · 1158 \/ 1375$/.test(prof?.textContent || '')) {
+  if (!/^Profile84%1 note · 1,158 \/ 1,375$/.test(prof?.textContent || '')) {
     fail(`the Profile file row does not read likewise: ${prof?.textContent}`)
   }
   const meter = r => r?.querySelector('.pa-meter.pa-meter-thin')
@@ -1404,9 +1404,14 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   if (!(panel?.textContent || '').includes('A profile note') || (panel?.textContent || '').includes('A note to add')) {
     fail('selecting Profile does not show the Profile notes')
   }
-  if (!(panel?.querySelector('.pa-dh')?.textContent || '').includes('USER.md')
-      || !(panel?.textContent || '').includes('Profile · 1 note')) {
-    fail('the Profile detail is not headed by its file and note count')
+  if (!(panel?.querySelector('.pa-dh .pa-crumb')?.textContent || '').startsWith('Profile')
+      || !(panel?.textContent || '').includes('Profile · 1 note')
+      || (panel?.querySelector('.pa-dh')?.textContent || '').includes('USER.md')) {
+    fail('the Profile detail is not headed by its own name and note count, without the file name')
+  }
+  await click(panel?.querySelector('.pa-tech-fold'), 30)
+  if (!(en.hostEl.querySelector('.pa-memory .pa-detail .pa-tech')?.textContent || '').includes('USER.md')) {
+    fail('the Profile file name is not under Details')
   }
   if (panel?.querySelector('.pa-banner')) fail('an 84% full Profile still shows the nearly-full banner')
   if (en.hostEl.querySelector('.pa-mem-rings, .pa-gauge-ring-lg')) fail('the memory rings are back')
@@ -1417,8 +1422,8 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 const appliedTab = tab(en.hostEl, /Activity/)
 if (!appliedTab) fail('the Activity tab is missing')
 await click(appliedTab, 60)
-must(en.hostEl.textContent, ['2 files changed outside the pane', 'Saved to memory', 'Not saved',
-  'Changed outside the pane', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
+must(en.hostEl.textContent, ['2 files changed outside Approvals', 'Saved to memory', 'Not saved',
+  'Changed outside Approvals', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 const actRow = (hostEl, id) => hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`)
 const actDetail = hostEl => hostEl.querySelector('.pa-activity .pa-detail .pa-card[data-entry]')
@@ -1462,8 +1467,12 @@ const actFind = async (hostEl, text) => {
   const forced = force[0]
   const forcedCard = forced?.closest('.pa-card')
   const line = forcedCard?.querySelector('[role="alert"]')
-  if (!line || !line.textContent.includes('memories/MEMORY.md')) {
-    fail('the conflict that arms “Force undo” is not stated as an alert on the card')
+  if (!line || !line.textContent.startsWith('Memory changed after this record')) {
+    fail(`the conflict that arms “Force undo” is not stated in plain words as an alert on the card: ${line?.textContent}`)
+  }
+  if (line?.classList.contains('pa-alert-danger')) fail('the undo conflict (a warning) is drawn red')
+  if (forcedCard?.querySelector('.pa-state-chip')?.textContent !== 'Undo needs force') {
+    fail('next to the conflict the chip still says the record can be undone')
   }
   if (line && line.parentElement?.firstElementChild !== line) {
     fail('the conflict alert is not at the top of the detail body, where it can fall below the fold')
@@ -1523,7 +1532,7 @@ const actFind = async (hostEl, text) => {
     fail('the history clear control is not in the Activity list footer')
   }
   await click(clear)
-  must(en.hostEl.textContent, ['Clearing deletes all 87 records', 'not only the ones shown', 'undo copies'],
+  must(en.hostEl.textContent, ['Deletes all 87 records', 'including ones not shown', 'no longer be undone or restored'],
     'clear confirmation copy')
   if (stub.calls.posts.some(p => p.path === '/history/clear')) fail('the clear fired before confirmation')
   const confirm = en.hostEl.querySelector('.pa-list-foot ' + DESTRUCTIVE)
@@ -1633,10 +1642,15 @@ const actFind = async (hostEl, text) => {
   const detail = actDetail(act.hostEl)
   if (detail?.getAttribute('data-entry') !== 'act10003') fail('activity: selecting a row does not show its detail')
   if (rows[2]?.getAttribute('aria-current') !== 'true') fail('activity: the selected row is not aria-current')
-  if (!/skills\/new-skill\/SKILL\.md/.test(detail?.querySelector('.pa-act-files')?.textContent || '')) {
-    fail('activity-rows: a row lost its file')
+  if ((detail?.querySelector('.pa-act-places')?.textContent || '') !== 'Skill “new-skill”') {
+    fail(`activity-rows: the changed place is not named plainly: ${detail?.querySelector('.pa-act-places')?.textContent}`)
   }
-  must(detail?.textContent, ['Skill', '#act10003', 'saved by you', 'Saved skill', 'Can be undone', 'Files',
+  if (detail?.querySelector('.pa-dh')?.textContent.includes('#act10003')) fail('activity: the record id is still in the head')
+  await click(detail?.querySelector('.pa-tech-fold'), 30)
+  if (!/skills\/new-skill\/SKILL\.md/.test(actDetail(act.hostEl)?.querySelector('.pa-tech .pa-act-files')?.textContent || '')) {
+    fail('activity-rows: a row lost its file (under Details)')
+  }
+  must(actDetail(act.hostEl)?.textContent, ['Skill', '#act10003', 'saved by you', 'Saved skill', 'Can be undone', 'Changed',
     'What happened', 'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
   act.root.unmount()
   act.hostEl.remove()
@@ -2304,9 +2318,17 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
   const none = await mount('en', 'page')
   const noneBody = none.hostEl.querySelector('.pa-clear-body')?.textContent
-  if (noneBody !== 'Nothing decided today · nothing written without you') {
-    fail(`all-clear at 0: ${JSON.stringify(noneBody)}`)
+  if (noneBody !== 'When Hermes wants to change its memory or a skill, the change waits here until you decide. '
+    + 'Nothing is written without you.') {
+    fail(`all-clear on a first day does not say what this place is for: ${JSON.stringify(noneBody)}`)
   }
+  if (none.hostEl.querySelector('.pa-clear-title')?.textContent !== 'Nothing waiting') {
+    fail('all-clear on a first day still reads “All caught up”')
+  }
+  const fullLine = none.hostEl.querySelector('.pa-clear-warn')
+  if (!/^Memory is 99% full/.test(fullLine?.textContent || '')) fail('all-clear: a nearly full memory file is not mentioned')
+  await click(buttons(fullLine, /^Open Memory$/)[0], 60)
+  if (!none.hostEl.querySelector('.pa-memory')) fail('all-clear: “Open Memory” does not open the Memory tab')
   if (none.hostEl.querySelector('.pa-clear-last')) fail('all-clear: a Last line is drawn with no history')
   none.root.unmount()
   none.hostEl.remove()
@@ -2354,6 +2376,13 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   const kpis = [...(held.hostEl.querySelector('.pa-strip')?.children || [])].map(c => c.textContent || '')
   if (held.hostEl.textContent.includes('Nothing awaits approval')) fail('loading reads as “Nothing awaits approval”')
   if (!held.hostEl.querySelector('[data-slot="loader"]')) fail('no kit Loader while the pending list loads')
+  if (held.hostEl.querySelector('.pa-state .pa-state-label')?.textContent !== 'Reading what is waiting…') {
+    fail('the loading state names nothing on screen; its label lives only in aria-label')
+  }
+  const reading = held.hostEl.querySelectorAll('.pa-bar .pa-gm[data-reading="1"]')
+  if (reading.length !== 2 || [...reading].some(m => m.querySelector('b')?.textContent !== '—')) {
+    fail(`the bar drops its Memory and Profile meters while reading (${reading.length} placeholders), so it jumps`)
+  }
   if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
     fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
   }
@@ -2371,7 +2400,12 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   const broken = await mount('en')
   if (!broken.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed read shows no kit ErrorState')
   if (/Restart the desktop app/.test(broken.hostEl.textContent)) fail('the error still asks for an app restart')
-  if (!broken.hostEl.textContent.includes('list exploded')) fail('the backend error message is not shown')
+  if (broken.hostEl.textContent.includes('list exploded')) fail('the raw backend error is shown before Details')
+  await click(broken.hostEl.querySelector('[data-slot="error-state"] .pa-tech-fold'), 30)
+  if (!broken.hostEl.textContent.includes('list exploded')) fail('the backend error message is not under Details')
+  if (!broken.hostEl.querySelector('.pa-state > [data-slot="error-state"]')) {
+    fail('the error state is not centred in its own .pa-state box')
+  }
   if (!/unavailable/i.test(broken.chipText)) fail(`the status chip has no error state: ${JSON.stringify(broken.chipText)}`)
   const retry = buttons(broken.hostEl, /^Retry$/)[0]
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error state carries no kit Retry button')
@@ -3103,14 +3137,14 @@ REST.scan = 'ok'
   const hist = await mount('en', 'page')
   await click(tab(hist.hostEl, /Activity/), 60)
   const fixedRow = await actFind(hist.hostEl, 'patch in user profile')
-  must(fixedRow?.textContent, ['The suggested fix removed 51 of the 54 new words in the text it edited.'],
+  must(fixedRow?.textContent, ['The reviewer’s fix removed 51 of the 54 new words.'],
     'a fixed history row states the effect')
-  const cmp = buttons(fixedRow || hist.hostEl, /^Compare with the write as staged$/)[0]
+  const cmp = buttons(fixedRow || hist.hostEl, /^Compare with what Hermes asked for$/)[0]
   if (!cmp) fail('a fixed history row offers no comparison with the write as staged')
   if ((fixedRow?.textContent || '').includes(WRITTEN_TEXT)) fail('the as-written text is shown before it is asked for')
   if (cmp) await click(cmp, 40)
-  must(actDetail(hist.hostEl)?.textContent, [`As written (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
-    'Applied (13 characters)', 'APPLIED-short', 'Reviewer: AMEND-WHY', 'Hide the comparison'], 'the comparison')
+  must(actDetail(hist.hostEl)?.textContent, [`What Hermes asked for (${WRITTEN_TEXT.length} characters)`, WRITTEN_TEXT,
+    'What was saved (13 characters)', 'APPLIED-short', 'Why: AMEND-WHY', 'Hide the comparison'], 'the comparison')
   must((await actFind(hist.hostEl, 'an older fixed write'))?.textContent, ['The as-written copy is no longer kept.'],
     'a pruned copy')
   const plainRow = await actFind(hist.hostEl, 'a plain write')
@@ -3652,7 +3686,7 @@ REST.scan = 'ok'
   const pid = stub.calls.registered.at(-1).id
   const say = (key, ...args) => stub.resolveKey(pid, key, args)
   if (say('pa.hist.clear', 1) !== 'Clear 1 record') fail(`one history row reads ${JSON.stringify(say('pa.hist.clear', 1))}`)
-  if (/Delete button/.test(say('pa.memory.readonlyEmpty'))) fail('an empty Memory tab points at a Delete button that is not there')
+  if (/Delete button/.test(say('pa.memory.emptyMemory'))) fail('an empty Memory tab points at a Delete button that is not there')
   const ui = await mount('en', 'page')
   await selectMode(ui.hostEl)
   await wait(60)
@@ -4329,12 +4363,37 @@ REST.scan = 'ok'
   }
   fr.root.unmount()
   fr.hostEl.remove()
-  // R2 A16: an empty history draws the kit EmptyState across the split, no list column and no row.
+  // R2 A16: an empty history draws the kit empty state across the split, no list column and no row; it says
+  // what the tab is for and offers the way back to Needs you.
   const none = await mount('en', 'page')
   await click(tab(none.hostEl, /Activity/), 80)
-  const blank = none.hostEl.querySelector('[data-slot="empty-state"]')
-  if (!blank || !/No records yet/.test(blank.textContent || '')) fail('activity: an empty history draws no kit EmptyState')
+  const blank = none.hostEl.querySelector('.pa-state')
+  if (!blank || !/No activity yet/.test(blank.textContent || '')) fail('activity: an empty history draws no empty state')
+  if (!/you can undo from here/.test(blank?.textContent || '')) fail('activity: the empty history does not say what it is for')
+  await click(buttons(blank, /^Go to Needs you$/)[0], 60)
+  if (!/^Needs you/.test(none.hostEl.querySelector('.pa-tab[aria-selected="true"]')?.textContent || '')) {
+    fail('activity: the empty history offers no way to Needs you')
+  }
+  await click(tab(none.hostEl, /Activity/), 80)
   if (none.hostEl.querySelector('.pa-act-row, .pa-list')) fail('activity: an empty history still draws a list column')
+  none.root.unmount()
+  none.hostEl.remove()
+}
+{
+  const blankFile = f => ({ ...f, entries: [], chars: 0, percent: 0 })
+  REST.memory = { ...MEMORY, memory: blankFile(MEMORY.memory), user: blankFile(MEMORY.user) }
+  const none = await mount('en', 'page')
+  await click(tab(none.hostEl, /Memory/), 80)
+  const body = none.hostEl.querySelector('.pa-memory .pa-detail')?.textContent || ''
+  if (!body.includes('No notes in Memory yet') || !body.includes('Memory holds what Hermes knows about your work')) {
+    fail(`memory: an empty file does not say what it holds and how notes get in: ${body.slice(0, 160)}`)
+  }
+  if (/% full/.test(body)) fail('memory: an empty file still repeats “0% full”')
+  await click(none.hostEl.querySelector('.pa-memrow[data-file="user"], #pa-mem-user'), 60)
+  if (!(none.hostEl.querySelector('.pa-memory .pa-detail')?.textContent || '').includes('Profile holds what Hermes knows about you')) {
+    fail('memory: an empty Profile does not say what it holds')
+  }
+  REST.memory = null
   none.root.unmount()
   none.hostEl.remove()
   REST.pending = null
@@ -4449,8 +4508,11 @@ REST.scan = 'ok'
     if (words[1] !== 'Needs one edit' || words[2] !== 'Safe to save') {
       fail(`rows: status words ${JSON.stringify(words)}`)
     }
-    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent).join()
-    if (times !== '2h,5m,2m') fail(`rows: the times are not the short form: ${times}`)
+    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent)
+    const mins = times.slice(1).map(x => (/^(\d+)m$/.exec(x || '') || [])[1]).map(Number)
+    if (times[0] !== '2h' || mins.some(m => !(m >= 2)) || mins[0] - mins[1] !== 3) {
+      fail(`rows: the times are not the short form of 2 h, 5 min and 2 min before the run: ${times}`)
+    }
     const heights = rows.map(w => w.style.height)
     if (new Set(heights).size !== 1 || !heights[0]) fail(`rows: the rows are not one fixed height: ${heights}`)
     if (rows.some(w => w.getAttribute('role') !== 'listitem')
@@ -4711,7 +4773,7 @@ REST.scan = 'ok'
   const memCss = sheetOf(mem)
   for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;',
     '.pa-split.pa-memory>.pa-list{display:flex;flex:none;', '.pa-split.pa-memory>.pa-detail{display:flex;flex:none}',
-    '.pa-memory>.pa-list>.pa-list-foot,.pa-memory .pa-back{display:none}']) {
+    '.pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}']) {
     const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
     if (!narrow.includes(rule)) fail(`rework 2 item 3: the narrow Memory tab lacks ${rule}`)
   }
@@ -4805,7 +4867,10 @@ REST.scan = 'ok'
   }
   await click(tab(act.hostEl, /Activity/), 60)
   const actSeps = [...act.hostEl.querySelectorAll('.pa-activity .pa-dh .pa-crumb-sep')].map(x => x.textContent)
-  if (!actSeps.length || actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
+  if (actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
+  if (/#\w/.test(act.hostEl.querySelector('.pa-activity .pa-dh .pa-crumb')?.textContent || '')) {
+    fail('the Activity crumb still shows a record id; it belongs under Details')
+  }
   const noFiles = [...act.hostEl.querySelectorAll('.pa-activity .pa-row[data-entry]')]
   let plain = null
   for (const row of noFiles) {
@@ -4813,8 +4878,8 @@ REST.scan = 'ok'
     const none = act.hostEl.querySelector('.pa-activity .pa-act-nofiles')
     if (none) { plain = none; break }
   }
-  if (!plain || plain.closest('.pa-act-files') || plain.textContent !== 'No file changes') {
-    fail('rework 2 item 12: "No file changes" is not plain muted text outside the monospace file box')
+  if (!plain || plain.closest('.pa-act-files') || plain.textContent !== 'Nothing was written') {
+    fail('rework 2 item 12: "Nothing was written" is not plain muted text outside the monospace file box')
   }
   act.root.unmount()
   act.hostEl.remove()
