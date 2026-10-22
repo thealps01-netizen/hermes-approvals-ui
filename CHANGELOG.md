@@ -28,6 +28,19 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 * **Undo texts say what really happens.** Next to "Force undo" the panel says the later change is
   thrown away; the note delete says "you can undo this" instead of "undoable".
 
+* **The empty, loading and error screens look finished.** "Could not be read" and "Reading…" sit in
+  the middle of the page with their words visible; the cause of an error is under "Details". While
+  the panel reads, the Memory and Profile meters stay in the top bar as placeholders, so it no longer
+  jumps.
+
+* **Empty screens say what each page is for.** On a first day Needs you says what will wait there,
+  and points out a memory file that is nearly full. An empty Activity explains it and links back to
+  Needs you; an empty Memory or Profile says what it holds and how notes get in.
+
+* **Activity and Memory speak plainly.** Files are named "Memory", "Profile" or "Skill “name”"; the
+  record number and the file paths moved under "Details". "Draft a merge request" is now "Ask Hermes
+  to combine notes", and the undo conflict is an amber warning with the chip "Undo needs force".
+
 * **Selecting several records works like the design.** After "Select" each record's icon turns into
   its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
   you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all

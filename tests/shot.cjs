@@ -371,7 +371,22 @@ const MEASURE = `(() => {
           out.push({ frame, what: 'ragged row times', el: list.className, ends })
         }
       }
-      for (const col of f.querySelectorAll('.pa-list, .pa-detail')) {
+      for (const state of f.querySelectorAll('.pa-state')) {
+        const outer = box(state)
+        const inner = [...state.children].map(box).filter(r => r.width > 0)
+        if (!inner.length) continue
+        const left = Math.min(...inner.map(r => r.left))
+        const right = Math.max(...inner.map(r => r.right))
+        const top = Math.min(...inner.map(r => r.top))
+        const bottom = Math.max(...inner.map(r => r.bottom))
+        const dx = Math.abs((left + right) / 2 - (outer.left + outer.right) / 2)
+        const dy = Math.abs((top + bottom) / 2 - (outer.top + outer.bottom) / 2)
+        if (dx > 2 || dy > 2) {
+          out.push({ frame, what: 'state off centre', el: 'pa-state', text: state.textContent.trim().slice(0, 40),
+            gap: Math.round(Math.max(dx, dy)) })
+        }
+      }
+      for (const col of f.querySelectorAll('.pa-list, .pa-detail, .pa-state')) {
         const edge = box(col)
         if (edge.width < 1) continue
         const walker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT)

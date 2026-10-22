@@ -1397,3 +1397,28 @@ An Impeccable critique (25/40 on Nielsen's heuristics) found five problems; all 
   `_TEXT` gate messages). API names (`approve`, `reject`) are unchanged.
 - **Undo copy.** `pa.act.hintForce` replaces the "exactly as they were" hint when a conflict arms
   Force undo.
+
+## Secondary screens: Activity, Memory, empty, loading and error (2026-10-22)
+
+A second critique covered the screens the first one skipped. What changed and why:
+
+- **Loading and error states own a centred box (`.pa-state`).** `.pa-body` is a flex row, so the kit
+  `Loader` and `ErrorState` shrank to their content at the left edge; the error state's parts spread
+  over the full height. The box is `flex:1` with grid centring, and the loader shows its label as text
+  (the aria-label alone left sighted users with a bare ring). The shot gate now checks that a
+  `.pa-state` is centred and that its text keeps off the frame edge; before, it only measured
+  `.pa-list`, `.pa-detail`, `.pa-bar` and `.pa-strip`, which is how the broken error frame passed.
+- **The bar keeps its meters while memory loads.** `BarMeters` draws two "—" placeholders instead of
+  nothing, so the bar keeps its shape when the data arrives.
+- **Technical facts sit under "Details" (`TechDetails`, the kit `PanelMeta`).** The owner is not a
+  developer: record ids, raw paths and raw error causes are kept (someone debugging needs them) but
+  folded. Plain names come from `placeName`: `memories/MEMORY.md` → Memory, `USER.md` → Profile,
+  `…/skills/<name>/SKILL.md` → Skill “name”, anything else → its file name.
+- **Empty states use the kit `PanelEmpty`** (icon, title, text, one action). Each says what the place
+  is for and how it fills: Activity links to Needs you; Memory and Profile explain what they hold. The
+  first-day Needs you reads "Nothing waiting" with one sentence of purpose instead of "All caught up",
+  and any memory file at 90 % or more is named there with "Open Memory".
+- **The undo conflict is amber.** It is a warning; red stays on the "Force undo" button, the stop.
+  The chip says "Undo needs force" so it no longer contradicts the alert.
+- **Narrow Memory hides the "Files" list head.** In the one-scroll layout below 760 px it scrolled
+  under the tab bar and showed half a word; the file rows need no heading there.

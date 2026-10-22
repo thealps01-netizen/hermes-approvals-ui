@@ -320,11 +320,12 @@ const NARROW = 420
 const FRAME_H = 48 + 560
 
 let version = 0
-async function frame(actions, start = PENDING, history = HISTORY) {
+async function frame(actions, start = PENDING, history = HISTORY, memory = MEMORY, broken = {}) {
   const registrations = []
   // Per frame state: a decided record leaves /pending and lands in /history with its record_id.
   let pending = start
   let hist = history
+  const reads = {}
   const ctx = {
     rest: async (path, opts) => {
       if (opts?.method === 'POST') {
@@ -348,9 +349,15 @@ async function frame(actions, start = PENDING, history = HISTORY) {
       }
       const table = {
         '/pending': pending, '/count': { counts: pending.counts, records: pending.records },
-        '/history?limit=50': hist, '/memory': MEMORY
+        '/history?limit=50': hist, '/memory': memory
       }
       if (!(path in table)) throw new Error(`unexpected path: ${path}`)
+      if (broken[path] === 'hang') return new Promise(() => {})
+      const fault = String(broken[path] || '')
+      if (fault.startsWith('later:')) {
+        reads[path] = (reads[path] || 0) + 1
+        if (reads[path] > 1) throw new Error(fault.slice(6))
+      } else if (fault) throw new Error(fault)
       return table[path]
     },
     os: { notify: () => {} },
@@ -463,7 +470,7 @@ add('f08', 'Needs you — a narrow 420 px pane, the detail view with its back ba
 
 add('f09', 'Activity — day sections, an apply entry selected, files, Compare open, Undo', await frame(async hostEl => {
   await click(findTab(hostEl, /^Activity/), 'the Activity tab')
-  await click(byText(hostEl, /^Compare with the write as staged$/), 'Compare with the write as staged')
+  await click(byText(hostEl, /^Compare with what Hermes asked for$/), 'Compare with what Hermes asked for')
   need(byText(hostEl, /^Hide the comparison$/), 'f09: the comparison did not open')
   need(hostEl.querySelector('.pa-detail [data-amended="effect"]'), 'f09: the amended entry draws no fix-effect line')
   need(hostEl.querySelectorAll('.pa-day').length >= 1, 'f09: the older day has no section heading')
@@ -495,6 +502,66 @@ add('f12', 'Memory — files with meters, MEMORY.md at 99 % with its banner, not
   need(/About to delete/.test(hostEl.querySelector('.pa-notes')?.textContent || ''),
     'f12: the note delete did not arm its two-step confirmation')
 }))
+
+add('f18', 'Empty — Needs you on a first day: nothing waiting, nothing decided yet', await frame(async hostEl => {
+  need(hostEl.querySelector('.pa-clear'), 'f18: All caught up is not drawn')
+}, EMPTY, { entries: [] }))
+
+add('f19', 'Empty — Activity with no records yet', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+}, EMPTY, { entries: [] }))
+
+add('f20', 'Empty — Memory with two empty files', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+}, EMPTY, { entries: [] }, {
+  memory: { file: 'MEMORY.md', chars: 0, limit: 2200, percent: 0, updated: NOW - 600, entries: [] },
+  user: { file: 'USER.md', chars: 0, limit: 1375, percent: 0, updated: NOW - 600, entries: [] }
+}))
+
+add('f21', 'Error — Activity could not be read', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+}, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'state.db is locked' }))
+
+add('f22', 'Loading — Memory still reading', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+}, PENDING, HISTORY, MEMORY, { '/memory': 'hang' }))
+
+add('f23', 'Error — Needs you could not be read, its Details open on the cause', await frame(async hostEl => {
+  const fold = hostEl.querySelector('.pa-state .pa-tech-fold')
+  need(fold, 'f23: the error state has no Details')
+  await click(fold, 'Details on the error')
+}, PENDING, HISTORY, MEMORY, { '/pending': 'state.db is locked' }))
+
+add('f24', 'Loading — Needs you still reading, the bar meters held as placeholders', await frame(async hostEl => {
+  need(hostEl.querySelector('.pa-state .pa-state-label'), 'f24: the loading state has no visible label')
+}, PENDING, HISTORY, MEMORY, { '/pending': 'hang', '/memory': 'hang' }))
+
+add('f25', 'Loading — Activity still reading', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+}, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'hang' }))
+
+add('f26', 'Error — Memory could not be read', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+}, PENDING, HISTORY, MEMORY, { '/memory': 'MEMORY.md could not be opened' }))
+
+add('f27', 'Activity — a refresh failed over loaded records: the amber “could not be refreshed” strip',
+  await frame(async hostEl => {
+    await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+    await click(hostEl.querySelector('.pa-refresh'), 'Refresh')
+    need(hostEl.querySelector('.pa-stale'), 'f27: the failed refresh shows no notice')
+  }, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'later:state.db is locked' }))
+
+add('f28', 'Memory — MEMORY.md over its limit (the stop tone), Details open on the file', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+  await click(hostEl.querySelector('.pa-memory .pa-detail .pa-tech-fold'), 'Details on the file')
+}, PENDING, HISTORY, { ...MEMORY, memory: { ...MEMORY.memory, chars: 2250, percent: 102 } }))
+
+add('f29', 'Activity — an entry selected with its Details open: the record id and the file paths',
+  await frame(async hostEl => {
+    await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+    await click(hostEl.querySelector('.pa-activity .pa-detail .pa-tech-fold'), 'Details on the entry')
+    need(hostEl.querySelector('.pa-activity .pa-tech .pa-act-files'), 'f29: Details shows no file paths')
+  }))
 
 add('f13', 'Needs you — select mode: tile checkboxes, “2 selected · Select all · Cancel”, the summary',
   await frame(async hostEl => {
