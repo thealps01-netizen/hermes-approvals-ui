@@ -432,11 +432,11 @@ add('f03', 'Needs you — the same record, “As written” pressed', await fram
   need(byText(detailOf(hostEl, 'skills:ed170001'), /^Show 120 more lines$/), 'f03: the long op has no “Show N more lines”')
 }))
 
-add('f04', 'Needs you — a description fix: the fix diff, “Use the short version”, held “Approve as written”',
+add('f04', 'Needs you — a description fix: the fix diff, “Use the short version” as the one save button',
   await frame(async hostEl => {
     const card = await pick(hostEl, 'skills:def67890')
     need(byText(card, /^Use the short version/), 'f04: the fix record is missing “Use the short version”')
-    need(byText(card, /^Approve as written$/), 'f04: the fix record is missing “Approve as written”')
+    need(!byText(card, /^Save as written$/), 'f04: “With the fix” still draws a second save button')
   }, FIXREADY))
 
 add('f05', 'Needs you — checking: a group whose review runs, a deleted file box, the primary locked',
@@ -507,34 +507,37 @@ add('f13', 'Needs you — select mode: tile checkboxes, “2 selected · Select 
     'f13: the detail pane does not summarise the 2 picked records')
 }))
 
-add('f14', 'Needs you — a skill group selected: result boxes, members, the stale #3 alert, Reject #n, a scan issue strip',
+add('f14', 'Needs you — a skill group selected: result boxes, members, the stale #3 alert, Don’t save #n, an amber scan issue strip',
   await frame(async hostEl => {
   const card = await pick(hostEl, `skills:${GROUP_ID}`)
   need(card?.querySelectorAll('.pa-file').length >= 3, 'f14: the group draws fewer than 3 result boxes')
-  need(byText(card, /^Reject #3$/), 'f14: the stale member has no “Reject #3”')
-  need(hostEl.querySelector('.pa-strip .pa-alert-danger'), 'f14: the scan issue has no notice strip')
+  need(byText(card, /^Don’t save #3$/), 'f14: the stale member has no “Don’t save #3”')
+  need(hostEl.querySelector('.pa-strip .pa-alert') && !hostEl.querySelector('.pa-strip .pa-alert-danger'),
+    'f14: the scan issue has no amber notice strip')
 }, { ...GROUPED, issues: ['Could not read one skill folder: skills/private-notes (permission denied).'] }))
 
-add('f15', 'Needs you — a suggested fix that deletes most of the new text: the alert with its count', await frame(async hostEl => {
+add('f15', 'Needs you — a suggested fix that deletes most of the new text: the amber alert, “As written” first', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')
   need(/deletes 51 of the 54 new words/.test(card?.textContent || ''), 'f15: the heavy-fix-loss alert is not drawn')
-  need(/^Approve as written/.test(primary(card)?.textContent || ''), 'f15: “Approve as written” is not the primary')
+  need(/^Save as written/.test(primary(card)?.textContent || ''), 'f15: “Save as written” is not the primary')
 }, FIXLOSS))
 
-add('f16', 'Needs you — the full review open: an unverified finding, the cut and siblings lines', await frame(async hostEl => {
+add('f16', 'Needs you — reject advised, the full review open: no primary save, an unverified finding, the cut line', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:aaa11111')
   await click(byText(card, /^Show the full review$/), 'Show the full review')
   need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Hide the full review$/), 'f16: the full review did not open')
+  need(!detailOf(hostEl, 'skills:aaa11111')?.querySelector('.pa-dfoot [data-variant="default"]'),
+    'f16: a reject-advised card still has a primary save button')
 }))
 
-add('f17', 'Needs you — not checked (the review failed): “Approve without review” armed with its warning',
+add('f17', 'Needs you — not checked (the review failed): “Save without review” armed with its warning',
   await frame(async hostEl => {
     const card = await pick(hostEl, 'memory:abc12345')
     if (hostEl.querySelector('.pa-split')?.getAttribute('data-open') === '0') {
       await click(rowOf(hostEl, 'memory:abc12345'), 'the list row memory:abc12345 (narrow: open the detail)')
     }
-    await click(byText(detailOf(hostEl, 'memory:abc12345') || card, /^Approve without review$/), 'Approve without review')
-    need(hostEl.querySelector('.pa-warnline'), 'f17: arming “Approve without review” drew no warning line')
+    await click(byText(detailOf(hostEl, 'memory:abc12345') || card, /^Save without review$/), 'Save without review')
+    need(hostEl.querySelector('.pa-warnline'), 'f17: arming “Save without review” drew no warning line')
     need(/The file now says/.test(detailOf(hostEl, 'memory:abc12345')?.textContent || ''),
       'f17: the op’s note about the current file is not drawn')
   }, UNCHECKED))

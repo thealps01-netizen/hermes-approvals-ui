@@ -1377,3 +1377,23 @@ a clip: the row points at the record, whose full text is the detail's title.
 * The primary decision button ends its row: for a heavy fix "Approve as written" is the primary and
   "Approve with the fix" (outline) comes before it. A failed review's chip carries the warning glyph;
   "…" means "still waiting" and only queued or unassigned reviews wear it.
+
+## Design critique fixes (2026-10-22)
+
+An Impeccable critique (25/40 on Nielsen's heuristics) found five problems; all five were fixed.
+
+- **Reject advised.** A save on a card whose reviewer verdict is `reject` is an outline button with no
+  `A` shortcut, and a click arms the in-place confirm row (`pa.review.rejectWarn`, "Save anyway"), the
+  same pattern as "Save unreviewed". The verdict is advice, not a gate, so saving stays possible.
+- **One save button.** The "With the fix / As written" toggle chooses the version, and the footer draws
+  one save button for that version. Before, it drew both and the toggle only changed the preview, so
+  "As written" could be shown while the highlighted button saved the fix. The card opens on "As written"
+  when the fix is heavy (`fixHeavy`) or held while the write itself is not held, so the first visible
+  button is the safe one. A record with no usable fix keeps its two-button footer.
+- **Amber for warnings.** The heavy-fix notice and the backend `issues` strip use `.pa-alert` (amber);
+  `.pa-alert-danger` stays for stops (the undo conflict, Clear all). `.pa-review` lost its 3 px tone
+  stripe: the verdict seal and badges already carry the tone, and the stripe was the side-tab pattern.
+- **Verbs.** User-facing text says Save / Don't save everywhere (`plugin.js` bundle and the backend
+  `_TEXT` gate messages). API names (`approve`, `reject`) are unchanged.
+- **Undo copy.** `pa.act.hintForce` replaces the "exactly as they were" hint when a conflict arms
+  Force undo.

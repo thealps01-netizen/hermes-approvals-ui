@@ -73,7 +73,7 @@ const BUNDLES = {
         second: 'Second opinion',
       },
       fixview: {
-        label: 'Show the change',
+        label: 'Version to save',
         fix: 'With the fix',
         as: 'As written',
         counts: (after, limit) => `With the fix the description is ${after} of ${limit} characters.`,
@@ -99,8 +99,8 @@ const BUNDLES = {
       },
       legend: {
         move: 'move',
-        approve: 'approve',
-        reject: 'reject',
+        approve: 'save',
+        reject: 'don’t save',
         pick: 'select',
         done: 'done',
       },
@@ -121,9 +121,10 @@ const BUNDLES = {
         undone: 'Undone',
         restored: 'Restored',
         cannot: 'Can’t be undone',
-        byYouApproved: 'approved by you',
-        byYouRejected: 'rejected by you',
+        byYouApproved: 'saved by you',
+        byYouRejected: 'not saved by you',
         hintUndo: 'Undo puts the files back exactly as they were before.',
+        hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
         hintRestore: 'Restore puts it back under Needs you.',
       },
       stage: {
@@ -144,7 +145,7 @@ const BUNDLES = {
         label: 'Approval views',
       },
       field: {
-        failedBefore: 'Approving was attempted',
+        failedBefore: 'Saving was attempted',
         fixCurrent: n => `As written (${plural(n, 'character', 'characters')})`,
         fixSuggested: n => `Shortened (${plural(n, 'character', 'characters')})`,
         findings: 'Minor notes',
@@ -157,9 +158,9 @@ const BUNDLES = {
         reject: 'Reject advised',
         rule: 'Rule check failed',
         stale: 'Cannot be applied',
-        staleWhy: 'Hermes cannot apply this write as staged: the text it changes is no longer in the file. Reject it; the change can be staged again against the current file.',
+        staleWhy: 'Hermes cannot apply this write as staged: the text it changes is no longer in the file. Choose “Don’t save”; the change can be staged again against the current file.',
         fixFirst: 'Shorten first',
-        failedBefore: 'Approve failed',
+        failedBefore: 'Save failed',
       },
       state: {
         newSkill: 'New skill',
@@ -176,15 +177,15 @@ const BUNDLES = {
         select: 'Select these changes',
         changes: n => plural(n, 'change', 'changes'),
         withDelete: 'includes deleting the skill',
-        approve: n => `Approve ${plural(n, 'change', 'changes')}`,
-        rejectAll: n => `Reject all ${n}`,
-        rejectOne: n => `Reject #${n}`,
+        approve: n => `Save ${plural(n, 'change', 'changes')}`,
+        rejectAll: n => `Don’t save all ${n}`,
+        rejectOne: n => `Don’t save #${n}`,
         list: n => `Changes (${n})`,
         showLines: 'Show lines',
         hideLines: 'Hide lines',
-        staleWhy: 'Some changes cannot be applied after the ones before them. Reject those on their own; the rest stay together and are reviewed again.',
-        staleHeld: list => `Approve unlocks when every change applies — reject ${list} first.`,
-        fixHeld: list => `Approve unlocks when every description fits — shorten ${list} first.`,
+        staleWhy: 'Some changes cannot be applied after the ones before them. Leave those out with “Don’t save”; the rest stay together and are reviewed again.',
+        staleHeld: list => `Saving unlocks when every change applies — leave out ${list} first.`,
+        fixHeld: list => `Saving unlocks when every description fits — shorten ${list} first.`,
         status: {
           changed: 'Changed',
           new: 'New file',
@@ -216,8 +217,9 @@ const BUNDLES = {
         other: 'Against',
         tokens: (i, o) => `${i} in / ${o} out tokens`,
         cost: (usd, status) => (status === 'included' ? 'included' : `$${usd.toFixed(4)} ${status}`),
-        locked: 'Approve unlocks when the pre-review has finished and no rule check failed.',
-        skipWarn: 'This write was not checked against your rules. Apply it anyway?',
+        locked: 'Saving unlocks when the pre-review has finished and no rule check failed.',
+        skipWarn: 'This write was not checked against your rules. Save it anyway?',
+        rejectWarn: 'The reviewer advises not saving this. Save it anyway?',
         title: 'Pre-review',
         rule: 'Rule check',
         check: 'Check',
@@ -226,12 +228,12 @@ const BUNDLES = {
         quoted: 'The reviewer quoted',
         unverifiedWhy: 'This quote could not be found in the write (or is too short to check), so the finding does not count toward the verdict.',
         notes: n => `${plural(n, 'minor note', 'minor notes')} under Details`,
-        fixHint: 'Writes the change with the suggested edits shown above applied. The rule checks run again on the edited text first.',
+        fixHint: 'Saves the change with the suggested edits shown above applied. The rule checks run again on the edited text first.',
         fixLeft: why => `The suggested edits do not clear every problem: ${why}`,
         fixCovers: (n, all) => `The fix covers ${n} of ${all} problems; the others have no edit and stay as advice.`,
         fixKeeps: (kept, added) => `With the fix, ${kept} of the ${added} new words in the text it edits remain.`,
         fixRemoves: (removed, added, pct) => `The suggested fix deletes ${removed} of the ${added} new words ` +
-          `in the text it edits (${pct}%). Read it before approving with it; Approve as written keeps the write.`,
+          `in the text it edits (${pct}%). Read it before saving with the fix; “As written” keeps the write unchanged.`,
         unverified: 'Unverified quote',
         cut: list => `The reviewer saw a shortened input; it left out ${list}.`,
         cutPart: (chars, part) => `${plural(chars, 'character', 'characters')} of ${part}`,
@@ -240,7 +242,7 @@ const BUNDLES = {
           target: 'the current target',
           siblings: 'the other pending writes to this file',
         },
-        carried: (ids, n) => `Approved since this review: ${ids}. ${n === 1 ? 'It' : 'They'} changed the same file, and the review already saw ${n === 1 ? 'it' : 'them'} while ${n === 1 ? 'it was' : 'they were'} waiting, so the review still stands.`,
+        carried: (ids, n) => `Saved since this review: ${ids}. ${n === 1 ? 'It' : 'They'} changed the same file, and the review already saw ${n === 1 ? 'it' : 'them'} while ${n === 1 ? 'it was' : 'they were'} waiting, so the review still stands.`,
         siblings: n => `Reviewed together with ${plural(n, 'other pending write', 'other pending writes')} to this file.`,
         outdated: {
           model: 'This review was made by another model than the one now set in Settings → Models — “Review again” reads it with the current one.',
@@ -261,34 +263,34 @@ const BUNDLES = {
         all: 'Select all',
         none: 'Clear selection',
         done: 'Cancel',
-        meter: 'Memory after approving',
-        approve: n => `Approve ${n}`,
-        reject: n => `Reject ${n}`,
-        confirmApprove: n => `Apply ${plural(n, 'record', 'records')} now? Each lands in “Activity” and can be undone there.`,
-        advisedReject: (n, all) => all === 1 ? 'The AI review advised rejecting it.'
-          : `The AI review advised rejecting ${n} of them.`,
-        confirmReject: n => `Reject ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Activity” tab.`,
+        approve: n => `Save ${n}`,
+        reject: n => `Don’t save ${n}`,
+        confirmApprove: n => `Save ${plural(n, 'record', 'records')} now? Each lands in “Activity” and can be undone there.`,
+        advisedReject: (n, all) => all === 1 ? 'The AI review advised not saving it.'
+          : `The AI review advised not saving ${n} of them.`,
+        confirmReject: n => `Don’t save ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Activity” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
-        approvedDone: (ok, all) => `${ok} of ${all} approved`,
-        rejectedDone: (ok, all) => `${ok} of ${all} rejected`,
+        approvedDone: (ok, all) => `${ok} of ${all} saved`,
+        rejectedDone: (ok, all) => `${ok} of ${all} not saved`,
         failed: (bad, why) => `${plural(bad, 'record', 'records')} failed: ${why}`,
         held: n => (n === 1
-          ? '1 selected record needs a decision of its own: approve it on its card or untick it.'
-          : `${n} selected records need a decision of their own: approve them on their cards or untick them.`),
+          ? '1 selected record needs a decision of its own: save it on its card or untick it.'
+          : `${n} selected records need a decision of their own: save them on their cards or untick them.`),
       },
       btn: {
         undo: 'Undo',
         forceUndo: 'Force undo',
         fix: 'Shorten description',
         onlyCreate: 'Create only this',
-        onlyApply: 'Apply only this',
+        onlyApply: 'Save only this',
         reReview: 'Review again',
-        approveFixed: 'Approve with the fix',
-        approveAsIs: 'Approve as written',
-        skipReview: 'Approve without review',
-        skipConfirm: 'Apply unreviewed',
+        approveFixed: 'Save with the fix',
+        approveAsIs: 'Save as written',
+        skipReview: 'Save without review',
+        skipConfirm: 'Save unreviewed',
         skipCancel: 'Cancel',
+        saveAnyway: 'Save anyway',
         restore: 'Restore',
         later: 'Later',
         saveMemory: 'Save to memory',
@@ -310,8 +312,8 @@ const BUNDLES = {
         deletesSkill: 'Deletes the whole skill folder. You can bring it back from the “Activity” tab.',
       },
       hist: {
-        apply: 'Approved and applied',
-        rejected: 'Rejected',
+        apply: 'Saved',
+        rejected: 'Not saved',
         clear: n => (n === 1 ? 'Clear 1 record' : n ? `Clear all ${plural(n, 'record', 'records')}` : 'Clear'),
         clearConfirm: n => `Clearing deletes all ${plural(n, 'record', 'records')} of the history, not only the ones `
           + 'shown, and drops their undo copies — those records can no longer be taken back.',
@@ -320,7 +322,7 @@ const BUNDLES = {
         clearFailed: 'Could not clear the history',
         external: 'Changed outside the pane',
         externalDetail: n => `${plural(n, 'file', 'files')} changed outside the pane`,
-        failed: 'Approve failed',
+        failed: 'Save failed',
         undone: 'Undone — the files are back to the state before this record',
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
         noFiles: 'No file changes',
@@ -365,7 +367,7 @@ const BUNDLES = {
         retry: 'Retry',
         loadingData: 'Reading…',
         historyTitle: 'No records yet',
-        historyBody: 'Everything you approve or reject, and every change made outside this pane, collects here; undo lives here too.',
+        historyBody: 'Everything you save or don’t save, and every change made outside this pane, collects here; undo lives here too.',
         loading: 'Reading memory…',
         historyError: 'The history could not be read.',
         memoryError: 'Memory could not be read.',
@@ -387,7 +389,7 @@ const BUNDLES = {
         drafted: 'Merge request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
-        deleteConfirm: 'About to delete — undoable from the “Activity” tab',
+        deleteConfirm: 'About to delete — you can undo this from the “Activity” tab',
         deleteCancel: 'Cancel',
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
@@ -428,7 +430,7 @@ const BUNDLES = {
         undoOk: files => `Undone: ${files}`,
         deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
-        rejected: 'Rejected — you can restore it from the “Activity” tab',
+        rejected: 'Not saved — you can restore it from the “Activity” tab',
         stale: 'This record changed since it was shown — the list is read again.',
         restored: id => (id ? `The record is back under Needs you as #${id}.` : 'The record is back under Needs you.'),
         restoredAll: ids => `The changes are back under Needs you as ${ids}.`,
@@ -948,7 +950,7 @@ const STYLE = `
 .pa-gist{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary)}
 .pa-alert-sub{margin-top:4px;color:var(--ui-text-secondary)}
 .pa-review{display:flex;flex-direction:column;gap:${G.xs}px;border-radius:${R.box}px;padding:${G.xs}px ${G.sm}px;
-  background:color-mix(in srgb,var(--pa-tone) 5%,transparent);border-left:3px solid var(--pa-tone)}
+  background:color-mix(in srgb,var(--pa-tone) 5%,transparent);border:${HAIRLINE}}
 .pa-review-head{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex-wrap:wrap}
 .pa-review-meta{flex:1;min-width:0;font-size:${FS.micro}px;color:var(--ui-text-secondary);text-align:right}
 .pa-majors{display:flex;flex-direction:column;gap:${G.sm}px}
@@ -1700,7 +1702,7 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       edits > 0 && fixLeft.length ? alertBox('left', t('pa.review.fixLeft', fixLeft.join(' ')), true) : null,
       edits > 0 && effect && fixHeavy(effect)
         ? alertBox('effect', t('pa.review.fixRemoves', effect.added - effect.kept, effect.added,
-            Math.round(100 * (effect.added - effect.kept) / effect.added)), true)
+            Math.round(100 * (effect.added - effect.kept) / effect.added)))
         : null,
       edits > 0 && effect && !fixHeavy(effect)
         ? jsx('div', { className: 'pa-note', children: t('pa.review.fixKeeps', effect.kept, effect.added) }, 'effect')
@@ -2041,7 +2043,7 @@ function DoneRow({ done, entries, t, onChanged }) {
   }, done.key)
 }
 
-function Meter({ fit, label }) {
+function Meter({ fit }) {
   const t = usePluginI18n(ID)
   const lim = Number(fit.limit) || 1
   const at = v => Math.max(0, Math.min(100, (Number(v) || 0) * 100 / lim))
@@ -2055,7 +2057,7 @@ function Meter({ fit, label }) {
       jsxs('div', {
         className: 'pa-meter-label',
         children: [
-          jsx('span', { children: label || t('pa.meter.label') }, 'label'),
+          jsx('span', { children: t('pa.meter.label') }, 'label'),
           jsx('b', { className: 'pa-meter-value', children: t('pa.meter.change', before, after) }, 'value')
         ]
       }, 'label'),
@@ -2190,7 +2192,8 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const [fixArmed, setFixArmed] = useState(false)
   const [shownLines, setShownLines] = useState(() => new Set())
   const [expandedChecks, setExpandedChecks] = useState(() => new Set())
-  const [view, setView] = useState('fix')
+  const [picked, setView] = useState('')
+  const [rejectArmed, setRejectArmed] = useState('')
   const detailsAt = useRef(null)
   const isGroup = Boolean(item.parts)
   const groupSubsystem = isGroup ? 'skills' : subsystem
@@ -2236,6 +2239,8 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
     Boolean(isGroup ? fixesInGroup.length : fixSingle), failedBefore, status, review.verdict)
   const okEdits = [...hard, ...major].filter(x => x.edit?.ok && !x.unverified)
   const hasToggle = Boolean(fixSingle) || (edits > 0 && okEdits.length > 0)
+  const asFirst = !fixSingle && (fixHeavy(effect) || (fixBlocked && !fixUnreviewed && !approveBlocked))
+  const view = picked || (asFirst ? 'as' : 'fix')
   const showFix = hasToggle && view === 'fix'
   const title = rowTitle(t, subsystem, item)
   const ids = [item.id, ...(parts || []).map(p => p.id)]
@@ -2272,16 +2277,14 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const kindTarget = subsystem === 'memory' ? recordFile(subsystem, item)
     : isGroup ? (item.names || []).join(', ') : (plain.target || groups.map(g => g.name).join(', '))
   const isFix = !isGroup && Boolean(fixSingle)
-  const labelPrimary = isGroup ? t('pa.grp.approve', parts.length)
-    : isFix ? primaryLabel(subsystem, item)
-      : edits > 0 ? t('pa.btn.approveAsIs') : primaryLabel(subsystem, item)
+  const labelPrimary = isGroup ? t('pa.grp.approve', parts.length) : primaryLabel(subsystem, item)
   const labelDecline = isGroup ? t('pa.grp.rejectAll', parts.length) : t('pa.btn.dontSave')
   const declineIsDelete = !isGroup && subsystem !== 'memory' && skillKindOf(item) === 'delete'
-  const primaryKey = isFix ? 'fix' : 'approve'
-  const primaryBlocked = isFix ? false : approveBlocked
-  const onPrimary = isFix ? () => void applyFix(item.id) : () => void decide('approve')
+  const onPrimary = () => void applyFix(item.id)
   const titleId = `pa-title-${groupSubsystem}-${item.id}`
   const hot = edits > 0 && !isFix ? (fixedVariant === 'default' ? 'fixed' : 'primary') : 'primary'
+  const twoWays = edits > 0 && !isFix && hasToggle
+  const pickAs = (isFix || twoWays) && view === 'as'
 
   const verdict = hard.length ? 'rule' : stale.length ? 'stale' : (fixSingle || fixesInGroup.length) ? 'edit'
     : failedBefore ? 'failed' : status === 'running' ? 'running' : status !== 'done' ? 'unchecked'
@@ -2407,7 +2410,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       : null,
     edits > 0 && effect && fixHeavy(effect)
       ? alertBox('frontFixLoss', t('pa.review.fixRemoves', effect.added - effect.kept, effect.added,
-          Math.round(100 * (effect.added - effect.kept) / effect.added)), true)
+          Math.round(100 * (effect.added - effect.kept) / effect.added)))
       : null,
     ...opened.map(row => jsx(Finding, { finding: row.finding }, `finding-${row.key}`))
   ]
@@ -2558,7 +2561,30 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       ...notes.map((f, i) => jsx(Finding, { finding: f }, `n${i}`))
     ]
   }, 'open')
-  const armed = (canSkip && skipArmed) || fixArmed
+  const advised = verdict === 'reject'
+  if (rejectArmed && !advised) setRejectArmed('')
+  const armed = (canSkip && skipArmed) || fixArmed || Boolean(rejectArmed)
+  const guard = (gate, go) => (advised ? () => setRejectArmed(gate) : go)
+  const fixedGo = fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true)
+  const primaryButtons = () => {
+    const a = advised ? '' : t('pa.key.a')
+    const tone = base => (advised ? 'outline' : base)
+    const asIs = (variant, hotKey) => heldButton(busy, t, 'approve', isGroup ? labelPrimary : t('pa.btn.approveAsIs'), tone(variant),
+      isFix || approveBlocked, heldWhy, guard('approve', () => decide('approve')), hotKey)
+    const fixed = (variant, hotKey) => heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), tone(variant),
+      fixBlocked && !fixUnreviewed, fixWhy, guard('fixed', fixedGo), hotKey)
+    if (isFix) {
+      return [pickAs ? asIs('default', a)
+        : heldButton(busy, t, 'fix', labelPrimary, 'default', false, '', onPrimary, a)]
+    }
+    if (twoWays) return [pickAs ? asIs('default', a) : fixed('default', a)]
+    if (edits > 0) {
+      const pair = [asIs(asIsVariant, hot === 'primary' ? a : ''), fixed(fixedVariant, hot === 'fixed' ? a : '')]
+      return hot === 'fixed' ? pair : pair.reverse()
+    }
+    return [heldButton(busy, t, 'approve', labelPrimary, tone('default'), approveBlocked, heldWhy,
+      guard('approve', () => decide('approve')), a)]
+  }
   const typeWord = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
   const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
   const crumbFile = subsystem === 'memory' ? [kindTarget]
@@ -2636,23 +2662,32 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         'data-armed': armed ? '1' : undefined,
         style: { minHeight: H.detailFoot },
         children: armed ? [
-          jsx('div', { className: 'pa-warnline', role: 'alert', children: t('pa.review.skipWarn') }, 'skipWarn'),
+          jsx('div', {
+            className: 'pa-warnline', role: 'alert', children: t(rejectArmed ? 'pa.review.rejectWarn' : 'pa.review.skipWarn')
+          }, 'skipWarn'),
           jsxs('div', {
             className: 'pa-actions',
             children: [
               jsx(Button, {
                 variant: 'text', size: 'sm', disabled: leaving,
-                onClick: () => { setSkipArmed(false); setFixArmed(false) },
+                onClick: () => { setSkipArmed(false); setFixArmed(false); setRejectArmed('') },
                 children: t('pa.btn.skipCancel')
               }, 'cancel'),
-              skipArmed && canSkip
+              rejectArmed
                 ? jsx(Button, {
                     variant: 'outline', size: 'sm',
-                    disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
-                    onClick: () => void decide('approve', [], true), children: t('pa.btn.skipConfirm')
-                  }, 'skip')
-                : heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'outline', false, '',
-                    () => decide('approve', [], true, true))
+                    disabled: Boolean(busy) && busy !== rejectArmed, loading: busy === rejectArmed,
+                    onClick: () => void decide('approve', [], false, rejectArmed === 'fixed'),
+                    children: t('pa.btn.saveAnyway')
+                  }, 'anyway')
+                : skipArmed && canSkip
+                  ? jsx(Button, {
+                      variant: 'outline', size: 'sm',
+                      disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
+                      onClick: () => void decide('approve', [], true), children: t('pa.btn.skipConfirm')
+                    }, 'skip')
+                  : heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'outline', false, '',
+                      () => decide('approve', [], true, true))
             ]
           }, 'actions')
         ] : [
@@ -2687,18 +2722,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 onClick: () => void decide('reject'),
                 children: [labelDecline, kbd(t('pa.key.x'), 'pa-btn-kbd')]
               }, 'reject'),
-              isFix
-                ? heldButton(busy, t, 'approve', t('pa.btn.approveAsIs'), 'outline', true, heldWhy,
-                    () => decide('approve'))
-                : null,
-              ...[
-                heldButton(busy, t, primaryKey, labelPrimary, isFix ? 'default' : asIsVariant,
-                  primaryBlocked, heldWhy, onPrimary, hot === 'primary' ? t('pa.key.a') : ''),
-                !edits || isFix ? null
-                  : heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), fixedVariant, fixBlocked && !fixUnreviewed,
-                      fixWhy, fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true),
-                      hot === 'fixed' ? t('pa.key.a') : '')
-              ][hot === 'fixed' || isFix || !edits ? 'slice' : 'reverse']()
+              ...primaryButtons()
             ]
           }, 'actions')
         ]
@@ -2880,7 +2904,7 @@ function BulkDetail({ items, picked, setPicked, onChanged }) {
             ]
           }, 'actions')
         ] : [
-          fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit, label: t('pa.bulk.meter') }, 'meter') },
+          fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit }, 'meter') },
             'left') : null,
           jsxs('div', {
             className: 'pa-actions',
@@ -3366,7 +3390,7 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
         }, 'note')
   const [chipKey, chipTone] = histChip(entry)
   const actor = entry.kind === 'apply' ? t('pa.act.byYouApproved') : entry.kind === 'rejected' ? t('pa.act.byYouRejected') : ''
-  const hint = entry.undoable ? t('pa.act.hintUndo') : restorable ? t('pa.act.hintRestore') : ''
+  const hint = entry.undoable ? t(conflict ? 'pa.act.hintForce' : 'pa.act.hintUndo') : restorable ? t('pa.act.hintRestore') : ''
   const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
   return jsxs('div', {
     ref: own,
@@ -3846,7 +3870,7 @@ function Pane() {
     staleNotice(t, viewError, viewRetry),
     issues.length
       ? jsx('div', {
-          className: 'pa-alert pa-alert-danger',
+          className: 'pa-alert',
           role: 'alert',
           children: issues.map((text, i) => jsx('div', { children: text }, `${i}:${text}`))
         }, 'issues')
