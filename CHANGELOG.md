@@ -11,6 +11,23 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 
 ### Changed
 
+* **One word for the decision: "Save" and "Don't save".** Buttons, keys, bulk actions, messages and
+  the activity log no longer mix Approve, Reject, Apply and Use for the same choice.
+
+* **The "With the fix / As written" switch now picks what is saved.** The card shows one save button
+  that follows the switch, instead of two save buttons that ignored it. A fix that deletes most of the
+  new text, or one that cannot be applied, opens on "As written".
+
+* **When the reviewer advises not saving, saving takes a second click.** No save button is
+  highlighted, the A key does nothing, and a click asks "Save it anyway?" first.
+
+* **Warnings are amber, not red.** The "fix removes most of the new text" notice and the "could not
+  read a folder" strip are warnings; red is left for real stops. The review box lost its coloured side
+  stripe.
+
+* **Undo texts say what really happens.** Next to "Force undo" the panel says the later change is
+  thrown away; the note delete says "you can undo this" instead of "undoable".
+
 * **Selecting several records works like the design.** After "Select" each record's icon turns into
   its tick box, the list header reads "2 selected · Select all · Cancel", and the right side lists what
   you picked with "Reject 2" and "Approve 2" under it (plus "Memory after approving" when they all

@@ -673,7 +673,7 @@ def check_app_layout() -> None:
         _report("plugin.js: the Needs-you keys are not handled on the split root — they would act "
                 "outside the tab or not at all")
     if "'aria-keyshortcuts': hot ? 'A' : undefined" not in src \
-            or "hot === 'primary' ? t('pa.key.a') : ''" not in detail:
+            or "const a = advised ? '' : t('pa.key.a')" not in detail:
         _report("plugin.js: the primary action lost aria-keyshortcuts A — the key is not announced "
                 "and finds no button")
     if "'aria-pressed': view === id" not in detail:
@@ -805,8 +805,8 @@ def check_skill_groups_panel() -> None:
         _report("plugin.js: the pending list does not draw ONE front card per skill group — its members "
                 "would be cards of their own")
     if "const heldByRule = isGroup ? fixesInGroup.length > 0" not in card \
-            or "const primaryBlocked = isFix ? false : approveBlocked" not in card \
-            or "primaryBlocked, heldWhy, onPrimary, " not in card:
+            or "isFix || approveBlocked, heldWhy, guard('approve'" not in card \
+            or "labelPrimary, tone('default'), approveBlocked, heldWhy," not in card:
         _report("plugin.js: the group's primary action is not held by the group gate — a group with a stale change, "
                 "a rule check or an unfinished review could be approved")
     if "groups: items.filter(item => item.parts).map(item => item.id)," not in src \

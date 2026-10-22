@@ -701,9 +701,9 @@ _TEXT = {
     'hard_memory_twice': '{name}: this record writes the same note twice: {quote}',
     'review_again_no_model': 'No model is assigned to the approvals review (Settings → Models), so the review was kept as it is.',
     'hard_unchecked': 'The rule checks could not run ({error}); approving is locked until they do.',
-    'gate_hard': 'A rule check failed, so Approve stays locked: {reasons}',
-    'gate_running': 'The pre-review is still running; Approve unlocks when it finishes.',
-    'gate_queued': 'The pre-review of this version of the write has not run yet; Approve unlocks once it is done.',
+    'gate_hard': 'A rule check failed, so saving stays locked: {reasons}',
+    'gate_running': 'The pre-review is still running; saving unlocks when it finishes.',
+    'gate_queued': 'The pre-review of this version of the write has not run yet; saving unlocks once it is done.',
     'gate_stale': 'This record changed after the panel showed it (the write, a rule check or the pre-review), '
                   'so nothing was written. Look at the card again and decide on what it shows now.',
     'restored': 'Back in the queue: {summary}',
@@ -713,9 +713,9 @@ _TEXT = {
                           'or the copy was cleaned up with the history).',
     'err_restore_failed': 'The record could not be put back in the queue; nothing changed.',
     'what_rewrite': 'rewrites {where} in full',
-    'gate_failed': 'The pre-review failed. Run it again, or use "Approve without review".',
+    'gate_failed': 'The pre-review failed. Run it again, or use "Save without review".',
     'gate_unassigned': 'No pre-review model is set (Settings → Models → Approvals review). '
-                       'Pick one, or use "Approve without review".',
+                       'Pick one, or use "Save without review".',
     'summary_unreviewed': '{summary} — approved without pre-review',
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
     'amend_nothing': 'There is no suggested edit that still matches this record.',
@@ -736,10 +736,10 @@ _TEXT = {
     'group_failed': 'Change #{n} could not be applied, so every change of the group was taken back: {error}',
     'group_unreviewed': ' — approved without pre-review',
     'gate_group_stale': 'Change {changes} cannot be applied after the changes before it, so nothing was written. '
-                        'Reject that change first.',
+                        'Leave that change out with “Don’t save” first.',
     'gate_group_fix': 'Change #{n} needs its description shortened first.',
-    'err_member_approve': 'This record is one change of a group: approve the group as a whole, '
-                          'or reject the changes you do not want first.',
+    'err_member_approve': 'This record is one change of a group: save the group as a whole, '
+                          'or leave out the changes you do not want first.',
     'err_group_scope': 'Only skill records form groups.',
 }
 

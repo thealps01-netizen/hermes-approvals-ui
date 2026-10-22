@@ -978,9 +978,9 @@ for (const key of ['skills:def67890', 'skills:aaa11111']) {
   sweepText += ' ' + liveText(en.hostEl)
 }
 await toFront(en.hostEl, 'memory:abc12345')
-must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Approve failed',
+must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Save failed',
   'Needs one edit', 'Safe to save', 'new-skill', 'Save skill', 'Show the full review', 'MEMORY.md', 'Waiting · 3',
-  'move', 'approve', 'reject'], 'en')
+  'move', 'save', 'don’t save'], 'en')
 noRawKeys(sweepText, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
@@ -1193,12 +1193,12 @@ for (const mounted of [en, other]) {
   const vtitle = v => v?.querySelector('.pa-vtitle')?.textContent
   await toFront(en.hostEl, 'memory:abc12345')
   const failed = verdictOf('memory:abc12345')
-  if (vtitle(failed) !== 'Approve failed' || failed?.getAttribute('data-k') !== 'failed'
+  if (vtitle(failed) !== 'Save failed' || failed?.getAttribute('data-k') !== 'failed'
       || failed?.style.getPropertyValue('--pa-tone') !== 'var(--ui-red)') {
     fail(`a record whose approve was refused is not marked as such: ${vtitle(failed)}`)
   }
   must(en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')?.textContent,
-    ['Approving was attempted: Approving was already attempted and Hermes refused'], 'the refused attempt')
+    ['Saving was attempted: Approving was already attempted and Hermes refused'], 'the refused attempt')
   await toFront(en.hostEl, 'skills:def67890')
   const fixable = verdictOf('skills:def67890')
   if (vtitle(fixable) !== 'Needs one edit — Hermes already drafted it' || fixable?.getAttribute('data-k') !== 'edit'
@@ -1215,7 +1215,7 @@ for (const mounted of [en, other]) {
   if (!(newCell?.querySelector('.pa-dh')?.textContent || '').includes('new-skill')) {
     fail('a new skill does not name itself in its head line')
   }
-  if (buttons(newCell, /Approve with the fix/).length) {
+  if (buttons(newCell, /Save with the fix/).length) {
     fail('a clean record offers a fix it does not need')
   }
 }
@@ -1332,7 +1332,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
-  must(en.hostEl.textContent, ['About to delete — undoable from the “Activity” tab'], 'delete confirmation copy')
+  must(en.hostEl.textContent, ['About to delete — you can undo this from the “Activity” tab'], 'delete confirmation copy')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/memory/delete')
   if (!post || post.body.target !== 'memory' || post.body.text !== 'A note') {
@@ -1467,6 +1467,10 @@ const actFind = async (hostEl, text) => {
   }
   if (line && line.parentElement?.firstElementChild !== line) {
     fail('the conflict alert is not at the top of the detail body, where it can fall below the fold')
+  }
+  const forceHint = forcedCard?.querySelector('.pa-act-hint')?.textContent || ''
+  if (/exactly as they were/.test(forceHint) || !/throws away the later change/.test(forceHint)) {
+    fail(`next to “Force undo” the hint still promises an exact undo: ${forceHint}`)
   }
   if (forced?.getAttribute('data-variant') !== 'destructive') fail('the forced undo is not a kit destructive Button')
   await click(forced, 60)
@@ -1632,7 +1636,7 @@ const actFind = async (hostEl, text) => {
   if (!/skills\/new-skill\/SKILL\.md/.test(detail?.querySelector('.pa-act-files')?.textContent || '')) {
     fail('activity-rows: a row lost its file')
   }
-  must(detail?.textContent, ['Skill', '#act10003', 'approved by you', 'Saved skill', 'Can be undone', 'Files',
+  must(detail?.textContent, ['Skill', '#act10003', 'saved by you', 'Saved skill', 'Can be undone', 'Files',
     'What happened', 'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
   act.root.unmount()
   act.hostEl.remove()
@@ -1649,7 +1653,9 @@ const actFind = async (hostEl, text) => {
   if (!/deletes 51 of the 54 new words/.test(card?.textContent || '')) {
     fail('front-fix-loss: the heavy-fix alert (count of deleted new words) is not drawn on the closed front card')
   }
-  if (!card?.querySelector('.pa-alert.pa-alert-danger')) fail('front-fix-loss: the alert is not a danger alert box')
+  if (!card?.querySelector('.pa-alert') || card.querySelector('.pa-alert-danger')) {
+    fail('front-fix-loss: the alert is not an amber alert box (red is only for a stop)')
+  }
   REST.pending = null
   loss.root.unmount()
   loss.hostEl.remove()
@@ -1903,7 +1909,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   await click(buttons(bar, /^Select all$/)[0])
   must(barOf(bulk)?.textContent, ['3 selected', 'Clear selection', '3 records selected'], 'bulk all')
   if (!cardOf(bulk)) fail('no selection summary in the detail pane over three ticked records')
-  const lockedApprove = buttons(barOf(bulk), /^Approve 3$/)[0]
+  const lockedApprove = buttons(barOf(bulk), /^Save 3$/)[0]
   if (lockedApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a flagged record selected')
   if (lockedApprove?.disabled) fail('the locked bulk Approve is a disabled button: its Tip can never be reached')
   const heldTip = lockedApprove?.closest('[data-tip]')?.getAttribute('data-tip') || ''
@@ -1911,23 +1917,23 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     fail(`the locked bulk Approve does not say how many records need their own decision: ${JSON.stringify(heldTip)}`)
   }
   if (lockedApprove) await click(lockedApprove)
-  if (/Apply 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
+  if (/Save 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
   if (posts().length !== before) fail('the locked bulk Approve sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
   must(barOf(bulk)?.textContent, ['2 selected'], 'bulk flagged unticked')
-  const openApprove = buttons(barOf(bulk), /^Approve 2$/)[0]
+  const openApprove = buttons(barOf(bulk), /^Save 2$/)[0]
   if (!openApprove || openApprove.getAttribute('aria-disabled') === 'true') fail('bulk Approve stays locked once every selected record is approvable')
   if (openApprove?.closest('[data-tip]')) fail('an open bulk Approve still carries the "needs a decision" Tip')
   await click(openApprove)
-  must(barOf(bulk)?.textContent, ['Apply 2 records now?'], 'bulk arming')
+  must(barOf(bulk)?.textContent, ['Save 2 records now?'], 'bulk arming')
   if (posts().length !== before) fail('bulk approve fired before Confirm')
   await click(bulk.hostEl.querySelector('.pa-bulk-cancel'))
   if (posts().length !== before) fail('Cancel still sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
   must(barOf(bulk)?.textContent, ['3 selected'], 'bulk flagged ticked again')
-  await click(buttons(barOf(bulk), /^Reject 3$/)[0])
+  await click(buttons(barOf(bulk), /^Don’t save 3$/)[0])
   const arm = bulk.hostEl.querySelector('.pa-bulk [role="alert"]')
-  if (!arm || !/Reject 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
+  if (!arm || !/Don’t save 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
     fail('bulk reject does not arm with its own warning (and the way back through Restore)')
   }
   if (posts().length !== before) fail('bulk reject fired before Confirm')
@@ -1938,19 +1944,19 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     fail(`bulk Reject does not act on every selected record, the flagged one included: ${shape}`)
   }
   const said = lastSaid()
-  if (said?.kind !== 'success' || said?.message !== '3 of 3 rejected') fail(`bulk result wrong: ${JSON.stringify(said)}`)
+  if (said?.kind !== 'success' || said?.message !== '3 of 3 not saved') fail(`bulk result wrong: ${JSON.stringify(said)}`)
   bulk.hostEl.remove()
 
   const ok = { status: 'done', verdict: 'approve', summary: 'Fine.', findings: [], hard: [] }
-  for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised rejecting 1 of them.']]) {
+  for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised not saving 1 of them.']]) {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict } })
     const advisedBulk = await mount('en')
     await selectMode(advisedBulk.hostEl)
     await click(buttons(barOf(advisedBulk), /^Select all$/)[0])
     await click(pickOf(advisedBulk, 'skills:def67890'))
-    await click(buttons(barOf(advisedBulk), /^Approve 2$/)[0])
+    await click(buttons(barOf(advisedBulk), /^Save 2$/)[0])
     const armed = barOf(advisedBulk)?.textContent || ''
-    if (line ? !armed.includes(line) : /advised rejecting/.test(armed)) {
+    if (line ? !armed.includes(line) : /advised not saving/.test(armed)) {
       fail(`bulk Approve with a ${verdict} verdict selected arms with: ${armed}`)
     }
     advisedBulk.hostEl.remove()
@@ -1960,9 +1966,9 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     const single = await mount('en')
     await selectMode(single.hostEl)
     await click(pickOf(single, 'skills:aaa11111'))
-    await click(buttons(barOf(single), /^Approve 1$/)[0])
+    await click(buttons(barOf(single), /^Save 1$/)[0])
     const armed = barOf(single)?.textContent || ''
-    if (!armed.includes('The AI review advised rejecting it.') || /of them/.test(armed)) {
+    if (!armed.includes('The AI review advised not saving it.') || /of them/.test(armed)) {
       fail(`bulk Approve of one advised record arms with: ${armed}`)
     }
     single.hostEl.remove()
@@ -1975,10 +1981,10 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const from0 = posts().length
   await click(buttons(barOf(partial), /^Select all$/)[0])
   await click(pickOf(partial, 'skills:def67890'))
-  await click(buttons(barOf(partial), /^Approve 2$/)[0])
+  await click(buttons(barOf(partial), /^Save 2$/)[0])
   await click(partial.hostEl.querySelector('.pa-bulk-go'), 80)
   const told = lastSaid()
-  if (told?.kind !== 'error' || told?.message !== '1 of 2 approved · 1 record failed: Hermes refused it') {
+  if (told?.kind !== 'error' || told?.message !== '1 of 2 saved · 1 record failed: Hermes refused it') {
     fail(`a partial bulk failure is not reported with its reason: ${JSON.stringify(told)}`)
   }
   const versions = posts().slice(from0).map(p => JSON.stringify(p.body.versions)).join(' ')
@@ -1993,10 +1999,10 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   await selectMode(stale.hostEl)
   await click(buttons(barOf(stale), /^Select all$/)[0])
   await click(pickOf(stale, 'skills:def67890'))
-  await click(buttons(barOf(stale), /^Approve 2$/)[0])
+  await click(buttons(barOf(stale), /^Save 2$/)[0])
   await click(stale.hostEl.querySelector('.pa-bulk-go'), 80)
   const staleSaid = lastSaid()
-  if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 approved · 1 record failed: ${STALE_ERR}`) {
+  if (staleSaid?.kind !== 'error' || staleSaid?.message !== `1 of 2 saved · 1 record failed: ${STALE_ERR}`) {
     fail(`a stale record in a bulk approve is not counted as a failure with its reason: ${JSON.stringify(staleSaid)}`)
   }
   REST.post = 'normal'
@@ -2007,11 +2013,11 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   await selectMode(batch.hostEl)
   const from = posts().length
   await click(buttons(barOf(batch), /^Select all$/)[0])
-  if (buttons(barOf(batch), /^Approve 4$/)[0]?.getAttribute('aria-disabled') !== 'true') {
+  if (buttons(barOf(batch), /^Save 4$/)[0]?.getAttribute('aria-disabled') !== 'true') {
     fail('bulk Approve over four records with one flagged is not locked')
   }
   await click(pickOf(batch, 'skills:def67890'))
-  await click(buttons(barOf(batch), /^Approve 3$/)[0])
+  await click(buttons(barOf(batch), /^Save 3$/)[0])
   await click(batch.hostEl.querySelector('.pa-bulk-go'), 80)
   const out = posts().slice(from).map(p => `${p.body.subsystem}:${p.body.ids.join('+')}`).join(' ')
   if (out !== 'memory:abc12345+abc99999 skills:aaa11111') fail(`one /decide per subsystem expected: ${out}`)
@@ -2376,6 +2382,8 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (broken.hostEl.querySelector('[data-slot="error-state"]')) fail('the error stays after a successful Retry')
   if (reachableKeys(broken.hostEl).size !== 3) fail('Retry did not bring the records back')
   if (!broken.hostEl.textContent.includes(ISSUE)) fail('an issue the backend reported is not shown')
+  const issueBox = [...broken.hostEl.querySelectorAll('.pa-alert')].find(a => a.textContent.includes(ISSUE))
+  if (!issueBox || issueBox.classList.contains('pa-alert-danger')) fail('a backend issue (a warning) is drawn red')
   broken.hostEl.remove()
   REST.mode = 'normal'
 }
@@ -2396,7 +2404,7 @@ REST.scan = 'ok'
 
 // --- 19) The pre-review gates Approve -------------------------------------------------------------
 // Approve unlocks only after the review has finished and no rule check failed. A running review and
-// a failed rule check lock it; an unset or failed review offers a TWO-STEP "Approve without review"
+// a failed rule check lock it; an unset or failed review offers a TWO-STEP "Save without review"
 // whose confirmed click is the only request that carries skip_review. A finished review is advice:
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
@@ -2430,18 +2438,18 @@ REST.scan = 'ok'
   await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Select all$/)[0])
   const gateBar = gate.hostEl.querySelector('.pa-bulk')
   if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
-  const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Approve 3$/)[0]
+  const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Save 3$/)[0]
   if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
   if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
     fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
   }
   await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
-    .includes('Approve unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
+    .includes('Saving unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
   await openFull(gate.hostEl, 'skills:def67890')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
-  if (buttons(cell(gate.hostEl, 'skills:def67890'), /Approve without review/).length) {
-    fail('a failed rule check offers "Approve without review"')
+  if (buttons(cell(gate.hostEl, 'skills:def67890'), /Save without review/).length) {
+    fail('a failed rule check offers "Save without review"')
   }
   await openFull(gate.hostEl, 'skills:aaa11111')
   const open = cell(gate.hostEl, 'skills:aaa11111')
@@ -2450,10 +2458,10 @@ REST.scan = 'ok'
   const before = decides().length
   await click(approveIn('skills:aaa11111'))
   if (decides().length !== before) fail('a locked Approve still sent /decide')
-  await click(buttons(open, /^Approve without review$/)[0])
-  if (decides().length !== before) fail('"Approve without review" fired on the first click')
+  await click(buttons(open, /^Save without review$/)[0])
+  if (decides().length !== before) fail('"Save without review" fired on the first click')
   must(cell(gate.hostEl, 'skills:aaa11111')?.textContent, ['was not checked against your rules'], 'skip arming')
-  await click(buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Apply unreviewed$/)[0], 80)
+  await click(buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Save unreviewed$/)[0], 80)
   const skip = decides().slice(before)
   if (skip.length !== 1 || skip[0].body.skip_review !== true || skip[0].body.decision !== 'approve'
       || skip[0].body.ids.join() !== 'aaa11111') {
@@ -2487,7 +2495,7 @@ REST.scan = 'ok'
 // --- 20) Every flagged card offers a way forward besides Reject -------------------------------------
 // A review or rule check that only says "this is wrong" leaves Reject as the one move. The reviewer's
 // suggested edit (and a rule check's own edit) is drawn under its finding and approved together with
-// the write: "Approve with the fix" sends ONE /decide with with_edits, and nothing goes to the chat box.
+// the write: "Save with the fix" sends ONE /decide with with_edits, and nothing goes to the chat box.
 // A fix that would leave a problem is held with the reason. Only a card whose review is still running
 // (it waits) and a write Hermes cannot apply as staged (it says why) may lack a non-Reject move.
 {
@@ -2506,36 +2514,43 @@ REST.scan = 'ok'
   const rule = cell(fixHost.hostEl, 'skills:def67890')
   must(rule?.textContent, ['Suggested edit — adds "author: Selftest Owner" to the header', 'author: Selftest Owner'],
     'rule edit shown')
-  if (!live(buttons(rule, /^Approve with the fix$/)[0])) fail('a rule check with a fixing edit offers no way to approve the fixed write')
-  if (live(buttons(rule, /^Approve as written$/)[0])) fail('a failed rule check lets the write through as written')
+  if (!live(buttons(rule, /^Save with the fix$/)[0])) fail('a rule check with a fixing edit offers no way to approve the fixed write')
+  if (live(buttons(rule, /^Save as written$/)[0])) fail('a failed rule check lets the write through as written')
   await openFull20(fixHost.hostEl, 'memory:abc12345')
   const left = cell(fixHost.hostEl, 'memory:abc12345')
   must(left?.textContent, [`The suggested edits do not clear every problem: ${FIX_LEFT}`], 'a fix that leaves a problem')
-  const held = buttons(left, /^Approve with the fix$/)[0]
+  if (!live(buttons(left, /^Save as written$/)[0])) fail('a held fix does not open the card on the open "As written"')
+  await click(buttons(left.querySelector('.pa-toggle'), /^With the fix$/)[0], 30)
+  const held = buttons(cell(fixHost.hostEl, 'memory:abc12345'), /^Save with the fix$/)[0]
   if (live(held)) fail('a fix that leaves a problem is still clickable')
   if (!String(held?.closest('[data-tip]')?.getAttribute('data-tip')).includes(FIX_LEFT)) fail('a held fix does not say why')
   await openFull20(fixHost.hostEl, 'skills:aaa11111')
   const flagged = cell(fixHost.hostEl, 'skills:aaa11111')
   must(flagged?.textContent, ['Needs an edit', 'The write says two different things.', 'name: new-skill-x',
     'The fix covers 1 of 2 problems'], 'suggested edit shown')
-  if (!live(buttons(flagged, /^Approve as written$/)[0])) fail('a reviewed card lost "Approve as written"')
-  const fixBtn = buttons(flagged, /^Approve with the fix$/)[0]
-  if (!live(fixBtn)) fail('a finding with a suggested edit offers no “Approve with the fix”')
+  if (buttons(flagged, /^Save as written$/).length) fail('a card with a usable fix still shows a second save button')
+  await click(buttons(flagged.querySelector('.pa-toggle'), /^As written$/)[0], 30)
+  if (!live(buttons(cell(fixHost.hostEl, 'skills:aaa11111'), /^Save as written$/)[0])) {
+    fail('a reviewed card lost "Save as written" behind the As written toggle')
+  }
+  await click(buttons(cell(fixHost.hostEl, 'skills:aaa11111').querySelector('.pa-toggle'), /^With the fix$/)[0], 30)
+  const fixBtn = buttons(cell(fixHost.hostEl, 'skills:aaa11111'), /^Save with the fix$/)[0]
+  if (!live(fixBtn)) fail('a finding with a suggested edit offers no “Save with the fix”')
   if (!String(fixBtn?.closest('[data-tip]')?.getAttribute('data-tip')).includes('suggested edits shown above')) {
-    fail('“Approve with the fix” does not say what it writes')
+    fail('“Save with the fix” does not say what it writes')
   }
   const before = decides().length
   if (fixBtn) await click(fixBtn, 80)
   const sent = decides().slice(before)
   if (sent.length !== 1 || sent[0].body.with_edits !== true || sent[0].body.decision !== 'approve'
       || sent[0].body.ids.join() !== 'aaa11111' || sent[0].body.skip_review) {
-    fail(`“Approve with the fix” is not one approve with with_edits: ${JSON.stringify(sent.map(p => p.body))}`)
+    fail(`“Save with the fix” is not one approve with with_edits: ${JSON.stringify(sent.map(p => p.body))}`)
   }
   if (stub.calls.posts.some(p => p.path === '/amend')) fail('the removed /amend route is still called')
   if (stub.calls.composer.length !== drafts) fail('a pending card wrote into the chat box')
   fixHost.hostEl.remove()
 
-  const WAYS = /^(Approve with the fix|Approve as written|Use the short version|Save to memory|Save changes|Save skill|Delete skill|Shorten description|Approve without review|Create only this|Apply only this)$/
+  const WAYS = /^(Save with the fix|Save as written|Use the short version|Save to memory|Save changes|Save skill|Delete skill|Shorten description|Save without review|Create only this|Save only this)$/
   const gaps = []
   for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
     REST.mode = mode
@@ -2655,7 +2670,7 @@ REST.scan = 'ok'
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
     fail('an unverified quote is labelled "In the write", next to a tag saying it was not found there')
   }
-  if ((review?.textContent || '').includes('yyy') || buttons(card, /^Approve with the fix$/).length) {
+  if ((review?.textContent || '').includes('yyy') || buttons(card, /^Save with the fix$/).length) {
     fail('an unverified finding offers its edit')
   }
   if (/Breaks a rule/.test(card?.querySelector('.pa-verdict')?.textContent || '')) {
@@ -2666,7 +2681,7 @@ REST.scan = 'ok'
   const want = {
     cut: 'The reviewer saw a shortened input; it left out 12,400 characters of the current target, '
       + '1 character of the other pending writes to this file.',
-    carried: 'Approved since this review: #bbb22222. It changed the same file',
+    carried: 'Saved since this review: #bbb22222. It changed the same file',
     siblings: 'Reviewed together with 2 other pending writes to this file.',
     outdated: 'Your rules in USER.md changed after this review'
   }
@@ -2799,13 +2814,13 @@ REST.scan = 'ok'
   must(stale()?.querySelector('.pa-alert')?.textContent, ['#3 · no longer applies after #1'], 'stale block')
   const rows = [...(stale()?.querySelectorAll('.pa-member') || [])]
   if (rows.length !== 3) fail(`the stale group lists ${rows.length} changes, not 3`)
-  must(stale()?.textContent, ['Changes (3)', '#1', 'b2000001', 'MEMBER-WHAT-b2000001', '+1 −1', 'Reject #1',
-    'Reject #3', 'Reject all 3', 'Approve 3 changes'], 'changes list')
+  must(stale()?.textContent, ['Changes (3)', '#1', 'b2000001', 'MEMBER-WHAT-b2000001', '+1 −1', 'Don’t save #1',
+    'Don’t save #3', 'Don’t save all 3', 'Save 3 changes'], 'changes list')
   if (stale()?.textContent.includes('MEMBER-LINE-b2000001')) fail('a member\'s lines are not behind a fold')
   if (rows[0]) await click(buttons(rows[0], /^Show lines$/)[0])
   must(stale()?.textContent, ['MEMBER-LINE-b2000001'], 'a member\'s own lines after its fold')
 
-  const sApprove = buttons(stale(), /^Approve 3 changes$/)[0]
+  const sApprove = buttons(stale(), /^Save 3 changes$/)[0]
   if (sApprove?.getAttribute('aria-disabled') !== 'true') fail('Approve is open on a group with a stale change')
   if (!String(sApprove?.closest('[data-tip]')?.getAttribute('data-tip')).includes('#3')) {
     fail('the held group Approve does not name the stale change in its Tip')
@@ -2823,19 +2838,19 @@ REST.scan = 'ok'
     if (boxes.some(b => !b.querySelector('.pa-file-head .pa-pill'))) fail('a group Result file box has no status pill')
   }
 
-  await click(buttons(clean(), /^Reject #2$/)[0], 60)
+  await click(buttons(clean(), /^Don’t save #2$/)[0], 60)
   let body = lastDecide()
   if (body.decision !== 'reject' || !same(body.ids, [CLEAN_MEMBERS[1]]) || (body.groups || []).length) {
     fail(`"Reject #2" did not send ids:[member] reject: ${JSON.stringify(body)}`)
   }
-  await click(buttons(clean(), /^Approve 2 changes$/)[0], 80)
+  await click(buttons(clean(), /^Save 2 changes$/)[0], 80)
   body = lastDecide()
   if (body.decision !== 'approve' || !same(body.groups, [CLEAN_GROUP]) || (body.ids || []).length
       || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
     fail(`group Approve did not send groups + versions[groupId]: ${JSON.stringify(body)}`)
   }
   await toFront(g.hostEl, ck(STALE_GROUP))
-  await click(buttons(stale(), /^Reject all 3$/)[0], 80)
+  await click(buttons(stale(), /^Don’t save all 3$/)[0], 80)
   body = lastDecide()
   if (body.decision !== 'reject' || !same(body.groups, [STALE_GROUP]) || (body.ids || []).length) {
     fail(`"Reject all 3" did not send groups:[id]: ${JSON.stringify(body)}`)
@@ -2862,9 +2877,9 @@ REST.scan = 'ok'
   }
   const bar = () => g.hostEl.querySelector('.pa-bulk')
   must(g.hostEl.querySelector('.pa-list-head')?.textContent, ['2 selected'], 'a group is one selectable unit')
-  must(bar()?.textContent, ['2 records selected', 'Approve 2'], 'a group is one selectable unit')
+  must(bar()?.textContent, ['2 records selected', 'Save 2'], 'a group is one selectable unit')
   sent = postsTo('/decide').length
-  await click(buttons(bar(), /^Approve 2$/)[0])
+  await click(buttons(bar(), /^Save 2$/)[0])
   await click(buttons(bar(), /^Confirm$/)[0], 80)
   const bulk = postsTo('/decide').slice(sent).map(p => p.body)
   if (bulk.length !== 1 || !same(bulk[0].groups, [CLEAN_GROUP]) || !same(bulk[0].ids, ['c3000003'])
@@ -2873,7 +2888,7 @@ REST.scan = 'ok'
   }
   if (!pick(ck(STALE_GROUP))) await selectMode(g.hostEl)
   await click(pick(ck(STALE_GROUP)))
-  const heldBulk = buttons(bar(), /^Approve 1$/)[0]
+  const heldBulk = buttons(bar(), /^Save 1$/)[0]
   if (heldBulk?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a stale group selected')
   g.root.unmount()
   g.hostEl.remove()
@@ -2899,10 +2914,10 @@ REST.scan = 'ok'
     if (sfc) await click(sfc, 40)
   }
   must(fClean()?.querySelector('.pa-review')?.textContent, ['#1 · FIX-FOR-ONE'], 'an edit finding names its change')
-  await click(buttons(fClean(), /^Approve with the fix$/)[0], 80)
+  await click(buttons(fClean(), /^Save with the fix$/)[0], 80)
   body = lastDecide()
   if (!body.with_edits || !same(body.groups, [CLEAN_GROUP]) || body.versions?.[CLEAN_GROUP] !== `gv-${CLEAN_GROUP}`) {
-    fail(`"Approve with the fix" on a group: ${JSON.stringify(body)}`)
+    fail(`"Save with the fix" on a group: ${JSON.stringify(body)}`)
   }
   f.root.unmount()
   f.hostEl.remove()
@@ -2918,7 +2933,7 @@ REST.scan = 'ok'
   const qGot = postsTo('/reviews').length - qPosts
   if (qGot !== 1) fail(`a queued group review posted /reviews ${qGot} times, not once`)
   await toFront(q.hostEl, ck(CLEAN_GROUP))
-  if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Approve 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
+  if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Save 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
     fail('a group whose review runs leaves Approve open')
   }
   q.root.unmount()
@@ -3008,8 +3023,8 @@ REST.scan = 'ok'
 
 // --- 23) The fix effect (1.11.1): a fix that deletes most of the new text is never the primary button -
 // A suggested fix once deleted 51 of the 54 new words of an approved write and nothing on the card said
-// so. The card now states what the fix keeps; at half or more removed it is a destructive alert and
-// "Approve as written" becomes the primary button. The fix stays clickable either way (1.9.3: a flagged
+// so. The card now states what the fix keeps; at half or more removed it is an amber alert (a warning,
+// not a stop) and the card opens on "As written", so "Save as written" is the one save button. The fix stays clickable either way (1.9.3: a flagged
 // card is never a dead end), and the history row of a fixed write keeps the as-written text to compare.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
@@ -3024,15 +3039,21 @@ REST.scan = 'ok'
     if (sfc) await click(sfc, 40)
   }
   must(heavy?.textContent, ['The suggested fix deletes 51 of the 54 new words in the text it edits (94%).',
-    'Approve as written keeps the write.'], 'a heavy fix is stated with its number')
-  if (!heavy?.querySelector('.pa-alert-danger')) {
-    fail('a fix that removes most of the new text is not an alert')
+    '“As written” keeps the write unchanged.'], 'a heavy fix is stated with its number')
+  if (!heavy?.querySelector('.pa-alert') || heavy.querySelector('.pa-alert-danger')) {
+    fail('a fix that removes most of the new text is not an amber alert (red is only for a stop)')
   }
-  if (variant(heavy, /^Approve as written$/) !== 'default' || variant(heavy, /^Approve with the fix$/) !== 'outline') {
-    fail(`a heavy fix is still the primary button: as written=${variant(heavy, /^Approve as written$/)}, `
-      + `fix=${variant(heavy, /^Approve with the fix$/)}`)
+  if (variant(heavy, /^Save as written$/) !== 'default' || buttons(heavy, /^Save with the fix$/).length) {
+    fail(`a heavy fix does not open on "As written": as written=${variant(heavy, /^Save as written$/)}, `
+      + `fix=${variant(heavy, /^Save with the fix$/)}`)
   }
-  if (!live(buttons(heavy, /^Approve with the fix$/)[0])) fail('a heavy fix is no longer clickable (1.9.3 dead end)')
+  if (heavy?.querySelector('.pa-toggle [aria-pressed="true"]')?.textContent !== 'As written') {
+    fail('a heavy fix: the toggle does not show "As written" as the version to save')
+  }
+  await click(buttons(heavy.querySelector('.pa-toggle'), /^With the fix$/)[0], 30)
+  if (!live(buttons(cell(host.hostEl, 'skills:aaa11111'), /^Save with the fix$/)[0])) {
+    fail('a heavy fix is no longer clickable (1.9.3 dead end)')
+  }
   await toFront(host.hostEl, 'memory:abc12345')
   const light = cell(host.hostEl, 'memory:abc12345')
   {
@@ -3042,7 +3063,7 @@ REST.scan = 'ok'
   must(light?.textContent, ['With the fix, 53 of the 54 new words in the text it edits remain.'],
     'a light fix states what it keeps')
   if ((light?.textContent || '').includes('deletes')) fail('a light fix reads as an alert')
-  if (variant(light, /^Approve as written$/) !== 'outline' || variant(light, /^Approve with the fix$/) !== 'default') {
+  if (buttons(light, /^Save as written$/).length || variant(light, /^Save with the fix$/) !== 'default') {
     fail('a light fix lost its primary button')
   }
   host.hostEl.remove()
@@ -3057,7 +3078,7 @@ REST.scan = 'ok'
   if (/new words in the text it edit/.test(cell(plain.hostEl, 'skills:aaa11111')?.textContent || '')) {
     fail('a review without fix_effect shows an effect line')
   }
-  if (variant(cell(plain.hostEl, 'skills:aaa11111'), /^Approve with the fix$/) !== 'default') {
+  if (variant(cell(plain.hostEl, 'skills:aaa11111'), /^Save with the fix$/) !== 'default') {
     fail('a fix with no measured effect lost its primary button')
   }
   plain.hostEl.remove()
@@ -3073,7 +3094,7 @@ REST.scan = 'ok'
   }
   must(gc?.textContent, ['The suggested fix deletes 5 of the 10 new words in the text it edits (50%).'],
     'a group heavy fix at exactly half')
-  if (variant(gc, /^Approve 2 changes$/) !== 'default' || variant(gc, /^Approve with the fix$/) !== 'outline') {
+  if (variant(gc, /^Save 2 changes$/) !== 'default' || buttons(gc, /^Save with the fix$/).length) {
     fail('a group heavy fix is still the primary button')
   }
   g.hostEl.remove()
@@ -3098,6 +3119,40 @@ REST.scan = 'ok'
   }
   hist.hostEl.remove()
   REST.mode = 'normal'
+}
+
+// --- 23b) Reject advised: no save button is the primary, A does not save, saving asks once more ------
+// The reviewer advised against a write, yet "Approve" stayed the blue primary on the A key. Now every
+// save on such a card is an outline button, none carries the A shortcut, and a click arms one confirm
+// row ("Save anyway") the way "Save unreviewed" does. The pre-review card carries no side stripe.
+{
+  const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
+  const no = { status: 'done', verdict: 'reject', summary: 'No.', findings: [], hard: [] }
+  REST.pending = withReview({ aaa11111: no })
+  const h = await mount('en')
+  await toFront(h.hostEl, 'skills:aaa11111')
+  const c = h.hostEl.querySelector('.pa-detail[data-key="skills:aaa11111"] > .pa-card')
+  if (c?.querySelector('.pa-verdict')?.getAttribute('data-k') !== 'reject') fail('reject advised: fixture is not advised')
+  const save = buttons(c?.querySelector('.pa-dfoot'), /^Save /)[0]
+  if (!save || save.getAttribute('data-variant') !== 'outline') {
+    fail(`reject advised: the save button is still the primary: ${save?.getAttribute('data-variant')}`)
+  }
+  if (c?.querySelector('[aria-keyshortcuts="A"]')) fail('reject advised: the A key still saves')
+  const from = decides().length
+  if (save) await click(save, 40)
+  if (decides().length !== from) fail('reject advised: one click saved')
+  const foot = h.hostEl.querySelector('.pa-detail .pa-dfoot')
+  const warn = foot?.querySelector('.pa-warnline')?.textContent
+  if (warn !== 'The reviewer advises not saving this. Save it anyway?') fail(`reject advised: no confirm row: ${warn}`)
+  await click(buttons(foot, /^Save anyway$/)[0], 80)
+  const sent = decides().slice(from)
+  if (sent.length !== 1 || sent[0].body.decision !== 'approve' || sent[0].body.with_edits) {
+    fail(`reject advised: "Save anyway" is not one plain approve: ${JSON.stringify(sent.map(p => p.body))}`)
+  }
+  const sheet = h.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-review\{[^}]*border-left/.test(sheet)) fail('the pre-review card still carries a coloured side stripe')
+  h.hostEl.remove()
+  REST.pending = null
 }
 
 // --- 24) 1.13: a failed refresh keeps the loaded list; polls never overlap ---------------------------
@@ -3280,11 +3335,11 @@ REST.scan = 'ok'
 
 // --- 27) 1.13: small honesty fixes on cards, the bulk bar, the KPI strip and the history clear -----
 // A lone pending record drew a selection box that did nothing, and a selection outlived its record.
-// "Approve without review" was offered on a card held by "Shorten first" (the backend refuses it).
+// "Save without review" was offered on a card held by "Shorten first" (the backend refuses it).
 // MEMORY.md read 99 % "Nearly full" in the KPI and "100% full" on the Memory tab (floor vs round).
 // Repeated stale lines or issues gave React duplicate keys. "Show the full review" did not say what it
 // opens or whether it is open. With no review model (or a failed review) an automatic rule fix that
-// clears every rule failure could only be rejected: it now gets the two-step "Apply unreviewed" confirm
+// clears every rule failure could only be rejected: it now gets the two-step "Save unreviewed" confirm
 // and sends with_edits + skip_review; it stays held while the fix leaves a rule failure behind.
 {
   const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
@@ -3328,8 +3383,8 @@ REST.scan = 'ok'
     ? { ...s, review: { status: 'unassigned', hard: [] } } : s)) }
   const short = await mount('en', 'page')
   await toFront(short.hostEl, 'skills:def67890')
-  if (buttons(cellOf(short, 'skills:def67890'), /Approve without review/).length) {
-    fail('"Approve without review" is offered on a card held by "Shorten first"')
+  if (buttons(cellOf(short, 'skills:def67890'), /Save without review/).length) {
+    fail('"Save without review" is offered on a card held by "Shorten first"')
   }
   short.root.unmount()
   short.hostEl.remove()
@@ -3376,15 +3431,15 @@ REST.scan = 'ok'
   await toFront(fixable.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = sends().length
-  const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0]
+  const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Save with the fix|Save unreviewed)$/)[0]
   if (!withFix() || withFix().classList.contains('pa-held') || withFix().getAttribute('aria-disabled') === 'true') {
     fail('with no review model a rule fix that clears every failure still cannot be approved')
   }
   if (withFix()) await click(withFix(), 30)
   if (sends().length !== before) fail('the unreviewed fix was sent on the first click (no confirm step)')
-  if (name(withFix()) !== 'Apply unreviewed'
+  if (name(withFix()) !== 'Save unreviewed'
       || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
-    fail('the unreviewed fix has no two-step "Apply unreviewed" confirm')
+    fail('the unreviewed fix has no two-step "Save unreviewed" confirm')
   }
   if (withFix()) await click(withFix(), 80)
   const body = sends().at(-1)?.body || {}
@@ -3398,11 +3453,11 @@ REST.scan = 'ok'
   const partial = await mount('en', 'page')
   await selectMode(partial.hostEl)
   await toFront(partial.hostEl, 'skills:aaa11111')
-  const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Approve with the fix$/)[0]
+  const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Save with the fix$/)[0]
   const from = sends().length
   if (held) {
     await click(held, 30)
-    await click(buttons(cellOf(partial, 'skills:aaa11111'), /^(Approve with the fix|Apply unreviewed)$/)[0], 60)
+    await click(buttons(cellOf(partial, 'skills:aaa11111'), /^(Save with the fix|Save unreviewed)$/)[0], 60)
   }
   if (!held?.classList.contains('pa-held') || sends().length !== from) fail('a rule fix that leaves a failure behind was unlocked')
   REST.pending = null
@@ -3411,7 +3466,7 @@ REST.scan = 'ok'
 }
 
 // --- 28) 1.13.1: an armed confirm follows the data; late answers need a baseline; remount; lone pick ---
-// a) Once "Approve with the fix" was armed into "Apply unreviewed", a refresh that added a rule failure the
+// a) Once "Save with the fix" was armed into "Save unreviewed", a refresh that added a rule failure the
 //    fix leaves behind, marked the record stale, or started / finished the review left the red confirm live,
 //    and a click sent skip_review + with_edits. The armed state now holds only while its unlock conditions
 //    do: the button looks exactly like a fresh mount of the same data, and returning conditions never re-arm.
@@ -3427,7 +3482,7 @@ REST.scan = 'ok'
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   const look = (h, key) => {
-    const b = buttons(cellOf(h, key), /^(Approve with the fix|Apply unreviewed)$/)[0]
+    const b = buttons(cellOf(h, key), /^(Save with the fix|Save unreviewed)$/)[0]
     return { b, state: { text: name(b), variant: b?.getAttribute('data-variant'),
       held: Boolean(b?.classList.contains('pa-held')), aria: b?.getAttribute('aria-disabled') || null,
       warn: /not checked against your rules/.test(cellOf(h, key)?.textContent || '') } }
@@ -3437,7 +3492,7 @@ REST.scan = 'ok'
     const h = await mount('en', 'page')
     await toFront(h.hostEl, key)
     if (look(h, key).b) await click(look(h, key).b, 30)
-    if (look(h, key).state.text !== 'Apply unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
+    if (look(h, key).state.text !== 'Save unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
     REST.pending = next
     await click(h.hostEl.querySelector('.pa-refresh'), 120)
     const after = look(h, key)
@@ -3448,7 +3503,7 @@ REST.scan = 'ok'
       REST.pending = first
       await click(h.hostEl.querySelector('.pa-refresh'), 120)
       const again = look(h, key)
-      if (again.state.text !== 'Approve with the fix' || again.state.warn) {
+      if (again.state.text !== 'Save with the fix' || again.state.warn) {
         fail(`[${label}] the confirm came back armed when the conditions returned: ${JSON.stringify(again.state)}`)
       }
       const before = sends().length
@@ -3641,14 +3696,14 @@ REST.scan = 'ok'
     const heldHost = await mount('en')
     await toFront(heldHost.hostEl, 'memory:abc12345')
     const heldBtn = [primaryBtn(cellAt(heldHost, 'memory:abc12345'))].filter(Boolean)[0]
-    if (!/Approve unlocks when the pre-review has finished/.test(heldBtn?.getAttribute('aria-description') || '')) {
+    if (!/Saving unlocks when the pre-review has finished/.test(heldBtn?.getAttribute('aria-description') || '')) {
       fail('a held Approve does not tell a screen reader why it is held')
     }
     const sends0 = () => stub.calls.posts.filter(x => x.path === '/decide').length
     const before0 = sends0()
     if (heldBtn) await click(heldBtn)
     const heldSaid = lastSaid()
-    if (heldSaid?.kind !== 'warning' || !/Approve unlocks when the pre-review has finished/.test(heldSaid?.message || '')
+    if (heldSaid?.kind !== 'warning' || !/Saving unlocks when the pre-review has finished/.test(heldSaid?.message || '')
         || sends0() !== before0) {
       fail(`a held Approve pressed from the keyboard does not say why: ${JSON.stringify(heldSaid)}`)
     }
@@ -3658,21 +3713,21 @@ REST.scan = 'ok'
   await click(buttons(ui.hostEl, /^Select all$/)[0])
   const sends = () => stub.calls.posts.filter(x => x.path === '/decide').length
   const before = sends()
-  const heldBulk = buttons(barOf(ui), /^Approve 3$/)[0]
+  const heldBulk = buttons(barOf(ui), /^Save 3$/)[0]
   if (!/decision of its own/.test(heldBulk?.getAttribute('aria-description') || '')) {
     fail('the held bulk Approve does not tell a screen reader why it is held')
   }
   if (heldBulk) await click(heldBulk)
   if (!/decision of its own/.test(lastSaid()?.message || '')) fail('the held bulk Approve pressed does not say why')
   await click(pickOf(ui, 'skills:def67890'))
-  await click(buttons(barOf(ui), /^Approve 2$/)[0])
+  await click(buttons(barOf(ui), /^Save 2$/)[0])
   const armed = barOf(ui)?.querySelector('[role="alert"]')
   if (!armed) fail('bulk Approve did not ask to confirm')
   if (doc.activeElement !== barOf(ui)?.querySelector('.pa-bulk-cancel')) fail('the bulk confirm does not take focus')
   armed?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await wait(20)
-  if (/Apply 2 records now\?/.test(barOf(ui)?.textContent || '')) fail('Esc does not close the bulk confirm')
-  if (name(doc.activeElement) !== 'Approve 2') {
+  if (/Save 2 records now\?/.test(barOf(ui)?.textContent || '')) fail('Esc does not close the bulk confirm')
+  if (name(doc.activeElement) !== 'Save 2') {
     fail(`closing the bulk confirm drops focus instead of returning it to "Approve 2": ${doc.activeElement?.tagName}`)
   }
   if (sends() !== before) fail('Esc on the bulk confirm sent a decision')
@@ -3702,9 +3757,9 @@ REST.scan = 'ok'
       }
     }
     await twice([primaryBtn(cellAt(hw, 'memory:abc12345'))].filter(Boolean)[0],
-      /Approve unlocks when the pre-review has finished/, 'single')
+      /Saving unlocks when the pre-review has finished/, 'single')
     await click(buttons(hw.hostEl, /^Select all$/)[0])
-    await twice(buttons(barOf(hw), /^Approve 3$/)[0], /decision of their own/, 'bulk')
+    await twice(buttons(barOf(hw), /^Save 3$/)[0], /decision of their own/, 'bulk')
     hw.hostEl.remove()
     REST.mode = 'normal'
   }
@@ -4171,8 +4226,8 @@ REST.scan = 'ok'
       sums.map(r => r.textContent).join(' | ')}`)
   }
   const foot = card?.querySelector('.pa-dfoot')
-  const rej = buttons(foot, /^Reject 2$/)[0]
-  const app = buttons(foot, /^Approve 2$/)[0]
+  const rej = buttons(foot, /^Don’t save 2$/)[0]
+  const app = buttons(foot, /^Save 2$/)[0]
   if (rej?.getAttribute('data-variant') !== 'outline' || app?.getAttribute('data-variant') !== 'default') {
     fail(`select-mode: the footer is not "Reject 2" outline + "Approve 2" primary: ${rej?.getAttribute('data-variant')} / ${
       app?.getAttribute('data-variant')}`)
@@ -4230,7 +4285,7 @@ REST.scan = 'ok'
   await selectMode(bk.hostEl)
   for (const box of [...bk.hostEl.querySelectorAll('input.pa-pick')].slice(0, 2)) await click(box, 20)
   const noticesBefore = stub.calls.notify.length
-  await click(buttons(bk.hostEl.querySelector('.pa-bulk'), /^Reject 2$/)[0], 40)
+  await click(buttons(bk.hostEl.querySelector('.pa-bulk'), /^Don’t save 2$/)[0], 40)
   await click(bk.hostEl.querySelector('.pa-bulk-go'), 400)
   const gone = stub.calls.notify.slice(noticesBefore).filter(m => /decided elsewhere/.test(m?.message || ''))
   if (gone.length) fail('review: a bulk decision made here is announced as "decided elsewhere"')
@@ -4531,7 +4586,7 @@ REST.scan = 'ok'
   }
 
   // 43d) fix toggle: With the fix by default (fix.text → fix.description), As written shows the op lines,
-  // aria-pressed follows, and the choice never changes what "Approve with the fix" sends
+  // aria-pressed follows, and the choice never changes what "Save with the fix" sends
   {
     const lines = c => [...(c?.querySelectorAll('.pa-dbody .pa-file .pa-dl') || [])]
       .map(l => `${l.getAttribute('data-k')}${l.textContent}`)
@@ -4539,7 +4594,7 @@ REST.scan = 'ok'
     await toFront(h.hostEl, 'skills:def67890')
     const c = det(h, 'skills:def67890')
     const group = c?.querySelector('.pa-toggle[role="group"]')
-    if (group?.getAttribute('aria-label') !== 'Show the change') fail('fix toggle: no "Show the change" group')
+    if (group?.getAttribute('aria-label') !== 'Version to save') fail('fix toggle: no "Version to save" group')
     const [fixB, asB] = [...(group?.querySelectorAll('button') || [])]
     if (name(fixB) !== 'With the fix' || fixB?.getAttribute('aria-pressed') !== 'true'
         || asB?.getAttribute('aria-pressed') !== 'false') fail('fix toggle: "With the fix" is not the pressed default')
@@ -4562,11 +4617,14 @@ REST.scan = 'ok'
     const rAs = buttons(rc?.querySelector('.pa-toggle'), /^As written$/)[0]
     if (!rAs) fail('fix toggle: a verified suggested edit draws no toggle')
     if (rAs) await click(rAs, 30)
+    if (buttons(det(r, 'skills:aaa11111'), /^Save with the fix$/).length) {
+      fail('fix toggle: "As written" still offers "Save with the fix" — the toggle must pick the one save button')
+    }
     const from = decides().length
-    await click(buttons(det(r, 'skills:aaa11111'), /^Approve with the fix$/)[0], 80)
+    await click(buttons(det(r, 'skills:aaa11111'), /^Save as written$/)[0], 80)
     const sent = decides().slice(from)
-    if (sent.length !== 1 || sent[0].body.with_edits !== true) {
-      fail(`fix toggle: As written changed what "Approve with the fix" sends: ${JSON.stringify(sent.map(p => p.body))}`)
+    if (sent.length !== 1 || sent[0].body.with_edits) {
+      fail(`fix toggle: "Save as written" did not save the write unchanged: ${JSON.stringify(sent.map(p => p.body))}`)
     }
     r.root.unmount()
     r.hostEl.remove()
@@ -4580,6 +4638,8 @@ REST.scan = 'ok'
       fail(`word marks: not only the changed words are marked: ${JSON.stringify([marks('-'), marks('+')])}`)
     }
     await toFront(w.hostEl, 'memory:abc12345')
+    const withFix = buttons(det(w, 'memory:abc12345')?.querySelector('.pa-toggle'), /^With the fix$/)[0]
+    if (withFix) await click(withFix, 30)
     if (det(w, 'memory:abc12345')?.querySelector('mark.pa-mark')) {
       fail('word marks: a pair that shares nothing is marked')
     }
@@ -4685,7 +4745,7 @@ REST.scan = 'ok'
   const g = await mount('en', 'page')
   const groupKey = `skills:${CLEAN_GROUP}`
   await toFront(g.hostEl, groupKey)
-  const rejectAll = buttons(g.hostEl.querySelector('.pa-detail'), /^Reject all \d+/)[0]
+  const rejectAll = buttons(g.hostEl.querySelector('.pa-detail'), /^Don’t save all \d+/)[0]
   if (!rejectAll || rejectAll.getAttribute('data-variant') !== 'outline') {
     fail(`rework 2 item 6: "Reject all N" is not outline: ${rejectAll?.getAttribute('data-variant')} (${groupKey})`)
   }
@@ -4694,7 +4754,7 @@ REST.scan = 'ok'
   REST.mode = 'normal'
 
   // item 7: a failed review says so in one sentence, its seal is the warning tone, and the armed "Apply
-  // unreviewed" is one confirm row in the footer (warning text + Cancel + Apply unreviewed outline), no Later
+  // unreviewed" is one confirm row in the footer (warning text + Cancel + Save unreviewed outline), no Later
   // beside it and no line floating above the footer.
   REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
   const nr = await mount('en', 'page')
@@ -4709,13 +4769,13 @@ REST.scan = 'ok'
   if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
     fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
   }
-  const skip = buttons(c, /^Approve without review$/)[0]
+  const skip = buttons(c, /^Save without review$/)[0]
   if (skip) await click(skip, 40)
   const foot = c?.querySelector('.pa-dfoot')
   const warn = foot?.querySelector('.pa-warnline[role="alert"]')
   const footButtons = [...(foot?.querySelectorAll('button') || [])].map(b => name(b))
-  const confirm = buttons(foot, /^Apply unreviewed$/)[0]
-  if (!warn || c?.querySelector('.pa-card > .pa-warnline') || footButtons.join('|') !== 'Cancel|Apply unreviewed'
+  const confirm = buttons(foot, /^Save unreviewed$/)[0]
+  if (!warn || c?.querySelector('.pa-card > .pa-warnline') || footButtons.join('|') !== 'Cancel|Save unreviewed'
       || confirm?.getAttribute('data-variant') !== 'outline') {
     fail(`rework 2 item 7: the armed footer is not one confirm row: ${footButtons.join('|')} · ${
       confirm?.getAttribute('data-variant')} · warning in footer ${Boolean(warn)}`)
@@ -4793,7 +4853,7 @@ REST.scan = 'ok'
   const row = [...(h.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"] .pa-dfoot .pa-actions')
     ?.querySelectorAll('button') || [])]
   const last = row[row.length - 1]
-  if (!last || last.getAttribute('data-variant') !== 'default' || !/^Approve as written/.test(name(last))) {
+  if (!last || last.getAttribute('data-variant') !== 'default' || !/^Save as written/.test(name(last))) {
     fail(`round 3: a heavy fix's primary is not the last button of the row: ${row.map(b => name(b)).join(' | ')}`)
   }
   h.root.unmount()
