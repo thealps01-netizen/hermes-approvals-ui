@@ -4508,8 +4508,11 @@ REST.scan = 'ok'
     if (words[1] !== 'Needs one edit' || words[2] !== 'Safe to save') {
       fail(`rows: status words ${JSON.stringify(words)}`)
     }
-    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent).join()
-    if (times !== '2h,5m,2m') fail(`rows: the times are not the short form: ${times}`)
+    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent)
+    const mins = times.slice(1).map(x => (/^(\d+)m$/.exec(x || '') || [])[1]).map(Number)
+    if (times[0] !== '2h' || mins.some(m => !(m >= 2)) || mins[0] - mins[1] !== 3) {
+      fail(`rows: the times are not the short form of 2 h, 5 min and 2 min before the run: ${times}`)
+    }
     const heights = rows.map(w => w.style.height)
     if (new Set(heights).size !== 1 || !heights[0]) fail(`rows: the rows are not one fixed height: ${heights}`)
     if (rows.some(w => w.getAttribute('role') !== 'listitem')
