@@ -71,7 +71,6 @@ const BUNDLES = {
         edit1: 'Needs one edit — Hermes already drafted it',
         editN: n => `Needs ${n} edits — Hermes already drafted them`,
         othersFine: n => (n === 1 ? '1 other check fine' : `${n} other checks fine`),
-        second: 'Second opinion',
       },
       fixview: {
         label: 'Version to save',
@@ -95,6 +94,7 @@ const BUNDLES = {
         j: 'J',
         k: 'K',
         x: 'X',
+        l: 'L',
         space: 'Space',
         esc: 'Esc',
       },
@@ -102,6 +102,7 @@ const BUNDLES = {
         move: 'move',
         approve: 'save',
         reject: 'don’t save',
+        later: 'later',
         pick: 'select',
         done: 'done',
       },
@@ -135,6 +136,9 @@ const BUNDLES = {
         show: 'Details',
         hide: 'Hide details',
         record: 'Record',
+        model: 'Reviewer model',
+        tokens: 'Tokens',
+        cost: 'Cost',
         files: 'Files',
         cause: 'Cause',
         file: 'File',
@@ -170,7 +174,7 @@ const BUNDLES = {
         unreviewed: 'Not reviewed',
         approve: 'Looks fine',
         fix: 'Needs an edit',
-        reject: 'Reject advised',
+        reject: 'Advises not saving',
         rule: 'Rule check failed',
         stale: 'Cannot be applied',
         staleWhy: 'Hermes cannot apply this write as staged: the text it changes is no longer in the file. Choose “Don’t save”; the change can be staged again against the current file.',
@@ -208,14 +212,14 @@ const BUNDLES = {
         },
       },
       advice: {
-        fix: 'It cannot be applied as staged — “Shorten description” rewrites it, then the pre-review reads it again.',
-        fixShort: 'It cannot be applied as staged — “Use the short version” rewrites it, then the pre-review reads it '
+        fix: 'It cannot be applied as staged — “Shorten description” rewrites it, then the reviewer reads it again.',
+        fixShort: 'It cannot be applied as staged — “Use the short version” rewrites it, then the reviewer reads it '
           + 'again.',
       },
       review: {
         running: model => `Reading this write against your rules${model ? ` · ${model}` : ''}…`,
-        unassigned: 'No pre-review model is set. Pick one in Settings → Models → “Approvals review”.',
-        failed: why => `The pre-review failed: ${why}`,
+        unassigned: 'No reviewer model is set. Pick one in Settings → Models → “Approvals review”.',
+        failed: why => `The review failed: ${why}`,
         empty: 'The reviewer found nothing to report.',
         severity: {
           block: 'Breaks a rule',
@@ -230,12 +234,12 @@ const BUNDLES = {
           rule: 'Rule',
         },
         other: 'Against',
-        tokens: (i, o) => `${i} in / ${o} out tokens`,
+        tokens: (i, o) => `${grouped(i)} in / ${grouped(o)} out`,
         cost: (usd, status) => (status === 'included' ? 'included' : `$${usd.toFixed(4)} ${status}`),
-        locked: 'Saving unlocks when the pre-review has finished and no rule check failed.',
+        locked: 'Saving unlocks when the reviewer has finished and no rule check failed.',
         skipWarn: 'This write was not checked against your rules. Save it anyway?',
         rejectWarn: 'The reviewer advises not saving this. Save it anyway?',
-        title: 'Pre-review',
+        title: 'Reviewer',
         rule: 'Rule check',
         check: 'Check',
         edit: 'Suggested edit',
@@ -281,8 +285,8 @@ const BUNDLES = {
         approve: n => `Save ${n}`,
         reject: n => `Don’t save ${n}`,
         confirmApprove: n => `Save ${plural(n, 'record', 'records')} now? Each lands in “Activity” and can be undone there.`,
-        advisedReject: (n, all) => all === 1 ? 'The AI review advised not saving it.'
-          : `The AI review advised not saving ${n} of them.`,
+        advisedReject: (n, all) => all === 1 ? 'The reviewer advised not saving it.'
+          : `The reviewer advised not saving ${n} of them.`,
         confirmReject: n => `Don’t save ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Activity” tab.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
@@ -339,6 +343,7 @@ const BUNDLES = {
         clearFailed: 'Could not clear the history',
         external: 'Changed outside Approvals',
         externalDetail: n => `${plural(n, 'file', 'files')} changed outside Approvals`,
+        filesN: n => plural(n, 'file', 'files'),
         failed: 'Save failed',
         undone: 'Undone — the files are back to the state before this record',
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
@@ -356,6 +361,7 @@ const BUNDLES = {
         wordsNotSaved: 'Not saved',
         wordsFailed: 'Couldn’t save',
         dayToday: 'Today',
+        dayNothing: 'nothing yet',
         dayYesterday: 'Yesterday',
         headSaved: n => `${n} saved`,
         headNotSaved: n => `${n} not saved`,
@@ -368,6 +374,19 @@ const BUNDLES = {
         gistRemove: (n, f) => `Edit skill: ${n} — removes ${f}`,
         gistDelete: n => `Delete skill: ${n}`,
         gistBatch: (names, parts) => `Skill changes on ${names} — ${parts}`,
+        gistNote: (c, place, note) => (note ? `${c} in ${place}: ${note}` : `${c} in ${place}`),
+        chNew: s => `new skill (${s})`,
+        chRewrite: s => `whole file rewritten (${s})`,
+        chPatch: (f, a, r) => `${f}: ${plural(a, 'line', 'lines')} added, ${r} removed`,
+        chWrite: f => `writes ${f}`,
+        chRemove: f => `removes ${f}`,
+        chDelete: 'deletes the skill',
+        chNoteAdd: 'New note',
+        chNoteEdit: 'Edited note',
+        chNoteReplace: 'Rewritten note',
+        chNoteRemove: 'Deleted note',
+        chNotes: n => plural(n, 'note change', 'note changes'),
+        chNoteMany: 'Note changes',
         gistBatchNew: n => plural(n, 'new skill', 'new skills'),
         gistBatchEdit: n => plural(n, 'edit', 'edits'),
         gistBatchDelete: n => plural(n, 'deletion', 'deletions'),
@@ -391,13 +410,14 @@ const BUNDLES = {
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
         reviewsFailed: why => (why
-          ? `The pre-reviews could not be started: ${why}. The next refresh tries again.`
-          : 'The pre-reviews could not be started. The next refresh tries again.'),
+          ? `The reviews could not be started: ${why}. The next refresh tries again.`
+          : 'The reviews could not be started. The next refresh tries again.'),
       },
       memory: {
         warnBody: 'A new note fits only if an older one is shortened or merged. Hermes can propose which.',
-        rowSub: (notes, chars, limit) => `${plural(notes, 'note', 'notes')} · ${grouped(chars)} / ${grouped(limit)}`,
-        fill: pct => `${pct}% full`,
+        rowSub: (notes, chars, limit) => `${plural(notes, 'note', 'notes')} · ${grouped(chars)} / ${grouped(limit)} `
+          + 'characters',
+        nearlyFull: pct => `${pct}% · nearly full`,
         title: (name, n) => `${name} · ${plural(n, 'note', 'notes')}`,
         draftMerge: 'Ask Hermes to combine notes',
         draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits under Needs you.',
@@ -441,8 +461,8 @@ const BUNDLES = {
         lateApplied: 'Applied — it took longer than the panel waits. It is in the “Activity” tab.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
-        lateRejectedElsewhere: 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.',
-        lateAppliedElsewhere: 'It was approved somewhere else (for example from chat) while the panel waited — it is in the “Activity” tab.',
+        lateRejectedElsewhere: 'It was turned down somewhere else (for example from chat) while the panel waited — nothing was saved.',
+        lateAppliedElsewhere: 'It was saved somewhere else (for example from chat) while the panel waited — it is in the “Activity” tab.',
         lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
@@ -468,10 +488,10 @@ const BUNDLES = {
         ruleMemory: 'Follows your rules · written in English',
         ruleSkill: 'Follows your rules · authorship, owner',
         notRun: reason => `Not checked yet — ${reason}`,
-        reasonRunning: 'the second opinion is still reading this',
+        reasonRunning: 'the reviewer is still reading this',
         reasonUnassigned: 'no review model is set',
         failed: 'The check failed — “Review again” retries it.',
-        reasonQueued: 'the second opinion is waiting its turn',
+        reasonQueued: 'the reviewer is waiting its turn',
       },
     }
   }
@@ -639,33 +659,76 @@ const groupByDay = entries => {
   return groups
 }
 const GIST_END = '(?=$| — | → |; )'
+const slash = s => String(s || '').replace(/\\/g, '/')
+const skillShort = s => String(s || '').split(/\s*,\s*/).map(n => slash(n).split('/').filter(Boolean).pop() || n)
+  .join(', ')
 const BATCH_KIND = { create: 'pa.hist.gistBatchNew', edit: 'pa.hist.gistBatchEdit', patch: 'pa.hist.gistBatchEdit',
   write_file: 'pa.hist.gistBatchEdit', remove_file: 'pa.hist.gistBatchEdit', delete: 'pa.hist.gistBatchDelete' }
+const NOTE_KIND = {
+  add: 'pa.hist.chNoteAdd', replace: 'pa.hist.chNoteReplace', patch: 'pa.hist.chNoteEdit', remove: 'pa.hist.chNoteRemove'
+}
+const notePlace = (t, word) => t(/^user/.test(word) ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
 const GIST = [
   [new RegExp(`^(create|rewrite) '([^']+)'(?: — (.*?))? \\((\\d+) (chars|KB)\\)${GIST_END}`),
-    (t, m) => t(m[1] === 'create' ? 'pa.hist.gistCreate' : 'pa.hist.gistRewrite', m[2], m[3] || '',
-      m[5] === 'KB' ? `${m[4]} KB` : t('pa.hist.gistChars', m[4]))],
-  [new RegExp(`^patch '([^']+)' (.+?) \\(\\+(\\d+)/-(\\d+) lines\\)${GIST_END}`),
-    (t, m) => t('pa.hist.gistPatch', m[1], m[2], Number(m[3]), Number(m[4]))],
-  [new RegExp(`^write (.+?) in '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistWrite', m[2], m[1])],
-  [new RegExp(`^remove (.+?) from [']([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistRemove', m[2], m[1])],
-  [new RegExp(`^delete skill '([^']+)'${GIST_END}`), (t, m) => t('pa.hist.gistDelete', m[1])],
+    (t, m) => {
+      const name = skillShort(m[2])
+      const size = m[5] === 'KB' ? `${m[4]} KB` : t('pa.hist.gistChars', m[4])
+      const made = m[1] === 'create'
+      return {
+        name, change: t(made ? 'pa.hist.chNew' : 'pa.hist.chRewrite', size),
+        full: t(made ? 'pa.hist.gistCreate' : 'pa.hist.gistRewrite', name, m[3] || '', size)
+      }
+    }],
+  [new RegExp(`^patch '([^']+)' (.+?) \\(\\+(\\d+)/-(\\d+) lines\\)${GIST_END}`), (t, m) => {
+    const [name, file, a, r] = [skillShort(m[1]), slash(m[2]), Number(m[3]), Number(m[4])]
+    return { name, change: t('pa.hist.chPatch', file, a, r), full: t('pa.hist.gistPatch', name, file, a, r) }
+  }],
+  [new RegExp(`^write (.+?) in '([^']+)'${GIST_END}`), (t, m) => {
+    const [name, file] = [skillShort(m[2]), slash(m[1])]
+    return { name, change: t('pa.hist.chWrite', file), full: t('pa.hist.gistWrite', name, file) }
+  }],
+  [new RegExp(`^remove (.+?) from [']([^']+)'${GIST_END}`), (t, m) => {
+    const [name, file] = [skillShort(m[2]), slash(m[1])]
+    return { name, change: t('pa.hist.chRemove', file), full: t('pa.hist.gistRemove', name, file) }
+  }],
+  [new RegExp(`^delete skill '([^']+)'${GIST_END}`), (t, m) => ({
+    name: skillShort(m[1]), change: t('pa.hist.chDelete'), full: t('pa.hist.gistDelete', skillShort(m[1]))
+  })],
   [new RegExp(`^batch\\(\\d+ ops: ([a-z_, ]+)\\) on (.+?)${GIST_END}`), (t, m) => {
     const acts = m[1].split(', ')
     const kinds = acts.map(a => BATCH_KIND[a])
-    if (kinds.some(k => !k)) return m[0]
+    if (kinds.some(k => !k)) return null
     const parts = [...new Set(Object.values(BATCH_KIND))].map(k => [k, kinds.filter(x => x === k).length])
       .filter(([, n]) => n).map(([k, n]) => t(k, n))
-    return t('pa.hist.gistBatch', m[2], parts.join(', '))
-  }]
+    const name = skillShort(m[2])
+    return { name, change: parts.join(', '), full: t('pa.hist.gistBatch', name, parts.join(', ')) }
+  }],
+  [/^(add|replace|patch|remove) (?:to|in|from) (memory|user profile): (?:entry matching: )?([^\n]*)/,
+    (t, m) => ({ note: true, place: notePlace(t, m[2]), name: m[3].trim(), change: t(NOTE_KIND[m[1]]) })],
+  [/^apply (\d+) op\(s\) to (memory|user profile): (?:- [a-z]+: )?([^\n]*)/,
+    (t, m) => ({ note: true, place: notePlace(t, m[2]), name: m[3].trim(), change: t('pa.hist.chNotes', Number(m[1])) })],
+  [new RegExp('^background review consolidation \\((add|replace|patch|remove|batch) on (memory|user)\\): '
+    + '(?:entry matching: |- [a-z]+: )?([^\\n]*)'),
+    (t, m) => ({
+      note: true, place: notePlace(t, m[2]), name: m[3].trim(),
+      change: t(m[1] === 'batch' ? 'pa.hist.chNoteMany' : NOTE_KIND[m[1]])
+    })]
 ]
-const plainGist = (t, raw) => {
+const gistOf = (t, raw) => {
   const text = String(raw || '')
   for (const [re, say] of GIST) {
     const m = text.match(re)
-    if (m) return say(t, m) + text.slice(m[0].length)
+    const parts = m ? say(t, m) : null
+    if (parts) return { ...parts, rest: text.slice(m[0].length) }
   }
-  return text
+  return null
+}
+const oldWords = rest => rest.replace(/ — approved without pre-review\b/g, ' — saved without review')
+  .replace(/ — approved with (\d+) suggested edit/g, ' — saved with $1 suggested edit')
+const plainGist = (t, raw) => {
+  const g = gistOf(t, raw)
+  if (!g) return String(raw || '')
+  return (g.note ? t('pa.hist.gistNote', g.change, g.place, g.name) : g.full) + oldWords(g.rest)
 }
 const TAB_KEY = { pending: 'pa.tab.pending', history: 'pa.tab.history', memory: 'pa.tab.memory' }
 const KIND_VARIANT = { apply: 'success', rejected: 'muted', external: 'warn', failed: 'destructive' }
@@ -675,7 +738,7 @@ const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(-
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { tag: 4, box: 8, ctl: 6, file: 9, verdict: 10, pill: 999 }
 const FS = {
-  micro: 11, meta: 11.5, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 10, detail: 17, empty: 15
+  micro: 12, meta: 12, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 11, detail: 17, empty: 15
 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
@@ -755,7 +818,7 @@ const STYLE = `
 .pa-progress{display:flex;align-items:center;gap:10px;font-size:${FS.meta}px;color:var(--ui-text-secondary);
   white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
 .pa-pips{display:flex;gap:3px;flex:none}
-.pa-pip{width:14px;height:6px;border-radius:2px;background:${tint('var(--ui-text-primary)', 14)}}
+.pa-pip{width:10px;height:6px;border-radius:2px;background:${tint('var(--ui-text-primary)', 14)}}
 .pa-pip[data-k="apply"]{background:var(--ui-green)}
 .pa-pip[data-k="rejected"]{background:${tint('var(--ui-text-primary)', 40)}}
 .pa-strip{display:flex;flex-direction:column;gap:${G.xs}px;padding:${G.xs}px 16px;border-bottom:${HAIRLINE};flex:none}
@@ -816,7 +879,9 @@ const STYLE = `
 .pa-back>.pa-back-pos{margin-left:auto;font-variant-numeric:tabular-nums}
 .pa-dh{display:flex;flex-direction:column;gap:6px;padding:16px 20px 0;flex:none;min-width:0}
 .pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
-  flex-wrap:wrap}
+  flex-wrap:nowrap;white-space:nowrap}
+.pa-crumb>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pa-crumb>.pa-crumb-end,.pa-crumb>.pa-crumb-icon,.pa-crumb>.pa-crumb-sep,.pa-crumb>.pa-pill{flex:none}
 .pa-crumb>.pa-crumb-end{margin-left:auto}
 .pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-crumb-sep{color:var(--ui-text-secondary)}
@@ -933,7 +998,9 @@ const STYLE = `
 .pa-root .pa-memrow[data-on="1"]::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;
   background:var(--ui-accent)}
 .pa-memrow-top{display:flex;align-items:baseline;gap:8px;font-size:${FS.row}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-memrow-top>b{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+.pa-memrow-top>b{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pa-memrow-top>b[data-full]::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:${WARN};margin-right:6px;vertical-align:middle}
 .pa-memrow-sub{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:8px 12px;border-radius:${R.box}px;
@@ -969,6 +1036,8 @@ const STYLE = `
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
 .pa-finding{display:flex;flex-direction:column;gap:${G.xxs}px;padding-top:${G.xs}px;border-top:${HAIRLINE}}
 .pa-fullchange-toggle{align-self:flex-start}
+.pa-root .pa-fold-btn::before{content:'▸' / '';display:inline-block;width:1em;flex:none}
+.pa-root .pa-fold-btn[aria-expanded="true"]::before{content:'▾' / ''}
 .pa-held{opacity:.5;cursor:not-allowed}
 .pa-pill{display:inline-flex;align-items:center;height:${TAG.height}px;padding:${TAG.padding};
   border-radius:${TAG.borderRadius}px;border:${HAIRLINE};background:transparent;
@@ -981,7 +1050,6 @@ const STYLE = `
 .pa-review{display:flex;flex-direction:column;gap:${G.xs}px;border-radius:${R.box}px;padding:${G.xs}px ${G.sm}px;
   background:color-mix(in srgb,var(--pa-tone) 5%,transparent);border:${HAIRLINE}}
 .pa-review-head{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex-wrap:wrap}
-.pa-review-meta{flex:1;min-width:0;font-size:${FS.micro}px;color:var(--ui-text-secondary);text-align:right}
 .pa-majors{display:flex;flex-direction:column;gap:${G.sm}px}
 .pa-quote{font-size:${FS.micro}px;line-height:1.5;color:var(--ui-text-secondary);padding-left:${G.xs}px;
   border-left:2px solid var(--ui-stroke-tertiary)}
@@ -1221,7 +1289,7 @@ function TechDetails({ t, rows }) {
     className: 'pa-tech',
     children: [
       jsx(Button, {
-        variant: 'text', size: 'inline', className: 'pa-tech-fold', 'aria-expanded': open,
+        variant: 'text', size: 'inline', className: 'pa-tech-fold pa-fold-btn', 'aria-expanded': open,
         onClick: () => setOpen(v => !v), children: t(open ? 'pa.tech.hide' : 'pa.tech.show')
       }, 'fold'),
       open ? jsx(PanelMeta, { className: 'pa-tech-rows', rows: shown }, 'rows') : null
@@ -1245,14 +1313,16 @@ function LoadError({ title: heading, error, onRetry }) {
 }
 
 const placeName = (t, path) => {
-  const p = String(path || '')
+  const p = slash(path)
   const mem = p.match(/(?:^|\/)memories\/(MEMORY|USER)\.md$/)
   if (mem) return t(mem[1] === 'USER' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
-  const skill = p.match(/(?:^|\/)skills\/(?:.*\/)?([^/]+)\/SKILL\.md$/)
+  const skill = p.match(/(?:^|\/)skills\/(?:.*\/)?([^/]+)\/(?:SKILL\.md|(?:references|templates|scripts|assets)\/.+)$/)
   if (skill) return t('pa.act.placeSkill', skill[1])
   return p.split('/').pop() || p
 }
 const placeNames = (t, paths) => [...new Set(paths.map(p => placeName(t, p)))]
+const pathBreaks = path => slash(path).split('/')
+  .flatMap((seg, i, all) => (i < all.length - 1 ? [`${seg}/`, jsx('wbr', {}, `w${i}`)] : [seg]))
 
 const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
   className: 'pa-alert pa-stale',
@@ -1659,15 +1729,19 @@ const lineRows = op => {
 }
 
 
-function ReviewSection({ review, facts, tone, busy, onAgain }) {
+function ReviewSection({ review, facts, tone, ids }) {
   const t = usePluginI18n(ID)
   const { status, hard, major, doubtful, notes, edits, fixLeft, unfixed, effect, advice } = facts
   const usage = review.usage || {}
-  const meta = [
-    review.model,
-    typeof usage.input === 'number' ? t('pa.review.tokens', usage.input, usage.output || 0) : '',
-    typeof usage.cost_usd === 'number' ? t('pa.review.cost', usage.cost_usd, usage.cost_status || '') : ''
-  ].filter(Boolean).join(' · ')
+  const done = status === 'done'
+  const tech = [
+    { label: t('pa.tech.record'), value: (ids || []).map(id => `#${id}`).join(', ') },
+    { label: t('pa.tech.model'), value: review.model || '' },
+    { label: t('pa.tech.tokens'), value: done && typeof usage.input === 'number'
+      ? t('pa.review.tokens', usage.input, usage.output || 0) : '' },
+    { label: t('pa.tech.cost'), value: done && typeof usage.cost_usd === 'number'
+      ? t('pa.review.cost', usage.cost_usd, usage.cost_status || '') : '' }
+  ]
   const gist = (key, text) => jsx('div', { className: 'pa-gist', children: text }, key)
   const quote = (key, label, text) => text ? jsx('div', { className: 'pa-quote', children: `${label}: “${text}”` }, key) : null
   const problem = (key, badge, variant, text, edit, extra) => jsxs('div', {
@@ -1718,22 +1792,9 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
     className: 'pa-review',
     style: { '--pa-tone': tone },
     children: [
-      jsxs('div', {
+      jsx('div', {
         className: 'pa-review-head',
-        children: [
-          jsx('div', { className: 'pa-section', children: t('pa.review.title') }, 'label'),
-          jsx('span', { className: 'pa-review-meta', children: status === 'done' ? meta : '' }, 'meta'),
-          status === 'done' || status === 'failed'
-            ? jsx(Button, {
-                variant: 'outline',
-                size: 'xs',
-                disabled: Boolean(busy) && busy !== 'review',
-                loading: busy === 'review',
-                onClick: () => void onAgain(),
-                children: t('pa.btn.reReview')
-              }, 'again')
-            : null
-        ]
+        children: jsx('div', { className: 'pa-section', children: t('pa.review.title') }, 'label')
       }, 'head'),
       status === 'running' ? gist('running', t('pa.review.running', review.model || review.provider || '')) : null,
       status === 'unassigned' ? gist('unassigned', t('pa.review.unassigned')) : null,
@@ -1771,7 +1832,8 @@ function ReviewSection({ review, facts, tone, busy, onAgain }) {
       edits > 0 && !fixLeft.length && unfixed > 0
         ? jsx('div', { className: 'pa-note', children: t('pa.review.fixCovers', edits, edits + unfixed) }, 'covers')
         : null,
-      notes.length ? jsx('div', { className: 'pa-note', children: t('pa.review.notes', notes.length) }, 'notes') : null
+      notes.length ? jsx('div', { className: 'pa-note', children: t('pa.review.notes', notes.length) }, 'notes') : null,
+      jsx(TechDetails, { t, rows: tech }, 'tech')
     ]
   })
 }
@@ -1799,7 +1861,6 @@ const ago = (t, ts) => {
   }
   return ''
 }
-const shortDay = ts => new Date(ts * 1000).toLocaleDateString('en-GB', { weekday: 'short' })
 const decidedToday = entries => entries
   .filter(e => (e.kind === 'apply' || e.kind === 'rejected') && dayKey(e.ts) === dayKey(Date.now() / 1000))
   .sort((a, b) => a.ts - b.ts)
@@ -1912,17 +1973,20 @@ function BarMeters({ data, t, reading }) {
   }, 'meters')
 }
 
+const PIPS_FROM = 2
 function DayProgress({ entries, n, compact }) {
   const t = usePluginI18n(ID)
   const done = decidedToday(entries)
   const all = done.length + n
   if (!all && !compact) return null
   const text = t('pa.day.decided', done.length, all)
+  const pips = all >= PIPS_FROM && all <= 12
+  if (compact && !pips) return null
   return jsxs('div', {
     className: 'pa-progress',
     children: [
       compact ? null : jsx('span', { children: t('pa.day.today') }, 'today'),
-      all && all <= 12
+      pips
         ? jsx('span', {
             className: 'pa-pips',
             role: 'img',
@@ -1975,12 +2039,12 @@ const recordTitle = (t, subsystem, item) => {
   const plain = item.plain || {}
   if (subsystem === 'memory') return plain.headline || plain.target || ''
   if (item.parts) {
-    return [(item.names || []).join(', '), t('pa.grp.changes', item.parts.length),
+    return [skillShort((item.names || []).join(', ')), t('pa.grp.changes', item.parts.length),
       groupDeletes(item) ? t('pa.grp.withDelete') : ''].filter(Boolean).join(' · ')
   }
   const groups = plain.groups || []
   return SKILL_KINDS.map(([kind, key]) => [key, groups.filter(g => (g.kind || 'update') === kind)])
-    .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${list.map(g => g.name).join(', ')}`)
+    .filter(([, list]) => list.length).map(([key, list]) => `${t(key)}: ${skillShort(list.map(g => g.name).join(', '))}`)
     .join(' · ') || plain.target || ''
 }
 const rowTitle = (t, subsystem, item) => (item.summary ? plainGist(t, item.summary) : recordTitle(t, subsystem, item))
@@ -2166,7 +2230,7 @@ const marked = (a, b) => {
   return [cut(x), cut(y)]
 }
 const withMarks = rows => {
-  const out = rows.map(r => ({ k: r[0], text: r[1] || '', parts: null }))
+  const out = rows.map(r => ({ k: r[0], text: String(r[1] || '').replace(/^(\s*)[-*] (?=\S)/, '$1• '), parts: null }))
   for (let i = 0; i + 1 < out.length; i += 1) {
     if (out[i].k !== '-' || out[i + 1].k !== '+') continue
     const m = marked(out[i].text, out[i + 1].text)
@@ -2190,7 +2254,7 @@ const splitLines = s => {
 const editRows = edit => [...splitLines(edit.find).map(l => ['-', l]), ...splitLines(edit.replace).map(l => ['+', l])]
 const opPath = (subsystem, op, item) => {
   if (subsystem === 'memory') return `memories/${recordFile(subsystem, item)}`
-  return [op.name, op.file].filter(Boolean).join('/') || op.file || ''
+  return [skillShort(op.name), slash(op.file)].filter(Boolean).join('/') || slash(op.file)
 }
 
 function FileDiff({ path, rows, op, badge, deleted }) {
@@ -2411,15 +2475,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         }, f))
       }, 'steps')
     : null
-  const usage = review.usage || {}
-  const cost = typeof usage.cost_usd === 'number' ? t('pa.review.cost', usage.cost_usd, usage.cost_status || '') : ''
-  const second = status === 'done' && review.model
-    ? jsxs('div', {
-        className: 'pa-second',
-        children: [jsx('div', { children: t('pa.verdict.second') }, 'label'),
-          jsx('div', { children: [review.model, cost].filter(Boolean).join(' · ') }, 'model')]
-      }, 'second')
-    : null
   const canAgain = status === 'done' || status === 'failed'
   const againButton = jsx(Button, {
     variant: 'text', size: 'inline', className: 'pa-again',
@@ -2459,10 +2514,10 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           steps
         ]
       }, 'text'),
-      toggle || second || (fit && canAgain)
+      toggle || (fit && canAgain)
         ? jsxs('div', {
             className: 'pa-vside',
-            children: [toggle, second, fit && canAgain ? againButton : null]
+            children: [toggle, fit && canAgain ? againButton : null]
           }, 'side')
         : null
     ]
@@ -2594,6 +2649,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
               size: 'inline',
               disabled: leaving,
               'aria-expanded': lines,
+              className: 'pa-fold-btn',
               onClick: () => toggleLines(part.id),
               children: t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
             }, 'fold'),
@@ -2636,7 +2692,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       cardAt.current?.querySelector('.pa-fullchange-toggle')?.focus()
     },
     children: [
-      jsx(ReviewSection, { review, facts, tone: VERDICT[verdict], busy, onAgain: reviewAgain }, 'review'),
+      jsx(ReviewSection, { review, facts, tone: VERDICT[verdict], ids }, 'review'),
       notes.length ? jsx('div', { className: 'pa-section', children: t('pa.field.findings') }, 'findLabel') : null,
       ...notes.map((f, i) => jsx(Finding, { finding: f }, `n${i}`))
     ]
@@ -2667,9 +2723,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   }
   const typeWord = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
   const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
-  const crumbFile = subsystem === 'memory' ? [kindTarget]
-    : isGroup ? [kindTarget]
-      : [kindTarget, ...[...new Set((item.ops || []).map(o => o.file).filter(Boolean))].slice(0, 1)]
+  const crumbFile = subsystem === 'memory' && isProfile(kindTarget) ? [t('pa.kpi.profileLabel')] : []
 
   return jsxs('div', {
     ref: cardAt,
@@ -2692,7 +2746,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 'icon'),
               jsx('span', { children: typeWord }, 'type'),
               ...crumbFile.filter(Boolean).flatMap((c, i) => [sep(i), jsx('span', { children: c }, `c${i}`)]),
-              jsx('span', { className: 'pa-pill pa-pill-id', children: `#${item.id}` }, 'id'),
               jsx('span', { className: 'pa-crumb-end', 'data-when': '1', children: when(t, item.staged_at) }, 'when')
             ]
           }, 'crumb'),
@@ -2727,7 +2780,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           jsx(Button, {
             variant: 'text',
             size: 'inline',
-            className: 'pa-fullchange-toggle',
+            className: 'pa-fullchange-toggle pa-fold-btn',
             disabled: leaving,
             'aria-expanded': open,
             'aria-controls': detailsId,
@@ -3067,6 +3120,7 @@ function AllClear({ t, entries, onChanged, mem, onOpen }) {
   const n = decidedToday(entries).length
   const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
   const canUndo = Boolean(last?.undoable) && !last?.undone
+  const canRestore = !canUndo && last?.kind === 'rejected' && last?.restorable === true && !last?.restored
   const said = last ? plainGist(t, String(last.summary || '')) : ''
   const first = !n && !last
   const full = ['memory', 'user'].map(id => (mem?.[id] ? { id, ...fill(mem[id]) } : null))
@@ -3091,18 +3145,20 @@ function AllClear({ t, entries, onChanged, mem, onOpen }) {
               jsx('span', {
                 children: t('pa.clear.last', short(said, 60), historyWords(t, last), when(t, last.ts))
               }, 'text'),
-              canUndo
+              canUndo || canRestore
                 ? jsx(Button, {
-                    variant: 'textStrong', size: 'inline', loading: busy, className: 'pa-clear-undo',
+                    variant: 'textStrong', size: 'inline', loading: busy,
+                    className: canUndo ? 'pa-clear-undo' : 'pa-restore',
                     onClick: async () => {
                       setBusy(true)
                       try {
-                        await undoEntry(t, last, onChanged)
+                        if (canUndo) await undoEntry(t, last, onChanged)
+                        else await restoreEntry(t, last, onChanged)
                       } finally {
                         setBusy(false)
                       }
                     },
-                    children: t('pa.btn.undo')
+                    children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
                   }, 'undo')
                 : null
             ]
@@ -3323,7 +3379,8 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
           ] : [
             jsxs('span', { children: [kbd(t('pa.key.j')), kbd(t('pa.key.k')), t('pa.legend.move')] }, 'move'),
             jsxs('span', { children: [kbd(t('pa.key.a')), t('pa.legend.approve')] }, 'approve'),
-            jsxs('span', { children: [kbd(t('pa.key.x')), t('pa.legend.reject')] }, 'reject')
+            jsxs('span', { children: [kbd(t('pa.key.x')), t('pa.legend.reject')] }, 'reject'),
+            jsxs('span', { children: [kbd(t('pa.key.l')), t('pa.legend.later')] }, 'later')
           ]
         }, 'legend')
       }, 'foot')
@@ -3361,6 +3418,12 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
 const histTile = entry => tileOf(entry.subsystem === 'skills' ? 'skills' : 'memory',
   (entry.files || []).map(f => f.path).find(isProfile) || '')
 const TITLE_MAX = 140
+const sameOnce = texts => texts.reduce((rows, text, i) => {
+  const row = rows.find(r => r.text === text)
+  if (row) row.at.push(i + 1)
+  else rows.push({ text, at: [i + 1] })
+  return rows
+}, [])
 const OUTCOME = {
   apply: ['var(--ui-green)', CheckIcon],
   rejected: ['var(--ui-text-secondary)', CrossIcon],
@@ -3373,10 +3436,14 @@ const histChip = entry => (entry.undoable && !entry.undone ? ['pa.act.canUndo', 
       : entry.restored ? ['pa.act.restored', 'var(--ui-text-tertiary)'] : ['pa.act.cannot', 'var(--ui-text-tertiary)'])
 
 function ActRow({ entry, on, t, onSelect }) {
-  const said = entry.kind === 'external' && (entry.files || []).length ? t('pa.hist.externalDetail', entry.files.length)
-    : plainGist(t, String(entry.summary || ''))
-  const today = dayKey(entry.ts) === dayKey(Date.now() / 1000)
+  const files = entry.files || []
+  const outside = entry.kind === 'external' && files.length > 0
+  const g = outside ? null : gistOf(t, entry.summary)
   const words = historyWords(t, entry)
+  const named = outside || Boolean(g)
+  const name = !named ? words : outside ? placeNames(t, files.map(f => f.path)).join(', ') : g.name || g.change
+  const said = !named ? plainGist(t, String(entry.summary || ''))
+    : [words, outside ? t('pa.hist.filesN', files.length) : g.name ? g.change : ''].filter(Boolean).join(' · ')
   return jsx('div', {
     className: 'pa-rowwrap',
     role: 'listitem',
@@ -3387,18 +3454,18 @@ function ActRow({ entry, on, t, onSelect }) {
       className: 'pa-row pa-act-row',
       'data-entry': entry.id,
       'aria-current': on ? 'true' : undefined,
-      'aria-label': `${words}: ${said}`,
+      'aria-label': `${name} · ${said}`,
       onClick: () => onSelect(entry.id),
       children: [
         jsx(Tile, { of: histTile(entry) }, 'tile'),
         jsxs('span', {
           className: 'pa-row-text',
           children: [
-            jsx('span', { className: 'pa-row-title', children: words }, 'title'),
+            jsx('span', { className: 'pa-row-title', children: name }, 'title'),
             jsx('span', { className: 'pa-row-preview', children: said }, 'preview')
           ]
         }, 'text'),
-        jsx('span', { className: 'pa-row-time', children: today ? clock(entry.ts * 1000) : shortDay(entry.ts) }, 'time')
+        jsx('span', { className: 'pa-row-time', children: clock(entry.ts * 1000) }, 'time')
       ]
     }, 'row')
   }, entry.id)
@@ -3582,12 +3649,12 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                 children: [
                   jsx(Button, {
                     variant: 'text', size: 'inline', style: { alignSelf: 'flex-start' }, 'aria-expanded': fold,
-                    onClick: () => setFold(v => !v),
+                    className: 'pa-fold-btn', onClick: () => setFold(v => !v),
                     children: fold ? t('pa.hist.changesHide') : t('pa.grp.list', changes.length)
                   }, 'fold'),
-                  ...(fold ? changes.map((c, i) => jsx('div', {
-                    className: 'pa-aside', children: `#${i + 1} · ${plainGist(t, c)}`
-                  }, `c${i}`)) : [])
+                  ...(fold ? sameOnce(changes.map(c => plainGist(t, c))).map(r => jsx('div', {
+                    className: 'pa-aside', children: `${r.at.map(n => `#${n}`).join(', ')} · ${r.text}`
+                  }, `c${r.at[0]}`)) : [])
                 ]
               }, 'changes')
             : null,
@@ -3599,7 +3666,8 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                 label: t('pa.tech.files'),
                 value: files.length
                   ? jsx('div', {
-                      className: 'pa-act-files', children: files.map(f => jsx('span', { children: f.path }, f.path))
+                      className: 'pa-act-files',
+                      children: files.map(f => jsx('span', { children: pathBreaks(f.path) }, f.path))
                     }, 'paths')
                   : null
               }
@@ -3634,7 +3702,7 @@ function HistoryList({ data, error, refresh, onChanged, onOpen }) {
     today.filter(e => e.kind === 'rejected').length,
     today.filter(e => e.kind === 'failed').length
   ]
-  const headLine = [t('pa.hist.dayToday'),
+  const headLine = [t('pa.hist.dayToday'), today.length ? null : t('pa.hist.dayNothing'),
     headParts[0] ? t('pa.hist.headSaved', headParts[0]) : null,
     headParts[1] ? t('pa.hist.headNotSaved', headParts[1]) : null,
     headParts[2] ? t('pa.hist.headFailed', headParts[2]) : null].filter(Boolean).join(' · ')
@@ -3759,7 +3827,13 @@ function MemFileRow({ label: name, store, t }) {
     children: [
       jsxs('span', {
         className: 'pa-memrow-top',
-        children: [jsx('span', { children: name }, 'name'), jsx('b', { children: pct === null ? '—' : `${pct}%` }, 'pct')]
+        children: [
+          jsx('span', { children: name }, 'name'),
+          jsx('b', {
+            'data-full': pct >= 90 ? '1' : undefined,
+            children: pct === null ? '—' : pct >= 90 ? t('pa.memory.nearlyFull', pct) : `${pct}%`
+          }, 'pct')
+        ]
       }, 'top'),
       jsx('span', {
         className: 'pa-meter pa-meter-thin', 'aria-hidden': true, style: { '--pa-tone': TONE_COLOR[tone] },
@@ -3776,9 +3850,12 @@ function MemFileRow({ label: name, store, t }) {
 
 function MemoryView({ data, error, refresh, onChanged }) {
   const t = usePluginI18n(ID)
-  const [target, setTarget] = useState('memory')
+  const [picked, setTarget] = useState(null)
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(null)
+  const fullest = ['memory', 'user'].map(id => (data?.[id] ? { id, pct: fill(data[id]).pct } : null))
+    .filter(f => f && f.pct >= 90).sort((a, b) => b.pct - a.pct)[0]
+  const target = picked || fullest?.id || 'memory'
   const [busy, setBusy] = useState(false)
   const askAt = useRef(null)
   useEffect(() => {
@@ -3868,10 +3945,7 @@ function MemoryView({ data, error, refresh, onChanged }) {
                     jsx('span', {
                       className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(target === 'user' ? UsersIcon : BrainIcon, 13)
                     }, 'icon'),
-                    jsx('span', { children: labelOf(target) }, 'type'),
-                    store.entries.length
-                      ? jsx('span', { className: 'pa-crumb-end', children: t('pa.memory.fill', pct) }, 'pct')
-                      : null
+                    jsx('span', { children: labelOf(target) }, 'type')
                   ]
                 }, 'crumb'),
                 jsx('div', {

@@ -451,7 +451,7 @@ def fix_without_review_is_marked():
     out = env.approve("skills", "96000001", with_edits=True, skip_review=True)
     assert out["ok"], out
     row = next(e for e in env.entries() if e.get("record_id") == "96000001")
-    assert "without pre-review" in row["summary"], row["summary"]
+    assert "saved without review" in row["summary"], row["summary"]
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -479,7 +479,7 @@ def memory_patch_card_is_an_edit():
     assert "Deletes" not in what, f"an edit was shown as a delete: {what}"
     assert "git-bash" in what, what
     assert item["plain"]["fit"].get("over"), f"the overflow was not measured: {item['plain']['fit']}"
-    assert item["plain"]["recommendation"]["verdict"] != "Approve", \
+    assert item["plain"]["recommendation"]["verdict"] != env.pa._tx("rec_approve"), \
         f"a patch that overflows MEMORY.md was recommended: {item['plain']['recommendation']}"
 
 
@@ -1044,6 +1044,24 @@ def _run_one(name: str) -> int:
         return 1
     print(f"ok   {name}")
     return 0
+
+
+@case
+def card_reads_without_machine_text():
+    """The card says what changes in plain words: no raw record note, no category path, one verb pair."""
+    env = Env()
+    env.skill("pathy", "alpha\n")
+    env.stage("skills", "97100001", {"action": "patch", "name": "cat/pathy", "old_string": "alpha",
+                                     "new_string": "beta"}, summary="batch(1 ops: patch) on cat/pathy")
+    plain = env.item("skills", "97100001")["plain"]
+    shown = " ".join([plain["why"], plain["headline"], plain["effect"], *plain["what"]])
+    for raw in ("batch(", "own note", "cat/pathy", "If you approve", '"History"'):
+        assert raw not in shown, f"the card still shows {raw!r}: {shown}"
+    assert "pathy" in plain["headline"], plain["headline"]
+    env.memory("The shell is git-bash.")
+    env.stage_memory("97100002", {"action": "add", "target": "memory", "content": "A new note."})
+    effect = env.item("memory", "97100002")["plain"]["effect"]
+    assert "When you save" in effect and '"Activity"' in effect, effect
 
 
 def main(argv: list) -> int:

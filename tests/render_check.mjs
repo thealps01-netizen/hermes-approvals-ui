@@ -1382,7 +1382,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   if (!/^Memory99%/.test(memText) || !memText.includes('2 notes · 2,189 / 2,200') || memText.includes('.md')) {
     fail(`the Memory file row does not read name, percent, notes · chars / limit: ${mem?.textContent}`)
   }
-  if (!/^Profile84%1 note · 1,158 \/ 1,375$/.test(prof?.textContent || '')) {
+  if (!/^Profile84%1 note · 1,158 \/ 1,375 characters$/.test(prof?.textContent || '')) {
     fail(`the Profile file row does not read likewise: ${prof?.textContent}`)
   }
   const meter = r => r?.querySelector('.pa-meter.pa-meter-thin')
@@ -1424,7 +1424,7 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
 const appliedTab = tab(en.hostEl, /Activity/)
 if (!appliedTab) fail('the Activity tab is missing')
 await click(appliedTab, 60)
-must(en.hostEl.textContent, ['2 files changed outside Approvals', 'Saved to memory', 'Not saved',
+must(en.hostEl.textContent, ['Changed outside Approvals · 2 files', 'Saved to memory', 'Not saved',
   'Changed outside Approvals', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 const actRow = (hostEl, id) => hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`)
@@ -1978,7 +1978,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   bulk.hostEl.remove()
 
   const ok = { status: 'done', verdict: 'approve', summary: 'Fine.', findings: [], hard: [] }
-  for (const [verdict, line] of [['approve', ''], ['reject', 'The AI review advised not saving 1 of them.']]) {
+  for (const [verdict, line] of [['approve', ''], ['reject', 'The reviewer advised not saving 1 of them.']]) {
     REST.pending = withReview({ abc12345: ok, aaa11111: { ...ok, verdict } })
     const advisedBulk = await mount('en')
     await selectMode(advisedBulk.hostEl)
@@ -1998,7 +1998,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     await click(pickOf(single, 'skills:aaa11111'))
     await click(buttons(barOf(single), /^Save 1$/)[0])
     const armed = barOf(single)?.textContent || ''
-    if (!armed.includes('The AI review advised not saving it.') || /of them/.test(armed)) {
+    if (!armed.includes('The reviewer advised not saving it.') || /of them/.test(armed)) {
       fail(`bulk Approve of one advised record arms with: ${armed}`)
     }
     single.hostEl.remove()
@@ -2090,7 +2090,8 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
     ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
-    ['late', 'error', 'It was rejected somewhere else (for example from chat) while the panel waited — nothing was applied.', 'rejected']]) {
+    ['late', 'error', 'It was turned down somewhere else (for example from chat) while the panel waited — nothing was saved.',
+      'rejected']]) {
     REST.post = mode
     REST.lateKind = lateKind
     const late = await mount('en')
@@ -2495,7 +2496,7 @@ REST.scan = 'ok'
   }
   await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Clear selection$/)[0])
   if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
-    .includes('Saving unlocks when the pre-review has finished')) fail('a locked Approve does not say why in its Tip')
+    .includes('Saving unlocks when the reviewer has finished')) fail('a locked Approve does not say why in its Tip')
   await openFull(gate.hostEl, 'skills:def67890')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
   if (buttons(cell(gate.hostEl, 'skills:def67890'), /Save without review/).length) {
@@ -2503,7 +2504,7 @@ REST.scan = 'ok'
   }
   await openFull(gate.hostEl, 'skills:aaa11111')
   const open = cell(gate.hostEl, 'skills:aaa11111')
-  must(open?.textContent, ['No pre-review model is set', 'Approvals review'], 'unassigned review')
+  must(open?.textContent, ['No reviewer model is set', 'Approvals review'], 'unassigned review')
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = decides().length
   await click(approveIn('skills:aaa11111'))
@@ -2526,10 +2527,19 @@ REST.scan = 'ok'
   const done = await mount('en')
   await openFull(done.hostEl, 'skills:aaa11111')
   const card = cell(done.hostEl, 'skills:aaa11111')
-  must(card?.textContent, ['Reject advised', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
-  must(card?.querySelector('.pa-review')?.textContent, ['Pre-review', `In the write: “${FINDING.quote}”`,
-    `Against: “${FINDING.other}”`, 'gpt-5.5 · 5210 in / 388 out tokens · $0.0123 estimated', 'Review again'],
-  'the pre-review section')
+  must(card?.textContent, ['Advises not saving', 'One duplicate rule.', 'Breaks a rule', FINDING.explain], 'finished review')
+  must(card?.querySelector('.pa-review')?.textContent, ['Reviewer', `In the write: “${FINDING.quote}”`,
+    `Against: “${FINDING.other}”`], 'the review section')
+  if (/gpt-5\.5|388 out|estimated/.test(card?.querySelector('.pa-review')?.textContent || '')) {
+    fail('the review section shows the model, tokens or cost before Details is opened')
+  }
+  if (buttons(card, /^Review again$/).length !== 1) {
+    fail(`"Review again" is offered ${buttons(card, /^Review again$/).length} times on one card (want once)`)
+  }
+  await click(buttons(card?.querySelector('.pa-review'), /^Details$/)[0], 40)
+  must(card?.querySelector('.pa-review')?.textContent, ['Reviewer model', 'gpt-5.5', '5,210 in / 388 out',
+    '$0.0123 estimated', '#aaa11111'], 'the review Details')
+  await click(buttons(card?.querySelector('.pa-review'), /^Hide details$/)[0], 40)
   if ([primaryBtn(card)].filter(Boolean)[0]?.getAttribute('aria-disabled') === 'true') {
     fail('a finished review locks Approve — the review is advice, the decision stays the user\'s')
   }
@@ -2714,7 +2724,7 @@ REST.scan = 'ok'
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .filter(el => !el.closest('.pa-back'))
       .map(el => (el.tagName === 'INPUT' ? 'checkbox' : name(el).trim()))
-    const want = ['Hide the full review', 'Review again', 'Review again', 'Later', 'Don’t save', 'Save skill']
+    const want = ['Hide the full review', 'Details', 'Review again', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -3620,7 +3630,8 @@ REST.scan = 'ok'
     const coldSaid = lastSaid()
     const want = applied ? coldSaid?.kind !== 'error' && /applied/i.test(coldSaid?.message || '')
       : row === null ? coldSaid?.kind === 'error' && coldSaid?.message === UNKNOWN
-        : coldSaid?.kind === 'error' && new RegExp(row === 'apply' ? 'applied|approved' : 'rejected', 'i').test(coldSaid?.message || '')
+        : coldSaid?.kind === 'error'
+          && new RegExp(row === 'apply' ? 'saved somewhere' : 'turned down', 'i').test(coldSaid?.message || '')
     if (!want) {
       fail(`a late ${button} with no history baseline, history then showing ${row || 'only an older failed'} row, told: ${JSON.stringify(coldSaid)}`)
     }
@@ -3753,14 +3764,14 @@ REST.scan = 'ok'
     const heldHost = await mount('en')
     await toFront(heldHost.hostEl, 'memory:abc12345')
     const heldBtn = [primaryBtn(cellAt(heldHost, 'memory:abc12345'))].filter(Boolean)[0]
-    if (!/Saving unlocks when the pre-review has finished/.test(heldBtn?.getAttribute('aria-description') || '')) {
+    if (!/Saving unlocks when the reviewer has finished/.test(heldBtn?.getAttribute('aria-description') || '')) {
       fail('a held Approve does not tell a screen reader why it is held')
     }
     const sends0 = () => stub.calls.posts.filter(x => x.path === '/decide').length
     const before0 = sends0()
     if (heldBtn) await click(heldBtn)
     const heldSaid = lastSaid()
-    if (heldSaid?.kind !== 'warning' || !/Saving unlocks when the pre-review has finished/.test(heldSaid?.message || '')
+    if (heldSaid?.kind !== 'warning' || !/Saving unlocks when the reviewer has finished/.test(heldSaid?.message || '')
         || sends0() !== before0) {
       fail(`a held Approve pressed from the keyboard does not say why: ${JSON.stringify(heldSaid)}`)
     }
@@ -3814,7 +3825,7 @@ REST.scan = 'ok'
       }
     }
     await twice([primaryBtn(cellAt(hw, 'memory:abc12345'))].filter(Boolean)[0],
-      /Saving unlocks when the pre-review has finished/, 'single')
+      /Saving unlocks when the reviewer has finished/, 'single')
     await click(buttons(hw.hostEl, /^Select all$/)[0])
     await twice(buttons(barOf(hw), /^Save 3$/)[0], /decision of their own/, 'bulk')
     hw.hostEl.remove()
@@ -3822,7 +3833,7 @@ REST.scan = 'ok'
   }
   {
     const PLAIN_CREATE = 'New skill: e2e-demo — Use when the owner asks for a demo of the approval flow. (158 characters)'
-    const PLAIN_PATCH = 'Edit skill: release-notes — SKILL.md: 3 lines added, 2 removed — approved without pre-review'
+    const PLAIN_PATCH = 'Edit skill: release-notes — SKILL.md: 3 lines added, 2 removed — saved without review'
     const RAW_CREATE = "create 'e2e-demo' — Use when the owner asks for a demo of the approval flow. (158 chars)"
     const RAW_PATCH = "patch 'release-notes' SKILL.md (+3/-2 lines) — approved without pre-review"
     const RAW_BATCH = 'batch(4 ops: create, patch, write_file, delete) on alpha, beta'
@@ -4064,8 +4075,8 @@ REST.scan = 'ok'
   if (okChips(mc).join() !== 'Not a duplicate,No contradiction,Facts hold,Your rules') {
     fail(`the four ok check chips for a clean memory review: ${JSON.stringify(okChips(mc))}`)
   }
-  if (mc?.querySelector('.pa-verdict .pa-second')?.textContent !== 'Second opiniongpt-5.5') {
-    fail(`the verdict card does not name the model: ${mc?.querySelector('.pa-verdict .pa-second')?.textContent}`)
+  if (/gpt-5\.5/.test(mc?.querySelector('.pa-verdict')?.textContent || '')) {
+    fail('the verdict card still names the reviewer model (it belongs under Details)')
   }
   REST.pending = null
   mh.hostEl.remove()
@@ -4948,6 +4959,114 @@ REST.scan = 'ok'
   h.root.unmount()
   h.hostEl.remove()
   REST.mode = 'normal'
+}
+
+// --- 52) real data read plainly: the owner's screenshots of 1.14.0, one check per finding --------------
+{
+  const NOW = Date.now() / 1000
+  const ago = s => NOW - s
+  const SKILL_SAID = "patch 'software-development\\plugin-authoring' references\\gates.md (+3/-1 lines)"
+  REST.history = { entries: [
+    { id: 'f5200001', ts: ago(60), kind: 'apply', subsystem: 'skills', summary: SKILL_SAID,
+      files: [{ path: 'skills\\software-development\\plugin-authoring\\references\\gates.md' }], undoable: true },
+    { id: 'f5200002', ts: ago(120), kind: 'apply', subsystem: 'memory',
+      summary: 'patch in memory: entry matching: The workspace is on D:', files: [{ path: 'memories/MEMORY.md' }],
+      undoable: true },
+    { id: 'f5200003', ts: ago(180), kind: 'rejected', subsystem: 'memory',
+      summary: 'apply 2 op(s) to user profile: - add: Prefers short replies', files: [], undoable: false },
+    { id: 'f5200004', ts: ago(240), kind: 'apply', subsystem: 'skills', summary: 'gamma-skill · 3 changes',
+      changes: ['SAME-CHANGE', 'SAME-CHANGE', 'OTHER-CHANGE'], files: [{ path: 'skills/gamma-skill/SKILL.md' }],
+      undoable: false }
+  ], counts: { applied: 3, failed: 0, undoable: 2 } }
+  const a = await mount('en', 'page')
+  await click(tab(a.hostEl, /Activity/), 60)
+  const rowText = (id, part) => actRow(a.hostEl, id)?.querySelector(part)?.textContent || ''
+  if (rowText('f5200001', '.pa-row-title') !== 'plugin-authoring'
+      || !rowText('f5200001', '.pa-row-preview').includes('references/gates.md: 3 lines added, 1 removed')
+      || (actRow(a.hostEl, 'f5200001')?.textContent || '').includes('\\')) {
+    fail(`real data: a skill row does not lead with the skill name in plain words: ${rowText('f5200001', '.pa-row-title')}`
+      + ` / ${rowText('f5200001', '.pa-row-preview')}`)
+  }
+  if (rowText('f5200002', '.pa-row-title') !== 'The workspace is on D:'
+      || !rowText('f5200002', '.pa-row-preview').includes('Edited note')
+      || (actRow(a.hostEl, 'f5200002')?.textContent || '').includes('entry matching')) {
+    fail(`real data: a memory row reads like code: ${actRow(a.hostEl, 'f5200002')?.textContent}`)
+  }
+  if (rowText('f5200003', '.pa-row-title') !== 'Prefers short replies'
+      || !rowText('f5200003', '.pa-row-preview').includes('2 note changes')) {
+    fail(`real data: a batch memory row reads like code: ${actRow(a.hostEl, 'f5200003')?.textContent}`)
+  }
+  await click(actRow(a.hostEl, 'f5200001'), 30)
+  await click(buttons(actDetail(a.hostEl), /^Details$/)[0], 30)
+  const files = actDetail(a.hostEl)?.querySelector('.pa-act-files')
+  if (!files || !files.querySelector('wbr') || files.textContent.includes('\\')) {
+    fail(`real data: a long file path in Activity breaks inside a word or keeps backslashes: ${files?.textContent}`)
+  }
+  await click(actRow(a.hostEl, 'f5200004'), 30)
+  await click(buttons(actDetail(a.hostEl), /^Changes \(3\)$/)[0], 30)
+  must(actDetail(a.hostEl)?.textContent, ['#1, #2 · SAME-CHANGE', '#3 · OTHER-CHANGE'], 'real data: a repeated change')
+  a.root.unmount()
+  a.hostEl.remove()
+
+  REST.history = { entries: [{ id: 'f5200005', ts: ago(3 * 86400), kind: 'apply', subsystem: 'memory',
+    summary: 'MEMORY.md updated', files: [{ path: 'memories/MEMORY.md' }], undoable: false }],
+  counts: { applied: 1, failed: 0, undoable: 0 } }
+  const quiet = await mount('en', 'page')
+  await click(tab(quiet.hostEl, /Activity/), 60)
+  if (!(quiet.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent || '').includes('nothing yet')) {
+    fail('real data: the Activity head reads a bare "Today" when nothing was decided today')
+  }
+  quiet.root.unmount()
+  quiet.hostEl.remove()
+
+  REST.pending = { counts: { memory: 0, skills: 0 }, memory: [], skills: [] }
+  REST.history = { entries: [{ id: 'f5200006', ts: ago(30), kind: 'rejected', subsystem: 'memory',
+    summary: 'MEMORY.md rejected', files: [], undoable: false, restorable: true }],
+  counts: { applied: 0, failed: 0, undoable: 0 } }
+  const clear = await mount('en', 'page')
+  if (!buttons(clear.hostEl.querySelector('.pa-clear'), /^Restore$/).length) {
+    fail('real data: after "Don’t save" the all-caught-up state offers no way back')
+  }
+  clear.root.unmount()
+  clear.hostEl.remove()
+  REST.pending = null
+  REST.history = null
+
+  REST.pending = { ...PENDING, memory: [{ ...PENDING.memory[0], ops: [{ action: 'add', new: '- a listed note' }] }] }
+  const n = await mount('en', 'page')
+  await toFront(n.hostEl, 'memory:abc12345')
+  const detail = n.hostEl.querySelector('.pa-detail')
+  if (detail?.querySelector('.pa-pill-id') || (detail?.querySelector('.pa-crumb')?.textContent || '').includes('#abc')) {
+    fail('real data: the record number still sits in the card head (it belongs under Details)')
+  }
+  const added = [...(detail?.querySelectorAll('.pa-dl[data-k="+"]') || [])].map(d => d.textContent)
+  if (!added.some(x => x.includes('• a listed note'))) fail(`real data: a listed note reads "+ -": ${added.join(' | ')}`)
+  if (!/later/.test(n.hostEl.querySelector('.pa-split .pa-legend')?.textContent || '')) {
+    fail('real data: the key legend leaves out L (later)')
+  }
+  const css = n.hostEl.querySelector('style')?.textContent || ''
+  const tiny = [...css.matchAll(/([^{}]+)\{[^}]*?font-size:(\d+(?:\.\d+)?)px/g)]
+    .filter(m => Number(m[2]) < 12 && !/kbd/.test(m[1])).map(m => `${m[1].trim()} ${m[2]}px`)
+  if (tiny.length) fail(`real data: text under 12 px: ${tiny.slice(0, 4).join(', ')}`)
+  if (!/\.pa-fold-btn::before\{content:'▸'/.test(css)
+      || !buttons(detail, /^Details$/).every(b => b.classList.contains('pa-fold-btn'))) {
+    fail('real data: a fold button does not show which way it opens')
+  }
+  n.root.unmount()
+  n.hostEl.remove()
+  REST.pending = null
+
+  REST.memory = { memory: { ...MEMORY.memory, chars: 990, percent: 45, entries: ['A note'] },
+    user: { ...MEMORY.user, chars: 1340, percent: 97 } }
+  const m = await mount('en', 'page')
+  await click(tab(m.hostEl, /Memory/), 60)
+  const picked = m.hostEl.querySelector('.pa-memrows [role="tab"][aria-selected="true"]')?.textContent || ''
+  if (!picked.startsWith('Profile') || !picked.includes('nearly full')) {
+    fail(`real data: the Memory tab does not open on the file that is nearly full: ${picked}`)
+  }
+  m.root.unmount()
+  m.hostEl.remove()
+  REST.memory = null
 }
 
 if (problems.length) {
