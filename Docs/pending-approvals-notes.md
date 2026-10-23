@@ -1437,3 +1437,25 @@ you already draws:
 - the `FileDiff` box for asked-for → saved, so the changed words get the same marks as a pending diff.
 
 A summary longer than `TITLE_MAX` is cut in the heading and shown whole in the body.
+
+## Real data read plainly (2026-10-23)
+
+Screenshots of the installed 1.14.0 against the owner's own records showed the panel was clean on test
+data and noisy on real data: Hermes' record notes (`batch(…)`, `patch in memory: entry matching: …`),
+Windows backslashes, category folders in skill names and five names for the reviewer.
+
+- `gistOf()` turns every known record note into parts (name, change, place); `plainGist()` builds the
+  sentence from them and the Activity row uses the parts for its title and line. A note it does not know
+  is shown unchanged, never guessed. The memory forms follow `tools/memory_tool.py` of the pinned core.
+- The backend no longer appends the record's own note to `why` (`_origin_why`); `_skill_label()` cuts a
+  category folder from names in the headline and the "what" lines.
+- The reviewer's model, tokens and cost, and the record number, live in the review's Details: they help
+  someone checking the run, not someone deciding.
+- Memory opens on the file at 90 % or more, so the button that points at a full file lands on it.
+- Fold buttons get their ▸/▾ from a `::before` on `.pa-fold-btn` with empty alt text, so the button's
+  accessible name stays the bare label.
+- `tests/render_check.mjs` block 52 holds one check per finding; each is red on fc1442b's `plugin.js`.
+  `tests/regress_audit.py` `card_reads_without_machine_text` is red on fc1442b's `plugin_api.py`.
+- The shot gate's pill sample floor went from 10 to 6. The record-number pills (`#abc12345`) made up most
+  of the old sample; with them under Details the narrow frames draw six pills of three kinds, which still
+  measures one height, one radius and one padding.

@@ -603,14 +603,14 @@ _TEXT = {
     'err_not_deleted': 'This note is no longer in {file} as the list showed it (it was changed or removed '
                        'since), so nothing was deleted. The list is read again.',
     'err_already_undone': 'This record was already undone.',
-    'err_not_undoable': 'This record cannot be undone (a rejected record has no file effect).',
+    'err_not_undoable': 'This record cannot be undone (a record you did not save changed no file).',
     'err_conflict': 'The file changed after this record; send force to undo anyway.',
-    'err_no_copies': 'This record has no undo copy (it may have been rejected or the copy cleaned up) — no file was touched.',
+    'err_no_copies': 'This record has no undo copy (it may not have been saved, or the copy was cleaned up) — no file was touched.',
     'err_unsafe_spec': 'This history record names a location outside your profile and every configured skill folder; undo refused.',
     'err_outside_roots': '{path} is outside your profile and every configured skill folder, so the panel does not touch it.',
-    'card_failed': 'A pending {subsystem} change could not be shown, so it is left out of this list: "{summary}" ({id}). Reason: {error}. Nothing was applied and it stays pending; to drop it, type /{subsystem} reject {id} in chat.',
+    'card_failed': 'A pending {subsystem} change could not be shown, so it is left out of this list: "{summary}" ({id}). Reason: {error}. Nothing was saved and it keeps waiting; to drop it, type /{subsystem} reject {id} in a chat.',
     'err_bad_scope': 'invalid subsystem/decision.',
-    'err_bad_record': 'this record is not shaped the way Hermes stages a write (an operation or the payload is not an object); reject it',
+    'err_bad_record': 'this record is not shaped the way Hermes stages a write (an operation or the payload is not an object); choose "Don’t save"',
     'err_no_ids': 'The id list is empty.',
     'err_no_ops_selected': 'No operation in the selected skill.',
     'apply_done': '{n} operation(s) applied.',
@@ -625,11 +625,11 @@ _TEXT = {
     'group_member_busy': 'A change of this group is in use by another program ({error}), so nothing was written; try again.',
     'what_unknown_note': 'An operation Hermes does not know: {action}',
     'stale_mem_refused': '{what} → cannot be applied: {problem}',
-    'stale_mem_unpinned': 'this edit was staged without the note it targets, so Hermes refuses it; reject it and let the agent write it again',
+    'stale_mem_unpinned': 'this edit was staged without the note it targets, so Hermes refuses it; choose "Don’t save" and let the agent write it again',
     'count_add': 'Adds {n} {notes}',
     'count_rep': 'updates {n} {notes}',
     'count_rem': 'deletes {n} {notes}',
-    'effect_memory': 'If you approve, the write lands in {file} and is remembered automatically in later sessions. You can take it back from the "History" tab.',
+    'effect_memory': 'When you save, the note goes into {file} and Hermes remembers it in later sessions. You can undo it from the "Activity" tab.',
     'what_create': 'creates a new skill named {name}',
     'what_delete': 'deletes the skill {name}',
     'what_write': 'writes the file {where}',
@@ -637,26 +637,26 @@ _TEXT = {
     'what_section': '{where} → updates the "{section}" section',
     'what_patch': '{where} → changes text: {p}',
     'stale_patch': '{what} → cannot be applied: Hermes cannot apply this patch — {problem}.',
-    'rec_failed_before': 'Approving was already attempted and Hermes refused: {error} Approving it again as-is fails the same way; the full error is in the red box below.',
-    'stale_memory_limit': '{file}: this change would put the file at {after}/{limit} chars ({over} over). Hermes refuses the write; a record that frees room (merge/remove) must be approved first.',
-    'rec_memory_limit_reason': '{file} is {percent_before}% full and this record would reach {after}/{limit} chars — Hermes refuses the write. Reject it; approve a record that frees room instead.',
-    'rec_mem_fit_reason': '{file} goes {before}% → {after}% ({limit} chars max). It fits and can be approved.',
+    'rec_failed_before': 'Saving was already attempted and Hermes refused: {error} Saving it again as-is fails the same way; the full error is in the box below.',
+    'stale_memory_limit': '{file}: this change would put the file at {after}/{limit} characters ({over} over). Hermes refuses the write; a change that frees room (merge or remove) must be saved first.',
+    'rec_memory_limit_reason': '{file} is {percent_before}% full and this change would reach {after}/{limit} characters — Hermes refuses the write. Choose "Don’t save"; save a change that frees room instead.',
+    'rec_mem_fit_reason': '{file} goes {before}% → {after}% ({limit} characters max). It fits and can be saved.',
     'stale_path': '{what} → cannot be applied: Hermes refuses this file path — {problem}.',
-    'stale_frontmatter': '{what} → cannot be applied: the validator rejects it — {problem}.',
+    'stale_frontmatter': '{what} → cannot be applied: the validator refuses it — {problem}.',
     'head_new': 'New skill: {names}',
     'head_upd': 'Edit skill: {names}',
     'head_del': 'Delete skill: {names}',
-    'effect_skills': 'If you approve, those files are written and the assistant reads the new version the next time it loads this skill. When a record touches more than one skill, the "only this" button inside the card applies just one — the remaining operations stay queued as a new pending record. You can take it back from the "History" tab.',
+    'effect_skills': 'When you save, these files are written and Hermes reads the new version the next time it loads the skill. You can undo it from the "Activity" tab.',
+    'effect_multi': 'This touches more than one skill: "Save only this" saves one of them, and the rest keep waiting as a new record.',
     'note_what': 'What it does',
     'why_background': 'The background review that runs after a session wanted to save this.',
     'why_assistant': 'The assistant wanted to save this during a task.',
     'why_unknown': 'Source: {origin}',
-    'why_summary': 'The record\'s own note: {summary}',
-    'rec_reject': 'Reject',
-    'rec_reject_reason': '{n} operation(s) can no longer be applied. The record is applied as a whole, so approving it errors out and writes nothing — rejecting it and waiting for a fresh proposal is cleaner.',
+    'rec_reject': 'Don’t save',
+    'rec_reject_reason': '{n} operation(s) can no longer be applied. The record is saved as a whole, so saving it fails and writes nothing — choosing "Don’t save" and waiting for a fresh proposal is cleaner.',
     'rec_only_new': 'Create only the new skill ({names})',
     'rec_only_new_reason': 'This record touches more than one skill. The new skill does not change existing files and is undoable; the other edits can be decided separately.',
-    'rec_approve': 'Approve',
+    'rec_approve': 'Save',
     'rec_new_reason': 'Only a new skill is created: it touches no existing file and is undoable.',
     'rec_patch_reason': 'The text to change was found exactly once in the file; applicable and undoable.',
     'rec_mem_remove_reason': 'It contains a deletion: {file} shrinks (currently {percent}% full) and frees room for later notes.',
@@ -665,7 +665,7 @@ _TEXT = {
     'op_change': 'File updated · +{added} / −{removed} lines',
     'op_current_file': 'Currently in the file: {text}',
     'rec_fix': 'Shorten the description first',
-    'rec_fix_blocked': 'This record cannot be applied as it stands: "{name}"\'s description is {before} chars and new skills are capped at {limit}. The card\'s "Shorten description" button trims it to {after} chars; the pre-review then reads it again.',
+    'rec_fix_blocked': 'This record cannot be applied as it stands: "{name}"\'s description is {before} chars and new skills are capped at {limit}. The card\'s "Shorten description" button trims it to {after} chars; the reviewer then reads it again.',
     'rec_fix_reason': 'The description is {before} chars; Hermes caps new skills at {limit} chars, so this write would be refused as-is. Shortened: "{description}" ({after} chars).',
     'fix_bad_request': 'Shortening only applies to skill records.',
     'fix_gone': 'Record not found (it may have been decided elsewhere).',
@@ -676,7 +676,7 @@ _TEXT = {
     'err_unvalidated': 'the skill validator could not run',
     'stale_unvalidated': '{what} → could not be validated: Hermes\' skill validator could not run, so this record was not checked.',
     'rec_unvalidated': 'Could not validate',
-    'rec_unvalidated_reason': 'Hermes\' skill validator could not run, so nothing here was checked and approving is not recommended. Refresh once Hermes is healthy; the error is in the Hermes log.',
+    'rec_unvalidated_reason': 'Hermes\' skill validator could not run, so nothing here was checked and saving is not recommended. Refresh once Hermes is healthy; the error is in the Hermes log.',
     'issue_index': 'The watch index was unreadable ({problem}); it was set aside as {name} and rebuilt. Changes made outside the pane while it was unreadable were not recorded.',
     'err_read': 'Could not read: {error}',
     'err_route': 'The request could not be completed: {error}',
@@ -700,28 +700,28 @@ _TEXT = {
     'hard_memory_duplicate': '{name}: this note is already saved: {quote}',
     'hard_memory_twice': '{name}: this record writes the same note twice: {quote}',
     'review_again_no_model': 'No model is assigned to the approvals review (Settings → Models), so the review was kept as it is.',
-    'hard_unchecked': 'The rule checks could not run ({error}); approving is locked until they do.',
+    'hard_unchecked': 'The rule checks could not run ({error}); saving is locked until they do.',
     'gate_hard': 'A rule check failed, so saving stays locked: {reasons}',
-    'gate_running': 'The pre-review is still running; saving unlocks when it finishes.',
-    'gate_queued': 'The pre-review of this version of the write has not run yet; saving unlocks once it is done.',
-    'gate_stale': 'This record changed after the panel showed it (the write, a rule check or the pre-review), '
+    'gate_running': 'The reviewer is still reading this; saving unlocks when it finishes.',
+    'gate_queued': 'The reviewer has not read this version of the write yet; saving unlocks once it has.',
+    'gate_stale': 'This record changed after the panel showed it (the write, a rule check or the review), '
                   'so nothing was written. Look at the card again and decide on what it shows now.',
     'restored': 'Back in the queue: {summary}',
-    'err_not_restorable': 'Only a rejected record can be restored.',
+    'err_not_restorable': 'Only a record you did not save can be restored.',
     'err_already_restored': 'This record was already restored.',
-    'err_no_record_copy': 'No copy of this rejected record was kept (it was rejected before 1.10.0, '
+    'err_no_record_copy': 'No copy of this record was kept (it was not saved before 1.10.0, '
                           'or the copy was cleaned up with the history).',
     'err_restore_failed': 'The record could not be put back in the queue; nothing changed.',
     'what_rewrite': 'rewrites {where} in full',
-    'gate_failed': 'The pre-review failed. Run it again, or use "Save without review".',
-    'gate_unassigned': 'No pre-review model is set (Settings → Models → Approvals review). '
+    'gate_failed': 'The review failed. Run it again, or use "Save without review".',
+    'gate_unassigned': 'No reviewer model is set (Settings → Models → Approvals review). '
                        'Pick one, or use "Save without review".',
-    'summary_unreviewed': '{summary} — approved without pre-review',
+    'summary_unreviewed': '{summary} — saved without review',
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
     'amend_nothing': 'There is no suggested edit that still matches this record.',
     'fix_left': 'The suggested edits do not clear every problem, so nothing was written: {reasons}',
-    'fix_undoes_all': 'The suggested edits take back every change here, so nothing is left to write; reject it instead.',
-    'summary_fixed': '{summary} — approved with {n} suggested edit(s)',
+    'fix_undoes_all': 'The suggested edits take back every change here, so nothing is left to write; choose "Don’t save" instead.',
+    'summary_fixed': '{summary} — saved with {n} suggested edit(s)',
     'summary_fix_effect': '{summary}; the fix removed {removed} of the {added} new words in the text it edited',
     'amend_author': 'adds "author: {want}" to the header',
     'amend_drop_line': 'removes the line that is already in the skill',
@@ -734,7 +734,7 @@ _TEXT = {
     'group_summary': '{names} · {n} changes',
     'group_applied': '{n} changes applied together.',
     'group_failed': 'Change #{n} could not be applied, so every change of the group was taken back: {error}',
-    'group_unreviewed': ' — approved without pre-review',
+    'group_unreviewed': ' — saved without review',
     'gate_group_stale': 'Change {changes} cannot be applied after the changes before it, so nothing was written. '
                         'Leave that change out with “Don’t save” first.',
     'gate_group_fix': 'Change #{n} needs its description shortened first.',
@@ -868,13 +868,14 @@ def _memory_fit(record: dict) -> dict:
     return fit
 
 
-def _origin_why(origin: str, summary: str = "") -> str:
-    text = {"background_review": _tx("why_background"), "assistant_tool": _tx("why_assistant")}.get(
+def _origin_why(origin: str) -> str:
+    return {"background_review": _tx("why_background"), "assistant_tool": _tx("why_assistant")}.get(
         origin, _tx("why_unknown", origin=origin or "?"))
-    if summary:
-        short = " ".join(str(summary).split())
-        text += " " + _tx("why_summary", summary=short)
-    return text
+
+
+def _skill_label(name: str) -> str:
+    parts = [p for p in str(name or "").replace("\\", "/").split("/") if p]
+    return parts[-1] if parts else str(name or "")
 
 
 def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
@@ -882,7 +883,7 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
 
     payload = record.get("payload") or {}
     ops = payload.get("operations") or [payload]
-    why = _origin_why(record.get("origin") or "", str(record.get("summary") or ""))
+    why = _origin_why(record.get("origin") or "")
     what: list[str] = []
     stale: list[str] = []
     notes: list[dict] = []
@@ -948,9 +949,9 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             rewrite = _rewrites_skill_md(op)
             rel = "SKILL.md" if rewrite else (
                 str(op.get("file_path") or "SKILL.md").replace("\\", "/").strip().lstrip("/") or "SKILL.md")
-            where = name + "/" + rel
+            where = _skill_label(name) + "/" + rel
             if action == "create":
-                what.append(_tx("what_create", name=name))
+                what.append(_tx("what_create", name=_skill_label(name)))
                 content = op.get("content") or ""
                 problem = _skill_problem(content)
                 if problem == _tx("err_unvalidated"):
@@ -962,7 +963,7 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
                 if what_it_does:
                     notes.append({"label": _tx("note_what"), "text": what_it_does})
             elif action == "delete":
-                what.append(_tx("what_delete", name=name))
+                what.append(_tx("what_delete", name=_skill_label(name)))
             elif action in ("write_file", "remove_file"):
                 if action == "write_file":
                     what.append(_tx("what_write", where=where))
@@ -1002,14 +1003,15 @@ def _explain(subsystem: str, record: dict, view: dict | None = None) -> dict:
             elif action == "delete":
                 group["kind"] = "delete"
         groups = list(per_name.values())
-        target_label = ", ".join(per_name) or "?"
+        target_label = ", ".join(_skill_label(n) for n in per_name) or "?"
         new = [g["name"] for g in groups if g["kind"] == "new"]
         upd = [g["name"] for g in groups if g["kind"] == "update"]
         gone = [g["name"] for g in groups if g["kind"] == "delete"]
+        new, upd, gone = ([_skill_label(n) for n in names] for names in (new, upd, gone))
         headline = " + ".join(p for p in (_tx("head_new", names=", ".join(new)) if new else "",
                                           _tx("head_upd", names=", ".join(upd)) if upd else "",
                                           _tx("head_del", names=", ".join(gone)) if gone else "") if p)
-        effect = _tx("effect_skills")
+        effect = _tx("effect_skills") + (" " + _tx("effect_multi") if len(per_name) > 1 else "")
 
     if subsystem == wa.MEMORY:
         fit = _memory_fit(record)

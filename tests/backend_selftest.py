@@ -94,12 +94,12 @@ def _review_selftest(tmp: Path) -> None:
     clean = item("skills", "5e1f0001")["review"]
     assert clean["status"] == "unassigned" and clean["hard"] == [], clean
     refused = approve("skills", "5e1f0001")
-    assert not refused["ok"] and refused["blocked"] and "No pre-review model" in refused["error"], refused
+    assert not refused["ok"] and refused["blocked"] and "No reviewer model" in refused["error"], refused
     assert (pend / "skills" / "5e1f0001.json").exists(), "a refused approve must leave the record queued"
     waved = approve("skills", "5e1f0001", skip_review=True)
     assert waved["ok"], waved
     last = history(limit=1)["entries"][0]
-    assert "approved without pre-review" in last["summary"], last
+    assert "saved without review" in last["summary"], last
 
     bad = "---\nname: new-bad\ndescription: Use when testing.\n---\n\nbody\n"
     stage("skills", "5e1f0002", {"action": "create", "name": "new-bad", "category": "cat", "content": bad})
@@ -110,7 +110,7 @@ def _review_selftest(tmp: Path) -> None:
     marked = item("skills", "5e1f0002")["review"]
     assert hard[0]["edit"]["ok"] and marked["edits"] == 1 and marked["fix_left"] == [], marked
     not_yet = approve("skills", "5e1f0002", with_edits=True)
-    assert not not_yet["ok"] and "No pre-review model" in not_yet["error"], not_yet
+    assert not not_yet["ok"] and "No reviewer model" in not_yet["error"], not_yet
     assert json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))["payload"]["content"] == bad
     fixed = approve("skills", "5e1f0002", with_edits=True, skip_review=True)
     assert fixed["ok"], fixed
@@ -237,12 +237,12 @@ def _review_selftest(tmp: Path) -> None:
     assert first["status"] == "queued" and first["provider"] == "selftest" and not seen, \
         f"GET /pending must never start a paid review: {first}, {len(seen)} call(s)"
     blocked_queued = approve("skills", "5e1f0007")
-    assert not blocked_queued["ok"] and "has not run yet" in blocked_queued["error"], blocked_queued
+    assert not blocked_queued["ok"] and "has not read this version" in blocked_queued["error"], blocked_queued
     assert reviews_start({})["started"] >= 1
     assert item("skills", "5e1f0007")["review"]["status"] == "running"
     assert reviews_start({})["started"] == 0, "a running review must not be started twice"
     blocked_while = approve("skills", "5e1f0007")
-    assert not blocked_while["ok"] and "still running" in blocked_while["error"], blocked_while
+    assert not blocked_while["ok"] and "still reading this" in blocked_while["error"], blocked_while
     hold.set()
     done = settle("skills", "5e1f0007")
     assert done["status"] == "done" and done["verdict"] == "reject", done
@@ -309,7 +309,7 @@ def _review_selftest(tmp: Path) -> None:
     assert "Measure the tab bar height once" in text and text.count(old_rule) == 1 and "third lesson" in text, \
         f"the edit to the existing text applies before the write, which repeats its old wording: {text}"
     entry = history(limit=1)["entries"][0]
-    assert "approved with 1 suggested edit(s)" in entry["summary"], entry
+    assert "saved with 1 suggested edit(s)" in entry["summary"], entry
     assert undo({"id": entry["id"]})["ok"], "the fix of the existing text must undo with the write"
     assert (own / "SKILL.md").read_bytes() == before_fix, "undo must restore the existing text too"
 
@@ -416,7 +416,7 @@ def _review_selftest(tmp: Path) -> None:
     broken = settle("skills", "5e1f0008")
     assert broken["status"] == "failed" and "provider down" in broken["error"], broken
     failed = approve("skills", "5e1f0008")
-    assert not failed["ok"] and "pre-review failed" in failed["error"], failed
+    assert not failed["ok"] and "review failed" in failed["error"], failed
     globals()["_review_call"] = lambda task, **kw: answer('{"summary": "fine", "findings": []}')
     again = review_again({"subsystem": "skills", "id": "5e1f0008"})
     assert again["ok"] and again["review"]["status"] == "running", again
@@ -1134,7 +1134,7 @@ def _selftest() -> int:
 
     plain = listing["memory"][0]["plain"]
     assert plain["kind_label"].startswith("Memory note → MEMORY.md"), plain
-    assert plain["why"] and plain["what"] and "If you approve" in plain["effect"], plain
+    assert plain["why"] and plain["what"] and "When you save" in plain["effect"], plain
     assert plain["stale"] == [], plain
 
     long_err = "profile: old: abc\nnew: def\n→ Approved 0 memory write(s). Failed: 27034fd9: " + "no entry matched " * 20
@@ -1143,18 +1143,18 @@ def _selftest() -> int:
     assert _short_error("short error") == "short error", "a short message must come back unchanged"
     assert "\n" not in _tx("rec_failed_before", error=_short_error(long_err)), "the reason must stay on one line"
 
-    assert "The record's own note" in plain["why"], plain["why"]
+    assert "own note" not in plain["why"], plain["why"]
     rec_summary = {"subsystem": "memory", "origin": "background_review",
                    "summary": "batch(2 ops: add) on MEMORY.md",
                    "payload": {"target": "memory", "operations": [{"action": "add", "content": "Selftest entry"}]}}
-    assert "batch(2 ops: add) on MEMORY.md" in _explain("memory", rec_summary)["why"]
+    assert "batch(" not in _explain("memory", rec_summary)["why"], "the card repeats the record's raw note"
     assert plain["notes"] == [], plain["notes"]
     rec = plain["recommendation"]
     assert rec["verdict"] == _tx("rec_approve") and "fits" in rec["reason"], rec
 
     assert _TEXT and all(isinstance(v, str) for v in _TEXT.values()), "one English table of strings"
     alone = next(i for i in pending()["memory"] if i["id"] == "aaaaaaaa")
-    assert alone["plain"]["recommendation"]["verdict"] == "Approve", alone["plain"]["recommendation"]
+    assert alone["plain"]["recommendation"]["verdict"] == _tx("rec_approve"), alone["plain"]["recommendation"]
     assert "note" in alone["plain"]["headline"], alone["plain"]["headline"]
 
     long_desc = "A description that runs far past the limit " * 8
@@ -1422,7 +1422,7 @@ def _selftest() -> int:
     }, ensure_ascii=False), encoding="utf-8")
     over = next(i for i in pending()["memory"] if i["id"] == "ffffffff")
     assert over["plain"]["stale"], over["plain"]
-    assert "chars" in over["plain"]["stale"][0], over["plain"]["stale"]
+    assert "characters" in over["plain"]["stale"][0], over["plain"]["stale"]
     assert over["plain"]["recommendation"]["verdict"] == _tx("rec_reject"), over["plain"]["recommendation"]
     failed = _as_panel({"subsystem": "memory", "ids": ["ffffffff"], "decision": "approve"})
     assert failed["results"][0]["ok"] is False, failed
@@ -1622,7 +1622,7 @@ def _selftest() -> int:
     long_summary = "batch(9 ops: patch, patch) on " + " ".join(["a-very-long-skill-name"] * 9)
     why = _explain("memory", {"origin": "background_review", "summary": long_summary,
                               "payload": {"target": "memory", "operations": []}})["why"]
-    assert long_summary in why, why[-80:]
+    assert "batch(" not in why, why[-80:]
 
     assert fix({"subsystem": "memory", "id": "ffff0002"})["ok"] is False
     assert fix({"subsystem": "skills", "id": "../../x"})["ok"] is False

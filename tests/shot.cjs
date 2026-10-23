@@ -325,6 +325,13 @@ const MEASURE = `(() => {
     overflowPx: frames.map(f => f.overflowPx),
     hiddenWarnings,
     clipped: qa('.pa-frame-wrap *').map(clip).filter(Boolean),
+    // A bar item squeezed narrower than its own text lets the text run on into its neighbour with no
+    // overlap the text-over-text check can see ("5 of 8 decidedMemory").
+    barSpill: qa('.pa-frame-wrap .pa-bar *').filter(el => {
+      const s = getComputedStyle(el)
+      return txt(el) && s.overflowX === 'visible' && el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0
+    }).map(el => ({ frame: el.closest('.pa-frame-wrap').getAttribute('data-frame'),
+      el: String(el.className).split(' ')[0], text: txt(el).slice(0, 40), w: el.clientWidth, scrollW: el.scrollWidth })),
     rowEllipsis: qa('.pa-frame-wrap *').filter(el => txt(el) && el.scrollWidth > el.clientWidth + 1 && rowCut(el)).length,
     // A card wider than its grid cell draws over its neighbour (one long unbreakable path did it).
     cardSpill: qa('.pa-cell').filter(c => c.firstElementChild &&
@@ -635,6 +642,7 @@ app.whenReady().then(async () => {
       const named = m.spillOutOfCard.map(s => `${s.key} "${s.text}"`)
       bad.push(`spillOutOfCard=${m.spillOutOfCard.length}: ${named.join(' · ')} (text drawn past the card edge)`)
     }
+    if (m.barSpill.length) bad.push(`barSpill=${m.barSpill.length} ${JSON.stringify(m.barSpill.slice(0, 3))}`)
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.alignment.length) bad.push(`alignment=${m.alignment.length} ${JSON.stringify(m.alignment.slice(0, 3))}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
@@ -670,7 +678,7 @@ app.whenReady().then(async () => {
       const named = m.toneText.nodes.map(n => `"${n.text}" wears ${n.tone} as text (${n.where})`)
       bad.push(`toneText=${m.toneText.count}: ${named.join(' · ')}`)
     }
-    if (m.pills.length >= 10) {
+    if (m.pills.length >= 6) {
       if (m.pillLang.heights.length !== 1) bad.push(`pill heights=${JSON.stringify(m.pillLang.heights)}`)
       if (m.pillLang.radii.length !== 1) bad.push(`pill radii=${JSON.stringify(m.pillLang.radii)}`)
       if (m.pillLang.paddings.length !== 1) bad.push(`pill paddings=${JSON.stringify(m.pillLang.paddings)}`)

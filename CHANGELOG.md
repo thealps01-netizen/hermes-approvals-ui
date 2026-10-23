@@ -11,6 +11,26 @@ The page is being redesigned to "Needs you". Nothing is released yet.
 
 ### Changed
 
+* **The panel speaks plainly where it showed Hermes' own record text.** The card no longer quotes the
+  record's note ("batch(1 ops: patch)…"); memory changes read "Edited note in Memory: …" instead of
+  "patch in memory: entry matching: …"; skill names drop their category folder and paths use "/".
+
+* **One name for the reviewer.** "Pre-review", "second opinion" and "AI review" are now "the reviewer";
+  "Reject advised" reads "Advises not saving"; texts that still said Approve, Reject or the "History"
+  tab say Save, Don't save and "Activity".
+
+* **The reviewer's model, tokens, cost and the record number moved under Details.** The decision card
+  shows the verdict only, and "Review again" appears once instead of twice.
+
+* **Activity rows lead with what changed.** The skill or note is the row title; what happened sits under
+  it. The list head says "nothing yet" on a quiet day, and a change repeated inside a group is listed once.
+
+* **Memory opens on the file that is nearly full** and marks it in the list.
+
+* **Smaller fixes.** After "Don't save" the all-caught-up screen offers Restore; the key legend lists L
+  (later); fold buttons show ▸/▾; a note starting with "- " shows a bullet, not "+ -"; long paths break
+  at a folder; small text is at least 12 px; the day dots need at least two decisions.
+
 * **One word for the decision: "Save" and "Don't save".** Buttons, keys, bulk actions, messages and
   the activity log no longer mix Approve, Reject, Apply and Use for the same choice.
 
