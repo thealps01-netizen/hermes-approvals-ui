@@ -1459,3 +1459,13 @@ Windows backslashes, category folders in skill names and five names for the revi
 - The shot gate's pill sample floor went from 10 to 6. The record-number pills (`#abc12345`) made up most
   of the old sample; with them under Details the narrow frames draw six pills of three kinds, which still
   measures one height, one radius and one padding.
+
+## Memory note delete as a trash icon (1.15.0)
+
+The owner chose an always-visible trash icon over the written "Delete" link and over a hover-only icon:
+a hover-only control is invisible to keyboard and touch users until they land on it. The icon is the
+kit's `icons.Trash2` in a `ghost` / `icon-xs` Button inside a `Tip` ("Delete note N"); its aria-label
+still names the note and its length. Without `Trash2` in the host kit the button falls back to the
+written "Delete". The two-step "About to delete" confirmation is unchanged. render_check checks the
+icon, the empty visible text, the Tip and the aria-label; the check is red on 993ae0e.
+

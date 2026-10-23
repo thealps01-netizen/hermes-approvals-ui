@@ -27,6 +27,7 @@ const BrainIcon = icons?.Brain || null
 const UsersIcon = icons?.Users || null
 const BookIcon = icons?.Book || null
 const CrossIcon = icons?.X || null
+const TrashIcon = icons?.Trash2 || null
 
 let ctxRef = null
 
@@ -426,6 +427,7 @@ const BUNDLES = {
         delete: 'Delete',
         deleteConfirm: 'About to delete — you can undo this from the “Activity” tab',
         deleteCancel: 'Cancel',
+        deleteTip: n => `Delete note ${n}`,
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         emptyTitle: name => `No notes in ${name} yet`,
@@ -3987,11 +3989,18 @@ function MemoryView({ data, error, refresh, onChanged }) {
                           jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
                           armed(i, entry)
                             ? null
-                            : jsx(Button, {
-                                variant: 'text', size: 'inline', className: 'pa-note-del',
-                                'aria-label': `${t('pa.memory.delete')}: ${t('pa.memory.note', i + 1, entry.length)}`,
-                                onClick: () => setConfirming({ target, i, text: entry }),
-                                children: t('pa.memory.delete')
+                            : jsx(Tip, {
+                                label: t('pa.memory.deleteTip', i + 1),
+                                children: jsx('span', {
+                                  className: 'pa-tipwrap',
+                                  children: jsx(Button, {
+                                    variant: TrashIcon ? 'ghost' : 'text', size: TrashIcon ? 'icon-xs' : 'inline',
+                                    className: 'pa-note-del',
+                                    'aria-label': `${t('pa.memory.delete')}: ${t('pa.memory.note', i + 1, entry.length)}`,
+                                    onClick: () => setConfirming({ target, i, text: entry }),
+                                    children: TrashIcon ? jsx(TrashIcon, {}, 'icon') : t('pa.memory.delete')
+                                  }, 'btn')
+                                }, 'wrap')
                               }, 'arm'),
                           armed(i, entry)
                             ? jsxs('div', {

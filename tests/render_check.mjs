@@ -163,6 +163,8 @@ export const icons = {
   AlertCircle: glyph('alert-circle', ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 8v4', 'M12 16h.01']),
   ChevronLeft: glyph('chevron-left', ['M15 6l-6 6l6 6']),
   X: glyph('x', ['M18 6l-12 12', 'M6 6l12 12']),
+  Trash2: glyph('trash', ['M4 7l16 0', 'M10 11l0 6', 'M14 11l0 6', 'M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12',
+    'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3']),
   Book: glyph('book', ['M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6v13',
     'M12 6v13', 'M21 6v13']),
   Users: glyph('users', ['M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2',
@@ -1319,11 +1321,16 @@ must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', '2 notes · 2,189 / 2
   if (labels[0] !== 'Delete: Note 1 · 6 characters' || !/^Delete: Note 2/.test(labels[1] || '')) {
     fail(`the note delete controls do not name their note: ${JSON.stringify(labels)}`)
   }
+  const trash = [...en.hostEl.querySelectorAll('.pa-note-del')]
+  if (!trash.length || trash.some(b => !b.querySelector('svg[data-icon="trash"]') || b.textContent.trim()
+      || !b.closest('[data-tip]')?.getAttribute('data-tip')?.startsWith('Delete note '))) {
+    fail('the note delete is not a trash icon with its name in a Tip and in aria-label')
+  }
 }
 if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memory file tabs are not a tablist')
 if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
 {
-  const del = buttons(en.hostEl, /^Delete$/)[0]
+  const del = en.hostEl.querySelector('.pa-note-del')
   if (!del) fail('the note delete control is missing')
   await click(del)
   const armed = en.hostEl.querySelectorAll(DESTRUCTIVE).length
@@ -3389,7 +3396,7 @@ REST.scan = 'ok'
   grew(from, 'an undo')
   await click(tab(all.hostEl, /^Memory/), 60)
   from = reads()
-  await click(buttons(all.hostEl, /^Delete$/)[0], 30)
+  await click(all.hostEl.querySelector('.pa-note-del'), 30)
   const deletes = stub.calls.posts.filter(p => p.path === '/memory/delete').length
   await click(buttons(all.hostEl, /^Delete$/).find(b => b.getAttribute('data-variant') === 'destructive'), 200)
   if (stub.calls.posts.filter(p => p.path === '/memory/delete').length !== deletes + 1) fail('the memory delete was not sent')
@@ -4465,7 +4472,7 @@ REST.scan = 'ok'
   if (full.length > 1) {
     fail('ui-polish: "Memory is nearly full" is written twice')
   }
-  const arm = buttons(pg.hostEl.querySelector('[role="tabpanel"]#pa-mem-panel') || pg.hostEl, /^Delete$/)[0]
+  const arm = (pg.hostEl.querySelector('[role="tabpanel"]#pa-mem-panel') || pg.hostEl).querySelector('.pa-note-del')
   if (arm) await click(arm, 30)
   const grid = [...pg.hostEl.querySelectorAll('#pa-mem-panel *')].some(el => el.style.gridTemplateColumns === '1fr 1fr')
   if (grid) fail('ui-polish: the delete confirmation splits the row into two half-width buttons')
@@ -4825,8 +4832,7 @@ REST.scan = 'ok'
   const ownScroll = window.HTMLElement.prototype.scrollIntoView
   window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this) }
   await click(tab(mem.hostEl, /^Memory/), 60)
-  const memDels = [...(mem.hostEl.querySelector('.pa-detail')?.querySelectorAll('button') || [])]
-    .filter(b => /^Delete$/.test(b.textContent || ''))
+  const memDels = [...(mem.hostEl.querySelector('.pa-detail')?.querySelectorAll('.pa-note-del') || [])]
   if (memDels.length) await click(memDels[memDels.length - 1], 60)
   if (!scrolled.some(el => el.classList?.contains('pa-note-ask'))) {
     fail(`rework 2 item 3: arming a note delete does not scroll its confirm row into view (${memDels.length} Delete buttons)`)

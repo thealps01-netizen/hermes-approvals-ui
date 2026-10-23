@@ -5,9 +5,10 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
-## Unreleased
+## 1.15.0
 
-The page is being redesigned to "Needs you". Nothing is released yet.
+The page is redesigned around "Needs you": one list of what waits for you, the decision card beside it,
+and Activity and Memory drawn the same way.
 
 ### Changed
 
@@ -26,6 +27,9 @@ The page is being redesigned to "Needs you". Nothing is released yet.
   it. The list head says "nothing yet" on a quiet day, and a change repeated inside a group is listed once.
 
 * **Memory opens on the file that is nearly full** and marks it in the list.
+
+* **A note in Memory is deleted with a trash icon.** It is always visible, its tooltip and its
+  screen-reader name say which note it deletes, and the two-step "About to delete" confirmation stays.
 
 * **Smaller fixes.** After "Don't save" the all-caught-up screen offers Restore; the key legend lists L
   (later); fold buttons show ▸/▾; a note starting with "- " shows a bullet, not "+ -"; long paths break

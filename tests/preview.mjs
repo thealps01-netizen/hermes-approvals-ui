@@ -507,7 +507,7 @@ add('f12', 'Memory — files with meters, MEMORY.md at 99 % with its banner, not
   await click(findTab(hostEl, /^Memory/), 'the Memory tab')
   need(hostEl.querySelectorAll('.pa-memrow').length === 2, 'f12: the Memory list does not draw both files')
   need(hostEl.querySelector('.pa-banner'), 'f12: no near-full banner at 99 %')
-  const dels = [...hostEl.querySelectorAll('.pa-detail button')].filter(b => /^Delete$/.test(b.textContent))
+  const dels = [...hostEl.querySelectorAll('.pa-detail .pa-note-del')]
   await click(dels[2], 'Delete on note 3')
   need(/About to delete/.test(hostEl.querySelector('.pa-notes')?.textContent || ''),
     'f12: the note delete did not arm its two-step confirmation')
