@@ -1122,6 +1122,7 @@ const STYLE = `
   .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}}
 @container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
 @container (max-width:480px){.pa-bar .pa-progress{display:none}}
+.pa-bar:is([data-fit="1"],[data-fit="2"]) :is(.pa-pips,.pa-gm-bar),.pa-bar[data-fit="2"] .pa-progress{display:none}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -1217,6 +1218,32 @@ function useFade(inner) {
   }
   useLayoutEffect(sync)
   return { ref, more: more ? '1' : '0', sync }
+}
+
+const BAR_STEPS = 2
+const barSpills = bar => [...bar.querySelectorAll('*')].some(el => el.clientWidth > 0
+  && el.scrollWidth > el.clientWidth + 1 && window.getComputedStyle(el).overflowX === 'visible')
+
+function fitBar(bar) {
+  for (let step = 0; step <= BAR_STEPS; step++) {
+    bar.setAttribute('data-fit', String(step))
+    if (!barSpills(bar)) return
+  }
+}
+
+function useBarFit() {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    if (ref.current) fitBar(ref.current)
+  })
+  useEffect(() => {
+    const bar = ref.current
+    if (!bar || typeof window.ResizeObserver === 'undefined') return undefined
+    const watch = new window.ResizeObserver(() => fitBar(bar))
+    watch.observe(bar)
+    return () => watch.disconnect()
+  }, [])
+  return ref
 }
 
 function Raw({ children, height, tone, className }) {
@@ -4049,6 +4076,7 @@ function Pane() {
   const { data, error, at, seq, refresh, n } = usePending()
   const mem = usePolling(api.memory, 60000)
   const hist = usePolling(api.history, 30000)
+  const barRef = useBarFit()
   const refreshAll = () => {
     const until = refresh()
     mem.refresh()
@@ -4110,6 +4138,7 @@ function Pane() {
       jsx('style', { children: STYLE }, 'css'),
       jsxs('div', {
         className: 'pa-bar',
+        ref: barRef,
         style: { minHeight: H.bar },
         children: [
           jsx('div', { className: 'pa-bar-title', role: 'heading', 'aria-level': 1, children: t('pa.pane.title') }, 'title'),

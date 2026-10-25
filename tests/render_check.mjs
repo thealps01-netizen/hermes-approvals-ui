@@ -5075,6 +5075,53 @@ REST.scan = 'ok'
   REST.memory = null
 }
 
+// --- 53) the top bar fits its pane: 1.15.0 drew "9 of 9 decided" across the Memory meter in an 847 px pane
+// (the dots and meter bars went only below a fixed 760 px). The panel observes its bar and steps down while a
+// bar item is narrower than its text: dots and meter bars first, then the day count; it steps back up when the
+// room returns. jsdom has no layout, so the item's widths are set by hand; the measured gate's width sweep
+// (shot.cjs barSweep) checks the same fitBar against the real layout at every width from 420 to 1100 px.
+{
+  const seen = []
+  dom.window.ResizeObserver = class {
+    constructor(cb) { this.cb = cb; this.els = []; seen.push(this) }
+    observe(el) { this.els.push(el) }
+    disconnect() { this.off = true }
+  }
+  const b = await mount('en', 'page')
+  const bar = b.hostEl.querySelector('.pa-bar')
+  const watch = seen.find(o => o.els.includes(bar))
+  if (!watch) {
+    fail('bar fit: the panel does not observe its top bar, so a narrower pane lets bar items draw over each other')
+  } else {
+    const css = b.hostEl.querySelector('style')?.textContent || ''
+    const rule = css.split('\n').find(l => l.startsWith('.pa-bar:is([data-fit="1"],[data-fit="2"])')) || ''
+    if (!/\.pa-pips/.test(rule) || !/\.pa-gm-bar/.test(rule) || !/\.pa-bar\[data-fit="2"\] \.pa-progress/.test(rule)) {
+      fail(`bar fit: step 1 must hide the dots and meter bars, step 2 the day count too: ${rule || 'no rule'}`)
+    }
+    if (bar.getAttribute('data-fit') !== '0') fail(`bar fit: a bar with room starts at ${bar.getAttribute('data-fit')}`)
+    const progress = bar.querySelector('.pa-progress')
+    let tight = 0
+    Object.defineProperty(progress, 'clientWidth', { configurable: true, get: () => 94 })
+    Object.defineProperty(progress, 'scrollWidth', { configurable: true,
+      get: () => (Number(bar.getAttribute('data-fit')) < tight ? 228 : 94) })
+    const step = async need => {
+      tight = need
+      await act(async () => { watch.cb([]) })
+      return bar.getAttribute('data-fit')
+    }
+    const at1 = await step(1)
+    const at2 = await step(2)
+    const back = await step(0)
+    if (at1 !== '1' || at2 !== '2' || back !== '0') {
+      fail(`bar fit: steps read ${at1}/${at2}/${back} for a bar short by the dots, by the count, then roomy (want 1/2/0)`)
+    }
+  }
+  b.root.unmount()
+  if (watch && !watch.off) fail('bar fit: the bar observer outlives the panel')
+  b.hostEl.remove()
+  delete dom.window.ResizeObserver
+}
+
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
   process.exit(1)
