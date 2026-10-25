@@ -707,6 +707,19 @@ const DARK_SEEDS = darkBlock
   : ''
 
 const theme = readFileSync(THEME, 'utf8')
+
+// The panel fits its top bar to the pane at run time (fitBar: drop the day dots and meter bars, then
+// the day count, while any bar item is narrower than its text). A static page runs no React, so the
+// page carries the panel's OWN fitBar source, cut from the file under test, and runs it on every bar
+// on load and on every resize; the measured gate's width sweep then exercises the shipping code.
+const FIT_FROM = src.indexOf('const BAR_STEPS')
+const FIT_TO = src.indexOf('\nfunction useBarFit')
+const fitSource = FIT_FROM >= 0 && FIT_TO > FIT_FROM ? src.slice(FIT_FROM, FIT_TO) : null
+const fitScript = fitSource
+  ? `<script>\n${fitSource}\nconst paBars = [...document.querySelectorAll('.pa-bar')]\n`
+    + 'window.paFitBars = () => paBars.forEach(fitBar)\n'
+    + 'for (const bar of paBars) {\n  fitBar(bar)\n  new ResizeObserver(() => fitBar(bar)).observe(bar)\n}\n</script>'
+  : ''
 const body = frames.map(f => `<section class="${f.narrow ? 'pa-frame-wrap pa-narrow' : 'pa-frame-wrap'}" data-frame="${f.id}">
   <p class="pa-frame-label">${f.id} · ${f.label}</p>
   <div class="pa-frame">${f.html}</div>
@@ -738,6 +751,7 @@ body{padding:16px 18px 28px}
 <body data-frames="${frames.length}">
 <p class="pa-frame-label">The panel's REAL React output, ${frames.length} states, ${dark ? 'dark' : 'light'} mode, in the application's own theme block (_theme_preview.css) over the app's COMPILED stylesheet. No hand-drawn mock.</p>
 ${body}
+${fitScript}
 </body>
 </html>
 `
@@ -754,4 +768,7 @@ if (problems.length) {
 console.log(`preview.html written: ${HERE}preview.html (${page.length} bytes) · preview-light.html (${lightPage.length} bytes)`)
 console.log(`  style: ${kitStyles} + theme + dark seeds (dark page) / theme light values (light page)`)
 console.log(`  frames: ${frames.length} at ${WIDE} px (f07/f08 at ${NARROW} px) · kit marks: button/badge/block · themed tips: ${tips} · no native title= · no raw pa.* key`)
+console.log(fitSource
+  ? `  bar fit: the panel's fitBar (${fitSource.length} chars) runs on every bar on load and on resize`
+  : '  bar fit: NOT FOUND in the file under test (no const BAR_STEPS … function useBarFit) — bars drawn unfitted')
 process.exit(0)

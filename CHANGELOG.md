@@ -250,6 +250,10 @@ and Activity and Memory drawn the same way.
 * **A problem line under "Checked for you" starts at the left** like the ✓ lines, instead of sitting
   in the middle of the card.
 
+* **The top bar no longer draws "N of M decided" over the Memory meter.** In a pane between about 760
+  and 1000 px wide the day count ran into the meters. The bar now checks what fits at its own width:
+  first the day dots and meter bars go, then the day count, and they come back when there is room.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

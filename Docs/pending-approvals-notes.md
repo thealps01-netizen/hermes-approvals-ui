@@ -1469,3 +1469,25 @@ still names the note and its length. Without `Trash2` in the host kit the button
 written "Delete". The two-step "About to delete" confirmation is unchanged. render_check checks the
 icon, the empty visible text, the Tip and the aria-label; the check is red on 993ae0e.
 
+## The top bar fits its pane (1.15.0)
+
+The owner's 847 px pane drew "9 of 9 decided" across the Memory meter. The bar stepped down only at
+fixed pane widths (dots and meter bars below 760 px, the day count below 480 px), but what fits depends
+on the data: the dot count, "N of M", the tab badge. From 770 to 970 px the `.pa-progress` box shrank
+(`min-width:0`) under its text and the text, never clipped, ran on over the meters; at 490 px the title
+spilled the same way. No frame was drawn in that band, so no gate saw it.
+
+* `fitBar` measures instead of guessing: it sets `data-fit` 0, 1, 2 on the bar and stops at the first
+  step where no bar item is narrower than its content (`scrollWidth > clientWidth` with visible
+  overflow, the same test as the gate's `barSpill`). Step 1 hides the dots and meter bars, step 2 the
+  day count too: the order the narrow rules already used. It runs after every render (the content
+  changed) and from a ResizeObserver on the bar (the pane changed), so it steps back up when the room
+  returns. The `@container` 760/480 rules stay: they are the approved narrow design, not a fit.
+* It is set as an attribute on the bar, not React state: three steps are tried and measured inside one
+  callback before paint, with no re-render and no flicker.
+* A width sweep in `shot.cjs` (`barSweep`, 420 to 1100 px in 10 px steps, every frame) is the check
+  that fails on the code before the fix (75 findings on c7287df, 0 after). The static page runs no
+  React, so `preview.mjs` cuts the panel's own `fitBar` source from the file under test into the page;
+  a hidden window delivers ResizeObserver reports late, so the sweep calls that `fitBar` per step
+  itself, and render_check (53) proves the panel wires the observer to its bar.
+

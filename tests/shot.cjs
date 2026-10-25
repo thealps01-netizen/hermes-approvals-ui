@@ -534,6 +534,74 @@ const MEASURE = `(() => {
   }
 })()`
 
+// The top bar at every pane width, not only the three the frames are drawn at: 1.15.0 drew "5 of 8
+// decided" across the Memory meter from 760 to 990 px, a band no frame width fell into. Each step sets
+// every frame to one width (frames capped by the page width are skipped) and reads the bar back: a
+// squeezed item whose text runs on past its box (spill), or two visible text boxes crossing. A hidden
+// window delivers ResizeObserver reports late or not at all, so each step runs the panel's own fitBar
+// (window.paFitBars, from preview.mjs) the way the observer does in the app; render_check proves the
+// panel wires that observer to its bar.
+const SWEEP_FROM = 420
+const SWEEP_TO = 1100
+const SWEEP_STEP = 10
+const sweepSet = width => `(() => {
+  document.querySelectorAll('.pa-frame-wrap').forEach(w => { w.style.width = '${width}px' })
+  if (window.paFitBars) window.paFitBars()
+  return true
+})()`
+const SWEEP_READ = `(() => {
+  const box = el => el.getBoundingClientRect()
+  const out = []
+  for (const w of document.querySelectorAll('.pa-frame-wrap')) {
+    const bar = w.querySelector('.pa-bar')
+    if (!bar || Math.round(box(w).width) !== parseInt(w.style.width, 10)) continue
+    const frame = w.getAttribute('data-frame')
+    for (const el of bar.querySelectorAll('*')) {
+      const s = getComputedStyle(el)
+      if (el.textContent.trim() && s.overflowX === 'visible' && el.clientWidth > 0
+        && el.scrollWidth > el.clientWidth + 1) {
+        out.push({ frame, what: 'spill', text: el.textContent.trim().slice(0, 40) })
+      }
+    }
+    const boxes = []
+    const tw = document.createTreeWalker(bar, NodeFilter.SHOW_TEXT)
+    let tn
+    while ((tn = tw.nextNode())) {
+      const host = tn.parentElement
+      if (!tn.textContent.trim() || !host || getComputedStyle(host).visibility !== 'visible') continue
+      const r = document.createRange()
+      r.selectNodeContents(tn)
+      for (const b of r.getClientRects()) {
+        let [l, t, rt, bt] = [b.left, b.top, b.right, b.bottom]
+        for (let p = host; p && p !== w; p = p.parentElement) {
+          const cs = getComputedStyle(p)
+          if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+          const c = box(p)
+          l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); bt = Math.min(bt, c.bottom)
+        }
+        if (rt - l > 1 && bt - t > 1) boxes.push({ n: tn, l, t, rt, bt })
+      }
+    }
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const p = boxes[a]
+        const q = boxes[b]
+        if (p.n === q.n) continue
+        if (Math.min(p.rt, q.rt) - Math.max(p.l, q.l) > 2 && Math.min(p.bt, q.bt) - Math.max(p.t, q.t) > 2) {
+          out.push({ frame, what: 'text over text',
+            text: p.n.textContent.trim().slice(0, 30) + ' / ' + q.n.textContent.trim().slice(0, 30) })
+        }
+      }
+    }
+  }
+  return out
+})()`
+const SWEEP_RESET = `(() => {
+  document.querySelectorAll('.pa-frame-wrap').forEach(w => { w.style.width = '' })
+  if (window.paFitBars) window.paFitBars()
+  return true
+})()`
+
 // The negative control: the two violations the contrast pair exists to catch. Injected into the
 // ALREADY DRAWN page, so it exercises the same measurement path (and nothing else) — the gate has to
 // name both nodes and exit 1.
@@ -588,6 +656,26 @@ app.whenReady().then(async () => {
       + ' document.getAnimations().forEach(a => a.finish()); true')
     await new Promise(r => setTimeout(r, 60))
     const m = await win.webContents.executeJavaScript(MEASURE)
+    // The sweep waits a painted frame per width: the panel may resize from a ResizeObserver, which
+    // reports only when the page renders, and a hidden window renders only when asked (invalidate).
+    const sweep = new Map()
+    for (let width = SWEEP_FROM; width <= SWEEP_TO; width += SWEEP_STEP) {
+      await win.webContents.executeJavaScript(sweepSet(width))
+      win.webContents.invalidate()
+      await new Promise(r => setTimeout(r, 60))
+      for (const hit of await win.webContents.executeJavaScript(SWEEP_READ)) {
+        const key = `${hit.frame}|${hit.what}|${hit.text}`
+        const seen = sweep.get(key)
+        if (seen) seen.widths.push(width)
+        else sweep.set(key, { ...hit, widths: [width] })
+      }
+    }
+    await win.webContents.executeJavaScript(SWEEP_RESET)
+    win.webContents.invalidate()
+    await new Promise(r => setTimeout(r, 120))
+    m.barSweep = [...sweep.values()].map(s => ({ frame: s.frame, what: s.what, text: s.text,
+      from: Math.min(...s.widths), to: Math.max(...s.widths), widths: s.widths.length }))
+    m.barFit = await win.webContents.executeJavaScript('typeof window.paFitBars === "function"')
     // One crop per frame: scroll the frame into the viewport, then capture its rectangle (no
     // captureBeyondViewport, no device-metrics override — both made earlier captures unreliable).
     const crops = []
@@ -643,6 +731,11 @@ app.whenReady().then(async () => {
       bad.push(`spillOutOfCard=${m.spillOutOfCard.length}: ${named.join(' · ')} (text drawn past the card edge)`)
     }
     if (m.barSpill.length) bad.push(`barSpill=${m.barSpill.length} ${JSON.stringify(m.barSpill.slice(0, 3))}`)
+    if (m.barSweep.length) {
+      const named = m.barSweep.slice(0, 4).map(s => `${s.frame} ${s.what} "${s.text}" at ${s.from}-${s.to} px`)
+      bad.push(`barSweep=${m.barSweep.length} (the top bar breaks between ${SWEEP_FROM} and ${SWEEP_TO} px): `
+        + named.join(' · '))
+    }
     if (m.clipped.length) bad.push(`clipped=${m.clipped.length} ${JSON.stringify(m.clipped[0])}`)
     if (m.alignment.length) bad.push(`alignment=${m.alignment.length} ${JSON.stringify(m.alignment.slice(0, 3))}`)
     if (m.nativeTitles > 0) bad.push(`nativeTitles=${m.nativeTitles}`)
