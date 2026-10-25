@@ -5121,8 +5121,7 @@ REST.scan = 'ok'
 }
 
 // --- 54) row cards and Activity decks: the owner found the list rows plain ("an admin table"). Every row of
-// Needs you and Activity is a small card tinted by what it belongs to (one hue per skill name, violet for
-// memory notes, teal for the Profile), and consecutive Activity records of the same thing fold into one deck:
+// Needs you and Activity is a small card marked by what it belongs to, and consecutive Activity records of the same thing fold into one deck:
 // "software-factory 3", "2 saved · 1 not saved", one outcome pip per record. The deck opens in place into one
 // line per record, each its own selectable entry with its own detail (Undo stays per record).
 {
@@ -5150,10 +5149,12 @@ REST.scan = 'ok'
   if (wraps().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${wraps().length} rows)`)
   const deck = () => d.hostEl.querySelector('.pa-activity .pa-deck')
   const head = () => deck()?.querySelector('.pa-deck-row')
-  const hues = wraps().map(w => w.style.getPropertyValue('--pa-h'))
-  if (hues[2] !== '290' || !/^\d+$/.test(hues[0] || '') || !/^\d+$/.test(hues[1] || '')) {
-    fail(`row cards: the rows carry no hue of their own (memory 290): ${JSON.stringify(hues)}`)
+  const ids = wraps().map(w => w.style.getPropertyValue('--pa-id'))
+  if (ids.join() !== 'var(--ui-accent),var(--ui-accent),var(--ui-purple)') {
+    fail(`row cards: a row's mark is not the Hermes theme's own colour (skills accent, memory purple): ${ids}`)
   }
+  const own = sheet.match(/oklch\(|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
+  if (own) fail(`theme colours: the panel paints colours of its own instead of the Hermes theme's: ${own.join(' ')}`)
   const pips = [...(deck()?.querySelectorAll('.pa-ko') || [])].map(p => p.getAttribute('data-k')).join()
   if (deck()?.querySelector('.pa-deck-count')?.textContent !== '3' || pips !== 'apply,rejected,apply'
     || !(head()?.textContent || '').includes('2 saved · 1 not saved') || head()?.getAttribute('aria-expanded') !== 'false'

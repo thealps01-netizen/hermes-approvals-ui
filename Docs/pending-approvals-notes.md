@@ -1505,14 +1505,20 @@ group repeats ("Deste") from a drawn sheet with his own Activity records.
   (inset ring), and the left accent bar is gone. Heights stay the fixed `H.row` / `H.actRow`, so
   every row-height check still holds. The select-mode checkbox moved with the row padding
   (14 → 12 px) and still sits exactly on the tile.
-* **Colour says what a row belongs to, never how it ended.** `--pa-h` is a hue on the card:
-  violet (290) for memory notes, teal (195) for the Profile, and for a skill one of four hues picked
-  by a hash of its name (255, 330, 45, 220). The same skill gets the same colour in Needs you and
-  Activity, and on every day. Green, yellow and red stay outcome colours. The colour comes from
-  `oklch` mixed 82 % with `--ui-text-primary`, so it lightens on the dark theme and darkens on the
-  light one without a second table. Four skill hues mean some skills share one; dealing colours out
-  in order would make them all different but move a skill's colour from day to day, which defeats
-  the point.
+* **Every colour comes from the Hermes theme; the mark lives on the icon tile only.** The card is
+  the theme's `--ui-bg-elevated` with its `--ui-stroke-tertiary` border; the deck slabs, count chip
+  and line divider are neutral mixes of `--ui-text-primary`. `--pa-id` names what a row belongs to as
+  a theme token (`markOf`): skills `--ui-accent`, memory notes `--ui-purple`, the Profile
+  `--ui-cyan`; the tile mixes it 62 % with `--ui-accent` (the way the app bends its own semantic
+  colours toward the accent with `harmonize`), so a grey theme gets grey-violet, a blue theme blue.
+  Green, yellow and red stay outcome colours.
+  The first cut (one fixed `oklch(.64 .17 h)` hue per skill name, tinting the whole card) ignored
+  the theme: on the owner's grey Mono theme it drew pink, orange and violet cards, the orange reading
+  as the warning tone. The previews only ever drew the blue GitHub seeds, so nobody saw it there.
+  render_check 54 now fails on any colour literal in the panel's stylesheet (`oklch(`, `#hex`,
+  `rgb(`, `hsl(`, `hwb(`, `lab(`, `lch(`) and on a row mark that is not a theme token. A colour per
+  skill was dropped: the theme has no set of tones that tells four skills apart and stays in key,
+  and the deck already gathers the repeats a per-skill colour was meant to link.
 * **A deck is consecutive records of one thing on one day** (`decksOf`): the same skill name, the
   same note in the same file, or the same files changed outside. A record with no name never joins
   one. The closed deck reads name, count, tally ("4 saved · 1 not saved") and one pip per outcome
