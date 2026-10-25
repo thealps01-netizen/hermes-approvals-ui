@@ -1531,3 +1531,31 @@ group repeats ("Deste") from a drawn sheet with his own Activity records.
 * Checks: render_check 54 (red on d48b256) covers the card rule, the hues, the closed deck, the
   opened lines, per-line selection and Undo, and closing again. The preview has a deck frame (f31).
   The old "mockup-match: rows of one list" assertion is retired, because this decision replaces it.
+
+## What a saved record changed (1.15.0)
+
+The owner asked why one software-factory record showed its text and the next only its file paths.
+Only a record the reviewer had amended drew a diff, and that diff is the amendment ("Asked for →
+saved"), not the record's change. Hermes deletes the pending record (and its operations) once it is
+applied, and the panel kept only the before-copies it needs for Undo, plus each file's after-hash.
+
+* **No new storage; the diff is derived and checked.** `GET /history/changes?id=` (`_history_changes`)
+  takes the record's own before-copy (`snapshots/<id>/<n>.bin`; an empty text for a created file)
+  and its after-text from the next record, in time, that touched the same path: that record's
+  before-copy is exactly this record's result. With no later record the live file is used. Either
+  way the bytes must hash to the record's own `sha_after`, so a later hand edit, an undo or a pruned
+  copy yields `state: "gone"` and the panel says the change can no longer be shown; it never draws a
+  guess. A deleted file (`sha_after: null`) diffs against an empty text. Undecodable bytes are
+  `gone`. The rows come from the same `_op_lines` as the Needs you card (context 1, capped at
+  `_LINES_LIMIT`), so the panel reuses `FileDiff`.
+* On the owner's own history this recovered 294 of 318 file changes; the 24 others had lost a copy.
+  The rejected alternative was keeping an after-copy from now on: it shows nothing for past records
+  and doubles the copies on disk.
+* The panel reads the route once per opened record (`HistoryDetail`, keyed by the entry id) and puts
+  the diffs above the reviewer's amendment, which stays as it was. Files are named by their place
+  inside the skill (`software-factory/references/roles.md`, `fileName`), because one record often
+  touches several files of one skill.
+* Checks: regress `history_shows_each_saved_change` (the first record's diff ends where the second
+  begins, the newest uses the live file, a hand edit turns it into `gone`, an unknown id is refused);
+  render_check 55 (the detail asks the route and draws one diff per file plus the gone note); preview
+  f31 now opens a saved record. Both checks fail on the code before this change.

@@ -356,6 +356,8 @@ const BUNDLES = {
         cmpBadge: 'Asked for → saved',
         whyLabel: 'Reviewer’s note:',
         noCopy: 'The as-written copy is no longer kept.',
+        diffGone: name => `What this record changed in ${name} can no longer be shown: its copies are gone.`,
+        diffFailed: 'What this record changed could not be read.',
         wordsProfile: 'Saved to Profile',
         wordsMemory: 'Saved to memory',
         wordsSkill: 'Saved skill',
@@ -586,6 +588,7 @@ const api = {
       }
     }),
   review: (subsystem, id) => ctxRef.rest('/review', { method: 'POST', body: { subsystem, id } }),
+  changes: id => ctxRef.rest(`/history/changes?id=${encodeURIComponent(id)}`),
   undo: (id, force) => ctxRef.rest('/undo', { method: 'POST', body: { id, force: Boolean(force) } })
 }
 
@@ -1372,7 +1375,7 @@ function LoadError({ title: heading, error, onRetry }) {
   }, 'error')
 }
 
-const SKILL_AT = /(?:^|\/)skills\/(?:.*\/)?([^/]+)\/(?:SKILL\.md|(?:references|templates|scripts|assets)\/.+)$/
+const SKILL_AT = /(?:^|\/)skills\/(?:.*\/)?([^/]+)\/(SKILL\.md|(?:references|templates|scripts|assets)\/.+)$/
 const placeName = (t, path) => {
   const p = slash(path)
   const mem = p.match(/(?:^|\/)memories\/(MEMORY|USER)\.md$/)
@@ -1380,6 +1383,11 @@ const placeName = (t, path) => {
   const skill = p.match(SKILL_AT)
   if (skill) return t('pa.act.placeSkill', skill[1])
   return p.split('/').pop() || p
+}
+const fileName = path => {
+  const p = slash(path)
+  const skill = p.match(SKILL_AT)
+  return skill ? `${skill[1]}/${skill[2]}` : p.split('/').pop() || p
 }
 const placeNames = (t, paths) => [...new Set(paths.map(p => placeName(t, p)))]
 const pathBreaks = path => slash(path).split('/')
@@ -3629,8 +3637,18 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   const [conflict, setConflict] = useState(null)
   const [busy, setBusy] = useState(false)
   const [fold, setFold] = useState(false)
+  const [diff, setDiff] = useState(null)
   const own = useRef(null)
   const files = entry.files || []
+  useEffect(() => {
+    let live = true
+    setDiff(null)
+    if (files.length) {
+      api.changes(entry.id).then(d => live && setDiff(Array.isArray(d?.files) ? d.files : 'failed'),
+        () => live && setDiff('failed'))
+    }
+    return () => { live = false }
+  }, [entry.id])
   const changes = entry.changes || []
   const amended = entry.amended && typeof entry.amended === 'object' ? entry.amended : null
   const written = amended ? amended.written : []
@@ -3792,6 +3810,10 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
               }, 'conflict')
             : null,
           long ? jsx(Summary, { text: gist, raw: said }, 'summary') : null,
+          diff === 'failed' ? jsx('div', { className: 'pa-aside', children: t('pa.hist.diffFailed') }, 'nodiff') : null,
+          ...(Array.isArray(diff) ? diff : []).map((f, i) => (f.state === 'ok'
+            ? jsx(FileDiff, { path: fileName(f.path), rows: f.lines || [], op: f }, `diff${i}`)
+            : jsx('div', { className: 'pa-aside', children: t('pa.hist.diffGone', fileName(f.path)) }, `diff${i}`))),
           amended && !Array.isArray(written) ? jsx('div', { className: 'pa-aside', children: t('pa.hist.noCopy') }, 'gone') : null,
           ...compared,
           ...(amended?.why || []).map((w, i) => jsxs('div', {

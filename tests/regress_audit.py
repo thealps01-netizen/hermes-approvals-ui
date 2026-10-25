@@ -1064,6 +1064,31 @@ def card_reads_without_machine_text():
     assert "When you save" in effect and '"Activity"' in effect, effect
 
 
+@case
+def history_shows_each_saved_change():
+    """Activity shows what each saved record changed: its own before-copy against the copy the next record
+    of the same file kept (or the live file), each checked against the record's own after-hash."""
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    folder = env.skill("pathy", "alpha\nkeep\n")
+    env.stage("skills", "97200001", {"action": "patch", "name": "pathy", "old_string": "alpha", "new_string": "beta"})
+    assert env.approve("skills", "97200001")["ok"]
+    env.stage("skills", "97200002", {"action": "patch", "name": "pathy", "old_string": "keep", "new_string": "kept"})
+    assert env.approve("skills", "97200002")["ok"]
+    rows = {e.get("record_id"): e for e in env.entries()}
+    first = _body(env.pa.history_changes(id=rows["97200001"]["id"]))
+    lines = [tuple(r) for f in first["files"] for r in f.get("lines", [])]
+    assert first["files"] and all(f["state"] == "ok" for f in first["files"]), first
+    assert ("-", "alpha") in lines and ("+", "beta") in lines and ("+", "kept") not in lines, lines
+    second = _body(env.pa.history_changes(id=rows["97200002"]["id"]))
+    lines = [tuple(r) for f in second["files"] for r in f.get("lines", [])]
+    assert ("-", "keep") in lines and ("+", "kept") in lines and ("+", "beta") not in lines, lines
+    (folder / "SKILL.md").write_text("changed by hand\n", encoding="utf-8")
+    gone = _body(env.pa.history_changes(id=rows["97200002"]["id"]))
+    assert [f["state"] for f in gone["files"]] == ["gone"] and not gone["files"][0].get("lines"), gone
+    assert _body(env.pa.history_changes(id="00000000")) == {"ok": False, "files": []}
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

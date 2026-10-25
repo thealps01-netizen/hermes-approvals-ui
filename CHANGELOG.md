@@ -15,6 +15,10 @@ and Activity and Memory drawn the same way.
 * **List rows are small cards.** In Needs you and Activity every row is its own rounded card on the
   Hermes theme's own surface. Every colour on a card comes from the theme you picked: skills take its
   accent, memory notes its violet, Profile notes its teal. The selected card is outlined.
+* **Activity shows what every saved record changed.** Until now a record showed its changes only when
+  the reviewer had corrected it ("Asked for → saved"); a record saved as it was showed nothing but its
+  file paths. Each saved record, and each change made outside the panel, now shows its own diff,
+  file by file. When the copies needed for it are gone the panel says so instead of guessing.
 * **Repeated Activity records fold into a deck.** Records of the same skill or note that follow each
   other become one card ("software-factory 5 · 4 saved · 1 not saved") with one dot per outcome. A
   click opens the deck into one line per record; each line opens its own record, with its own Undo.

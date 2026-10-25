@@ -357,6 +357,9 @@ async function frame(actions, start = PENDING, history = HISTORY, memory = MEMOR
         }
         return { ok: true, removed: 3, restored: ['memories/MEMORY.md'], results: [{ ok: true }] }
       }
+      if (path.startsWith('/history/changes?id=')) {
+        return CHANGES[decodeURIComponent(path.split('=')[1])] || { ok: true, files: [] }
+      }
       const table = {
         '/pending': pending, '/count': { counts: pending.counts, records: pending.records },
         '/history?limit=50': hist, '/memory': memory
@@ -566,6 +569,17 @@ const SF = (n, ago, kind = 'apply') => ({
   summary: `batch(${n} ops: ${Array(n).fill('patch').join(', ')}) on software-factory`,
   files: kind === 'apply' ? [{ path: 'skills/software-factory/SKILL.md' }] : [], undoable: kind === 'apply'
 })
+const CHANGES = {
+  sf000005: { ok: true, files: [
+    { path: 'skills/software-factory/SKILL.md', state: 'ok', lines_total: 9, added: 3, removed: 1, lines: [
+      [' ', '## Job layout'], ['-', 'The job folder is always `<repo>/.factory/<slug>/`.'],
+      ['+', 'The job folder is `<repo>/.factory/<slug>/` for a local job; a sandboxed job keeps it inside'],
+      ['+', 'its clone, at `<checkout>/.factory/<slug>/`.'], [' ', ''], ['…', ''],
+      [' ', '## Rounds'], ['+', 'Write `spec.md` into the clone before round 1.'], [' ', 'Each round reads the spec first.']
+    ] },
+    { path: 'skills/software-factory/references/roles.md', state: 'gone' }
+  ] }
+}
 const HISTORY_DECK = { entries: [
   { id: 'gd000001', ts: NOW - 600, kind: 'external', subsystem: 'skills', record_id: 'r1000001',
     summary: 'changed outside the pane', files: [{ path: 'skills/game-dev/SKILL.md' }], undoable: true },
@@ -579,7 +593,7 @@ const HISTORY_DECK = { entries: [
     summary: "delete skill 'headroom'", files: [{ path: 'skills/headroom/SKILL.md' }], undoable: true }
 ], counts: { applied: 7, undoable: 8 } }
 add('f31', 'Activity — row cards and decks: two game-dev records and five software-factory records each fold into '
-  + 'one deck; software-factory is open, one line per record',
+  + 'one deck; software-factory is open, one line per record; the saved record shown draws what it changed, file by file',
   await frame(async hostEl => {
     await click(findTab(hostEl, /^Activity/), 'the Activity tab')
     const deck = [...hostEl.querySelectorAll('.pa-activity .pa-deck')]
@@ -587,7 +601,8 @@ add('f31', 'Activity — row cards and decks: two game-dev records and five soft
     need(deck, 'f31: five software-factory records draw no deck')
     await click(deck?.querySelector('.pa-deck-row'), 'the software-factory deck')
     need(deck?.querySelectorAll('.pa-act-sub').length === 5, 'f31: the opened deck does not list its five records')
-    await click(deck?.querySelectorAll('.pa-act-sub')[1], 'the not-saved record in the deck')
+    await click(deck?.querySelectorAll('.pa-act-sub')[2], 'a saved record in the deck')
+    need(hostEl.querySelector('.pa-detail .pa-change'), 'f31: the saved record does not draw what it changed')
   }, PENDING, HISTORY_DECK, MEMORY))
 
 add('f28', 'Memory — MEMORY.md over its limit (the stop tone), Details open on the file', await frame(async hostEl => {

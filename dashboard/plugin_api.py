@@ -4021,6 +4021,59 @@ def _history(limit: int) -> dict:
     return {"entries": entries, "counts": counts}
 
 
+@router.get("/history/changes")
+def history_changes(id: str = ""):
+    try:
+        with _LOCK:
+            return _history_changes(_valid_id(id))
+    except Exception as exc:
+        return _route_failed("/history/changes", exc)
+
+
+def _snap_bytes(entry_id: str, snap: object) -> bytes | None:
+    name = str(snap or "")
+    if not name or name in (".", "..") or "/" in name.replace("\\", "/"):
+        return None
+    path = _state() / "snapshots" / entry_id / name
+    return path.read_bytes() if path.is_file() else None
+
+
+def _after_bytes(rel: str, sha_after: object, later: list[dict]) -> bytes | None:
+    for row in later:
+        f = next((g for g in row.get("files") or [] if g.get("path") == rel), None)
+        if f is None:
+            continue
+        data = _snap_bytes(str(row.get("id") or ""), f.get("snap"))
+        if data is None:
+            return b"" if sha_after is None and f.get("created") else None
+        return data if hashlib.sha256(data).hexdigest() == sha_after else None
+    path = _abs(rel)
+    if path is None:
+        return None
+    if not path.exists():
+        return b"" if sha_after is None else None
+    return path.read_bytes() if sha_after and _sha(path) == sha_after else None
+
+
+def _history_changes(entry_id: str) -> dict:
+    rows = list(reversed(_entries(MAX_ENTRIES)))
+    at = next((n for n, e in enumerate(rows) if entry_id and e.get("id") == entry_id), None)
+    if at is None:
+        return {"ok": False, "files": []}
+    entry, out = rows[at], []
+    for f in entry.get("files") or []:
+        rel = str(f.get("path") or "")
+        before = b"" if f.get("created") else _snap_bytes(entry_id, f.get("snap"))
+        after = None if before is None else _after_bytes(rel, f.get("sha_after"), rows[at + 1:])
+        try:
+            old, new = before.decode("utf-8"), after.decode("utf-8")
+        except (AttributeError, UnicodeDecodeError):
+            out.append({"path": rel, "state": "gone"})
+            continue
+        out.append({"path": rel, "state": "ok", **_op_lines(old, new)})
+    return {"ok": True, "files": out}
+
+
 @router.post("/undo")
 def undo(body: dict):
     try:
