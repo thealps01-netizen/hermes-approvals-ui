@@ -561,6 +561,35 @@ add('f27', 'Activity — a refresh failed over loaded records: the amber “coul
     need(hostEl.querySelector('.pa-stale'), 'f27: the failed refresh shows no notice')
   }, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'later:state.db is locked' }))
 
+const SF = (n, ago, kind = 'apply') => ({
+  id: `sf00000${n}`, ts: NOW - ago, kind, subsystem: 'skills', record_id: `r10000${n}`,
+  summary: `batch(${n} ops: ${Array(n).fill('patch').join(', ')}) on software-factory`,
+  files: kind === 'apply' ? [{ path: 'skills/software-factory/SKILL.md' }] : [], undoable: kind === 'apply'
+})
+const HISTORY_DECK = { entries: [
+  { id: 'gd000001', ts: NOW - 600, kind: 'external', subsystem: 'skills', record_id: 'r1000001',
+    summary: 'changed outside the pane', files: [{ path: 'skills/game-dev/SKILL.md' }], undoable: true },
+  { id: 'gd000002', ts: NOW - 1200, kind: 'external', subsystem: 'skills', record_id: 'r1000002',
+    summary: 'changed outside the pane', files: [{ path: 'skills/game-dev/SKILL.md' }], undoable: true },
+  { id: 'mm000001', ts: NOW - 1800, kind: 'apply', subsystem: 'memory', record_id: 'r1000003',
+    summary: 'add to memory: Partial reads are reported as partial', files: [{ path: 'memories/MEMORY.md' }],
+    undoable: true },
+  SF(1, 2400), SF(2, 3000, 'rejected'), SF(5, 3600), SF(3, 4200), SF(4, 4800),
+  { id: 'hr000001', ts: NOW - 5400, kind: 'apply', subsystem: 'skills', record_id: 'r1000009',
+    summary: "delete skill 'headroom'", files: [{ path: 'skills/headroom/SKILL.md' }], undoable: true }
+], counts: { applied: 7, undoable: 8 } }
+add('f31', 'Activity — row cards and decks: two game-dev records and five software-factory records each fold into '
+  + 'one deck; software-factory is open, one line per record',
+  await frame(async hostEl => {
+    await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+    const deck = [...hostEl.querySelectorAll('.pa-activity .pa-deck')]
+      .find(d => /software-factory/.test(d.textContent || ''))
+    need(deck, 'f31: five software-factory records draw no deck')
+    await click(deck?.querySelector('.pa-deck-row'), 'the software-factory deck')
+    need(deck?.querySelectorAll('.pa-act-sub').length === 5, 'f31: the opened deck does not list its five records')
+    await click(deck?.querySelectorAll('.pa-act-sub')[1], 'the not-saved record in the deck')
+  }, PENDING, HISTORY_DECK, MEMORY))
+
 add('f28', 'Memory — MEMORY.md over its limit (the stop tone), Details open on the file', await frame(async hostEl => {
   await click(findTab(hostEl, /^Memory/), 'the Memory tab')
   await click(hostEl.querySelector('.pa-memory .pa-detail .pa-tech-fold'), 'Details on the file')

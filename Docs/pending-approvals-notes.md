@@ -560,6 +560,8 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   (with its lone-last-card rule) is gone with it: `.pa-activity-list` is a single column of
   `.pa-act-row` rows, word + `#id` + time + action on one line, summary and files under it, as the
   approved mockup draws it. The audit, the canary and `render_check.mjs` (11c) lock the row form.
+  1.15.0 replaced the mockup's "rows of one list, split by lines" with cards: see "Row cards and
+  Activity decks".
 - **Text actions at a row's edge use the kit's `inline` size.** `xs`/`sm` add 8-10px of side padding,
   so a text-only Undo, Later or Delete sat visibly inside the edge the rest of the row's text keeps.
   `inline` drops the box padding; boxed buttons (Force undo, Cancel/Delete pairs) keep their size.
@@ -1491,3 +1493,35 @@ spilled the same way. No frame was drawn in that band, so no gate saw it.
   a hidden window delivers ResizeObserver reports late, so the sweep calls that `fitBar` per step
   itself, and render_check (53) proves the panel wires the observer to its bar.
 
+
+## Row cards and Activity decks (1.15.0)
+
+The owner found the list rows plain ("an admin table": grey icon boxes, rows split by lines, one
+skill repeated five times). Three line and dot variants were turned down; he chose cards that
+group repeats ("Deste") from a drawn sheet with his own Activity records.
+
+* **Cards, not rows of one table.** `.pa-list-rows` keeps an 8 px inset and a 6 px gap; each
+  `.pa-rowwrap` is a rounded card with its own border. The selected card gets an accent outline
+  (inset ring), and the left accent bar is gone. Heights stay the fixed `H.row` / `H.actRow`, so
+  every row-height check still holds. The select-mode checkbox moved with the row padding
+  (14 → 12 px) and still sits exactly on the tile.
+* **Colour says what a row belongs to, never how it ended.** `--pa-h` is a hue on the card:
+  violet (290) for memory notes, teal (195) for the Profile, and for a skill one of four hues picked
+  by a hash of its name (255, 330, 45, 220). The same skill gets the same colour in Needs you and
+  Activity, and on every day. Green, yellow and red stay outcome colours. The colour comes from
+  `oklch` mixed 82 % with `--ui-text-primary`, so it lightens on the dark theme and darkens on the
+  light one without a second table. Four skill hues mean some skills share one; dealing colours out
+  in order would make them all different but move a skill's colour from day to day, which defeats
+  the point.
+* **A deck is consecutive records of one thing on one day** (`decksOf`): the same skill name, the
+  same note in the same file, or the same files changed outside. A record with no name never joins
+  one. The closed deck reads name, count, tally ("4 saved · 1 not saved") and one pip per outcome
+  (`OUTCOME` colours, a ring for not saved), with two slabs under it so it reads as a stack. A click
+  opens it in place (`aria-expanded`) into one 30 px line per record (`H.actSub`). A saved line shows
+  only its change ("3 edits"); any other line leads with its outcome word in bold. Each line is its
+  own entry with its own detail and Undo, so nothing undoable hides behind the fold. Opening a deck
+  selects its newest record but does not switch a narrow pane to the detail view, because there the
+  list has to stay visible to show the lines. One deck is open at a time.
+* Checks: render_check 54 (red on d48b256) covers the card rule, the hues, the closed deck, the
+  opened lines, per-line selection and Undo, and closing again. The preview has a deck frame (f31).
+  The old "mockup-match: rows of one list" assertion is retired, because this decision replaces it.

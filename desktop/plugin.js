@@ -367,6 +367,8 @@ const BUNDLES = {
         headSaved: n => `${n} saved`,
         headNotSaved: n => `${n} not saved`,
         headFailed: n => `${n} failed`,
+        headOutside: n => `${n} changed outside`,
+        deckN: n => plural(n, 'record', 'records'),
         gistCreate: (n, d, s) => (d ? `New skill: ${n} — ${d} (${s})` : `New skill: ${n} (${s})`),
         gistRewrite: (n, d, s) => (d ? `Edit skill: ${n}, whole file rewritten — ${d} (${s})`
           : `Edit skill: ${n}, whole file rewritten (${s})`),
@@ -745,7 +747,7 @@ const FS = {
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 78, doneRow: 38, actRow: 58,
-  memRow: 72, day: 30
+  actSub: 30, memRow: 72, day: 30
 }
 const W = { list: 300 }
 const LINE = 16
@@ -784,7 +786,7 @@ const STYLE = `
 .pa-root button:focus-visible,.pa-root input:focus-visible,.pa-root summary:focus-visible,
 .pa-root [role="button"]:focus-visible,.pa-root .pa-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
-.pa-cb{position:absolute;left:14px;top:10px;width:28px;height:28px;cursor:pointer;z-index:1}
+.pa-cb{position:absolute;left:12px;top:10px;width:28px;height:28px;cursor:pointer;z-index:1}
 .pa-pick{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
 .pa-cbx{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;border:${HAIRLINE};box-sizing:border-box;
   background:var(--hx-raised);pointer-events:none}
@@ -832,8 +834,8 @@ const STYLE = `
 .pa-list-head{display:flex;align-items:center;gap:8px;padding:0 14px;box-sizing:border-box;flex:none;
   font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-list-head>.pa-select,.pa-list-head>.pa-list-side{margin-left:auto}
-.pa-list-rows{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
-  ${THIN_SCROLL}}
+.pa-list-rows{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  padding:${G.xs}px;box-sizing:border-box;${THIN_SCROLL}}
 .pa-list-foot{margin-top:auto;display:flex;align-items:center;gap:14px;padding:0 14px;box-sizing:border-box;flex:none;
   border-top:${HAIRLINE};font-size:${FS.micro}px;color:var(--ui-text-secondary);min-width:0}
 .pa-list-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
@@ -842,15 +844,47 @@ const STYLE = `
   border:${HAIRLINE};border-bottom-width:2px;border-radius:4px;font-size:${FS.kbd}px;font-weight:600;
   color:var(--ui-text-secondary);line-height:1}
 .pa-root .pa-btn-kbd{margin-left:8px;border-color:color-mix(in srgb,currentColor 35%,transparent);color:inherit}
-.pa-rowwrap{display:flex;align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box}
-.pa-rowwrap+.pa-rowwrap{border-top:1px solid ${tint('var(--ui-stroke-tertiary)', 55)}}
+.pa-rowwrap{--pa-hc:color-mix(in oklch,oklch(.64 .17 var(--pa-h,250)) 82%,var(--ui-text-primary));display:flex;
+  align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box;border-radius:10px;overflow:hidden;
+  border:1px solid ${tint('var(--pa-hc)', 30)};
+  background:linear-gradient(180deg,color-mix(in srgb,var(--pa-hc) 13%,var(--ui-bg-elevated)),
+  color-mix(in srgb,var(--pa-hc) 5%,var(--ui-bg-elevated)))}
 .pa-root .pa-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:3px 10px;align-items:start;flex:1;
-  min-width:0;margin:0;padding:10px 14px;border:0;background:transparent;font:inherit;color:inherit;text-align:left;
+  min-width:0;margin:0;padding:10px 12px;border:0;background:transparent;font:inherit;color:inherit;text-align:left;
   cursor:pointer;position:relative;box-sizing:border-box;transition:${move('hover', 'background-color')}}
 .pa-root .pa-row:hover{background:var(--hx-field)}
-.pa-rowwrap[data-on="1"]{background:var(--ui-row-active-background)}
-.pa-rowwrap[data-on="1"]::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;
-  background:var(--ui-accent)}
+.pa-rowwrap[data-on="1"]{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
+.pa-rowwrap .pa-tile{color:var(--pa-hc);background:${tint('var(--pa-hc)', 20)};border-color:${tint('var(--pa-hc)', 36)}}
+.pa-deck[data-open="1"]{flex-direction:column}
+.pa-deck[data-open="0"]{--pa-stack:0 5px 0 -2px color-mix(in srgb,var(--pa-hc) 22%,var(--ui-bg-elevated)),
+  0 10px 0 -5px color-mix(in srgb,var(--pa-hc) 12%,var(--ui-bg-elevated));overflow:visible;margin-bottom:${G.xs}px;
+  box-shadow:var(--pa-stack)}
+.pa-deck[data-open="0"][data-on="1"]{box-shadow:inset 0 0 0 1px var(--ui-accent),var(--pa-stack)}
+.pa-deck[data-open="0"]>.pa-row{border-radius:9px}
+.pa-deck[data-open="1"]>.pa-row{flex:none;height:${H.actRow - 2}px}
+.pa-deck-row>.pa-tile{grid-area:1 / 1}
+.pa-deck-row>.pa-row-text{grid-area:1 / 2 / 3 / 3}
+.pa-deck-row>.pa-row-time{grid-area:1 / 3}
+.pa-deck-title{display:flex;align-items:center;gap:6px;min-width:0}
+.pa-deck-title>.pa-row-title{min-width:0}
+.pa-deck-count{flex:none;padding:0 6px;border-radius:${R.pill}px;font-size:${FS.micro}px;font-weight:700;
+  color:var(--ui-text-primary);background:${tint('var(--pa-hc)', 30)}}
+.pa-deck-chev{display:inline-flex;flex:none;color:var(--ui-text-secondary);transform:rotate(180deg);
+  transition:${move('hover', 'transform')}}
+.pa-deck[data-open="1"] .pa-deck-chev{transform:rotate(270deg)}
+.pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center}
+.pa-ko{width:8px;height:8px;border-radius:50%;box-sizing:border-box;flex:none;background:var(--pa-tone)}
+.pa-ko[data-k="rejected"]{background:transparent;border:1.5px solid var(--ui-text-secondary)}
+.pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px;border-top:1px solid ${tint('var(--pa-hc)', 24)}}
+.pa-root .pa-act-sub{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:10px;align-items:center;
+  height:${H.actSub}px;margin:0;padding:0 8px 0 22px;border:0;border-radius:7px;background:transparent;font:inherit;
+  font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
+  transition:${move('hover', 'background-color')}}
+.pa-root .pa-act-sub:hover{background:var(--hx-field)}
+.pa-root .pa-act-sub[aria-current="true"]{background:${tint('var(--ui-accent)', 22)};color:var(--ui-text-primary)}
+.pa-act-sub-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa-act-sub-text>b{font-weight:600;color:var(--ui-text-primary)}
+.pa-act-sub-time{font-variant-numeric:tabular-nums;white-space:nowrap}
 .pa-tile{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;border:${HAIRLINE};box-sizing:border-box;
   color:var(--ui-text-secondary);background:var(--hx-raised);flex:none}
 .pa-row-text{min-width:0;display:flex;flex-direction:column;gap:2px}
@@ -867,8 +901,8 @@ const STYLE = `
 .pa-dot[data-k="ok"]{background:var(--ui-green)}
 .pa-dot[data-k="bad"]{background:var(--ui-red)}
 .pa-dot[data-k="warn"]{background:${WARN}}
-.pa-done{display:flex;align-items:center;gap:10px;padding:0 14px;box-sizing:border-box;flex:none;
-  border-top:1px solid ${tint('var(--ui-stroke-tertiary)', 55)};font-size:${FS.preview}px;color:var(--ui-text-secondary);
+.pa-done{display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box;flex:none;
+  border:1px solid ${tint('var(--ui-stroke-tertiary)', 55)};border-radius:10px;font-size:${FS.preview}px;color:var(--ui-text-secondary);
   background:${tint('var(--ui-green)', 6)};min-width:0}
 .pa-done[data-k="reject"]{background:${tint('var(--ui-text-primary)', 3)}}
 .pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}
@@ -985,8 +1019,7 @@ const STYLE = `
 .pa-act-said{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);overflow-wrap:anywhere;min-width:0}
 .pa-dtitle .pa-act-said{font:inherit;line-height:1.35}
 .pa-act-hint{font-size:${FS.meta}px;color:var(--ui-text-secondary);flex:1 1 200px;min-width:0}
-.pa-day{display:flex;align-items:center;padding:0 14px;box-sizing:border-box;flex:none;
-  border-top:${HAIRLINE};border-bottom:${HAIRLINE};background:${tint('var(--ui-text-primary)', 3)};
+.pa-day{display:flex;align-items:flex-end;padding:0 14px 2px;margin:0 -${G.xs}px;box-sizing:border-box;flex:none;
   font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-outcome{margin:2px 20px 0}
 .pa-chip-dot{width:6px;height:6px;border-radius:50%;background:var(--pa-tone)}
@@ -1341,11 +1374,12 @@ function LoadError({ title: heading, error, onRetry }) {
   }, 'error')
 }
 
+const SKILL_AT = /(?:^|\/)skills\/(?:.*\/)?([^/]+)\/(?:SKILL\.md|(?:references|templates|scripts|assets)\/.+)$/
 const placeName = (t, path) => {
   const p = slash(path)
   const mem = p.match(/(?:^|\/)memories\/(MEMORY|USER)\.md$/)
   if (mem) return t(mem[1] === 'USER' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
-  const skill = p.match(/(?:^|\/)skills\/(?:.*\/)?([^/]+)\/(?:SKILL\.md|(?:references|templates|scripts|assets)\/.+)$/)
+  const skill = p.match(SKILL_AT)
   if (skill) return t('pa.act.placeSkill', skill[1])
   return p.split('/').pop() || p
 }
@@ -1876,6 +1910,11 @@ const recordFile = (subsystem, item) => {
   return (plain.fit || {}).file || plain.target || 'MEMORY.md'
 }
 const tileOf = (subsystem, file) => (subsystem === 'memory' ? (isProfile(file) ? UsersIcon : BrainIcon) : BookIcon)
+const HUES = [255, 330, 45, 220]
+const hueOf = (subsystem, file, name) => String(subsystem === 'memory' ? (isProfile(file) ? 195 : 290)
+  : HUES[[...String(name || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length])
+const queueHue = (subsystem, item) => hueOf(subsystem, recordFile(subsystem, item),
+  skillShort((item.names || ((item.plain || {}).groups || []).map(g => g.name)).join(', ')) || (item.plain || {}).target)
 const Tile = ({ of }) => jsx('span', { className: 'pa-tile', 'aria-hidden': true, children: icon(of, 15) }, 'tile')
 const AGO_SHORT = [
   [60, 'pa.ago.now'], [60, 'pa.ago.m'], [24, 'pa.ago.h'], [7, 'pa.ago.d'], [4.35, 'pa.ago.w'], [12, 'pa.ago.mo'],
@@ -2128,7 +2167,7 @@ function QueueRow({ unit, on, t, onSelect, picking, picked, onPick }) {
     'data-on': on ? '1' : '0',
     'data-picking': picking ? '1' : undefined,
     'data-picked': picking && picked ? '1' : undefined,
-    style: { height: H.row },
+    style: { height: H.row, '--pa-h': queueHue(subsystem, item) },
     children: [
       picking
         ? jsxs('label', {
@@ -3464,20 +3503,112 @@ const histChip = entry => (entry.undoable && !entry.undone ? ['pa.act.canUndo', 
     : entry.undone ? ['pa.act.undone', 'var(--ui-text-tertiary)']
       : entry.restored ? ['pa.act.restored', 'var(--ui-text-tertiary)'] : ['pa.act.cannot', 'var(--ui-text-tertiary)'])
 
-function ActRow({ entry, on, t, onSelect }) {
+const actLine = (t, entry) => {
   const files = entry.files || []
   const outside = entry.kind === 'external' && files.length > 0
   const g = outside ? null : gistOf(t, entry.summary)
   const words = historyWords(t, entry)
   const named = outside || Boolean(g)
   const name = !named ? words : outside ? placeNames(t, files.map(f => f.path)).join(', ') : g.name || g.change
-  const said = !named ? plainGist(t, String(entry.summary || ''))
-    : [words, outside ? t('pa.hist.filesN', files.length) : g.name ? g.change : ''].filter(Boolean).join(' · ')
+  const change = outside ? t('pa.hist.filesN', files.length) : g?.name ? g.change : ''
+  const said = !named ? plainGist(t, String(entry.summary || '')) : [words, change].filter(Boolean).join(' · ')
+  const deck = outside ? `x:${name}` : g?.name ? `${g.note ? `n:${g.place}` : 's'}:${g.name}` : ''
+  const skill = files.map(f => (slash(f.path).match(SKILL_AT) || [])[1]).find(Boolean) || (g && !g.note ? g.name : '')
+  const hue = hueOf(entry.subsystem === 'memory' ? 'memory' : 'skills',
+    files.map(f => f.path).find(isProfile) || '', skill)
+  return { name, words, change, said, deck, hue }
+}
+const DECK_TALLY = [['apply', 'pa.hist.headSaved'], ['external', 'pa.hist.headOutside'],
+  ['rejected', 'pa.hist.headNotSaved'], ['failed', 'pa.hist.headFailed']]
+const decksOf = (t, entries) => entries.reduce((out, entry) => {
+  const line = actLine(t, entry)
+  const last = out[out.length - 1]
+  if (line.deck && last && last.key === line.deck) last.entries.push(entry)
+  else out.push({ key: line.deck, line, entries: [entry] })
+  return out
+}, []).map(d => ({ ...d, id: d.entries[d.entries.length - 1].id }))
+
+function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
+  const { entries, line } = deck
+  const n = entries.length
+  const tally = DECK_TALLY.map(([kind, key]) => [entries.filter(e => e.kind === kind).length, key])
+    .filter(([c]) => c).map(([c, key]) => t(key, c)).join(' · ')
+  const head = jsxs('button', {
+    type: 'button',
+    className: 'pa-row pa-deck-row',
+    'aria-expanded': open ? 'true' : 'false',
+    'aria-label': `${line.name} · ${t('pa.hist.deckN', n)} · ${tally}`,
+    onClick: () => onToggle(deck),
+    children: [
+      jsx(Tile, { of: histTile(entries[0]) }, 'tile'),
+      jsxs('span', {
+        className: 'pa-row-text',
+        children: [
+          jsxs('span', {
+            className: 'pa-deck-title',
+            children: [
+              jsx('span', { className: 'pa-row-title', children: line.name }, 'title'),
+              jsx('span', { className: 'pa-deck-count', children: String(n) }, 'count'),
+              jsx('span', { className: 'pa-deck-chev', 'aria-hidden': true, children: icon(BackIcon, 13) }, 'chev')
+            ]
+          }, 'top'),
+          jsx('span', { className: 'pa-row-preview', children: tally }, 'preview')
+        ]
+      }, 'text'),
+      jsx('span', { className: 'pa-row-time', children: clock(entries[0].ts * 1000) }, 'time'),
+      open ? null : jsx('span', {
+        className: 'pa-kos', 'aria-hidden': true,
+        children: entries.map(e => jsx('i', {
+          className: 'pa-ko', 'data-k': e.kind, style: { '--pa-tone': (OUTCOME[e.kind] || OUTCOME.apply)[0] }
+        }, e.id))
+      }, 'kos')
+    ]
+  }, 'head')
+  const subs = open ? jsx('div', {
+    className: 'pa-deck-subs',
+    role: 'group',
+    'aria-label': line.name,
+    children: entries.map(e => {
+      const own = actLine(t, e)
+      return jsxs('button', {
+        type: 'button',
+        className: 'pa-act-sub',
+        'data-entry': e.id,
+        'aria-current': e.id === sel ? 'true' : undefined,
+        'aria-label': `${own.name} · ${own.said} · ${clock(e.ts * 1000)}`,
+        onClick: () => onSelect(e.id),
+        children: [
+          jsx('i', {
+            className: 'pa-ko', 'data-k': e.kind, 'aria-hidden': true,
+            style: { '--pa-tone': (OUTCOME[e.kind] || OUTCOME.apply)[0] }
+          }, 'ko'),
+          jsx('span', {
+            className: 'pa-act-sub-text',
+            children: e.kind === 'apply' ? own.change || own.words
+              : [jsx('b', { children: own.words }, 'w'), own.change ? ` · ${own.change}` : null]
+          }, 'text'),
+          jsx('span', { className: 'pa-act-sub-time', children: clock(e.ts * 1000) }, 'time')
+        ]
+      }, e.id)
+    })
+  }, 'subs') : null
+  return jsxs('div', {
+    className: 'pa-rowwrap pa-deck',
+    role: 'listitem',
+    'data-on': !open && entries.some(e => e.id === sel) ? '1' : '0',
+    'data-open': open ? '1' : '0',
+    style: { height: open ? H.actRow + 1 + 2 * G.xxs + n * H.actSub : H.actRow, '--pa-h': line.hue },
+    children: [head, subs]
+  }, `deck-${deck.id}`)
+}
+
+function ActRow({ entry, on, t, onSelect }) {
+  const { name, said, hue } = actLine(t, entry)
   return jsx('div', {
     className: 'pa-rowwrap',
     role: 'listitem',
     'data-on': on ? '1' : '0',
-    style: { height: H.actRow },
+    style: { height: H.actRow, '--pa-h': hue },
     children: jsxs('button', {
       type: 'button',
       className: 'pa-row pa-act-row',
@@ -3519,7 +3650,8 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
     for (const ms of [450, 900, 1500]) {
       window.setTimeout(() => {
         if (!lost()) return
-        const row = [...(from?.querySelectorAll('.pa-row[data-entry]') || [])].find(c => c.dataset.entry === entry.id)
+        const row = [...(from?.querySelectorAll('.pa-act-row[data-entry],.pa-act-sub[data-entry]') || [])]
+          .find(c => c.dataset.entry === entry.id)
         row?.focus()
       }, ms)
     }
@@ -3720,6 +3852,7 @@ function HistoryList({ data, error, refresh, onChanged, onOpen }) {
   const t = usePluginI18n(ID)
   const [sel, setSel] = useState(null)
   const [open, setOpen] = useState(false)
+  const [deckOpen, setDeckOpen] = useState(null)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const entries = data?.entries || []
@@ -3770,16 +3903,23 @@ function HistoryList({ data, error, refresh, onChanged, onOpen }) {
       }, 'empty')
     }, 'empty')
   }
+  const pick = id => {
+    setSel(id)
+    setOpen(true)
+  }
   const rows = groups.flatMap(g => [
     g.key === todayKey ? null : jsx('div', { className: 'pa-day', style: { height: H.day }, children: dayHeading(t, g.ts) },
       `day-${g.key}`),
-    ...g.entries.map(e => jsx(ActRow, {
-      entry: e, on: selected && e.id === selected.id, t,
-      onSelect: id => {
-        setSel(id)
-        setOpen(true)
-      }
-    }, e.id))
+    ...decksOf(t, g.entries).map(d => (d.entries.length > 1
+      ? jsx(ActDeck, {
+          deck: d, sel: selected?.id, open: deckOpen === d.id, t, onSelect: pick,
+          onToggle: () => {
+            setDeckOpen(deckOpen === d.id ? null : d.id)
+            if (deckOpen !== d.id) setSel(d.entries[0].id)
+          }
+        }, `deck-${d.id}`)
+      : jsx(ActRow, { entry: d.entries[0], on: selected && d.entries[0].id === selected.id, t, onSelect: pick },
+        d.entries[0].id)))
   ]).filter(Boolean)
   return jsxs('div', {
     className: 'pa-split pa-activity',

@@ -4276,7 +4276,8 @@ REST.scan = 'ok'
   }
   const sheet = sm.hostEl.querySelector('style')?.textContent || ''
   if (!sheet.includes('.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}')
-      || !/\.pa-cb\{position:absolute;left:14px;top:10px;width:28px;height:28px/.test(sheet)) {
+      || !/\.pa-cb\{position:absolute;left:12px;top:10px;width:28px;height:28px/.test(sheet)
+      || !/\.pa-root \.pa-row\{[^}]*padding:10px 12px;/.test(sheet)) {
     fail('select-mode: the checkbox is not drawn in the place of the 28 px icon tile')
   }
   must(head()?.textContent, ['0 selected', 'Select all', 'Cancel'], 'select-mode: the list header after Select')
@@ -4343,9 +4344,6 @@ REST.scan = 'ok'
   if (foot?.querySelector('.pa-fullchange-toggle')) fail('mockup-match: "Show the full review" sits in the action bar')
   const sheet = mm.hostEl.querySelector('style')?.textContent || ''
   if (!/\.pa-dfoot\{[^}]*border-top:/.test(sheet)) fail('mockup-match: the action bar has no rule above it')
-  if (!/\.pa-rowwrap\+\.pa-rowwrap\{border-top:1px solid/.test(sheet)) {
-    fail('mockup-match: list rows are separate bordered cards, not rows of one list')
-  }
   if (/\.pa-detail[^{]*\{[^}]*background:/.test(sheet)) {
     fail('mockup-match: the detail is a tinted fill, not the plain surface')
   }
@@ -5120,6 +5118,75 @@ REST.scan = 'ok'
   if (watch && !watch.off) fail('bar fit: the bar observer outlives the panel')
   b.hostEl.remove()
   delete dom.window.ResizeObserver
+}
+
+// --- 54) row cards and Activity decks: the owner found the list rows plain ("an admin table"). Every row of
+// Needs you and Activity is a small card tinted by what it belongs to (one hue per skill name, violet for
+// memory notes, teal for the Profile), and consecutive Activity records of the same thing fold into one deck:
+// "software-factory 3", "2 saved · 1 not saved", one outcome pip per record. The deck opens in place into one
+// line per record, each its own selectable entry with its own detail (Undo stays per record).
+{
+  const NOW = Date.now() / 1000
+  const SF = n => `patch 'software-factory' SKILL.md (+${n}/-1 lines)`
+  REST.history = { entries: [
+    { id: 'deck0001', ts: NOW - 100, kind: 'apply', subsystem: 'skills', summary: SF(3),
+      files: [{ path: 'skills/software-factory/SKILL.md' }], undoable: true },
+    { id: 'deck0002', ts: NOW - 200, kind: 'rejected', subsystem: 'skills', summary: SF(2), files: [], undoable: false },
+    { id: 'deck0003', ts: NOW - 300, kind: 'apply', subsystem: 'skills', summary: SF(6),
+      files: [{ path: 'skills/software-factory/SKILL.md' }], undoable: true },
+    { id: 'deck0004', ts: NOW - 400, kind: 'apply', subsystem: 'skills', summary: "delete skill 'headroom'",
+      files: [{ path: 'skills/headroom/SKILL.md' }], undoable: true },
+    { id: 'deck0005', ts: NOW - 500, kind: 'apply', subsystem: 'memory',
+      summary: 'add to memory: Partial reads are reported as partial', files: [{ path: 'memories/MEMORY.md' }],
+      undoable: true }
+  ], counts: { applied: 4, undoable: 4, total: 5 } }
+  const d = await mount('en', 'page')
+  await click(tab(d.hostEl, /Activity/), 60)
+  const sheet = d.hostEl.querySelector('style')?.textContent || ''
+  if (/\.pa-rowwrap\+\.pa-rowwrap\{border-top/.test(sheet) || !/\.pa-rowwrap\{[^}]*border-radius:10px/.test(sheet)) {
+    fail('row cards: the list rows are still rows of one table split by lines, not separate cards')
+  }
+  const wraps = () => [...d.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
+  if (wraps().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${wraps().length} rows)`)
+  const deck = () => d.hostEl.querySelector('.pa-activity .pa-deck')
+  const head = () => deck()?.querySelector('.pa-deck-row')
+  const hues = wraps().map(w => w.style.getPropertyValue('--pa-h'))
+  if (hues[2] !== '290' || !/^\d+$/.test(hues[0] || '') || !/^\d+$/.test(hues[1] || '')) {
+    fail(`row cards: the rows carry no hue of their own (memory 290): ${JSON.stringify(hues)}`)
+  }
+  const pips = [...(deck()?.querySelectorAll('.pa-ko') || [])].map(p => p.getAttribute('data-k')).join()
+  if (deck()?.querySelector('.pa-deck-count')?.textContent !== '3' || pips !== 'apply,rejected,apply'
+    || !(head()?.textContent || '').includes('2 saved · 1 not saved') || head()?.getAttribute('aria-expanded') !== 'false'
+    || deck()?.querySelector('.pa-act-sub')) {
+    fail(`decks: the closed deck does not read "software-factory 3 · 2 saved · 1 not saved" with pips ${pips}`)
+  }
+  if (deck()?.getAttribute('data-on') !== '1') fail('decks: the closed deck holding the selected record is not marked')
+  await click(head(), 40)
+  const subs = () => [...(deck()?.querySelectorAll('.pa-act-sub[data-entry]') || [])]
+  if (head()?.getAttribute('aria-expanded') !== 'true' || subs().map(s => s.dataset.entry).join() !== 'deck0001,deck0002,deck0003'
+    || deck()?.style.height !== '157px') {
+    fail(`decks: opening the deck does not show its 3 records in one 157 px card (${deck()?.style.height})`)
+  }
+  if (actDetail(d.hostEl)?.getAttribute('data-entry') !== 'deck0001' || subs()[0]?.getAttribute('aria-current') !== 'true') {
+    fail('decks: the newest record of the opened deck is not the one shown')
+  }
+  const said = subs().map(s => s.textContent)
+  if (/Saved skill/.test(said[0] || '') || !/Not saved/.test(said[1] || '') || !/SKILL\.md/.test(said[0] || '')) {
+    fail(`decks: a deck line repeats "Saved skill" or hides "Not saved": ${JSON.stringify(said)}`)
+  }
+  await click(subs()[1], 40)
+  if (actDetail(d.hostEl)?.getAttribute('data-entry') !== 'deck0002' || subs()[1]?.getAttribute('aria-current') !== 'true') {
+    fail('decks: a deck line does not open its own record')
+  }
+  await click(subs()[0], 40)
+  if (!buttons(actDetail(d.hostEl), /^Undo$/).length) fail('decks: a record inside a deck lost its own Undo')
+  await click(head(), 40)
+  if (head()?.getAttribute('aria-expanded') !== 'false' || subs().length || deck()?.style.height !== '58px') {
+    fail('decks: the opened deck does not close again')
+  }
+  d.root.unmount()
+  d.hostEl.remove()
+  REST.history = null
 }
 
 if (problems.length) {

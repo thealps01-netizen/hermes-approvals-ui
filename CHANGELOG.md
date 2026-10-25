@@ -12,6 +12,13 @@ and Activity and Memory drawn the same way.
 
 ### Changed
 
+* **List rows are small cards.** In Needs you and Activity every row is its own rounded card, tinted
+  by what it belongs to: each skill keeps one colour wherever it appears, memory notes are violet and
+  Profile notes teal. The selected card is outlined.
+* **Repeated Activity records fold into a deck.** Records of the same skill or note that follow each
+  other become one card ("software-factory 5 · 4 saved · 1 not saved") with one dot per outcome. A
+  click opens the deck into one line per record; each line opens its own record, with its own Undo.
+
 * **The panel speaks plainly where it showed Hermes' own record text.** The card no longer quotes the
   record's note ("batch(1 ops: patch)…"); memory changes read "Edited note in Memory: …" instead of
   "patch in memory: entry matching: …"; skill names drop their category folder and paths use "/".
