@@ -12,9 +12,9 @@ and Activity and Memory drawn the same way.
 
 ### Changed
 
-* **List rows are small cards.** In Needs you and Activity every row is its own rounded card, tinted
-  by what it belongs to: each skill keeps one colour wherever it appears, memory notes are violet and
-  Profile notes teal. The selected card is outlined.
+* **List rows are small cards.** In Needs you and Activity every row is its own rounded card on the
+  Hermes theme's own surface. Every colour on a card comes from the theme you picked: skills take its
+  accent, memory notes its violet, Profile notes its teal. The selected card is outlined.
 * **Repeated Activity records fold into a deck.** Records of the same skill or note that follow each
   other become one card ("software-factory 5 · 4 saved · 1 not saved") with one dot per outcome. A
   click opens the deck into one line per record; each line opens its own record, with its own Undo.

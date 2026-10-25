@@ -844,11 +844,9 @@ const STYLE = `
   border:${HAIRLINE};border-bottom-width:2px;border-radius:4px;font-size:${FS.kbd}px;font-weight:600;
   color:var(--ui-text-secondary);line-height:1}
 .pa-root .pa-btn-kbd{margin-left:8px;border-color:color-mix(in srgb,currentColor 35%,transparent);color:inherit}
-.pa-rowwrap{--pa-hc:color-mix(in oklch,oklch(.64 .17 var(--pa-h,250)) 82%,var(--ui-text-primary));display:flex;
+.pa-rowwrap{--pa-hc:color-mix(in oklch,var(--pa-id,var(--ui-accent)) 62%,var(--ui-accent));display:flex;
   align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box;border-radius:10px;overflow:hidden;
-  border:1px solid ${tint('var(--pa-hc)', 30)};
-  background:linear-gradient(180deg,color-mix(in srgb,var(--pa-hc) 13%,var(--ui-bg-elevated)),
-  color-mix(in srgb,var(--pa-hc) 5%,var(--ui-bg-elevated)))}
+  border:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-elevated)}
 .pa-root .pa-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:3px 10px;align-items:start;flex:1;
   min-width:0;margin:0;padding:10px 12px;border:0;background:transparent;font:inherit;color:inherit;text-align:left;
   cursor:pointer;position:relative;box-sizing:border-box;transition:${move('hover', 'background-color')}}
@@ -856,8 +854,8 @@ const STYLE = `
 .pa-rowwrap[data-on="1"]{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
 .pa-rowwrap .pa-tile{color:var(--pa-hc);background:${tint('var(--pa-hc)', 20)};border-color:${tint('var(--pa-hc)', 36)}}
 .pa-deck[data-open="1"]{flex-direction:column}
-.pa-deck[data-open="0"]{--pa-stack:0 5px 0 -2px color-mix(in srgb,var(--pa-hc) 22%,var(--ui-bg-elevated)),
-  0 10px 0 -5px color-mix(in srgb,var(--pa-hc) 12%,var(--ui-bg-elevated));overflow:visible;margin-bottom:${G.xs}px;
+.pa-deck[data-open="0"]{--pa-stack:0 5px 0 -2px color-mix(in srgb,var(--ui-text-primary) 9%,var(--ui-bg-elevated)),
+  0 10px 0 -5px color-mix(in srgb,var(--ui-text-primary) 5%,var(--ui-bg-elevated));overflow:visible;margin-bottom:${G.xs}px;
   box-shadow:var(--pa-stack)}
 .pa-deck[data-open="0"][data-on="1"]{box-shadow:inset 0 0 0 1px var(--ui-accent),var(--pa-stack)}
 .pa-deck[data-open="0"]>.pa-row{border-radius:9px}
@@ -868,14 +866,14 @@ const STYLE = `
 .pa-deck-title{display:flex;align-items:center;gap:6px;min-width:0}
 .pa-deck-title>.pa-row-title{min-width:0}
 .pa-deck-count{flex:none;padding:0 6px;border-radius:${R.pill}px;font-size:${FS.micro}px;font-weight:700;
-  color:var(--ui-text-primary);background:${tint('var(--pa-hc)', 30)}}
+  color:var(--ui-text-primary);background:${tint('var(--ui-text-primary)', 12)}}
 .pa-deck-chev{display:inline-flex;flex:none;color:var(--ui-text-secondary);transform:rotate(180deg);
   transition:${move('hover', 'transform')}}
 .pa-deck[data-open="1"] .pa-deck-chev{transform:rotate(270deg)}
 .pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center}
 .pa-ko{width:8px;height:8px;border-radius:50%;box-sizing:border-box;flex:none;background:var(--pa-tone)}
 .pa-ko[data-k="rejected"]{background:transparent;border:1.5px solid var(--ui-text-secondary)}
-.pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px;border-top:1px solid ${tint('var(--pa-hc)', 24)}}
+.pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px;border-top:1px solid var(--ui-stroke-tertiary)}
 .pa-root .pa-act-sub{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:10px;align-items:center;
   height:${H.actSub}px;margin:0;padding:0 8px 0 22px;border:0;border-radius:7px;background:transparent;font:inherit;
   font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
@@ -1910,11 +1908,8 @@ const recordFile = (subsystem, item) => {
   return (plain.fit || {}).file || plain.target || 'MEMORY.md'
 }
 const tileOf = (subsystem, file) => (subsystem === 'memory' ? (isProfile(file) ? UsersIcon : BrainIcon) : BookIcon)
-const HUES = [255, 330, 45, 220]
-const hueOf = (subsystem, file, name) => String(subsystem === 'memory' ? (isProfile(file) ? 195 : 290)
-  : HUES[[...String(name || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length])
-const queueHue = (subsystem, item) => hueOf(subsystem, recordFile(subsystem, item),
-  skillShort((item.names || ((item.plain || {}).groups || []).map(g => g.name)).join(', ')) || (item.plain || {}).target)
+const markOf = (subsystem, file) => (subsystem !== 'memory' ? 'var(--ui-accent)'
+  : isProfile(file) ? 'var(--ui-cyan)' : 'var(--ui-purple)')
 const Tile = ({ of }) => jsx('span', { className: 'pa-tile', 'aria-hidden': true, children: icon(of, 15) }, 'tile')
 const AGO_SHORT = [
   [60, 'pa.ago.now'], [60, 'pa.ago.m'], [24, 'pa.ago.h'], [7, 'pa.ago.d'], [4.35, 'pa.ago.w'], [12, 'pa.ago.mo'],
@@ -2167,7 +2162,7 @@ function QueueRow({ unit, on, t, onSelect, picking, picked, onPick }) {
     'data-on': on ? '1' : '0',
     'data-picking': picking ? '1' : undefined,
     'data-picked': picking && picked ? '1' : undefined,
-    style: { height: H.row, '--pa-h': queueHue(subsystem, item) },
+    style: { height: H.row, '--pa-id': markOf(subsystem, recordFile(subsystem, item)) },
     children: [
       picking
         ? jsxs('label', {
@@ -3513,10 +3508,8 @@ const actLine = (t, entry) => {
   const change = outside ? t('pa.hist.filesN', files.length) : g?.name ? g.change : ''
   const said = !named ? plainGist(t, String(entry.summary || '')) : [words, change].filter(Boolean).join(' · ')
   const deck = outside ? `x:${name}` : g?.name ? `${g.note ? `n:${g.place}` : 's'}:${g.name}` : ''
-  const skill = files.map(f => (slash(f.path).match(SKILL_AT) || [])[1]).find(Boolean) || (g && !g.note ? g.name : '')
-  const hue = hueOf(entry.subsystem === 'memory' ? 'memory' : 'skills',
-    files.map(f => f.path).find(isProfile) || '', skill)
-  return { name, words, change, said, deck, hue }
+  const mark = markOf(entry.subsystem === 'memory' ? 'memory' : 'skills', files.map(f => f.path).find(isProfile) || '')
+  return { name, words, change, said, deck, mark }
 }
 const DECK_TALLY = [['apply', 'pa.hist.headSaved'], ['external', 'pa.hist.headOutside'],
   ['rejected', 'pa.hist.headNotSaved'], ['failed', 'pa.hist.headFailed']]
@@ -3597,18 +3590,18 @@ function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
     role: 'listitem',
     'data-on': !open && entries.some(e => e.id === sel) ? '1' : '0',
     'data-open': open ? '1' : '0',
-    style: { height: open ? H.actRow + 1 + 2 * G.xxs + n * H.actSub : H.actRow, '--pa-h': line.hue },
+    style: { height: open ? H.actRow + 1 + 2 * G.xxs + n * H.actSub : H.actRow, '--pa-id': line.mark },
     children: [head, subs]
   }, `deck-${deck.id}`)
 }
 
 function ActRow({ entry, on, t, onSelect }) {
-  const { name, said, hue } = actLine(t, entry)
+  const { name, said, mark } = actLine(t, entry)
   return jsx('div', {
     className: 'pa-rowwrap',
     role: 'listitem',
     'data-on': on ? '1' : '0',
-    style: { height: H.actRow, '--pa-h': hue },
+    style: { height: H.actRow, '--pa-id': mark },
     children: jsxs('button', {
       type: 'button',
       className: 'pa-row pa-act-row',
