@@ -833,6 +833,9 @@ async function mount(appLocale, parts = 'both') {
           record_id: 'aaa11111', summary: 'OLD-FAILED-ATTEMPT', files: [], undoable: false }, ...HISTORY.entries],
         counts: HISTORY.counts }
       }
+      if (path.startsWith('/history/changes?id=')) {
+        return (REST.changes || {})[decodeURIComponent(path.split('=')[1])] || { ok: true, files: [] }
+      }
       const left = d => (REST.gone ? { ...d, memory: (d.memory || []).filter(r => !REST.gone.has(r.id)),
         skills: (d.skills || []).filter(r => !REST.gone.has(r.id)) } : d)
       const table = {
@@ -5188,6 +5191,43 @@ REST.scan = 'ok'
   d.root.unmount()
   d.hostEl.remove()
   REST.history = null
+}
+
+// --- 55) what each saved record changed: Activity showed a change only when the reviewer had amended the
+// record ("Asked for → saved"); a record saved as it was showed nothing but file paths. The detail now
+// reads GET /history/changes for the record and draws one diff per file, named by its place inside the
+// skill; a file whose copies no longer line up says so instead of drawing a guess.
+{
+  const NOW = Date.now() / 1000
+  const SKILL = 'skills/software-development/software-factory/SKILL.md'
+  const ROLES = 'skills/software-development/software-factory/references/roles.md'
+  REST.history = { entries: [
+    { id: 'chg00001', ts: NOW - 100, kind: 'apply', subsystem: 'skills', summary: "patch 'software-factory' SKILL.md",
+      files: [{ path: SKILL }, { path: ROLES }], undoable: true }
+  ], counts: { applied: 1, undoable: 1, total: 1 } }
+  REST.changes = { chg00001: { ok: true, files: [
+    { path: SKILL, state: 'ok', lines: [[' ', 'kept line'], ['-', 'old rule'], ['+', 'new rule']], lines_total: 3,
+      added: 1, removed: 1 },
+    { path: ROLES, state: 'gone' }
+  ] } }
+  const d = await mount('en', 'page')
+  await click(tab(d.hostEl, /Activity/), 60)
+  await click(d.hostEl.querySelector('.pa-act-row[data-entry="chg00001"]'), 80)
+  const card = actDetail(d.hostEl)
+  const diffs = [...(card?.querySelectorAll('.pa-change') || [])]
+  if (!d.order.includes('GET /history/changes?id=chg00001')) fail('changes: the Activity detail never asks what the record changed')
+  if (diffs.length !== 1 || diffs[0].querySelector('.pa-file-path')?.textContent !== 'software-factory/SKILL.md'
+    || !/new rule/.test(diffs[0].querySelector('.pa-dl[data-k="+"]')?.textContent || '')
+    || !/old rule/.test(diffs[0].querySelector('.pa-dl[data-k="-"]')?.textContent || '')) {
+    fail(`changes: a saved record does not show its own diff per file (${diffs.length} drawn)`)
+  }
+  if (!/software-factory\/references\/roles\.md.*no longer/.test(card?.textContent || '')) {
+    fail('changes: a file whose copies are gone is not named as such')
+  }
+  d.root.unmount()
+  d.hostEl.remove()
+  REST.history = null
+  REST.changes = null
 }
 
 if (problems.length) {
