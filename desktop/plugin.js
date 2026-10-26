@@ -760,7 +760,7 @@ const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 78, doneRow: 38, actRow: 58,
   actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76
 }
-const W = { list: 300, rail: 184 }
+const W = { list: 300, listMid: 260, rail: 184 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
 const TAG = {
@@ -1244,7 +1244,18 @@ const STYLE = `
   .pa-progress{flex-wrap:wrap;row-gap:6px}
   .pa-gms{flex-direction:column;align-items:stretch;gap:8px}
   .pa-gm>.pa-gm-bar{flex:1;width:auto}}
-@container (min-width:761px) and (max-width:1100px){.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}.pa-meter-box{flex:1}}
+@container (min-width:761px) and (max-width:1100px){.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}.pa-meter-box{flex:1}
+  .pa-split{grid-template-columns:${W.listMid}px minmax(0,1fr)}
+  .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
+  .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}
+  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;${THIN_SCROLL}}
+  .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:0}
+  .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
+  .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
+  .pa-memory .pa-memrows{flex-direction:row;gap:${G.xs}px;padding:${G.xs}px}
+  .pa-memory .pa-memrows>.pa-memrow{flex:1 1 0;min-width:0}
+  .pa-memory>.pa-detail>.pa-card{flex:none}
+  .pa-memory .pa-dbody{flex:none;overflow:visible}}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })

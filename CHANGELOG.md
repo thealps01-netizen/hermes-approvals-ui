@@ -16,6 +16,8 @@ and Activity and Memory drawn the same way.
   day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
   theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
   stays on top, as a card. Every colour still comes from the theme you picked.
+* **The rail fits a medium pane.** Between 761 and 1100 px the Memory files sit above the notes and the
+  check strip puts its buttons under the finding, so text no longer breaks one word a line beside the rail.
 * **Memory notes show how long they are.** Each note is shaded by its length against the longest
   one, the longest in the warning colour, with its size next to it, so you see which note to shorten first.
 * **All caught up shows your week.** A chart of the last seven days, saved and not saved, sits beside it.
