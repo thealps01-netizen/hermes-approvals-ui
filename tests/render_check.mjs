@@ -4895,6 +4895,17 @@ REST.scan = 'ok'
     '.pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}']) {
     const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
     if (!narrow.includes(rule)) fail(`rework 2 item 3: the narrow Memory tab lacks ${rule}`)
+    const mid = memCss.slice(memCss.indexOf('@container (min-width:761px) and (max-width:1100px)'))
+    if (!memCss.includes('@container (min-width:761px) and (max-width:1100px)') || !mid.split('\n@')[0].includes(rule)) {
+      fail(`vitality: beside the rail (761-1100 px) the Memory tab is not one scroll: it lacks ${rule}`)
+    }
+  }
+  {
+    const band = memCss.slice(memCss.indexOf('@container (min-width:761px) and (max-width:1100px)')).split('\n@')[0]
+    if (!band.includes('.pa-verdict{grid-template-columns:auto minmax(0,1fr)}')
+        || !band.includes('.pa-vside{grid-column:1 / -1;')) {
+      fail('vitality: beside the rail the verdict strip keeps three columns and squeezes the finding to one word a line')
+    }
   }
 
   // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the primary keeps the top

@@ -1595,6 +1595,13 @@ and are not built.
 * **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
   detail footer gives the meter its own line and puts Later and the actions under it, so the
   buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **The medium band (761-1100 px).** Beside the rail a pane of about 860 px left ~150 px for a
+  memory note and ~70 px for a failed check's finding, one word a line; the gates never saw it
+  because the frames are drawn at 1000, 640 and 420 px. In this band the list column is 260 px
+  (`W.listMid`), the Memory tab is the one scroll of the narrow pane (the two files side by side on
+  top, the notes full width below) and the verdict strip puts its side column under the text. The
+  owner rejected moving the rail breakpoint up instead: the rail is the point of the look. Measure
+  a layout change at `PA_WIDTH=860` too.
 * **Memory notes show their length.** Each note row is shaded from the left by its length against
   the longest note (`--pa-w`), the longest one in the warning tone, and says its size ("96
   characters"). On a nearly full file the note to shorten is visible at a glance; nothing is sorted
