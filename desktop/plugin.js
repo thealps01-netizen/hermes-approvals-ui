@@ -120,6 +120,12 @@ const BUNDLES = {
           + 'Nothing is written without you.',
         full: (word, pct) => `${word} is ${pct}% full — tidy it up before it runs out of room.`,
       },
+      week: {
+        title: 'This week',
+        label: (saved, notSaved) => `This week: ${saved} saved, ${notSaved} not saved`,
+        gap: 'Striped days are older than the history the panel keeps.',
+        day: d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d] || '',
+      },
       act: {
         canUndo: 'Can be undone',
         canRestore: 'Can be restored',
@@ -441,6 +447,7 @@ const BUNDLES = {
           + 'Needs you first.',
         files: 'Files',
         note: (i, len) => `Note ${i} · ${plural(len, 'character', 'characters')}`,
+        noteLength: len => plural(grouped(len), 'character', 'characters'),
       },
       chip: {
         duplicate: 'Not a duplicate',
@@ -743,16 +750,17 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const WARN = 'var(--ui-yellow)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
-const R = { tag: 4, box: 8, ctl: 6, file: 9, verdict: 10, pill: 999 }
+const R = { tag: 4, box: 8, ctl: 6, file: 9, verdict: 10, pill: 999, row: 12, card: 18, panel: 20, rail: 22 }
 const FS = {
-  micro: 12, meta: 12, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 11, detail: 17, empty: 15
+  micro: 12, meta: 12, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 11, detail: 17, empty: 15,
+  brand: 15, hero: 22
 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 78, doneRow: 38, actRow: 58,
-  actSub: 30, memRow: 72, day: 30
+  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76
 }
-const W = { list: 300 }
+const W = { list: 300, rail: 184 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
 const TAG = {
@@ -1043,14 +1051,18 @@ const STYLE = `
   border-left:3px solid ${WARN};background:var(--hx-field);font-size:${FS.meta}px;color:var(--ui-text-primary)}
 .pa-banner>span{flex:1 1 220px;min-width:0}
 .pa-notes{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden}
-.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;
-  border-bottom:${HAIRLINE}}
+.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:start;padding:10px 12px;
+  border-bottom:${HAIRLINE};--pa-shade:${tint('var(--ui-accent)', 9)};
+  background-image:linear-gradient(to right,var(--pa-shade) var(--pa-w,0%),transparent var(--pa-w,0%))}
+.pa-note-row[data-longest="1"]{--pa-shade:${tint(WARN, 16)}}
+.pa-note-len{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;
+  padding-top:2px}
 .pa-note-row:last-child{border-bottom:none}
 .pa-note-row[data-armed="1"]{background:var(--hx-field)}
 .pa-note-n{font-size:${FS.micro}px;color:var(--ui-text-secondary);text-align:right;padding-top:2px;
   font-variant-numeric:tabular-nums}
 .pa-note-text{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.pa-note-ask{grid-column:2 / 4;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px;font-size:${FS.meta}px;
+.pa-note-ask{grid-column:2 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px;font-size:${FS.meta}px;
   color:var(--ui-text-primary)}
 .pa-note-ask>span{flex:1 1 200px;min-width:0}
 .pa-sel-count{color:var(--ui-text-primary);font-weight:600;font-variant-numeric:tabular-nums}
@@ -1157,6 +1169,82 @@ const STYLE = `
 @container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
 @container (max-width:480px){.pa-bar .pa-progress{display:none}}
 .pa-bar:is([data-fit="1"],[data-fit="2"]) :is(.pa-pips,.pa-gm-bar),.pa-bar[data-fit="2"] .pa-progress{display:none}
+.pa-root{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);
+  padding:${G.sm}px;box-sizing:border-box;background:var(--pa-shell);
+  --pa-deep:oklch(from var(--ui-accent) min(l, .45) min(c, .15) h);
+  --pa-deep-2:oklch(from var(--ui-accent) min(l, .3) min(c, .1) h);
+  --pa-on-deep:oklch(from var(--ui-accent) .985 .012 h);--pa-surface:var(--ui-bg-elevated);
+  --pa-shell:color-mix(in oklab,var(--ui-accent) 5%,var(--ui-bg-chrome));
+  --pa-lift:0 1px 2px ${tint('var(--ui-text-primary)', 6)},0 18px 34px -24px ${tint('var(--ui-accent)', 38)}}
+.pa-root>.pa-bar{grid-column:1 / -1;grid-row:1;margin-bottom:${G.sm}px;border:0;border-radius:${R.card}px;
+  background:var(--pa-surface);box-shadow:var(--pa-lift)}
+.pa-root>.pa-strip{grid-column:1 / -1;grid-row:2;margin-bottom:${G.sm}px;border:0;border-radius:${R.panel}px;
+  background:var(--pa-surface);box-shadow:var(--pa-lift)}
+.pa-root>.pa-body{grid-column:1 / -1;grid-row:3;min-height:0}
+.pa-split{gap:${G.sm}px}
+.pa-list,.pa-detail{background:var(--pa-surface);border-radius:${R.panel}px;box-shadow:var(--pa-lift);overflow:hidden}
+.pa-list{border-right:0}
+.pa-tab>.pa-tag{margin-left:${G.xxs}px}
+.pa-root .pa-tab[data-on="1"]{background:var(--pa-deep);color:var(--pa-on-deep);box-shadow:none}
+.pa-tile{border-radius:9px}
+.pa-verdict{border-radius:${R.panel - 4}px}
+.pa-file,.pa-notes{border-radius:${R.box + 4}px}
+.pa-sum-text>.pa-row-title{white-space:normal;overflow:visible}
+.pa-clear{justify-content:flex-start;padding:${G.base}px;overflow-y:auto;${THIN_SCROLL}}
+.pa-hero{align-self:stretch;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:${G.lg}px;
+  align-items:center;padding:${G.lg}px;border-radius:${R.panel}px;text-align:left;color:var(--pa-on-deep);
+  background-color:var(--pa-deep-2);background-image:linear-gradient(145deg,var(--pa-deep),var(--pa-deep-2));
+  box-shadow:0 24px 44px -30px ${tint('var(--ui-accent)', 75)};margin-bottom:${G.sm}px}
+.pa-hero[data-week="0"]{grid-template-columns:minmax(0,1fr)}
+.pa-hero-lead{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.pa-hero .pa-clear-seal{color:var(--pa-on-deep);background:color-mix(in srgb,var(--pa-on-deep) 16%,transparent);
+  box-shadow:0 0 0 6px color-mix(in srgb,var(--pa-on-deep) 7%,transparent)}
+.pa-hero .pa-clear-title{color:var(--pa-on-deep);font-size:${FS.hero}px;letter-spacing:-.02em}
+.pa-hero .pa-clear-body{color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
+.pa-week{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
+.pa-week-title{font-size:${FS.meta}px;font-weight:600}
+.pa-week-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:${G.xs}px;height:${H.week}px}
+.pa-week-day{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;font-size:${FS.micro}px;
+  color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
+.pa-week-day[data-today="1"]{color:var(--pa-on-deep);font-weight:600}
+.pa-week-col{flex:1;width:100%;max-width:26px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;
+  border-radius:7px;background:color-mix(in srgb,var(--pa-on-deep) 10%,transparent);overflow:hidden}
+.pa-week-col>i{display:block;border-radius:5px;min-height:0}
+.pa-week-col>i[data-k="apply"]{background:var(--pa-on-deep)}
+.pa-week-col>i[data-k="rejected"]{background:color-mix(in srgb,var(--pa-on-deep) 45%,transparent)}
+.pa-week-day[data-gap="1"]>.pa-week-col{background:repeating-linear-gradient(135deg,
+  color-mix(in srgb,var(--pa-on-deep) 16%,transparent) 0 3px,transparent 3px 7px)}
+.pa-week-note{font-size:${FS.micro}px;color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
+@container (max-width:560px){
+  .pa-hero{grid-template-columns:minmax(0,1fr);gap:${G.base}px;padding:${G.base}px ${G.lg}px}
+  .pa-hero .pa-clear-seal{display:none}
+  .pa-week-bars{height:${H.weekNarrow}px}}
+@container (min-width:761px){
+  .pa-root>.pa-bar{grid-column:1;grid-row:1 / -1;width:${W.rail}px;margin:0 ${G.sm}px 0 0;display:flex;
+    flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:18px 10px 10px;border-radius:${R.rail}px;
+    color:var(--pa-on-deep);background-color:var(--pa-deep-2);
+    background-image:linear-gradient(165deg,var(--pa-deep),var(--pa-deep-2));
+    box-shadow:0 22px 40px -28px ${tint('var(--ui-accent)', 70)}}
+  .pa-root>.pa-strip,.pa-root>.pa-body{grid-column:2}
+  .pa-root>.pa-strip{grid-row:1}
+  .pa-root>.pa-body{grid-row:2 / -1}
+  .pa-bar-title{color:var(--pa-on-deep);font-size:${FS.brand}px;padding:0 10px;margin-bottom:18px}
+  .pa-bar-tabs{display:block}
+  .pa-tabs{flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:3px;background:transparent}
+  .pa-root .pa-tab{min-height:40px;padding:0 12px;border-radius:${R.row}px;font-size:${FS.row}px;
+    color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
+  .pa-root .pa-tab:hover{color:var(--pa-on-deep);background:color-mix(in srgb,var(--pa-on-deep) 12%,transparent)}
+  .pa-root .pa-tab[data-on="1"]{background:var(--pa-surface);color:var(--ui-text-primary);font-weight:600;
+    box-shadow:0 10px 22px -14px var(--pa-deep-2)}
+  .pa-tab>.pa-tag{margin-left:auto}
+  .pa-root .pa-tab:focus-visible{outline-color:var(--pa-on-deep)}
+  .pa-bar-side{margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+    gap:10px 8px;padding:12px;border-radius:${R.panel - 4}px;background:var(--pa-surface)}
+  .pa-bar-side>.pa-progress,.pa-bar-side>.pa-gms{grid-column:1 / -1}
+  .pa-progress{flex-wrap:wrap;row-gap:6px}
+  .pa-gms{flex-direction:column;align-items:stretch;gap:8px}
+  .pa-gm>.pa-gm-bar{flex:1;width:auto}}
+@container (min-width:761px) and (max-width:1100px){.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}.pa-meter-box{flex:1}}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -1259,6 +1347,11 @@ const barSpills = bar => [...bar.querySelectorAll('*')].some(el => el.clientWidt
   && el.scrollWidth > el.clientWidth + 1 && window.getComputedStyle(el).overflowX === 'visible')
 
 function fitBar(bar) {
+  const list = bar.querySelector('[role="tablist"]')
+  if (list) {
+    const down = window.getComputedStyle(list).flexDirection === 'column'
+    list.setAttribute('aria-orientation', down ? 'vertical' : 'horizontal')
+  }
   for (let step = 0; step <= BAR_STEPS; step++) {
     bar.setAttribute('data-fit', String(step))
     if (!barSpills(bar)) return
@@ -1318,7 +1411,7 @@ function Field({ label: title, children }) {
 
 const TONE_COLOR = { ok: 'var(--ui-green)', warn: WARN, bad: 'var(--ui-red)', off: 'var(--ui-text-tertiary)' }
 const pendingBadge = n => jsx(Badge, {
-  className: 'pa-tag', style: { ...TAG, marginLeft: G.xxs }, variant: 'default', children: String(n)
+  className: 'pa-tag', style: TAG, variant: 'solid', children: String(n)
 }, 'badge')
 
 const errText = e => {
@@ -1441,7 +1534,8 @@ function Tabs({ label: name, items, value, onSelect, idBase, listClass = 'pa-tab
   const keys = items.map(item => item.id)
   const onKeyDown = e => {
     const at = keys.indexOf(value)
-    const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: keys.length - 1 }[e.key]
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+    const next = step ? at + step : { Home: 0, End: keys.length - 1 }[e.key]
     if (next === undefined) return
     e.preventDefault()
     const id = keys[(next + keys.length) % keys.length]
@@ -1451,6 +1545,7 @@ function Tabs({ label: name, items, value, onSelect, idBase, listClass = 'pa-tab
   return jsx('div', {
     role: 'tablist',
     'aria-label': name,
+    'aria-orientation': listClass === 'pa-tabs' ? undefined : 'vertical',
     className: listClass,
     style: listClass === 'pa-tabs' ? { overflowX: 'auto', flex: '1 1 auto' } : undefined,
     onKeyDown,
@@ -1931,6 +2026,48 @@ const ago = (t, ts) => {
     v /= step
   }
   return ''
+}
+const weekSeries = (entries, now, cut) => {
+  const base = new Date(now * 1000)
+  const at = k => new Date(base.getFullYear(), base.getMonth(), base.getDate() + k).getTime() / 1000
+  const oldest = Math.min(...entries.map(e => Number(e.ts) || Infinity))
+  return Array.from({ length: 7 }, (_, i) => {
+    const from = at(i - 6)
+    const to = at(i - 5)
+    const mine = entries.filter(e => e.ts >= from && e.ts < to)
+    return {
+      day: new Date(from * 1000).getDay(), today: i === 6, gap: Boolean(cut) && from <= oldest,
+      saved: mine.filter(e => e.kind === 'apply').length, notSaved: mine.filter(e => e.kind === 'rejected').length
+    }
+  })
+}
+function WeekChart({ t, entries, cut }) {
+  const days = weekSeries(entries, Date.now() / 1000, cut)
+  const top = Math.max(1, ...days.map(d => d.saved + d.notSaved))
+  const sum = k => days.reduce((n, d) => n + (d.gap ? 0 : d[k]), 0)
+  return jsxs('div', {
+    className: 'pa-week',
+    children: [
+      jsx('div', { className: 'pa-week-title', children: t('pa.week.title') }, 'title'),
+      jsx('div', {
+        className: 'pa-week-bars', role: 'img', 'aria-label': t('pa.week.label', sum('saved'), sum('notSaved')),
+        children: days.map((d, i) => jsxs('div', {
+          className: 'pa-week-day', 'data-gap': d.gap ? '1' : '0', 'data-today': d.today ? '1' : '0',
+          children: [
+            jsx('div', {
+              className: 'pa-week-col',
+              children: d.gap ? null : [
+                jsx('i', { 'data-k': 'rejected', style: { height: `${(d.notSaved * 100) / top}%` } }, 'no'),
+                jsx('i', { 'data-k': 'apply', style: { height: `${(d.saved * 100) / top}%` } }, 'yes')
+              ]
+            }, 'col'),
+            jsx('span', { 'aria-hidden': true, children: t('pa.week.day', d.day) }, 'name')
+          ]
+        }, i))
+      }, 'bars'),
+      days.some(d => d.gap) ? jsx('div', { className: 'pa-week-note', children: t('pa.week.gap') }, 'gap') : null
+    ]
+  }, 'week')
 }
 const decidedToday = entries => entries
   .filter(e => (e.kind === 'apply' || e.kind === 'rejected') && dayKey(e.ts) === dayKey(Date.now() / 1000))
@@ -2585,10 +2722,10 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           steps
         ]
       }, 'text'),
-      toggle || (fit && canAgain)
+      toggle || canAgain
         ? jsxs('div', {
             className: 'pa-vside',
-            children: [toggle, fit && canAgain ? againButton : null]
+            children: [toggle, canAgain ? againButton : null]
           }, 'side')
         : null
     ]
@@ -2784,14 +2921,22 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       return [pickAs ? asIs('default', a)
         : heldButton(busy, t, 'fix', labelPrimary, 'default', false, '', onPrimary, a)]
     }
-    if (twoWays) return [pickAs ? asIs('default', a) : fixed('default', a)]
-    if (edits > 0) {
-      const pair = [asIs(asIsVariant, hot === 'primary' ? a : ''), fixed(fixedVariant, hot === 'fixed' ? a : '')]
-      return hot === 'fixed' ? pair : pair.reverse()
+    const asIsHeld = isFix || approveBlocked
+    const fixedHeld = fixBlocked && !fixUnreviewed
+    if (twoWays && !(canSkip && (pickAs ? asIsHeld : fixedHeld))) {
+      return [pickAs ? asIs('default', a) : fixed('default', a)]
     }
+    if (edits > 0) {
+      const pair = [[asIsHeld, k => asIs(asIsVariant, k)], [fixedHeld, k => fixed(fixedVariant, k)]]
+      const live = (hot === 'fixed' ? pair : pair.reverse()).filter(([held]) => !(canSkip && held))
+      return live.map(([, draw], i) => draw(i === live.length - 1 ? a : ''))
+    }
+    if (canSkip && approveBlocked) return []
     return [heldButton(busy, t, 'approve', labelPrimary, tone('default'), approveBlocked, heldWhy,
       guard('approve', () => decide('approve')), a)]
   }
+  const primaries = primaryButtons()
+  const skipHot = canSkip && !advised && !primaries.length
   const typeWord = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
   const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
   const crumbFile = subsystem === 'memory' && isProfile(kindTarget) ? [t('pa.kpi.profileLabel')] : []
@@ -2895,11 +3040,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
             ]
           }, 'actions')
         ] : [
-          fit || canAgain
-            ? jsx('div', {
-                className: 'pa-dfoot-left', children: fit ? jsx(Meter, { fit }, 'meter') : againButton
-              }, 'left')
-            : null,
+          fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit }, 'meter') }, 'left') : null,
           onLater
             ? jsx(Button, {
                 variant: 'text', size: 'sm', className: 'pa-later', disabled: leaving,
@@ -2913,7 +3054,11 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 ? jsx(Button, {
                     variant: 'outline', size: 'sm',
                     disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
-                    onClick: () => setSkipArmed(true), children: t('pa.btn.skipReview')
+                    'aria-keyshortcuts': skipHot ? 'A' : undefined,
+                    onClick: () => setSkipArmed(true),
+                    children: skipHot
+                      ? [t('pa.btn.skipReview'), kbd(t('pa.key.a'), 'pa-btn-kbd')]
+                      : t('pa.btn.skipReview')
                   }, 'skip')
                 : null,
               jsxs(Button, {
@@ -2926,7 +3071,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 onClick: () => void decide('reject'),
                 children: [labelDecline, kbd(t('pa.key.x'), 'pa-btn-kbd')]
               }, 'reject'),
-              ...primaryButtons()
+              ...primaries
             ]
           }, 'actions')
         ]
@@ -3186,7 +3331,7 @@ function useQueue(list) {
   return { order: resolved, later }
 }
 
-function AllClear({ t, entries, onChanged, mem, onOpen }) {
+function AllClear({ t, entries, cut, onChanged, mem, onOpen }) {
   const [busy, setBusy] = useState(false)
   const n = decidedToday(entries).length
   const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
@@ -3200,14 +3345,26 @@ function AllClear({ t, entries, onChanged, mem, onOpen }) {
     className: 'pa-clear',
     role: 'status',
     children: [
-      jsx('div', { className: 'pa-clear-seal', 'aria-hidden': true, children: icon(CheckIcon, 24) }, 'seal'),
-      jsx('div', {
-        className: 'pa-clear-title', children: t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
-      }, 'title'),
-      jsx('div', {
-        className: 'pa-clear-body',
-        children: first ? t('pa.clear.firstBody') : n ? t('pa.clear.decided', n) : t('pa.clear.none')
-      }, 'body'),
+      jsxs('div', {
+        className: 'pa-hero',
+        'data-week': first ? '0' : '1',
+        children: [
+          jsxs('div', {
+            className: 'pa-hero-lead',
+            children: [
+              jsx('div', { className: 'pa-clear-seal', 'aria-hidden': true, children: icon(CheckIcon, 24) }, 'seal'),
+              jsx('div', {
+                className: 'pa-clear-title', children: t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
+              }, 'title'),
+              jsx('div', {
+                className: 'pa-clear-body',
+                children: first ? t('pa.clear.firstBody') : n ? t('pa.clear.decided', n) : t('pa.clear.none')
+              }, 'body')
+            ]
+          }, 'lead'),
+          first ? null : jsx(WeekChart, { t, entries, cut }, 'week')
+        ]
+      }, 'hero'),
       n ? jsx(DayProgress, { entries, n: 0, compact: true }, 'pips') : null,
       last
         ? jsxs('div', {
@@ -3384,13 +3541,15 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingPending') }, 'loading')
   const entries = hist?.data?.entries || []
+  const cut = (Number(hist?.data?.counts?.total) || 0) > entries.length
   if (!keys.length) {
     return jsx('div', {
       ref: rootAt,
       className: 'pa-split pa-split-clear',
       'data-open': '1',
       children: jsx('div', {
-        className: 'pa-detail pa-cell', 'data-key': '', children: jsx(AllClear, { t, entries, onChanged, mem, onOpen }, 'empty')
+        className: 'pa-detail pa-cell', 'data-key': '',
+        children: jsx(AllClear, { t, entries, cut, onChanged, mem, onOpen }, 'empty')
       }, 'detail')
     }, 'split')
   }
@@ -3474,7 +3633,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
           onLater: () => later(selKey), onBack: back,
           back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, keys.length) }
         }, selKey)
-      : jsx(AllClear, { t, entries, onChanged, mem, onOpen }, 'empty')
+      : jsx(AllClear, { t, entries, cut, onChanged, mem, onOpen }, 'empty')
   }, 'detail')
   return jsxs('div', {
     ref: rootAt,
@@ -4048,6 +4207,10 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const store = data?.[target]
   const pct = store ? fill(store).pct : 0
   const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
+  const lengths = (store?.entries || []).map(entry => entry.length)
+  const longest = Math.max(1, ...lengths)
+  const alone = lengths.length > 1 && lengths.filter(n => n === longest).length === 1
+  const longestAt = alone ? lengths.indexOf(longest) : -1
   const draftMerge = async () => {
     let placed = false
     try {
@@ -4166,9 +4329,15 @@ function MemoryView({ data, error, refresh, onChanged }) {
                       children: store.entries.map((entry, i) => jsxs('div', {
                         className: 'pa-note-row',
                         'data-armed': armed(i, entry) ? '1' : '0',
+                        'data-longest': i === longestAt ? '1' : '0',
+                        style: { '--pa-w': `${Math.max(4, Math.round((entry.length * 100) / longest))}%` },
                         children: [
                           jsx('span', { className: 'pa-note-n', children: String(i + 1) }, 'n'),
                           jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
+                          armed(i, entry)
+                            ? null
+                            : jsx('span', { className: 'pa-note-len', children: t('pa.memory.noteLength', entry.length) },
+                              'len'),
                           armed(i, entry)
                             ? null
                             : jsx(Tip, {
@@ -4285,10 +4454,7 @@ function Pane() {
     role: 'region',
     'aria-label': t('pa.pane.title'),
     'data-still': still ? '1' : '0',
-    style: {
-      display: 'flex', height: '100%', minHeight: 0, flexDirection: 'column',
-      background: 'transparent', color: 'var(--ui-text-primary)'
-    },
+    style: { height: '100%', minHeight: 0, color: 'var(--ui-text-primary)' },
     children: [
       jsx('style', { children: STYLE }, 'css'),
       jsxs('div', {

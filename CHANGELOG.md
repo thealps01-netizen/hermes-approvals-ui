@@ -12,6 +12,17 @@ and Activity and Memory drawn the same way.
 
 ### Changed
 
+* **A new look: a rail on the left and cards on a tinted ground.** In a wide pane the tabs, the
+  day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
+  theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
+  stays on top, as a card. Every colour still comes from the theme you picked.
+* **Memory notes show how long they are.** Each note is shaded by its length against the longest
+  one, the longest in the warning colour, with its size next to it, so you see which note to shorten first.
+* **All caught up shows your week.** A chart of the last seven days, saved and not saved, sits beside it.
+  Days older than the history the panel keeps are striped instead of shown as empty.
+* **No greyed-out Save when nothing will review the write.** With no reviewer model set, or after a
+  check failed, "Save without review" is the save (A works on it). "Review again" moved next to the
+  message that the check failed.
 * **List rows are small cards.** In Needs you and Activity every row is its own rounded card on the
   Hermes theme's own surface. Every colour on a card comes from the theme you picked: skills take its
   accent, memory notes its violet, Profile notes its teal. The selected card is outlined.
