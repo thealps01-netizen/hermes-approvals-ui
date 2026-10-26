@@ -1595,6 +1595,18 @@ and are not built.
 * **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
   detail footer gives the meter its own line and puts Later and the actions under it, so the
   buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **Room in the medium band (owner: "iç kısım çok yer kaplıyor yazılar dar geliyor").** Beside the rail
+  the detail card is ~420 px; the boxed verdict (20 px card padding + 14 px box padding + 34 px seal + 12 px
+  gap) left the finding ~250 px. In 761-1100 px: `.pa-verdict` is flat (no border, hairline under it, no
+  seal; `.pa-vtitle::before` carries the tone as a dot), `.pa-dh/.pa-dbody/.pa-dfoot` pad 14 px, list
+  tiles and select boxes are 22 px, and the selection summary puts its chip under the text (it clipped
+  "Memory · MEMORY.md · +2 −1" at 820 px). render_check 13e9 holds it.
+* **One fill (owner: inner boxes the outer boxes' colour).** In a grey-accent theme every tinted inner
+  box read as a different material. `.pa-verdict`, `.pa-file-head`, `.pa-review`, `.pa-done` and the
+  rail's `.pa-bar-side` are transparent and keep a hairline (border or inset ring); render_check 13f0
+  holds both halves. Kept on purpose: diff add/remove lines, warning callouts, selections (row ring,
+  active tab, active memory file), the armed-delete row and the running-review shimmer - each colour
+  there is a state, not a surface.
 * **Live-screen pass (after 5bb87a4).** Seen in the owner's app, not in the preview: (1) the 2 px note
   meter sat on the row hairline and read as a broken divider, so the note row has no background at
   all and only the longest note's count is marked (dot + weight); (2) beside a 260 px list the time

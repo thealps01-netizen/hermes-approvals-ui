@@ -16,6 +16,14 @@ and Activity and Memory drawn the same way.
   day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
   theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
   stays on top, as a card. Every colour still comes from the theme you picked.
+* **More room for the words beside the side menu.** When the panel is of medium width, the check is a
+  plain section under a line instead of a box with a large round icon (a coloured dot before the title
+  keeps its meaning), the record has less padding at the sides, and the icons in the list are smaller.
+  The finding and the change text now run about a third wider; the list names show more letters.
+* **Inner boxes match their card.** The check box, the file headers above a change, the review box,
+  the saved / not-saved box in Activity and the Today box at the foot of the side menu no longer paint
+  their own shade; they are the colour of the card they sit in, set apart by a thin line. Colour stays
+  only where it means something: added and removed lines, warnings and the selected item.
 * **Fixes seen on the real screen.** List rows give the name the whole first line and move the time to
   the line below, so names no longer cut to a few letters ("software…"). The slim top card shows only
   words; its seven unlabeled bars are gone (the full card keeps the week chart). Memory notes lose the

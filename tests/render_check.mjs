@@ -2387,6 +2387,34 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   REST.history = null
 }
 
+// --- 13e9) the medium band gives the words the width: a flat check, small tiles, chips under the text --------
+{
+  const css = en.hostEl.querySelector('style')?.textContent || ''
+  const band = css.split('@container (min-width:761px) and (max-width:1100px){')[1]?.split('\n}')[0] || ''
+  const miss = [
+    [/\.pa-verdict\{grid-template-columns:minmax\(0,1fr\);[^}]*border:0/, 'the check is a boxed card with a seal column'],
+    [/\.pa-verdict>\.pa-seal\{display:none\}/, 'the 34 px seal keeps its own column'],
+    [/\.pa-vtitle::before\{[^}]*background:var\(--pa-tone\)/, 'the verdict tone is lost with the seal'],
+    [/\.pa-dbody\{padding:12px 14px\}/, 'the record keeps its 20 px side padding'],
+    [/\.pa-root \.pa-row\{grid-template-columns:22px /, 'the list rows keep the 28 px tile column'],
+    [/\.pa-cb\{left:10px;top:8px;width:22px;height:22px\}/, 'the select box stays 28 px and covers the title'],
+    [/\.pa-sum-row>\.pa-sum-chip\{grid-column:2\}/, 'the selection summary keeps its status chip beside the title'],
+  ].filter(([re]) => !re.test(band)).map(([, why]) => why)
+  if (miss.length) fail(`medium band: the words are squeezed: ${miss.join('; ')}`)
+}
+
+// --- 13f0) one fill: a neutral box inside a card is the card's own colour, set apart by a hairline only -------
+{
+  const css = en.hostEl.querySelector('style')?.textContent || ''
+  const own = sel => [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(m => m[1].split(',').some(x => x.trim() === sel)).map(m => m[2]).join(';')
+  const boxes = ['.pa-verdict', '.pa-file-head', '.pa-review', '.pa-done', '.pa-done[data-k="reject"]', '.pa-bar-side']
+  const filled = boxes.filter(b => /background(?:-color|-image)?:(?!transparent|none)/.test(own(b)))
+  if (filled.length) fail(`one fill: inner boxes paint their own fill instead of the card’s: ${filled.join(' ')}`)
+  const ringed = ['.pa-verdict', '.pa-review', '.pa-done', '.pa-bar-side'].filter(b => !/border:|box-shadow:inset/.test(own(b)))
+  if (ringed.length) fail(`one fill: inner boxes lost the hairline that sets them apart: ${ringed.join(' ')}`)
+}
+
 // --- 13f1) one button system: every action is a kit button at the sm size; callouts and selections carry no bar --
 {
   const css = en.hostEl.querySelector('style')?.textContent || ''
@@ -4959,7 +4987,7 @@ REST.scan = 'ok'
   }
   {
     const band = memCss.slice(memCss.indexOf('@container (min-width:761px) and (max-width:1100px)')).split('\n@')[0]
-    if (!band.includes('.pa-verdict{grid-template-columns:auto minmax(0,1fr)}')
+    if (!/\.pa-verdict\{grid-template-columns:(?:auto )?minmax\(0,1fr\)[;}]/.test(band)
         || !band.includes('.pa-vside{grid-column:1 / -1;')) {
       fail('vitality: beside the rail the verdict strip keeps three columns and squeezes the finding to one word a line')
     }
