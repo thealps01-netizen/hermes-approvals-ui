@@ -16,6 +16,16 @@ and Activity and Memory drawn the same way.
   day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
   theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
   stays on top, as a card. Every colour still comes from the theme you picked.
+* **One button system.** Every action is the same kit button size (the small "xs" ones are gone);
+  "Review again" is a real button next to "With the fix / As written" instead of grey text; "Later"
+  shows its key L like "Don't save" (X) and "Save" (A), so the list footer keeps only J/K and no longer
+  wraps. Alerts are a tinted box instead of a coloured left bar, the chosen Memory file is ringed like a
+  chosen record, a note's length is a thin line under it, the slim week chart has no empty capsules, and
+  the record text fades under the check card instead of being cut mid-line.
+* **One material in every theme.** The rail and the top card are now the same cards as the list and the
+  record, tinted by the accent, on a slightly darker ground. With a grey accent (Mono) they used to be bright
+  grey slabs beside near-black content. The week bars carry the accent, and the Last line and the memory
+  warning sit inside the top card instead of floating under it.
 * **The top card stays on every tab.** The dark card with the week chart now sits above Needs you,
   Activity and Memory. While records wait it says how many ("3 waiting for you") instead of "All caught
   up" and shrinks to one slim line; it is hidden while Needs you could not be read, and in a 420 px pane

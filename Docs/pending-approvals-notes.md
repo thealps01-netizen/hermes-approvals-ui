@@ -1595,6 +1595,23 @@ and are not built.
 * **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
   detail footer gives the meter its own line and puts Later and the actions under it, so the
   buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **One button system (owner: "butonlar olmamış").** Kit buttons stay unstyled (AGENTS.md), so the
+  fix is in variant/size and placement: every action is `sm` (render_check counts `size: 'xs'` - only
+  the Alerts switch may use it); Review again is `outline`, beside the fix toggle in the verdict's side
+  column (one row in the 761-1100 px band); each decision button carries its key chip, so the list
+  legend keeps only J/K (four hints wrapped at 260 px). The craft floor bans a coloured left bar, so
+  `.pa-banner`/`.pa-alert` are a 9 % tone fill with a 30 % tone ring (`--pa-ct`), and the memory file
+  selection is the list row's accent ring. The note length is a 2 px meter at the row's foot (the
+  shaded block read as a broken background). The slim top card's week has no tracks, one baseline.
+  `.pa-dbody` masks its first 16 px so a scrolled line fades under the verdict. The narrow footer keeps
+  Later on the second row (rework 2 item 4).
+* **One material (the accent no longer sets the lightness).** The rail and hero were
+  `oklch(from accent min(l,.45) …)`: a deep blue for a coloured accent, but a grey accent (the Mono
+  swatch, white on dark) gave mid-grey slabs brighter than the near-black content cards, and the
+  ground was as dark as the cards. Now `--pa-deep` is 10 % accent over `--pa-surface`, the ink is
+  `--ui-text-primary`, the ground `--pa-shell` sits .045 below the elevated surface, and every card
+  carries a stroke ring in `--pa-lift` (shadows vanish on dark). Measure a look change with a grey
+  accent too: override `--theme-midground`/`--theme-primary` with `#ffffff` in the dark page.
 * **The top card on every tab.** The owner wanted the hero above every tab, not only in an empty
   Needs you. `TopCard` is drawn by the root between the notice strip and the body (its own grid row)
   and only once both the history and the pending list have loaded: before that the count is unknown,
