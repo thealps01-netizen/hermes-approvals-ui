@@ -987,7 +987,7 @@ for (const key of ['skills:def67890', 'skills:aaa11111']) {
 await toFront(en.hostEl, 'memory:abc12345')
 must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Save failed',
   'Needs one edit', 'Safe to save', 'new-skill', 'Save skill', 'Show the full review', 'MEMORY.md', 'Waiting · 3',
-  'move', 'save', 'don’t save'], 'en')
+  'move', 'Later'], 'en')
 noRawKeys(sweepText, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
 const locales = stub.calls.registered[stub.calls.registered.length - 1].locales
@@ -1800,9 +1800,11 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (!/@container \(min-width:761px\)\{\s*\.pa-root>\.pa-bar\{grid-column:1;grid-row:1 \/ -1;width:184px/.test(shell)) {
     fail('vitality: a wide pane does not turn the bar into the left rail (184px, full height)')
   }
-  if (!/--pa-deep:oklch\(from var\(--ui-accent\) min\(l, \.45\)/.test(shell)
-      || !/--pa-on-deep:oklch\(from var\(--ui-accent\) \.985/.test(shell)) {
-    fail('vitality: the rail colours are not derived from the theme accent (dark shade + light ink)')
+  if (!/--pa-deep:color-mix\(in oklab,var\(--ui-accent\) \d+%,var\(--pa-surface\)\)/.test(shell)
+      || !/--pa-on-deep:var\(--ui-text-primary\)/.test(shell)
+      || !/--pa-shell:[^;]*oklch\(from var\(--ui-bg-elevated\) calc\(l - \.\d+\)/.test(shell)) {
+    fail('vitality: the rail and top card are not the content cards’ surface tinted by the accent over a darker'
+      + ' shell (a grey accent turned them into grey slabs)')
   }
   if (!/\.pa-list,\.pa-detail\{background:var\(--pa-surface\);border-radius:20px;box-shadow:var\(--pa-lift\)/.test(shell)) {
     fail('vitality: the list and the detail are not separate cards on the panel ground')
@@ -2384,6 +2386,31 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   }
   REST.pending = null
   REST.history = null
+}
+
+// --- 13f1) one button system: every action is a kit button at the sm size; callouts and selections carry no bar --
+{
+  const css = en.hostEl.querySelector('style')?.textContent || ''
+  const sizes = new Set()
+  for (const view of [/^Needs you/, /^Activity/, /^Memory/]) {
+    await click(tab(en.hostEl, view), 60)
+    for (const b of en.hostEl.querySelectorAll('.pa-pane [data-slot="button"]')) sizes.add(b.getAttribute('data-size'))
+  }
+  await click(tab(en.hostEl, /^Needs you/), 60)
+  const xs = [...src.matchAll(/size: 'xs'/g)].length
+  if (xs !== 1) fail(`buttons: ${xs - 1} action buttons are drawn at xs (only the Alerts switch is xs)`)
+  const odd = [...sizes].filter(z => !['sm', 'inline', 'icon-xs', 'micro'].includes(z))
+  if (odd.length) fail(`buttons: action buttons come in sizes besides sm: ${JSON.stringify(odd)}`)
+  const again = en.hostEl.querySelector('.pa-verdict .pa-again')
+  if (again && again.getAttribute('data-variant') !== 'outline') fail('buttons: Review again reads as grey text, not a button')
+  if (/border-left:\d+px solid (?!var\(--ui-stroke)/.test(css)) fail('callouts: a coloured left bar marks an alert (a tinted fill and ring instead)')
+  if (/\.pa-memrow\[data-on="1"\]::before/.test(css)) fail('memory: the selected file is marked by a bar, not the row ring')
+  if (!/\.pa-note-row\{[^}]*left bottom \/ var\(--pa-w,0%\) 2px no-repeat/.test(css)) {
+    fail('memory: a note’s length is a shaded block behind the text, not a thin meter under it')
+  }
+  if (!/\.pa-top\[data-slim="1"\] \.pa-week-col\{[^}]*background:none/.test(css)) {
+    fail('top card: the slim week draws empty capsules (they read as loading placeholders)')
+  }
 }
 
 // --- 13f2) the top card while records wait: it names the count, never "All caught up", on every tab ----------
@@ -5167,8 +5194,12 @@ REST.scan = 'ok'
   }
   const added = [...(detail?.querySelectorAll('.pa-dl[data-k="+"]') || [])].map(d => d.textContent)
   if (!added.some(x => x.includes('• a listed note'))) fail(`real data: a listed note reads "+ -": ${added.join(' | ')}`)
-  if (!/later/.test(n.hostEl.querySelector('.pa-split .pa-legend')?.textContent || '')) {
-    fail('real data: the key legend leaves out L (later)')
+  const later = n.hostEl.querySelector('.pa-dfoot .pa-later')
+  if (later?.getAttribute('aria-keyshortcuts') !== 'L' || later.querySelector('.pa-btn-kbd')?.textContent !== 'L') {
+    fail('real data: Later does not show its key L like Don’t save (X) and Save (A)')
+  }
+  if (/save/i.test(n.hostEl.querySelector('.pa-split .pa-legend')?.textContent || '')) {
+    fail('real data: the list legend repeats the keys the buttons already show (it wrapped to two lines)')
   }
   const css = n.hostEl.querySelector('style')?.textContent || ''
   const tiny = [...css.matchAll(/([^{}]+)\{[^}]*?font-size:(\d+(?:\.\d+)?)px/g)]

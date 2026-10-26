@@ -101,9 +101,6 @@ const BUNDLES = {
       },
       legend: {
         move: 'move',
-        approve: 'save',
-        reject: 'don’t save',
-        later: 'later',
         pick: 'select',
         done: 'done',
       },
@@ -959,7 +956,7 @@ const STYLE = `
   color:var(--ui-text-secondary);text-align:right;min-width:0}
 .pa-toggle{display:flex;padding:2px;border-radius:7px;background:var(--hx-field);gap:2px}
 .pa-dbody{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 20px;display:flex;flex-direction:column;
-  gap:10px;${THIN_SCROLL}}
+  gap:10px;${THIN_SCROLL};mask-image:linear-gradient(to bottom,transparent 0,var(--pa-surface) ${G.base}px)}
 .pa-dbody>*{flex:none}
 .pa-file{border:${HAIRLINE};border-radius:${R.file}px;overflow:hidden;min-width:0}
 .pa-file-head{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:${FS.meta}px;
@@ -1039,9 +1036,8 @@ const STYLE = `
   border-bottom:1px solid ${tint('var(--ui-stroke-tertiary)', 55)};background:transparent;font:inherit;color:inherit;
   text-align:left;cursor:pointer;position:relative;box-sizing:border-box;flex:none;min-width:0}
 .pa-root .pa-memrow:hover{background:var(--hx-field)}
-.pa-root .pa-memrow[data-on="1"]{background:var(--ui-row-active-background)}
-.pa-root .pa-memrow[data-on="1"]::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;
-  background:var(--ui-accent)}
+.pa-root .pa-memrow[data-on="1"]{background:var(--ui-row-active-background);border-radius:${R.row}px;
+  box-shadow:inset 0 0 0 1px var(--ui-accent)}
 .pa-memrow-top{display:flex;align-items:baseline;gap:8px;font-size:${FS.row}px;font-weight:600;color:var(--ui-text-primary)}
 .pa-memrow-top>b{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pa-memrow-top>b[data-full]::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;
@@ -1049,13 +1045,15 @@ const STYLE = `
 .pa-memrow-sub{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:8px 12px;border-radius:${R.box}px;
-  border-left:3px solid ${WARN};background:var(--hx-field);font-size:${FS.meta}px;color:var(--ui-text-primary)}
+  --pa-ct:${WARN};background:color-mix(in srgb,var(--pa-ct) 9%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pa-ct) 30%,transparent);font-size:${FS.meta}px;
+  color:var(--ui-text-primary)}
 .pa-banner>span{flex:1 1 220px;min-width:0}
 .pa-notes{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden}
 .pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:start;padding:10px 12px;
-  border-bottom:${HAIRLINE};--pa-shade:${tint('var(--ui-accent)', 9)};
-  background-image:linear-gradient(to right,var(--pa-shade) var(--pa-w,0%),transparent var(--pa-w,0%))}
-.pa-note-row[data-longest="1"]{--pa-shade:${tint(WARN, 16)}}
+  border-bottom:${HAIRLINE};--pa-shade:${tint('var(--ui-accent)', 45)};
+  background:linear-gradient(var(--pa-shade),var(--pa-shade)) left bottom / var(--pa-w,0%) 2px no-repeat}
+.pa-note-row[data-longest="1"]{--pa-shade:${tint(WARN, 70)}}
 .pa-note-len{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;
   padding-top:2px}
 .pa-note-row:last-child{border-bottom:none}
@@ -1121,11 +1119,12 @@ const STYLE = `
 .pa-ln-mark{flex:none;width:10px;opacity:.7;user-select:none}
 .pa-ln-text{min-width:0;flex:1}
 .pa-note{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
-.pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:8px;
-  background:var(--hx-field);border-left:3px solid ${WARN};padding:8px 12px}
+.pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:${R.box}px;--pa-ct:${WARN};
+  background:color-mix(in srgb,var(--pa-ct) 9%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pa-ct) 30%,transparent);padding:8px 12px}
 .pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
 .pa-stale>span{flex:1 1 220px;min-width:0}
-.pa-alert-danger{border-left-color:var(--ui-red)}
+.pa-alert-danger{--pa-ct:var(--ui-red)}
 .pa-scroll{${THIN_SCROLL}}
 .pa-pane ::-webkit-scrollbar{width:8px;height:8px}
 .pa-pane ::-webkit-scrollbar-track{background:transparent}
@@ -1166,17 +1165,18 @@ const STYLE = `
   .pa-meter-box{flex:1 1 100%;min-width:0}
   .pa-btn-kbd{display:none}
   .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
-  .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}}
+  .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}}
 @container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
 @container (max-width:480px){.pa-bar .pa-progress{display:none}}
 .pa-bar:is([data-fit="1"],[data-fit="2"]) :is(.pa-pips,.pa-gm-bar),.pa-bar[data-fit="2"] .pa-progress{display:none}
 .pa-root{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);
   padding:${G.sm}px;box-sizing:border-box;background:var(--pa-shell);
-  --pa-deep:oklch(from var(--ui-accent) min(l, .45) min(c, .15) h);
-  --pa-deep-2:oklch(from var(--ui-accent) min(l, .3) min(c, .1) h);
-  --pa-on-deep:oklch(from var(--ui-accent) .985 .012 h);--pa-surface:var(--ui-bg-elevated);
-  --pa-shell:color-mix(in oklab,var(--ui-accent) 5%,var(--ui-bg-chrome));
-  --pa-lift:0 1px 2px ${tint('var(--ui-text-primary)', 6)},0 18px 34px -24px ${tint('var(--ui-accent)', 38)}}
+  --pa-surface:var(--ui-bg-elevated);
+  --pa-deep:color-mix(in oklab,var(--ui-accent) 10%,var(--pa-surface));--pa-deep-2:var(--pa-surface);
+  --pa-on-deep:var(--ui-text-primary);
+  --pa-shell:color-mix(in oklab,var(--ui-accent) 3%,oklch(from var(--ui-bg-elevated) calc(l - .045) c h));
+  --pa-lift:0 0 0 1px var(--ui-stroke-quaternary),0 1px 2px ${tint('var(--ui-text-primary)', 6)},
+    0 18px 34px -24px ${tint('var(--ui-text-primary)', 30)}}
 .pa-root>.pa-bar{grid-column:1 / -1;grid-row:1;margin-bottom:${G.sm}px;border:0;border-radius:${R.card}px;
   background:var(--pa-surface);box-shadow:var(--pa-lift)}
 .pa-root>.pa-strip{grid-column:1 / -1;grid-row:2;margin-bottom:${G.sm}px;border:0;border-radius:${R.panel}px;
@@ -1192,27 +1192,34 @@ const STYLE = `
 .pa-verdict{border-radius:${R.panel - 4}px}
 .pa-file,.pa-notes{border-radius:${R.box + 4}px}
 .pa-sum-text>.pa-row-title{white-space:normal;overflow:visible}
-.pa-top{justify-content:flex-start;padding:0;gap:0}
-.pa-top>.pa-hero{margin-bottom:0}
+.pa-top{justify-content:flex-start;align-items:stretch;padding:0;gap:0;border-radius:${R.panel}px;
+  background-color:var(--pa-deep-2);background-image:linear-gradient(145deg,var(--pa-deep),var(--pa-deep-2));
+  box-shadow:var(--pa-lift);overflow:hidden}
+.pa-top>.pa-hero{margin-bottom:0;background:none;box-shadow:none;border-radius:0}
+.pa-top>.pa-clear-last,.pa-top>.pa-clear-warn{justify-content:flex-start;text-align:left;
+  padding:${G.xs}px ${G.lg}px ${G.sm}px;border-top:${HAIRLINE}}
+.pa-top>.pa-clear-warn+.pa-clear-last,.pa-top>.pa-clear-last+.pa-clear-warn{border-top:0;padding-top:0}
 .pa-top .pa-clear-seal{font-size:${FS.hero}px;font-weight:600;font-variant-numeric:tabular-nums}
-.pa-top>.pa-clear-last,.pa-top>.pa-clear-warn{margin-top:${G.xs}px}
 .pa-top[data-slim="1"]>.pa-hero{grid-template-columns:minmax(0,1fr) minmax(0,${W.slimWeek}px);gap:${G.base}px;
   padding:${G.sm}px ${G.base}px ${G.sm}px ${G.lg}px}
 .pa-top[data-slim="1"] .pa-hero-lead{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:${G.sm}px;
   row-gap:2px}
 .pa-top[data-slim="1"] .pa-clear-seal,.pa-top[data-slim="1"] .pa-week-title,
   .pa-top[data-slim="1"] .pa-week-note,.pa-top[data-slim="1"] .pa-week-day>span{display:none}
+.pa-top[data-slim="1"] .pa-week-col{max-width:10px;border-radius:0;background:none}
+.pa-top[data-slim="1"] .pa-week-bars{border-bottom:1px solid color-mix(in srgb,var(--pa-on-deep) 20%,transparent)}
+.pa-top[data-slim="1"] .pa-week-col>i{border-radius:3px 3px 0 0}
 .pa-top[data-slim="1"] .pa-clear-title{font-size:${FS.brand}px}
 .pa-top[data-slim="1"] .pa-week-bars{height:${H.weekSlim}px;gap:${G.xxs}px}
 .pa-top[data-slim="1"]>.pa-clear-last,.pa-top[data-slim="1"]>.pa-clear-warn{display:none}
 .pa-hero{align-self:stretch;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:${G.lg}px;
   align-items:center;padding:${G.lg}px;border-radius:${R.panel}px;text-align:left;color:var(--pa-on-deep);
   background-color:var(--pa-deep-2);background-image:linear-gradient(145deg,var(--pa-deep),var(--pa-deep-2));
-  box-shadow:0 24px 44px -30px ${tint('var(--ui-accent)', 75)};margin-bottom:${G.sm}px}
+  box-shadow:var(--pa-lift);margin-bottom:${G.sm}px}
 .pa-hero[data-week="0"]{grid-template-columns:minmax(0,1fr)}
 .pa-hero-lead{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
-.pa-hero .pa-clear-seal{color:var(--pa-on-deep);background:color-mix(in srgb,var(--pa-on-deep) 16%,transparent);
-  box-shadow:0 0 0 6px color-mix(in srgb,var(--pa-on-deep) 7%,transparent)}
+.pa-hero .pa-clear-seal{color:var(--ui-accent);background:color-mix(in srgb,var(--ui-accent) 16%,transparent);
+  box-shadow:0 0 0 6px color-mix(in srgb,var(--ui-accent) 7%,transparent)}
 .pa-hero .pa-clear-title{color:var(--pa-on-deep);font-size:${FS.hero}px;letter-spacing:-.02em}
 .pa-hero .pa-clear-body{color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
 .pa-week{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
@@ -1224,8 +1231,8 @@ const STYLE = `
 .pa-week-col{flex:1;width:100%;max-width:26px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;
   border-radius:7px;background:color-mix(in srgb,var(--pa-on-deep) 10%,transparent);overflow:hidden}
 .pa-week-col>i{display:block;border-radius:5px;min-height:0}
-.pa-week-col>i[data-k="apply"]{background:var(--pa-on-deep)}
-.pa-week-col>i[data-k="rejected"]{background:color-mix(in srgb,var(--pa-on-deep) 45%,transparent)}
+.pa-week-col>i[data-k="apply"]{background:var(--ui-accent)}
+.pa-week-col>i[data-k="rejected"]{background:color-mix(in srgb,var(--ui-accent) 40%,transparent)}
 .pa-week-day[data-gap="1"]>.pa-week-col{background:repeating-linear-gradient(135deg,
   color-mix(in srgb,var(--pa-on-deep) 16%,transparent) 0 3px,transparent 3px 7px)}
 .pa-week-note{font-size:${FS.micro}px;color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
@@ -1241,7 +1248,7 @@ const STYLE = `
     flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:18px 10px 10px;border-radius:${R.rail}px;
     color:var(--pa-on-deep);background-color:var(--pa-deep-2);
     background-image:linear-gradient(165deg,var(--pa-deep),var(--pa-deep-2));
-    box-shadow:0 22px 40px -28px ${tint('var(--ui-accent)', 70)}}
+    box-shadow:var(--pa-lift)}
   .pa-root>.pa-strip,.pa-root>.pa-top,.pa-root>.pa-body{grid-column:2}
   .pa-root>.pa-strip{grid-row:1}
   .pa-root>.pa-top{grid-row:2}
@@ -1252,12 +1259,12 @@ const STYLE = `
   .pa-root .pa-tab{min-height:40px;padding:0 12px;border-radius:${R.row}px;font-size:${FS.row}px;
     color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
   .pa-root .pa-tab:hover{color:var(--pa-on-deep);background:color-mix(in srgb,var(--pa-on-deep) 12%,transparent)}
-  .pa-root .pa-tab[data-on="1"]{background:var(--pa-surface);color:var(--ui-text-primary);font-weight:600;
-    box-shadow:0 10px 22px -14px var(--pa-deep-2)}
+  .pa-root .pa-tab[data-on="1"]{background:color-mix(in oklab,var(--ui-accent) 16%,var(--pa-surface));
+    color:var(--ui-text-primary);font-weight:600;box-shadow:inset 0 0 0 1px var(--ui-stroke-quaternary)}
   .pa-tab>.pa-tag{margin-left:auto}
   .pa-root .pa-tab:focus-visible{outline-color:var(--pa-on-deep)}
   .pa-bar-side{margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
-    gap:10px 8px;padding:12px;border-radius:${R.panel - 4}px;background:var(--pa-surface)}
+    gap:10px 8px;padding:12px;border-radius:${R.panel - 4}px;background:var(--pa-shell)}
   .pa-bar-side>.pa-progress,.pa-bar-side>.pa-gms{grid-column:1 / -1}
   .pa-progress{flex-wrap:wrap;row-gap:6px}
   .pa-gms{flex-direction:column;align-items:stretch;gap:8px}
@@ -1265,7 +1272,7 @@ const STYLE = `
 @container (min-width:761px) and (max-width:1100px){.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}.pa-meter-box{flex:1}
   .pa-split{grid-template-columns:${W.listMid}px minmax(0,1fr)}
   .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
-  .pa-vside{grid-column:1 / -1;align-items:flex-start;text-align:left}
+  .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}
   .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;${THIN_SCROLL}}
   .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:0}
   .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
@@ -1521,7 +1528,7 @@ const staleNotice = (t, error, onRetry, style) => (!error ? null : jsxs('div', {
   style,
   children: [
     jsx('span', { children: t('pa.empty.refreshFailed', errText(error)) }, 'text'),
-    jsx(Button, { variant: 'outline', size: 'xs', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
+    jsx(Button, { variant: 'outline', size: 'sm', onClick: onRetry, children: t('pa.empty.retry') }, 'retry')
   ]
 }, 'stale'))
 
@@ -2714,7 +2721,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
     : null
   const canAgain = status === 'done' || status === 'failed'
   const againButton = jsx(Button, {
-    variant: 'text', size: 'inline', className: 'pa-again',
+    variant: 'outline', size: 'sm', className: 'pa-again',
     disabled: Boolean(busy) && busy !== 'review', loading: busy === 'review',
     onClick: () => void reviewAgain(), children: t('pa.btn.reReview')
   }, 'again')
@@ -2726,7 +2733,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         role: 'group',
         'aria-label': t('pa.fixview.label'),
         children: [['fix', 'pa.fixview.fix'], ['as', 'pa.fixview.as']].map(([id, k]) => jsx(Button, {
-          variant: view === id ? 'secondary' : 'text', size: 'xs', 'aria-pressed': view === id,
+          variant: view === id ? 'secondary' : 'text', size: 'sm', 'aria-pressed': view === id,
           className: 'pa-toggle-btn', onClick: () => setView(id), children: t(k)
         }, id))
       }, 'toggle')
@@ -2835,7 +2842,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                   children: jsx(Button, {
                     className: heldGroupOnly(g.name) ? 'pa-held' : undefined,
                     variant: 'outline',
-                    size: 'xs',
+                    size: 'sm',
                     'aria-disabled': heldGroupOnly(g.name) || undefined,
                     disabled: Boolean(busy) && busy !== `only:${g.name}`,
                     loading: busy === `only:${g.name}`,
@@ -2892,7 +2899,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
             }, 'fold'),
             jsx(Button, {
               variant: 'outline',
-              size: 'xs',
+              size: 'sm',
               disabled: Boolean(busy) && busy !== rejectKey,
               loading: busy === rejectKey,
               onClick: () => void rejectPart(part),
@@ -3073,7 +3080,8 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           onLater
             ? jsx(Button, {
                 variant: 'text', size: 'sm', className: 'pa-later', disabled: leaving,
-                'aria-keyshortcuts': 'L', onClick: () => onLater(), children: t('pa.btn.later')
+                'aria-keyshortcuts': 'L', onClick: () => onLater(),
+                children: [t('pa.btn.later'), kbd(t('pa.key.l'), 'pa-btn-kbd')]
               }, 'later')
             : null,
           jsxs('div', {
@@ -3630,10 +3638,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
             jsxs('span', { children: [kbd(t('pa.key.space')), t('pa.legend.pick')] }, 'pick'),
             jsxs('span', { children: [kbd(t('pa.key.esc')), t('pa.legend.done')] }, 'done')
           ] : [
-            jsxs('span', { children: [kbd(t('pa.key.j')), kbd(t('pa.key.k')), t('pa.legend.move')] }, 'move'),
-            jsxs('span', { children: [kbd(t('pa.key.a')), t('pa.legend.approve')] }, 'approve'),
-            jsxs('span', { children: [kbd(t('pa.key.x')), t('pa.legend.reject')] }, 'reject'),
-            jsxs('span', { children: [kbd(t('pa.key.l')), t('pa.legend.later')] }, 'later')
+            jsxs('span', { children: [kbd(t('pa.key.j')), kbd(t('pa.key.k')), t('pa.legend.move')] }, 'move')
           ]
         }, 'legend')
       }, 'foot')
@@ -4384,11 +4389,11 @@ function MemoryView({ data, error, refresh, onChanged }) {
                                 children: [
                                   jsx('span', { children: t('pa.memory.deleteConfirm') }, 'copy'),
                                   jsx(Button, {
-                                    variant: 'outline', size: 'xs', disabled: busy,
+                                    variant: 'outline', size: 'sm', disabled: busy,
                                     onClick: () => setConfirming(null), children: t('pa.memory.deleteCancel')
                                   }, 'cancel'),
                                   jsx(Button, {
-                                    variant: 'destructive', size: 'xs', loading: busy,
+                                    variant: 'destructive', size: 'sm', loading: busy,
                                     onClick: () => void removeEntry(entry), children: t('pa.memory.delete')
                                   }, 'confirm')
                                 ]
