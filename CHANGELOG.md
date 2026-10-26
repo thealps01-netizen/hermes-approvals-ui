@@ -16,6 +16,10 @@ and Activity and Memory drawn the same way.
   day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
   theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
   stays on top, as a card. Every colour still comes from the theme you picked.
+* **The top card stays on every tab.** The dark card with the week chart now sits above Needs you,
+  Activity and Memory. While records wait it says how many ("3 waiting for you") instead of "All caught
+  up" and shrinks to one slim line; it is hidden while Needs you could not be read, and in a 420 px pane
+  while a record is open.
 * **The rail fits a medium pane.** Between 761 and 1100 px the Memory files sit above the notes and the
   check strip puts its buttons under the finding, so text no longer breaks one word a line beside the rail.
 * **Memory notes show how long they are.** Each note is shaded by its length against the longest

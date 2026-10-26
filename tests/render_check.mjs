@@ -1901,7 +1901,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     { id: 'td000002', ts: Date.now() / 1000 - 3 * 86400, kind: 'apply', subsystem: 'memory', summary: 'old', files: [] }
   ], counts: { applied: 47, failed: 0, undoable: 0 } }
   const clear = await mount('en')
-  const allClear = clear.hostEl.querySelector('.pa-detail .pa-clear')
+  const allClear = clear.hostEl.querySelector('.pa-root > .pa-top')
   if (allClear?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') {
     fail(`all-clear title wrong: ${JSON.stringify(allClear?.querySelector('.pa-clear-title')?.textContent)}`)
   }
@@ -2361,7 +2361,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     return h
   }
   const h = await lastOf(JUST_DONE_HISTORY.entries)
-  const last = h.hostEl.querySelector('.pa-detail .pa-clear .pa-clear-last')
+  const last = h.hostEl.querySelector('.pa-top .pa-clear-last')
   if (!/^Last: “JUST-DONE-UNDOABLE” · Saved to memory · /.test(last?.textContent || '')) {
     fail(`last-decided: the newest decision is not named on the Last line: ${JSON.stringify(last?.textContent)}`)
   }
@@ -2386,6 +2386,26 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   REST.history = null
 }
 
+// --- 13f2) the top card while records wait: it names the count, never "All caught up", on every tab ----------
+{
+  REST.history = HISTORY
+  const w = await mount('en', 'page')
+  const n = w.hostEl.querySelectorAll('.pa-list .pa-row').length
+  for (const name of [/^Needs you/, /^Activity/, /^Memory/]) {
+    await click(tab(w.hostEl, name), 60)
+    const top = w.hostEl.querySelector('.pa-root > .pa-top')
+    const title = top?.querySelector('.pa-clear-title')?.textContent
+    if (!n || top?.getAttribute('data-waiting') !== '1' || !/^\d+ waiting for you$/.test(title || '')) {
+      fail(`top card: with records waiting the ${name.source.slice(1)} tab reads ${JSON.stringify(title)}`)
+    }
+    if (/All caught up/.test(top?.textContent || '')) fail('top card: says All caught up while records wait')
+    if (top?.querySelector('.pa-clear-seal svg')) fail('top card: the check mark is drawn while records wait')
+  }
+  w.root.unmount()
+  w.hostEl.remove()
+  REST.history = null
+}
+
 // --- 13g) all-clear: 0 pending draws All caught up (seal, title, today's count, pips, Last line) and no
 // record card ------------------------------------------------------------------------------------
 {
@@ -2395,7 +2415,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-split .pa-row')) {
     fail('all-clear: a record is drawn with 0 pending')
   }
-  const empty = h.hostEl.querySelector('.pa-split .pa-detail .pa-clear')
+  const empty = h.hostEl.querySelector('.pa-root > .pa-top')
   if (empty?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') fail('all-clear: the title is missing')
   if (!empty?.querySelector('.pa-clear-seal svg[data-icon="check"]')) {
     fail('all-clear: the check mark is not the kit\u2019s Check icon (a text glyph depends on the font)')
@@ -2407,8 +2427,15 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (body !== wantBody) {
     fail(`all-clear: the spec sentence is missing: ${JSON.stringify(body)}`)
   }
-  const pips = empty?.querySelectorAll('.pa-pips .pa-pip').length || 0
-  if (n && pips !== n) fail(`all-clear: the pips are not one per decision today: ${pips} (want ${n})`)
+  if (empty?.querySelector('.pa-pips')) fail('top card: it repeats the day pips the rail already shows')
+  if (h.hostEl.querySelector('.pa-detail .pa-clear')) fail('top card: an empty Needs you still draws its own all-clear')
+  for (const name of [/^Activity/, /^Memory/]) {
+    await click(tab(h.hostEl, name), 60)
+    const top = h.hostEl.querySelector('.pa-root > .pa-top')
+    if (top?.querySelector('.pa-clear-title')?.textContent !== 'All caught up' || !top.querySelector('.pa-week-bars')) {
+      fail(`top card: the ${name.source.slice(1)} tab does not carry the top card with its week`)
+    }
+  }
   if (!empty?.querySelector('.pa-clear-last')) fail('all-clear: the Last line is gone although history has entries')
   REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
   const none = await mount('en', 'page')
@@ -2483,7 +2510,8 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   }
   await click(tab(held.hostEl, /Activity/))
   if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
-  if (!held.hostEl.querySelector('.pa-root > div:nth-child(3) [data-slot="loader"]')) {
+  if (held.hostEl.querySelector('.pa-top')) fail('top card: drawn before the history arrived (it would say Nothing waiting)')
+  if (!held.hostEl.querySelector('.pa-root > .pa-body [data-slot="loader"]')) {
     fail('no kit Loader while the history loads')
   }
   held.hostEl.remove()
