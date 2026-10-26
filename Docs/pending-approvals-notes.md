@@ -1595,6 +1595,13 @@ and are not built.
 * **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
   detail footer gives the meter its own line and puts Later and the actions under it, so the
   buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **Live-screen pass (after 5bb87a4).** Seen in the owner's app, not in the preview: (1) the 2 px note
+  meter sat on the row hairline and read as a broken divider, so the note row has no background at
+  all and only the longest note's count is marked (dot + weight); (2) beside a 260 px list the time
+  and the deck count left titles a few letters, so `.pa-row-text` is `display:contents` and the row
+  grid puts the title across row 1 and the time at the end of the last line (`:has(.pa-row-meta)`
+  picks row 3 for Needs you); (3) the slim top card's bars had no day labels, so the slim card draws
+  no `WeekChart` at all. The pass above superseded its own meter and slim-bar rules.
 * **One button system (owner: "butonlar olmamış").** Kit buttons stay unstyled (AGENTS.md), so the
   fix is in variant/size and placement: every action is `sm` (render_check counts `size: 'xs'` - only
   the Alerts switch may use it); Review again is `outline`, beside the fix toggle in the verdict's side

@@ -1348,9 +1348,8 @@ if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memor
   const rows = [...en.hostEl.querySelectorAll('.pa-note-row')]
   const lens = rows.map(r => r.querySelector('.pa-note-text')?.textContent.length || 0)
   const top = Math.max(...lens)
-  const want = lens.map(n => `${Math.max(4, Math.round((n * 100) / top))}%`)
-  if (!rows.length || rows.map(r => r.style.getPropertyValue('--pa-w')).join() !== want.join()) {
-    fail(`note length: the rows are not shaded by their length against the longest note (${want})`)
+  if (!rows.length || rows.some(r => r.style.getPropertyValue('--pa-w'))) {
+    fail('note length: a note row still carries a length shade (--pa-w)')
   }
   const marked = rows.filter(r => r.getAttribute('data-longest') === '1').length
   const alone = lens.length > 1 && lens.filter(n => n === top).length === 1
@@ -2405,11 +2404,13 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (again && again.getAttribute('data-variant') !== 'outline') fail('buttons: Review again reads as grey text, not a button')
   if (/border-left:\d+px solid (?!var\(--ui-stroke)/.test(css)) fail('callouts: a coloured left bar marks an alert (a tinted fill and ring instead)')
   if (/\.pa-memrow\[data-on="1"\]::before/.test(css)) fail('memory: the selected file is marked by a bar, not the row ring')
-  if (!/\.pa-note-row\{[^}]*left bottom \/ var\(--pa-w,0%\) 2px no-repeat/.test(css)) {
-    fail('memory: a note’s length is a shaded block behind the text, not a thin meter under it')
+  if (/\.pa-note-row\{[^}]*(?:background|--pa-shade)/.test(css) || /--pa-w\b/.test(css)) {
+    fail('memory: a note row draws a length shade or meter (it read as a broken divider); the count says it')
   }
-  if (!/\.pa-top\[data-slim="1"\] \.pa-week-col\{[^}]*background:none/.test(css)) {
-    fail('top card: the slim week draws empty capsules (they read as loading placeholders)')
+  if (!/\.pa-row>\.pa-row-text\{display:contents\}/.test(css)
+      || !/\.pa-row-text>\.pa-row-title,\.pa-row-text>\.pa-deck-title\{grid-column:2 \/ -1;grid-row:1\}/.test(css)
+      || !/\.pa-row>\.pa-row-time\{grid-column:4;grid-row:2;/.test(css)) {
+    fail('list rows: the time shares the title line, so names cut to a few letters (“software…”)')
   }
 }
 
@@ -2459,8 +2460,9 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   for (const name of [/^Activity/, /^Memory/]) {
     await click(tab(h.hostEl, name), 60)
     const top = h.hostEl.querySelector('.pa-root > .pa-top')
-    if (top?.querySelector('.pa-clear-title')?.textContent !== 'All caught up' || !top.querySelector('.pa-week-bars')) {
-      fail(`top card: the ${name.source.slice(1)} tab does not carry the top card with its week`)
+    if (top?.querySelector('.pa-clear-title')?.textContent !== 'All caught up' || top.getAttribute('data-slim') !== '1'
+        || top.querySelector('.pa-week-bars')) {
+      fail(`top card: the ${name.source.slice(1)} tab does not carry the slim top card (words, no unlabeled bars)`)
     }
   }
   if (!empty?.querySelector('.pa-clear-last')) fail('all-clear: the Last line is gone although history has entries')

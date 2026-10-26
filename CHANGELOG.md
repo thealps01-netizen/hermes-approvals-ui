@@ -16,6 +16,11 @@ and Activity and Memory drawn the same way.
   day progress, the meters and Alerts move into a rail down the left, drawn in a deep shade of your
   theme's accent. The list and the open record are separate rounded cards. In a narrow pane the bar
   stays on top, as a card. Every colour still comes from the theme you picked.
+* **Fixes seen on the real screen.** List rows give the name the whole first line and move the time to
+  the line below, so names no longer cut to a few letters ("software…"). The slim top card shows only
+  words; its seven unlabeled bars are gone (the full card keeps the week chart). Memory notes lose the
+  length line under each note, which read as a broken divider; the longest note's count is marked
+  with a dot instead.
 * **One button system.** Every action is the same kit button size (the small "xs" ones are gone);
   "Review again" is a real button next to "With the fix / As written" instead of grey text; "Later"
   shows its key L like "Don't save" (X) and "Save" (A), so the list footer keeps only J/K and no longer

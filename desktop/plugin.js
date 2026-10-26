@@ -756,9 +756,9 @@ const FS = {
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 78, doneRow: 38, actRow: 58,
-  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76, weekSlim: 34
+  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76
 }
-const W = { list: 300, listMid: 260, rail: 184, slimWeek: 220 }
+const W = { list: 300, listMid: 260, rail: 184 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
 const TAG = {
@@ -869,9 +869,16 @@ const STYLE = `
 .pa-deck[data-open="0"][data-on="1"]{box-shadow:inset 0 0 0 1px var(--ui-accent),var(--pa-stack)}
 .pa-deck[data-open="0"]>.pa-row{border-radius:9px}
 .pa-deck[data-open="1"]>.pa-row{flex:none;height:${H.actRow - 2}px}
-.pa-deck-row>.pa-tile{grid-area:1 / 1}
-.pa-deck-row>.pa-row-text{grid-area:1 / 2 / 3 / 3}
-.pa-deck-row>.pa-row-time{grid-area:1 / 3}
+.pa-root .pa-row{grid-template-columns:28px minmax(0,1fr) auto auto;row-gap:2px}
+.pa-row>.pa-row-text{display:contents}
+.pa-row>.pa-tile{grid-column:1;grid-row:1 / span 2}
+.pa-row-text>.pa-row-title,.pa-row-text>.pa-deck-title{grid-column:2 / -1;grid-row:1}
+.pa-row-text>.pa-row-preview{grid-column:2 / 4;grid-row:2}
+.pa-row-text>.pa-row-meta{grid-column:2 / 4;grid-row:3}
+.pa-row>.pa-row-time{grid-column:4;grid-row:2;align-self:center;padding-top:0}
+.pa-row:has(.pa-row-meta)>.pa-row-time{grid-row:3}
+.pa-row:has(.pa-row-meta) .pa-row-preview{grid-column:2 / -1}
+.pa-deck-row .pa-row-preview{grid-column:2}
 .pa-deck-title{display:flex;align-items:center;gap:6px;min-width:0}
 .pa-deck-title>.pa-row-title{min-width:0}
 .pa-deck-count{flex:none;padding:0 6px;border-radius:${R.pill}px;font-size:${FS.micro}px;font-weight:700;
@@ -879,7 +886,7 @@ const STYLE = `
 .pa-deck-chev{display:inline-flex;flex:none;color:var(--ui-text-secondary);transform:rotate(180deg);
   transition:${move('hover', 'transform')}}
 .pa-deck[data-open="1"] .pa-deck-chev{transform:rotate(270deg)}
-.pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center}
+.pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center;margin-right:2px}
 .pa-ko{width:8px;height:8px;border-radius:50%;box-sizing:border-box;flex:none;background:var(--pa-tone)}
 .pa-ko[data-k="rejected"]{background:transparent;border:1.5px solid var(--ui-text-secondary)}
 .pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px;border-top:1px solid var(--ui-stroke-tertiary)}
@@ -1051,9 +1058,10 @@ const STYLE = `
 .pa-banner>span{flex:1 1 220px;min-width:0}
 .pa-notes{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden}
 .pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:start;padding:10px 12px;
-  border-bottom:${HAIRLINE};--pa-shade:${tint('var(--ui-accent)', 45)};
-  background:linear-gradient(var(--pa-shade),var(--pa-shade)) left bottom / var(--pa-w,0%) 2px no-repeat}
-.pa-note-row[data-longest="1"]{--pa-shade:${tint(WARN, 70)}}
+  border-bottom:${HAIRLINE}}
+.pa-note-row[data-longest="1"] .pa-note-len{color:var(--ui-text-primary);font-weight:600}
+.pa-note-row[data-longest="1"] .pa-note-len::before{content:'';display:inline-block;width:6px;height:6px;margin-right:6px;
+  border-radius:50%;background:${WARN};vertical-align:middle}
 .pa-note-len{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;
   padding-top:2px}
 .pa-note-row:last-child{border-bottom:none}
@@ -1200,17 +1208,12 @@ const STYLE = `
   padding:${G.xs}px ${G.lg}px ${G.sm}px;border-top:${HAIRLINE}}
 .pa-top>.pa-clear-warn+.pa-clear-last,.pa-top>.pa-clear-last+.pa-clear-warn{border-top:0;padding-top:0}
 .pa-top .pa-clear-seal{font-size:${FS.hero}px;font-weight:600;font-variant-numeric:tabular-nums}
-.pa-top[data-slim="1"]>.pa-hero{grid-template-columns:minmax(0,1fr) minmax(0,${W.slimWeek}px);gap:${G.base}px;
+.pa-top[data-slim="1"]>.pa-hero{gap:${G.base}px;
   padding:${G.sm}px ${G.base}px ${G.sm}px ${G.lg}px}
 .pa-top[data-slim="1"] .pa-hero-lead{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:${G.sm}px;
   row-gap:2px}
-.pa-top[data-slim="1"] .pa-clear-seal,.pa-top[data-slim="1"] .pa-week-title,
-  .pa-top[data-slim="1"] .pa-week-note,.pa-top[data-slim="1"] .pa-week-day>span{display:none}
-.pa-top[data-slim="1"] .pa-week-col{max-width:10px;border-radius:0;background:none}
-.pa-top[data-slim="1"] .pa-week-bars{border-bottom:1px solid color-mix(in srgb,var(--pa-on-deep) 20%,transparent)}
-.pa-top[data-slim="1"] .pa-week-col>i{border-radius:3px 3px 0 0}
+.pa-top[data-slim="1"] .pa-clear-seal{display:none}
 .pa-top[data-slim="1"] .pa-clear-title{font-size:${FS.brand}px}
-.pa-top[data-slim="1"] .pa-week-bars{height:${H.weekSlim}px;gap:${G.xxs}px}
 .pa-top[data-slim="1"]>.pa-clear-last,.pa-top[data-slim="1"]>.pa-clear-warn{display:none}
 .pa-hero{align-self:stretch;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:${G.lg}px;
   align-items:center;padding:${G.lg}px;border-radius:${R.panel}px;text-align:left;color:var(--pa-on-deep);
@@ -1242,7 +1245,7 @@ const STYLE = `
   .pa-week-bars{height:${H.weekNarrow}px}
   .pa-top[data-slim="1"] .pa-clear-body{display:none}
   .pa-root:has(.pa-split[data-open="1"]>.pa-detail>.pa-card)>.pa-top{display:none}
-  .pa-top[data-slim="1"]>.pa-hero{grid-template-columns:minmax(0,1fr) minmax(0,${W.slimWeek / 2}px)}}
+}
 @container (min-width:761px){
   .pa-root>.pa-bar{grid-column:1;grid-row:1 / -1;width:${W.rail}px;margin:0 ${G.sm}px 0 0;display:flex;
     flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:18px 10px 10px;border-radius:${R.rail}px;
@@ -3386,7 +3389,7 @@ function TopCard({ t, entries, cut, n: waiting, slim, onChanged, mem, onOpen }) 
     children: [
       jsxs('div', {
         className: 'pa-hero',
-        'data-week': first ? '0' : '1',
+        'data-week': first || slim ? '0' : '1',
         children: [
           jsxs('div', {
             className: 'pa-hero-lead',
@@ -3405,7 +3408,7 @@ function TopCard({ t, entries, cut, n: waiting, slim, onChanged, mem, onOpen }) 
               }, 'body')
             ]
           }, 'lead'),
-          first ? null : jsx(WeekChart, { t, entries, cut }, 'week')
+          first || slim ? null : jsx(WeekChart, { t, entries, cut }, 'week')
         ]
       }, 'hero'),
       last
@@ -4358,7 +4361,6 @@ function MemoryView({ data, error, refresh, onChanged }) {
                         className: 'pa-note-row',
                         'data-armed': armed(i, entry) ? '1' : '0',
                         'data-longest': i === longestAt ? '1' : '0',
-                        style: { '--pa-w': `${Math.max(4, Math.round((entry.length * 100) / longest))}%` },
                         children: [
                           jsx('span', { className: 'pa-note-n', children: String(i + 1) }, 'n'),
                           jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
