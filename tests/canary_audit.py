@@ -190,8 +190,8 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "versions: Object.fromEntries(items.map(item => [item.id, item.version])),",
      "versions: {},", 1, "does not send the version of every record"),
     ("review skip stays two-step", JS,
-     "onClick: () => setSkipArmed(true), children: t('pa.btn.skipReview')",
-     "onClick: () => void decide('approve', [], true), children: t('pa.btn.skipReview')", 1, "click does not arm"),
+     "onClick: () => setSkipArmed(true),",
+     "onClick: () => void decide('approve', [], true),", 1, "click does not arm"),
     ("a held fix stays held", JS, "const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? "
      "fixesInGroup.length : fixSingle)",
      "const fixBlocked = Boolean(isGroup ? fixesInGroup.length : fixSingle)", 1, "approved before the review finished"),

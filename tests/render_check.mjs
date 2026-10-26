@@ -1029,10 +1029,23 @@ for (const mounted of [en, other]) {
     const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
     if (!now || !/Activity/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
     if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
-    const panel = en.hostEl.querySelector('[role="tabpanel"]')
-    if (!panel || panel.getAttribute('aria-labelledby') !== now?.id) fail('the tab panel is not labelled by its tab')
     await act(async () => {
-      now.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+      now.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    const down = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
+    if (!/Memory/.test(down?.textContent || '')) fail('vitality: ArrowDown does not move along the (vertical) rail tabs')
+    await act(async () => {
+      down?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    })
+    const up = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
+    if (!/Activity/.test(up?.textContent || '')) fail('vitality: ArrowUp does not move back along the rail tabs')
+    if (!['horizontal', 'vertical'].includes(top.getAttribute('aria-orientation'))) {
+      fail('vitality: the view tablist does not say which way it runs (aria-orientation)')
+    }
+    const panel = en.hostEl.querySelector('[role="tabpanel"]')
+    if (!panel || panel.getAttribute('aria-labelledby') !== up?.id) fail('the tab panel is not labelled by its tab')
+    await act(async () => {
+      up?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
     })
     await act(async () => { await new Promise(r => setTimeout(r, 40)) })
   }
@@ -1331,6 +1344,24 @@ must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', '2 notes · 2,189 / 2
   }
 }
 if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memory file tabs are not a tablist')
+{
+  const rows = [...en.hostEl.querySelectorAll('.pa-note-row')]
+  const lens = rows.map(r => r.querySelector('.pa-note-text')?.textContent.length || 0)
+  const top = Math.max(...lens)
+  const want = lens.map(n => `${Math.max(4, Math.round((n * 100) / top))}%`)
+  if (!rows.length || rows.map(r => r.style.getPropertyValue('--pa-w')).join() !== want.join()) {
+    fail(`note length: the rows are not shaded by their length against the longest note (${want})`)
+  }
+  const marked = rows.filter(r => r.getAttribute('data-longest') === '1').length
+  const alone = lens.length > 1 && lens.filter(n => n === top).length === 1
+  if (marked !== (alone ? 1 : 0)) {
+    fail(`note length: ${marked} notes marked as the longest (a tie or a single note marks none, else one)`)
+  }
+  const said = rows.map(r => r.querySelector('.pa-note-len')?.textContent)
+  if (said.join('|') !== lens.map(n => `${n} character${n === 1 ? '' : 's'}`).join('|')) {
+    fail(`note length: a row does not say how long its note is: ${said}`)
+  }
+}
 if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
 {
   const del = en.hostEl.querySelector('.pa-note-del')
@@ -1765,6 +1796,20 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     fail('the refresh control carries no "Refresh · Updated HH:MM" Tip')
   }
   if (icon?.getAttribute('aria-label') !== 'Refresh') fail('the refresh control is not named "Refresh"')
+  const shell = en.hostEl.querySelector('style')?.textContent || ''
+  if (!/@container \(min-width:761px\)\{\s*\.pa-root>\.pa-bar\{grid-column:1;grid-row:1 \/ -1;width:184px/.test(shell)) {
+    fail('vitality: a wide pane does not turn the bar into the left rail (184px, full height)')
+  }
+  if (!/--pa-deep:oklch\(from var\(--ui-accent\) min\(l, \.45\)/.test(shell)
+      || !/--pa-on-deep:oklch\(from var\(--ui-accent\) \.985/.test(shell)) {
+    fail('vitality: the rail colours are not derived from the theme accent (dark shade + light ink)')
+  }
+  if (!/\.pa-list,\.pa-detail\{background:var\(--pa-surface\);border-radius:20px;box-shadow:var\(--pa-lift\)/.test(shell)) {
+    fail('vitality: the list and the detail are not separate cards on the panel ground')
+  }
+  if (badge?.getAttribute('data-variant') !== 'solid') {
+    fail('vitality: the count badge is not the solid kit badge (the soft one is unreadable on the rail)')
+  }
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
   if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
   if (en.chipText.includes('Onay')) fail(`chip text is not English: ${JSON.stringify(en.chipText)}`)
@@ -1866,8 +1911,31 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   }
   if (allClear?.getAttribute('role') !== 'status') fail('the all-clear is not a polite status region')
   if (clear.hostEl.querySelector('[role="tab"] [data-slot="badge"]')) fail('the Needs you badge shows at 0')
+  const week = clear.hostEl.querySelector('.pa-clear .pa-hero .pa-week-bars[role="img"]')
+  if (week?.getAttribute('aria-label') !== 'This week: 2 saved, 0 not saved') {
+    fail(`week chart: the all-clear hero has no labelled week chart: ${week?.getAttribute('aria-label')}`)
+  }
+  const wdays = [...(week?.querySelectorAll('.pa-week-day') || [])]
+  if (wdays.length !== 7 || wdays[6]?.getAttribute('data-today') !== '1'
+      || wdays.some(d => d.getAttribute('data-gap') === '1')) {
+    fail('week chart: not seven days ending today, or a gap drawn over a history that is complete')
+  }
   clear.root.unmount()
   clear.hostEl.remove()
+  REST.history = { entries: [
+    { id: 'td000003', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'today', files: [] },
+    { id: 'td000004', ts: Date.now() / 1000 - 120, kind: 'rejected', subsystem: 'memory', summary: 'today', files: [] }
+  ], counts: { applied: 99, failed: 0, undoable: 0, total: 100 } }
+  const busy = await mount('en')
+  const bars = busy.hostEl.querySelector('.pa-week-bars')
+  const gaps = [...(bars?.querySelectorAll('.pa-week-day') || [])].map(d => d.getAttribute('data-gap')).join('')
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime() / 1000
+  const want = Date.now() / 1000 - 120 >= todayStart ? '1111111' : '1111110'
+  if (gaps !== want || !busy.hostEl.querySelector('.pa-week-note')) {
+    fail(`week chart: days the kept history does not fully cover are not drawn as gaps (${gaps}, want ${want})`)
+  }
+  busy.root.unmount()
+  busy.hostEl.remove()
   REST.pending = null
   REST.history = null
 }
@@ -2484,9 +2552,19 @@ REST.scan = 'ok'
   const approveIn = key => [primaryBtn(cell(gate.hostEl, key))].filter(Boolean)[0]
   for (const key of ['memory:abc12345', 'skills:aaa11111']) {
     await toFront(gate.hostEl, key)
-    if (approveIn(key)?.getAttribute('aria-disabled') !== 'true') fail(`${key}: Approve is not locked before the review`)
     if (pickDisabled(gate.hostEl, key)) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
   }
+  await toFront(gate.hostEl, 'memory:abc12345')
+  if (approveIn('memory:abc12345')?.getAttribute('aria-disabled') !== 'true') {
+    fail('memory:abc12345: Approve is not locked while the review runs')
+  }
+  // Vitality: a record nobody will review (no model, or the check failed) shows no dead primary; its save is
+  // the two-step "Save without review", which then carries the A key.
+  await toFront(gate.hostEl, 'skills:aaa11111')
+  if (approveIn('skills:aaa11111')) fail('skills:aaa11111: a locked primary is still drawn beside "Save without review"')
+  const skipKey = buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Save without review/)[0]
+  if (skipKey?.getAttribute('aria-keyshortcuts') !== 'A') fail('"Save without review" does not carry the A key')
+  if (skipKey && !skipKey.querySelector('.pa-kbd')) fail('"Save without review" carries A but shows no key hint')
   await toFront(gate.hostEl, 'skills:def67890')
   if (pickDisabled(gate.hostEl, 'skills:def67890')) fail('skills:def67890: an unreviewed record cannot be ticked for bulk Reject')
   if (name(approveIn('skills:def67890')) !== 'Use the short version') {
@@ -2517,9 +2595,7 @@ REST.scan = 'ok'
   must(open?.textContent, ['No reviewer model is set', 'Approvals review'], 'unassigned review')
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = decides().length
-  await click(approveIn('skills:aaa11111'))
-  if (decides().length !== before) fail('a locked Approve still sent /decide')
-  await click(buttons(open, /^Save without review$/)[0])
+  await click(buttons(open, /^Save without review/)[0])
   if (decides().length !== before) fail('"Save without review" fired on the first click')
   must(cell(gate.hostEl, 'skills:aaa11111')?.textContent, ['was not checked against your rules'], 'skip arming')
   await click(buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Save unreviewed$/)[0], 80)
@@ -2734,7 +2810,7 @@ REST.scan = 'ok'
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .filter(el => !el.closest('.pa-back'))
       .map(el => (el.tagName === 'INPUT' ? 'checkbox' : name(el).trim()))
-    const want = ['Hide the full review', 'Details', 'Review again', 'Later', 'Don’t save', 'Save skill']
+    const want = ['Review again', 'Hide the full review', 'Details', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
   if (/In the write:/.test(doubt[0]?.textContent || '') || !/The reviewer quoted:/.test(doubt[0]?.textContent || '')) {
@@ -4114,8 +4190,8 @@ REST.scan = 'ok'
     fail(`an unreviewed record shows ${okRows} ok chips and ${waitRows.length} wait chips, not 0/1`)
   }
   must(waitRows[0]?.textContent, ['Not checked yet'], 'the single not-run chip')
-  if ([primaryBtn(c)].filter(Boolean)[0]?.getAttribute('aria-disabled') !== 'true') {
-    fail('an unreviewed record does not gate its primary action as block 19 requires')
+  if (primaryBtn(c) || !buttons(c, /^Save without review/).length) {
+    fail('an unreviewed record does not gate its save behind "Save without review" as block 19 requires')
   }
   nr.hostEl.remove()
   REST.mode = 'normal'
@@ -4347,7 +4423,7 @@ REST.scan = 'ok'
   if (foot?.querySelector('.pa-fullchange-toggle')) fail('mockup-match: "Show the full review" sits in the action bar')
   const sheet = mm.hostEl.querySelector('style')?.textContent || ''
   if (!/\.pa-dfoot\{[^}]*border-top:/.test(sheet)) fail('mockup-match: the action bar has no rule above it')
-  if (/\.pa-detail[^{]*\{[^}]*background:/.test(sheet)) {
+  if (/\.pa-detail[^{]*\{[^}]*background:(?!var\(--pa-surface\)[;}])/.test(sheet)) {
     fail('mockup-match: the detail is a tinted fill, not the plain surface')
   }
   mm.root.unmount()
@@ -4641,11 +4717,12 @@ REST.scan = 'ok'
     const held = await mount('en', 'page')
     await toFront(held.hostEl, 'skills:aaa11111')
     from = decides().length
-    const warnsBefore = stub.calls.notify.filter(m => m?.kind === 'warning').length
     await keyDown(det(held, 'skills:aaa11111'), 'a')
-    const warns = stub.calls.notify.filter(m => m?.kind === 'warning').length - warnsBefore
-    if (decides().length !== from) fail('keyboard: A on a held record sent a decision')
-    if (warns !== 1) fail(`keyboard: A on a held record warned ${warns} times, not once`)
+    if (decides().length !== from) fail('keyboard: A on an unreviewed record sent a decision')
+    if (!/was not checked against your rules/.test(det(held, 'skills:aaa11111')?.querySelector('[role="alert"]')
+      ?.textContent || '')) {
+      fail('keyboard: A on an unreviewed record does not arm "Save without review" (first of two steps)')
+    }
     held.root.unmount()
     held.hostEl.remove()
     REST.mode = 'normal'
@@ -4869,6 +4946,9 @@ REST.scan = 'ok'
     fail(`rework 2 item 7: the failed check does not read as one sentence: ${chipText}`)
   }
   const verdict = c?.querySelector('.pa-verdict')
+  if (!buttons(verdict || c, /^Review again$/).length || buttons(c?.querySelector('.pa-dfoot') || c, /^Review again$/).length) {
+    fail('vitality: "Review again" is not inside the failed-check strip (or is still in the action bar)')
+  }
   if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
     fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
   }
@@ -5156,7 +5236,7 @@ REST.scan = 'ok'
   if (ids.join() !== 'var(--ui-accent),var(--ui-accent),var(--ui-purple)') {
     fail(`row cards: a row's mark is not the Hermes theme's own colour (skills accent, memory purple): ${ids}`)
   }
-  const own = sheet.match(/oklch\(|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
+  const own = sheet.match(/oklch\((?!from var\(--ui-)|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
   if (own) fail(`theme colours: the panel paints colours of its own instead of the Hermes theme's: ${own.join(' ')}`)
   const pips = [...(deck()?.querySelectorAll('.pa-ko') || [])].map(p => p.getAttribute('data-k')).join()
   if (deck()?.querySelector('.pa-deck-count')?.textContent !== '3' || pips !== 'apply,rejected,apply'

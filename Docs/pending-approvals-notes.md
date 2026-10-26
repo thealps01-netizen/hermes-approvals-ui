@@ -1559,3 +1559,77 @@ applied, and the panel kept only the before-copies it needs for Undo, plus each 
   begins, the newest uses the live file, a hand edit turns it into `gone`, an unknown id is refused);
   render_check 55 (the detail asks the route and draws one diff per file plus the gone note); preview
   f31 now opens a saved record. Both checks fail on the code before this change.
+
+## The Vitality shell: rail and floating cards (1.15.0)
+
+The owner asked for the finish of a fitness dashboard he liked ("not its colours, its polish"). He
+approved static mockups (Needs you, Activity, Memory, All caught up, the narrow panes) before any code.
+This step brings over the shell and the surfaces; the parts that change behaviour are listed at the end
+and are not built.
+
+* **A left rail in a wide pane.** Above 760 px of pane (`@container (min-width:761px)`) the bar becomes
+  a 184 px rail (`W.rail`) down the left: the title, the three tabs stacked, and at the bottom one
+  surface card with the day progress, the two meters, Alerts and Refresh. Below 761 px it is the same
+  bar as before, drawn as a rounded card. The DOM did not move: the rail is `.pa-bar` placed by CSS
+  grid, so the tablist, the switch, `fitBar` and every role and key stay as they were. `.pa-root` is the
+  query container and cannot query itself, so it is always a grid (`auto | 1fr`, three rows) and only
+  its children change place.
+* **Rail colours come from the theme accent.** `--pa-deep` / `--pa-deep-2` are `oklch(from
+  var(--ui-accent) min(l, .45) min(c, .15) h)` and a darker, calmer second stop; the ink on them is
+  `--pa-on-deep`, the accent's hue at L .985. Capping the lightness keeps the ink readable on any
+  accent, light or dark theme, a yellow or cyan skin included (a yellow accent turns olive). Capping
+  the chroma keeps a vivid accent from turning the rail electric. A literal `oklch(L C H)` is still a
+  colour of the panel's own and still fails render_check; only `oklch(from var(--ui-…)` passes.
+* **The gate measures the rail.** `bgOf` in `shot.cjs` reads `background-color`, so the rail's
+  gradient carries its darker stop as the colour underneath. The colour parser now converts oklch,
+  oklab and lab through a 1 px canvas; before, `oklch(0.985 …)` read as rgb(0.985, …) and every rail
+  text measured 1:1.
+* **The count badge is the kit's `solid` badge.** The soft `default` badge is accent text on a 10 %
+  accent fill, which vanishes on the deep rail. `solid` is the kit's primary pair, the same pair as the
+  primary button; the gate lists it under host-owned contrast like that button.
+* **Cards on a tinted ground.** The pane ground is `--pa-shell` (the chrome with 5 % accent); the
+  list and the detail are separate `--pa-surface` (`--ui-bg-elevated`) cards, 20 px corners, a soft
+  accent-tinted lift (`--pa-lift`), 12 px apart. This replaces the 1.15.0 rule that the detail has no
+  fill: it now has the theme's own surface, which is not a tint. The alignment gate takes the left edge
+  from `.pa-body` instead of the bar, because in a wide pane the bar is a rail beside it.
+* **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
+  detail footer gives the meter its own line and puts Later and the actions under it, so the
+  buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **Memory notes show their length.** Each note row is shaded from the left by its length against
+  the longest note (`--pa-w`), the longest one in the warning tone, and says its size ("96
+  characters"). On a nearly full file the note to shorten is visible at a glance; nothing is sorted
+  or hidden.
+* Checks that fail on the code before this change: render_check 12 (rail, accent-derived colours,
+  cards, solid badge) and 10 (note shading, longest mark, length text).
+
+* **The all-clear hero and its week.** "All caught up" sits in a deep accent card (the rail's two
+  shades) beside a seven-day chart ending today: saved stacked over not saved, scaled to the busiest
+  day. The history keeps 100 entries (`MAX_ENTRIES` in the backend); when `counts.total` says more
+  were written than came back, every day the kept entries do not fully cover (up to and including
+  the day of the oldest kept entry, which is only partly there) is drawn striped with a one-line
+  note, never as an empty or short bar, because that would claim less happened than did.
+  The first-run all-clear has no chart (there is no week yet). Below 561 px the seal goes and the
+  chart shortens so the hero, the Last line and the Memory warning fit a 420 px pane.
+* **No dead primary while nobody reviews.** With no reviewer model, or after a failed check, the
+  card used to show a disabled Save next to "Save without review". Four buttons did not fit the
+  narrower detail card, and a button that only says no is noise. Now the held primary is not drawn;
+  "Save without review" (still two steps) is the save, and A arms it (with the A key hint drawn).
+  On a card with a fix, the held half of the pair is dropped and A moves to the half that stays. When a review is merely
+  running, the locked primary stays, because it will unlock by itself.
+* **The rail tablist runs down.** Up and Down move along the tabs as Left and Right do, and
+  `fitBar` sets `aria-orientation` from the list's real flex direction, so a screen reader hears a
+  vertical list in the rail and a horizontal one in the narrow bar. The Memory file list says
+  vertical always. The rail list keeps 3 px of padding so the 2 px focus ring is not cut by its
+  scroll box.
+* **The longest-note mark needs a single longest note.** With one note, or a tie for longest, no row
+  gets the warning shade, because then nothing stands out as the one to shorten.
+* **"Review again" lives in the verdict strip**, next to the sentence that says the check failed or
+  went stale, on every card, instead of in the action bar. It is first in Tab order on the card.
+* Checks that fail on the code before this change: render_check 3 (week chart: labelled, seven
+  days, gaps from the kept history) and 6 (no dead primary, A on "Save without review", Tab order,
+  the strip button).
+
+Not built from the approved mockups, on purpose: the side column with the space ring and "Up next"
+repeats the rail's Memory and Profile meters and the list beside it; and "decision card above the
+hero at 420 px" has nothing to move, because in a narrow pane an open record already fills the pane
+and the hero only exists on the empty all-clear.

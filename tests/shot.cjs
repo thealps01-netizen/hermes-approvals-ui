@@ -133,6 +133,8 @@ const MEASURE = `(() => {
   // the ratio is measured against the pixels actually behind the glyphs.
   // No regex here on purpose: the whole block is delivered as a template-literal string, and an
   // escaped pattern inside one is a silent trap (it compiles and matches nothing).
+  const paint = Object.assign(document.createElement('canvas'), { width: 1, height: 1 })
+    .getContext('2d', { willReadFrequently: true })
   const num = v => {
     const t = String(v || '').trim()
     if (!t) return null
@@ -149,6 +151,16 @@ const MEASURE = `(() => {
     const open = t.indexOf('(')
     if (open < 0 || t.charAt(t.length - 1) !== ')') return null
     const fn = t.slice(0, open).trim()
+    // oklch()/oklab()/lab() (the relative-colour tokens and every color-mix in oklab) are not sRGB
+    // triples: the canvas converts them the way the screen paints them.
+    if (fn !== 'rgb' && fn !== 'rgba' && fn !== 'color') {
+      paint.clearRect(0, 0, 1, 1)
+      paint.fillStyle = 'rgba(0,0,0,0)'
+      paint.fillStyle = t
+      paint.fillRect(0, 0, 1, 1)
+      const d = paint.getImageData(0, 0, 1, 1).data
+      return [d[0], d[1], d[2], d[3] / 255]
+    }
     const parts = t.slice(open + 1, -1).split('/')
     const scale = fn === 'color' ? 255 : 1
     const c = parts[0].replace(/,/g, ' ').split(' ').filter(Boolean)
@@ -351,7 +363,8 @@ const MEASURE = `(() => {
     alignment: qa('.pa-frame').flatMap((f, i) => {
       const out = []
       const frame = i + 1
-      const bar = f.querySelector('.pa-bar')
+      // The body column (the rail sits left of it in a wide pane, the bar above it in a narrow one).
+      const bar = f.querySelector('.pa-body')
       const x = bar ? box(bar).left : null
       for (const el of f.querySelectorAll('.pa-list, .pa-strip')) {
         if (x !== null && box(el).width > 0 && Math.abs(box(el).left - x) > 1) {
