@@ -116,6 +116,7 @@ const BUNDLES = {
         none: 'Nothing decided today · nothing written without you',
         last: (said, words, at) => `Last: “${said}” · ${words} · ${at}`,
         firstTitle: 'Nothing waiting',
+        waiting: n => `${n} waiting for you`,
         firstBody: 'When Hermes wants to change its memory or a skill, the change waits here until you decide. '
           + 'Nothing is written without you.',
         full: (word, pct) => `${word} is ${pct}% full — tidy it up before it runs out of room.`,
@@ -758,9 +759,9 @@ const FS = {
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 78, doneRow: 38, actRow: 58,
-  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76
+  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76, weekSlim: 34
 }
-const W = { list: 300, listMid: 260, rail: 184 }
+const W = { list: 300, listMid: 260, rail: 184, slimWeek: 220 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
 const TAG = {
@@ -1169,7 +1170,7 @@ const STYLE = `
 @container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
 @container (max-width:480px){.pa-bar .pa-progress{display:none}}
 .pa-bar:is([data-fit="1"],[data-fit="2"]) :is(.pa-pips,.pa-gm-bar),.pa-bar[data-fit="2"] .pa-progress{display:none}
-.pa-root{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);
+.pa-root{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);
   padding:${G.sm}px;box-sizing:border-box;background:var(--pa-shell);
   --pa-deep:oklch(from var(--ui-accent) min(l, .45) min(c, .15) h);
   --pa-deep-2:oklch(from var(--ui-accent) min(l, .3) min(c, .1) h);
@@ -1180,7 +1181,8 @@ const STYLE = `
   background:var(--pa-surface);box-shadow:var(--pa-lift)}
 .pa-root>.pa-strip{grid-column:1 / -1;grid-row:2;margin-bottom:${G.sm}px;border:0;border-radius:${R.panel}px;
   background:var(--pa-surface);box-shadow:var(--pa-lift)}
-.pa-root>.pa-body{grid-column:1 / -1;grid-row:3;min-height:0}
+.pa-root>.pa-top{grid-column:1 / -1;grid-row:3;margin-bottom:${G.sm}px}
+.pa-root>.pa-body{grid-column:1 / -1;grid-row:4;min-height:0}
 .pa-split{gap:${G.sm}px}
 .pa-list,.pa-detail{background:var(--pa-surface);border-radius:${R.panel}px;box-shadow:var(--pa-lift);overflow:hidden}
 .pa-list{border-right:0}
@@ -1190,7 +1192,19 @@ const STYLE = `
 .pa-verdict{border-radius:${R.panel - 4}px}
 .pa-file,.pa-notes{border-radius:${R.box + 4}px}
 .pa-sum-text>.pa-row-title{white-space:normal;overflow:visible}
-.pa-clear{justify-content:flex-start;padding:${G.base}px;overflow-y:auto;${THIN_SCROLL}}
+.pa-top{justify-content:flex-start;padding:0;gap:0}
+.pa-top>.pa-hero{margin-bottom:0}
+.pa-top .pa-clear-seal{font-size:${FS.hero}px;font-weight:600;font-variant-numeric:tabular-nums}
+.pa-top>.pa-clear-last,.pa-top>.pa-clear-warn{margin-top:${G.xs}px}
+.pa-top[data-slim="1"]>.pa-hero{grid-template-columns:minmax(0,1fr) minmax(0,${W.slimWeek}px);gap:${G.base}px;
+  padding:${G.sm}px ${G.base}px ${G.sm}px ${G.lg}px}
+.pa-top[data-slim="1"] .pa-hero-lead{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:${G.sm}px;
+  row-gap:2px}
+.pa-top[data-slim="1"] .pa-clear-seal,.pa-top[data-slim="1"] .pa-week-title,
+  .pa-top[data-slim="1"] .pa-week-note,.pa-top[data-slim="1"] .pa-week-day>span{display:none}
+.pa-top[data-slim="1"] .pa-clear-title{font-size:${FS.brand}px}
+.pa-top[data-slim="1"] .pa-week-bars{height:${H.weekSlim}px;gap:${G.xxs}px}
+.pa-top[data-slim="1"]>.pa-clear-last,.pa-top[data-slim="1"]>.pa-clear-warn{display:none}
 .pa-hero{align-self:stretch;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:${G.lg}px;
   align-items:center;padding:${G.lg}px;border-radius:${R.panel}px;text-align:left;color:var(--pa-on-deep);
   background-color:var(--pa-deep-2);background-image:linear-gradient(145deg,var(--pa-deep),var(--pa-deep-2));
@@ -1218,16 +1232,20 @@ const STYLE = `
 @container (max-width:560px){
   .pa-hero{grid-template-columns:minmax(0,1fr);gap:${G.base}px;padding:${G.base}px ${G.lg}px}
   .pa-hero .pa-clear-seal{display:none}
-  .pa-week-bars{height:${H.weekNarrow}px}}
+  .pa-week-bars{height:${H.weekNarrow}px}
+  .pa-top[data-slim="1"] .pa-clear-body{display:none}
+  .pa-root:has(.pa-split[data-open="1"]>.pa-detail>.pa-card)>.pa-top{display:none}
+  .pa-top[data-slim="1"]>.pa-hero{grid-template-columns:minmax(0,1fr) minmax(0,${W.slimWeek / 2}px)}}
 @container (min-width:761px){
   .pa-root>.pa-bar{grid-column:1;grid-row:1 / -1;width:${W.rail}px;margin:0 ${G.sm}px 0 0;display:flex;
     flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:18px 10px 10px;border-radius:${R.rail}px;
     color:var(--pa-on-deep);background-color:var(--pa-deep-2);
     background-image:linear-gradient(165deg,var(--pa-deep),var(--pa-deep-2));
     box-shadow:0 22px 40px -28px ${tint('var(--ui-accent)', 70)}}
-  .pa-root>.pa-strip,.pa-root>.pa-body{grid-column:2}
+  .pa-root>.pa-strip,.pa-root>.pa-top,.pa-root>.pa-body{grid-column:2}
   .pa-root>.pa-strip{grid-row:1}
-  .pa-root>.pa-body{grid-row:2 / -1}
+  .pa-root>.pa-top{grid-row:2}
+  .pa-root>.pa-body{grid-row:3 / -1}
   .pa-bar-title{color:var(--pa-on-deep);font-size:${FS.brand}px;padding:0 10px;margin-bottom:18px}
   .pa-bar-tabs{display:block}
   .pa-tabs{flex-direction:column;align-items:stretch;gap:${G.xxs}px;padding:3px;background:transparent}
@@ -3342,19 +3360,21 @@ function useQueue(list) {
   return { order: resolved, later }
 }
 
-function AllClear({ t, entries, cut, onChanged, mem, onOpen }) {
+function TopCard({ t, entries, cut, n: waiting, slim, onChanged, mem, onOpen }) {
   const [busy, setBusy] = useState(false)
   const n = decidedToday(entries).length
   const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
   const canUndo = Boolean(last?.undoable) && !last?.undone
   const canRestore = !canUndo && last?.kind === 'rejected' && last?.restorable === true && !last?.restored
   const said = last ? plainGist(t, String(last.summary || '')) : ''
-  const first = !n && !last
+  const first = !n && !last && !waiting
   const full = ['memory', 'user'].map(id => (mem?.[id] ? { id, ...fill(mem[id]) } : null))
     .filter(f => f && f.pct >= 90).sort((a, b) => b.pct - a.pct)[0]
   return jsxs('div', {
-    className: 'pa-clear',
+    className: 'pa-clear pa-top',
     role: 'status',
+    'data-waiting': waiting ? '1' : '0',
+    'data-slim': slim ? '1' : '0',
     children: [
       jsxs('div', {
         className: 'pa-hero',
@@ -3363,9 +3383,13 @@ function AllClear({ t, entries, cut, onChanged, mem, onOpen }) {
           jsxs('div', {
             className: 'pa-hero-lead',
             children: [
-              jsx('div', { className: 'pa-clear-seal', 'aria-hidden': true, children: icon(CheckIcon, 24) }, 'seal'),
               jsx('div', {
-                className: 'pa-clear-title', children: t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
+                className: 'pa-clear-seal', 'aria-hidden': true, children: waiting ? String(waiting) : icon(CheckIcon, 24)
+              }, 'seal'),
+              jsx('div', {
+                className: 'pa-clear-title',
+                children: waiting ? t('pa.clear.waiting', waiting)
+                  : t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
               }, 'title'),
               jsx('div', {
                 className: 'pa-clear-body',
@@ -3376,7 +3400,6 @@ function AllClear({ t, entries, cut, onChanged, mem, onOpen }) {
           first ? null : jsx(WeekChart, { t, entries, cut }, 'week')
         ]
       }, 'hero'),
-      n ? jsx(DayProgress, { entries, n: 0, compact: true }, 'pips') : null,
       last
         ? jsxs('div', {
             className: 'pa-clear-last',
@@ -3420,7 +3443,7 @@ function AllClear({ t, entries, cut, onChanged, mem, onOpen }) {
           }, 'full')
         : null
     ]
-  }, 'all-clear')
+  }, 'top')
 }
 
 function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
@@ -3552,18 +3575,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingPending') }, 'loading')
   const entries = hist?.data?.entries || []
-  const cut = (Number(hist?.data?.counts?.total) || 0) > entries.length
-  if (!keys.length) {
-    return jsx('div', {
-      ref: rootAt,
-      className: 'pa-split pa-split-clear',
-      'data-open': '1',
-      children: jsx('div', {
-        className: 'pa-detail pa-cell', 'data-key': '',
-        children: jsx(AllClear, { t, entries, cut, onChanged, mem, onOpen }, 'empty')
-      }, 'detail')
-    }, 'split')
-  }
+  if (!keys.length) return jsx('div', { ref: rootAt, className: 'pa-split pa-split-clear', 'data-open': '1' }, 'split')
   const front = order.find(u => queueKey(u) === selKey) || null
   const position = selKey ? keys.indexOf(selKey) + 1 : 0
   const showBulk = selecting && picked.size > 0 && !peek
@@ -3644,7 +3656,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
           onLater: () => later(selKey), onBack: back,
           back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, keys.length) }
         }, selKey)
-      : jsx(AllClear, { t, entries, cut, onChanged, mem, onOpen }, 'empty')
+      : null
   }, 'detail')
   return jsxs('div', {
     ref: rootAt,
@@ -4514,6 +4526,11 @@ function Pane() {
         ]
       }, 'bar'),
       notices.length ? jsx('div', { className: 'pa-strip', children: notices }, 'strip') : null,
+      hist.data && data ? jsx(TopCard, {
+        t, entries, cut: (Number(hist.data?.counts?.total) || 0) > entries.length, n, onChanged: refreshPane,
+        slim: Boolean(n) || view !== 'pending',
+        mem: mem.data, onOpen: setView
+      }, 'top') : null,
       jsx('div', {
         role: 'tabpanel',
         id: 'pa-view-panel',

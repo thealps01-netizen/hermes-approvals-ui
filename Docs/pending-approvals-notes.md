@@ -1595,6 +1595,15 @@ and are not built.
 * **Narrower detail column.** The rail costs the detail 196 px. Between 761 and 1100 px the
   detail footer gives the meter its own line and puts Later and the actions under it, so the
   buttons do not wrap one by one. The selection summary titles wrap instead of being cut.
+* **The top card on every tab.** The owner wanted the hero above every tab, not only in an empty
+  Needs you. `TopCard` is drawn by the root between the notice strip and the body (its own grid row)
+  and only once both the history and the pending list have loaded: before that the count is unknown,
+  and an error over Needs you used to read "All caught up" (preview f23 asserts it does not). With
+  records waiting, or on Activity and Memory, it is slim (`data-slim`): one title line, short bars, no
+  seal, Last line or warning, because the full card cost the detail card its warnings in a 608 px
+  frame. The title is the waiting count, never "All caught up". Below 560 px the slim card drops its
+  sentence, and it is hidden while a record is open there: that pane needs every pixel. The day pips
+  left the card; the rail shows them.
 * **The medium band (761-1100 px).** Beside the rail a pane of about 860 px left ~150 px for a
   memory note and ~70 px for a failed check's finding, one word a line; the gates never saw it
   because the frames are drawn at 1000, 640 and 420 px. In this band the list column is 260 px

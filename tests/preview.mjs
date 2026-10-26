@@ -542,6 +542,7 @@ add('f22', 'Loading — Memory still reading', await frame(async hostEl => {
 add('f23', 'Error — Needs you could not be read, its Details open on the cause', await frame(async hostEl => {
   const fold = hostEl.querySelector('.pa-state .pa-tech-fold')
   need(fold, 'f23: the error state has no Details')
+  need(!hostEl.querySelector('.pa-top'), 'f23: the top card speaks (All caught up) while Needs you could not be read')
   await click(fold, 'Details on the error')
 }, PENDING, HISTORY, MEMORY, { '/pending': 'state.db is locked' }))
 
