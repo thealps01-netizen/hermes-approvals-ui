@@ -1114,6 +1114,169 @@ def skill_review_asks_the_four_questions():
     assert [f["kind"] for f in got["findings"]] == ["known", "session", "trim", "drift"], got["findings"]
 
 
+def _tested_env(grade=None) -> "Env":
+    env = Env()
+    env.assign()
+    env.settings["model"] = {"provider": "selftest", "default": "main-1"}
+    env.pa._test_week = lambda: 42.0
+    seen: list = []
+
+    def reply(kw):
+        system = kw["messages"][0]["content"]
+        if "compare two answers" in system:
+            material = kw["messages"][1]["content"]
+            return json.dumps(grade(material) if grade else {"winner": "tie", "reason": "same"})
+        if "doing the owner's task" not in system:
+            return '{"summary": "fine", "findings": []}'
+        seen.append(system)
+        return "NEW-ANSWER" if "NEW-RULE" in system else "OLD-ANSWER"
+
+    env.reply = reply
+    env.seen = seen
+    return env
+
+
+def _evals(env: "Env", name: str, tasks: list) -> None:
+    folder = env.home / "state" / "pending-approvals" / "evals"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.json").write_text(json.dumps({"skill": name, "tasks": tasks}), encoding="utf-8")
+
+
+_TASKS = [{"id": f"t{n}", "prompt": f"task {n}", "expect": f"expect {n}"} for n in (1, 2, 3)]
+
+
+def _grow(env: "Env", rid: str, name: str = "own-skill") -> None:
+    env.stage("skills", rid, {"action": "patch", "name": name, "old_string": "alpha",
+                              "new_string": "alpha\nNEW-RULE: always do the thing."})
+
+
+def _test_done(env: "Env", rid: str) -> dict:
+    for _ in range(300):
+        view = env.item("skills", rid).get("test") or {}
+        if view.get("status") in ("done", "failed"):
+            return view
+        time.sleep(0.05)
+    raise AssertionError(f"the side-by-side test of {rid} never finished")
+
+
+@case
+def test_tasks_must_be_three_complete_tasks():
+    env = _tested_env()
+    env.skill("own-skill", "alpha\n")
+    _evals(env, "own-skill", _TASKS[:2])
+    assert env.pa._test_tasks("own-skill") == [], "two tasks were accepted"
+    _evals(env, "own-skill", _TASKS[:2] + [{"id": "t3", "prompt": "x", "expect": ""}])
+    assert env.pa._test_tasks("own-skill") == [], "a task with no expectation was accepted"
+    _evals(env, "own-skill", _TASKS)
+    assert len(env.pa._test_tasks("own-skill")) == 3
+    assert env.pa._test_tasks("../own-skill") == [], "a path in the skill name was read"
+
+
+@case
+def test_card_shows_size_and_tasks_and_runs_on_click():
+    env = _tested_env(lambda m: {"winner": "A" if m.index("NEW-ANSWER") < m.index("OLD-ANSWER") else "B",
+                                 "reason": "follows the rule"})
+    env.skill("own-skill", "alpha\n")
+    _evals(env, "own-skill", _TASKS)
+    _grow(env, "97400001")
+    env.settle("skills", "97400001")
+    view = env.item("skills", "97400001")["test"]
+    assert view["status"] == "none" and view["grows"] and view["tasks"] == 3 and view["week"] == 42.0, view
+    assert view["after"] == view["before"] + 1, view
+    calls = len(env.calls)
+    assert env.pa.test_start({"id": "97400001"}) == {"ok": True}
+    done = _test_done(env, "97400001")
+    assert done["verdict"] == "better" and [r["winner"] for r in done["results"]] == ["new"] * 3, done
+    assert len(env.calls) - calls == 9, f"a test made {len(env.calls) - calls} model calls, not 6 answers + 3 grades"
+    assert sum("NEW-RULE" in s for s in env.seen) == 3, "the new skill text did not reach exactly three answers"
+    env.stage("skills", "97400001", {"action": "patch", "name": "own-skill", "old_string": "alpha",
+                                       "new_string": "alpha\nNEW-RULE: always do the other thing."})
+    again = env.item("skills", "97400001")["test"]
+    assert again["status"] == "none" and again.get("stale") and "verdict" not in again, again
+
+
+@case
+def test_verdict_needs_a_win_and_no_loss():
+    run = None
+    for table, want in ((["new", "tie", "tie"], "better"), (["new", "old", "tie"], "not_better"),
+                        (["tie", "tie", "tie"], "not_better")):
+        order = iter(table)
+
+        def grade(material, order=order):
+            pick = next(order)
+            if pick == "tie":
+                return {"winner": "tie", "reason": "r"}
+            new_first = material.index("NEW-ANSWER") < material.index("OLD-ANSWER")
+            return {"winner": "A" if (pick == "new") == new_first else "B", "reason": "r"}
+
+        env = _tested_env(grade)
+        run = env.pa._test_run({"name": "own-skill", "before": "alpha", "after": "alpha NEW-RULE"}, _TASKS, 0.0)
+        assert run["verdict"] == want and [r["winner"] for r in run["results"]] == table, (table, run)
+
+
+@case
+def test_skips_tasks_from_the_writing_session():
+    env = _tested_env()
+    tasks = [dict(_TASKS[0], source_started_at=100.0, source_ended_at=200.0)] + _TASKS[1:]
+    run = env.pa._test_run({"name": "own-skill", "before": "a", "after": "a NEW-RULE"}, tasks, 250.0)
+    assert run["results"][0]["winner"] == "skipped", run
+    assert len(env.seen) == 4, f"a skipped task was still answered: {len(env.seen)} answers"
+
+
+@case
+def test_result_goes_stale_and_marks_untested_approvals():
+    env = _tested_env()
+    env.skill("own-skill", "alpha\n")
+    _evals(env, "own-skill", _TASKS)
+    _grow(env, "97400002")
+    env.settle("skills", "97400002")
+    env.pa.test_start({"id": "97400002"})
+    assert _test_done(env, "97400002")["status"] == "done"
+    _grow(env, "97400003", "other-skill")
+    env.skill("other-skill", "alpha\n")
+    env.settle("skills", "97400003")
+    assert env.approve("skills", "97400003")["ok"]
+    assert env.approve("skills", "97400002")["ok"]
+    summaries = {e.get("record_id"): e.get("summary", "") for e in env.entries()}
+    assert summaries["97400003"].endswith("saved untested"), summaries
+    assert "untested" not in summaries["97400002"], summaries
+    record = json.loads((env.home / "pending" / "skills" / "97400002.json").read_text(encoding="utf-8")) \
+        if (env.home / "pending" / "skills" / "97400002.json").exists() else None
+    assert record is None, "an approved record stayed pending"
+
+
+@case
+def test_needs_an_owner_skill():
+    env = _tested_env()
+    env.skill("their-skill", "alpha\n", author="Someone Else")
+    _evals(env, "their-skill", _TASKS)
+    _grow(env, "97400004", "their-skill")
+    env.settle("skills", "97400004")
+    assert "test" not in env.item("skills", "97400004"), "a third-party skill card offers a test"
+    out = env.pa.test_start({"id": "97400004"})
+    assert not out["ok"] and "own skills" in out["error"], out
+
+
+@case
+def test_runs_on_a_skill_group():
+    env = _tested_env()
+    env.skill("own-skill", "alpha\nbeta\n")
+    _evals(env, "own-skill", _TASKS)
+    _grow(env, "97400005")
+    env.stage("skills", "97400006", {"action": "patch", "name": "own-skill", "old_string": "beta",
+                                       "new_string": "beta\nNEW-RULE: one more."})
+    group = env.listing()["groups"]["skills"][0]
+    assert group["test"]["after"] == group["test"]["before"] + 2, group["test"]
+    assert not env.pa.test_start({"id": "97400005"})["ok"], "a group member was tested on its own"
+    assert env.pa.test_start({"id": group["id"]}) == {"ok": True}
+    for _ in range(300):
+        view = env.listing()["groups"]["skills"][0]["test"]
+        if view["status"] == "done":
+            break
+        time.sleep(0.05)
+    assert view["status"] == "done" and sum("NEW-RULE: one more" in s for s in env.seen) == 3, view
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

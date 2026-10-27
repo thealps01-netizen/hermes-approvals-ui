@@ -912,6 +912,7 @@ async function mount(appLocale, parts = 'both') {
         }
         if (path === '/fix') return { ok: true, message: 'Description shortened — long-description: 172 → 53 characters' }
         if (path === '/review') return { ok: true, review: { status: 'running', hard: [] } }
+        if (path === '/test') return { ok: true }
         if (path === '/memory/delete') return { ok: true, message: 'the note was deleted.' }
         if (path === '/history/clear') return { ok: true, removed: 3, kept: 0 }
         if (path === '/scan' && REST.scan === 'throw') throw new Error('500: {"ok": false, "error": "Could not read: scan exploded"}')
@@ -4434,6 +4435,57 @@ REST.scan = 'ok'
   if (okChips(kc).includes('Nothing already known')) fail('a known-text finding still shows its ok chip')
   REST.pending = null
   kh.hostEl.remove()
+}
+
+// --- 31b) side-by-side test row: size, cost, weekly usage, Test posts /test, results and the no-task state ------
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  const withTest = test => ({ ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s : { ...s, test }) })
+  const base = { skill: 'own-skill', before: 207, after: 287, grows: true, tasks: 3, week: 83.4 }
+  REST.pending = withTest({ ...base, status: 'none' })
+  const a = await mount('en')
+  await toFront(a.hostEl, 'skills:aaa11111')
+  const panel = cell(a.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')
+  must(panel?.textContent, ['Side-by-side test', 'Not run', 'own-skill · 207 → 287 lines', 'about 6 answers + 3 gradings',
+    'this week 83% used', 'Saving without a test marks the history entry “untested”.'], 'the untested test row')
+  await click(buttons(panel, /^Test$/)[0], 60)
+  const sent = stub.calls.posts.filter(p => p.path === '/test').pop()
+  if (sent?.body.id !== 'aaa11111') fail(`Test sent ${JSON.stringify(sent)}`)
+  a.hostEl.remove()
+
+  REST.pending = withTest({ ...base, status: 'done', verdict: 'better',
+    results: [{ id: 't1', winner: 'new', reason: 'follows the rule' }, { id: 't2', winner: 'tie', reason: '' },
+      { id: 't3', winner: 'skipped', reason: 'from the writing session' }] })
+  const b = await mount('en')
+  await toFront(b.hostEl, 'skills:aaa11111')
+  const done = cell(b.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')
+  must(done?.textContent, ['The new form is better', 't1 · new form wins — follows the rule', 't2 · tie',
+    't3 · skipped — from the writing session'], 'a finished test')
+  if (/untested/.test(done?.textContent || '')) fail('a tested change still warns about an untested save')
+  if (!buttons(done, /^Test again$/).length) fail('a finished test offers no Test again')
+  b.hostEl.remove()
+
+  REST.pending = withTest({ ...base, tasks: 0, status: 'none', stale: true })
+  const c = await mount('en')
+  await toFront(c.hostEl, 'skills:aaa11111')
+  const none = cell(c.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')
+  must(none?.textContent, ['No test tasks for this skill yet', 'the change moved on since the last test'], 'no tasks, stale')
+  if (buttons(none, /^Test/).length) fail('a skill with no test tasks offers a Test button')
+  c.hostEl.remove()
+
+  REST.pending = withTest({ ...base, status: 'failed', error: 'provider down' })
+  const d = await mount('en')
+  await toFront(d.hostEl, 'skills:aaa11111')
+  must(cell(d.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')?.textContent, ['The test failed: provider down'],
+    'a failed test')
+  d.hostEl.remove()
+
+  REST.pending = PENDING
+  const e = await mount('en')
+  await toFront(e.hostEl, 'skills:aaa11111')
+  if (cell(e.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')) fail('a card without a test view shows a test row')
+  REST.pending = null
+  e.hostEl.remove()
 }
 
 // --- 32) checks-not-run: no ok chip, one "Not checked yet" wait chip, primary gated as block 19 --------

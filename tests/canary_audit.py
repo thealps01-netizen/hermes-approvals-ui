@@ -145,7 +145,7 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "`react/jsx-runtime` is not imported"),
     ("no undefined name", API, "return Path(get_hermes_home())",
      "return Path(canary_missing_name())", 1, "looks like an undefined name"),
-    ("every _tx() key has a table entry", API, '_tx("fix_gone")', '_tx("canary_key")', 7,
+    ("every _tx() key has a table entry", API, '_tx("fix_gone")', '_tx("canary_key")', 8,
      "_tx('canary_key') has no entry in the message table"),
     ("no dead table entry", API, "    'kind_skill': 'Skill file',",
      "    'kind_skill': 'Skill file',\n    'canary_dead': 'x',", 1, "is never called"),
