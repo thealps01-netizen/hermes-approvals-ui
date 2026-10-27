@@ -112,6 +112,14 @@ CONTRACT: dict[str, dict[str, Any]] = {
         "names": (),
         "calls": {"normalize_usage": (1, ("provider",)), "estimate_usage_cost": (2, ("provider",))},
     },
+    "tools/skill_provenance.py": {
+        "names": (),
+        "calls": {"get_current_write_origin": (0, ()), "is_unattended_review": (0, ())},
+    },
+    "hermes_cli/plugins.py": {
+        "names": ("VALID_HOOKS",),
+        "calls": {},
+    },
 }
 
 problems: list[str] = []
