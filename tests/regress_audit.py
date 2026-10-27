@@ -1089,6 +1089,31 @@ def history_shows_each_saved_change():
     assert _body(env.pa.history_changes(id="00000000")) == {"ok": False, "files": []}
 
 
+@case
+def skill_review_asks_the_four_questions():
+    """Skill reviews ask about known, session-only, trimmable and drifting text; memory reviews do not."""
+    env = Env()
+    env.assign()
+    env.skill("own-skill", "alpha\n")
+    env.stage("skills", "97300001", {"action": "patch", "name": "own-skill", "old_string": "alpha",
+                                       "new_string": "alpha\nUse port 8400 for this run."})
+    env.settle("skills", "97300001")
+    head = env.calls[-1]["messages"][0]["content"]
+    for kind in ("5. known:", "6. session:", "7. trim:", "8. drift:", "rule|known|session|trim|drift"):
+        assert kind in head, f"the skill review prompt lacks {kind!r}"
+    env.stage("memory", "97300002", {"action": "add", "target": "memory", "content": "The owner uses Windows."})
+    env.settle("memory", "97300002")
+    head = env.calls[-1]["messages"][0]["content"]
+    assert "known:" not in head and "drift" not in head, "the memory review prompt got the skill questions"
+    assert "{skill}" not in head and "{kinds}" not in head, "a placeholder reached the reviewer"
+    proof = _proof_of(env, "Use port 8400 for this run.")
+    got = env.pa._review_parse(json.dumps({"summary": "s", "findings": [
+        {"severity": "fix", "kind": kind, "quote": "port 8400 for this run", "explain": "e",
+         "edit": {"find": "Use port 8400 for this run.", "replace": ""}} for kind in ("known", "session", "trim", "drift")]}),
+        proof)
+    assert [f["kind"] for f in got["findings"]] == ["known", "session", "trim", "drift"], got["findings"]
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

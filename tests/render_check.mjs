@@ -4418,8 +4418,22 @@ REST.scan = 'ok'
   const sh = await mount('en')
   await toFront(sh.hostEl, 'skills:aaa11111')
   if (!okChips(cell(sh.hostEl, 'skills:aaa11111')).includes('Your rules')) fail('the skill rule check chip is missing')
+  const skillChips = okChips(cell(sh.hostEl, 'skills:aaa11111'))
+  for (const name of ['Nothing already known', 'Not tied to one session', 'Nothing to delete instead', 'No drift']) {
+    if (!skillChips.includes(name)) fail(`the skill-only ok chip ${name} is missing: ${JSON.stringify(skillChips)}`)
+  }
   REST.pending = null
   sh.hostEl.remove()
+  REST.pending = { ...PENDING, skills: PENDING.skills.map(s => s.id !== 'aaa11111' ? s
+    : { ...s, review: { ...s.review, verdict: 'fix', findings: [{ severity: 'fix', kind: 'known', quote: 'q', other: '',
+      explain: 'FINDING-KNOWN' }] } }) }
+  const kh = await mount('en')
+  await toFront(kh.hostEl, 'skills:aaa11111')
+  const kc = cell(kh.hostEl, 'skills:aaa11111')
+  must(kc?.querySelector('.pa-verdict')?.textContent, ['FINDING-KNOWN'], 'a known-text finding on a skill card')
+  if (okChips(kc).includes('Nothing already known')) fail('a known-text finding still shows its ok chip')
+  REST.pending = null
+  kh.hostEl.remove()
 }
 
 // --- 32) checks-not-run: no ok chip, one "Not checked yet" wait chip, primary gated as block 19 --------

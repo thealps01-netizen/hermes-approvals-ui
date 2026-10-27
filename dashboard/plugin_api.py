@@ -2074,7 +2074,8 @@ _YAML_BLOCKS = {">", ">-", ">+", "|", "|-", "|+"}
 _LINE_INDEX: dict = {"sig": None, "lines": {}}
 _MD_LINK = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 _SEVERITY = ("block", "fix", "note")
-_KINDS = ("duplicate", "contradiction", "wrong", "evidence", "rule")
+_KINDS = ("duplicate", "contradiction", "wrong", "evidence", "rule", "known", "session", "trim", "drift")
+_SKILL_KINDS = "|known|session|trim|drift"
 _REVIEW_HEAD = (
     "You review ONE pending write to an AI assistant's long-term {what} before its owner decides on it. "
     "You advise; the owner decides. You never approve or reject anything yourself.\n\n"
@@ -2106,6 +2107,7 @@ _REVIEW_RULES = (
     "editing a third-party skill, language). Text that is not English is a rule finding even when it is "
     "written in Latin letters (Turkish, French, Spanish, German, ...); its edit replaces it with the English "
     "translation.\n"
+    "{skill}"
     "Do not repeat the HARD CHECK findings; the owner already sees them. Only exception: when a HARD CHECK "
     "finding says text must be English, add one rule finding whose edit replaces that text with its English "
     "translation. A '[... N more characters cut ...]' "
@@ -2123,15 +2125,29 @@ _REVIEW_RULES = (
     "fix = worth applying only after an edit; note = minor.\n"
     "Answer with ONE JSON object and nothing else:\n"
     '{{"summary": "one plain sentence", "findings": [{{"severity": "block|fix|note", '
-    '"kind": "duplicate|contradiction|wrong|rule", "quote": "exact text from the write", '
+    '"kind": "duplicate|contradiction|wrong|rule{kinds}", "quote": "exact text from the write", '
     '"other": "the exact duplicate or conflicting text, or the rule; empty when none", '
     '"explain": "one plain sentence a non-programmer understands", '
     '"edit": {{"find": "exact text from the new text of the write, or from the file", '
     '"replace": "its corrected text", "file": "only for an edit to the existing target"}}}}]}}\n'
     "An empty findings list means you found nothing to report."
 )
+_SKILL_RULES = (
+    "5. known: an added line tells a capable AI model something it already does well without being told "
+    "(general good practice, ordinary use of a common tool, an obvious step). Its edit deletes the line.\n"
+    "6. session: an added line only makes sense for the session that produced it (one project's file names, "
+    "ports or dates, a single incident) instead of for later uses of the skill. Its edit deletes the line or "
+    "rewrites it as the general rule.\n"
+    "7. trim: the write adds text where deleting or simplifying an existing line of the CURRENT TARGET would "
+    "solve the same problem. Quote the added text, put the existing line in \"other\", and give the edit for "
+    "that file.\n"
+    "8. drift: the write changes what the skill is for, or drops or weakens a safety rule of the CURRENT "
+    "TARGET (a warning, a limit, an approval step). Quote the text of the write that does it and put the old "
+    "line in \"other\". Dropping or weakening a safety rule is block.\n"
+    "Findings 5 to 7 are fix unless they also break an owner rule.\n"
+)
 _REVIEW_SYSTEM = _REVIEW_HEAD + _REVIEW_BLOCKS + _REVIEW_OTHERS + _REVIEW_RULES
-_REVIEW_PROMPT_V = hashlib.sha256(_REVIEW_SYSTEM.encode("utf-8")).hexdigest()[:8]
+_REVIEW_PROMPT_V = hashlib.sha256((_REVIEW_SYSTEM + _SKILL_RULES + _SKILL_KINDS).encode("utf-8")).hexdigest()[:8]
 _GROUP_SYSTEM = (
     "You review a GROUP of pending writes to an AI assistant's long-term {what} before its owner decides on "
     "them as one unit. They all change the same skill and are numbered #1, #2, ... in the order they would be "
@@ -2145,7 +2161,7 @@ _GROUP_SYSTEM = (
     "\nIn this group review every finding also carries \"change\": the number of the change its quote comes "
     "from (1 for #1). An edit of a write copies \"find\" from that change's new text."
 )
-_GROUP_PROMPT_V = hashlib.sha256(_GROUP_SYSTEM.encode("utf-8")).hexdigest()[:8]
+_GROUP_PROMPT_V = hashlib.sha256((_GROUP_SYSTEM + _SKILL_RULES + _SKILL_KINDS).encode("utf-8")).hexdigest()[:8]
 
 
 def _config() -> dict:
@@ -3145,7 +3161,9 @@ def _review_run(subsystem: str, prompt: str, model: dict, nonce: str, proof: str
 
     what = "skills" if subsystem == wa.SKILLS else "memory"
     route: dict = {}
-    head = (system or _REVIEW_SYSTEM).format(what=what, nonce=nonce)
+    skills = subsystem == wa.SKILLS
+    head = (system or _REVIEW_SYSTEM).format(what=what, nonce=nonce, skill=_SKILL_RULES if skills else "",
+                                             kinds=_SKILL_KINDS if skills else "")
     response = _review_call(_REVIEW_TASK, timeout=_REVIEW_TIMEOUT, max_tokens=6000, route_info=route,
                             messages=[{"role": "system", "content": head},
                                       {"role": "user", "content": prompt}])

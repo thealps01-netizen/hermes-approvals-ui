@@ -238,6 +238,10 @@ const BUNDLES = {
           wrong: 'Wrong',
           evidence: 'Evidence',
           rule: 'Rule',
+          known: 'Already known',
+          session: 'Only this session',
+          trim: 'Delete instead',
+          drift: 'Purpose or safety drift',
         },
         other: 'Against',
         tokens: (i, o) => `${grouped(i)} in / ${grouped(o)} out`,
@@ -454,6 +458,10 @@ const BUNDLES = {
         contradiction: 'No contradiction',
         wrong: 'Facts hold',
         rule: 'Your rules',
+        known: 'Nothing already known',
+        session: 'Not tied to one session',
+        trim: 'Nothing to delete instead',
+        drift: 'No drift',
         pending: n => (n ? `${n} awaiting approval` : 'No pending approvals'),
         error: 'Approvals unavailable',
       },
@@ -500,6 +508,10 @@ const BUNDLES = {
         wrong: 'No wrong facts found',
         ruleMemory: 'Follows your rules · written in English',
         ruleSkill: 'Follows your rules · authorship, owner',
+        known: 'Nothing the model already knows',
+        session: 'Nothing tied to one session',
+        trim: 'No simpler fix by deleting',
+        drift: 'Purpose and safety rules kept',
         notRun: reason => `Not checked yet — ${reason}`,
         reasonRunning: 'the reviewer is still reading this',
         reasonUnassigned: 'no review model is set',
@@ -1583,7 +1595,11 @@ const FINDING_KIND = {
   contradiction: 'pa.review.kind.contradiction',
   wrong: 'pa.review.kind.wrong',
   evidence: 'pa.review.kind.evidence',
-  rule: 'pa.review.kind.rule'
+  rule: 'pa.review.kind.rule',
+  known: 'pa.review.kind.known',
+  session: 'pa.review.kind.session',
+  trim: 'pa.review.kind.trim',
+  drift: 'pa.review.kind.drift'
 }
 const CUT_PART = {
   write: 'pa.review.part.write',
@@ -1596,6 +1612,9 @@ const OUTDATED = {
   rules: 'pa.review.outdated.rules'
 }
 const UNVERIFIED = ['pa.review.unverified', 'muted']
+const SKILL_FAMILIES = {
+  known: 'pa.check.known', session: 'pa.check.session', trim: 'pa.check.trim', drift: 'pa.check.drift'
+}
 const tagOf = x => (x?.change ? `#${x.change} · ` : '')
 const reviewFacts = review => {
   const findings = (review.findings || []).filter(f => f.kind !== 'evidence')
@@ -1731,7 +1750,9 @@ const checkRows = (subsystem, item) => {
     ['duplicate', major.filter(f => f.kind === 'duplicate'), subsystem === 'memory' ? 'pa.check.duplicateMemory' : 'pa.check.duplicateSkill'],
     ['contradiction', major.filter(f => f.kind === 'contradiction'), 'pa.check.contradiction'],
     ['wrong', major.filter(f => f.kind === 'wrong'), 'pa.check.wrong'],
-    ['rule', ruleFindings, subsystem === 'memory' ? 'pa.check.ruleMemory' : 'pa.check.ruleSkill']
+    ['rule', ruleFindings, subsystem === 'memory' ? 'pa.check.ruleMemory' : 'pa.check.ruleSkill'],
+    ...(subsystem === 'memory' ? [] : Object.entries(SKILL_FAMILIES)
+      .map(([k, key]) => [k, major.filter(f => f.kind === k), key]))
   ]
   const rows = []
   for (const [kind, findings, okKey] of families) {
@@ -2280,7 +2301,8 @@ const ROW_WORD = {
 }
 const FAMILIES = ['duplicate', 'contradiction', 'wrong', 'rule']
 const FAMILY_CHIP = {
-  duplicate: 'pa.chip.duplicate', contradiction: 'pa.chip.contradiction', wrong: 'pa.chip.wrong', rule: 'pa.chip.rule'
+  duplicate: 'pa.chip.duplicate', contradiction: 'pa.chip.contradiction', wrong: 'pa.chip.wrong', rule: 'pa.chip.rule',
+  known: 'pa.chip.known', session: 'pa.chip.session', trim: 'pa.chip.trim', drift: 'pa.chip.drift'
 }
 const dotStates = (subsystem, item) => {
   if ((item.review || {}).status !== 'done') return FAMILIES.map(() => 'wait')
