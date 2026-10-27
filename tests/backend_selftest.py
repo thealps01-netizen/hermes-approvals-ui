@@ -770,7 +770,8 @@ def _groups_selftest(tmp: Path) -> None:
         for r in group["members"]), "a member item carries its place, never a review or a version of its own"
     assert "review" in members["6a000004"] and "group" not in members["6a000004"], "a lone record stays a card"
     assert listed["counts"]["skills"] == 2 and listed["records"]["skills"] == 4, (listed["counts"], listed["records"])
-    assert count() == {"counts": {"memory": 0, "skills": 2}, "records": {"memory": 0, "skills": 4}}, count()
+    assert count() == {"counts": {"memory": 0, "skills": 2}, "records": {"memory": 0, "skills": 4},
+                       "candidates": 0}, count()
     assert [s["change"] for s in group["stale"]] == [3] and "cannot be applied" in group["stale"][0]["text"], \
         f"1.10.0: a conflict between two writes only showed after the first was approved: {group['stale']}"
     alone = _plain("skills", wa_get("skills", "6a000003"))
@@ -1100,6 +1101,439 @@ def _outside_home_selftest(tmp: Path) -> None:
         config.write_bytes(saved_config)
     _REVIEW_GATE = False
     _PANEL_SKIPS_REVIEW[0] = False
+
+
+def _recurrence_selftest(_tmp: Path) -> None:
+    """Recurrence gate (Unreleased): skill changes the agent makes alone wait as candidates.
+
+    Runs in its own throwaway Hermes home outside the platform default home, loads the real root
+    `__init__.py` hook, feeds it real-shaped `post_tool_call` arguments over a throwaway `state.db`,
+    stages records through the pinned core's `stage_write`, and answers every review with a stub.
+    """
+    import importlib.util
+    import os
+    import sqlite3
+    from types import SimpleNamespace
+
+    import hermes_constants
+    from tools import skill_provenance as sp
+    from tools import write_approval as wa
+
+    global _REVIEW_GATE
+    _REVIEW_GATE = True
+    _PANEL_SKIPS_REVIEW[0] = False
+    base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "Temp" \
+        if os.name == "nt" else Path("/tmp")
+    base.mkdir(parents=True, exist_ok=True)
+    home = Path(tempfile.mkdtemp(prefix="pa-recur-", dir=str(base))).resolve()
+    native = Path(hermes_constants._get_platform_default_hermes_home()).resolve()
+    assert not home.is_relative_to(native), f"the selftest home {home} lies inside the real home {native}"
+    saved_env, saved_config, saved_call = os.environ.get("HERMES_HOME"), _config, _review_call
+    os.environ["HERMES_HOME"] = str(home)
+    assert Path(hermes_constants.get_hermes_home()).resolve() == home
+    for sub in ("memories", "pending/memory", "pending/skills", "skills/cat"):
+        (home / sub).mkdir(parents=True, exist_ok=True)
+    (home / "memories" / "MEMORY.md").write_text("", encoding="utf-8")
+    author = "Selftest Owner"
+    settings: dict = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}}}
+    globals()["_config"] = lambda: settings
+    calls: list[dict] = []
+    replies: dict = {}
+
+    def judge(task: str, **kw):
+        prompt = kw["messages"][1]["content"]
+        tag = re.search(r"summary: recur (\w+)", prompt).group(1)
+        calls.append({"tag": tag, "system": kw["messages"][0]["content"], "prompt": prompt})
+        reply = replies.get(tag) or {}
+        if reply == "boom":
+            raise RuntimeError("selftest reviewer failed")
+        text = {"summary": "fine", "findings": []}
+        text.update(reply)
+        message = SimpleNamespace(content=json.dumps(text), reasoning=None, reasoning_content=None,
+                                  reasoning_details=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+
+    globals()["_review_call"] = judge
+    root = Path(__file__).resolve().parent.parent / "__init__.py"
+    spec = importlib.util.spec_from_file_location("pa_root_init_selftest", str(root))
+    init = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(init)
+    hooks: list = []
+    ctx = SimpleNamespace(register_auxiliary_task=lambda *a, **k: None,
+                          register_hook=lambda name, fn: hooks.append((name, fn)))
+    init.register(ctx)
+    assert [h[0] for h in hooks] == ["post_tool_call"], hooks
+    hook = hooks[0][1]
+
+    db = home / "state.db"
+
+    def make_db(path: Path, tables: bool = True) -> None:
+        conn = sqlite3.connect(str(path))
+        try:
+            conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, "
+                         "content TEXT, timestamp REAL)")
+            if tables:
+                conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, parent_session_id TEXT)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def session(sid: str, source: str, *messages) -> str:
+        conn = sqlite3.connect(str(db))
+        try:
+            conn.execute("INSERT INTO sessions VALUES (?, ?, ?)", (sid, source, None))
+            for n, (role, text) in enumerate(messages):
+                conn.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                             (sid, role, text, time.time() + n))
+            conn.commit()
+        finally:
+            conn.close()
+        return sid
+
+    make_db(db)
+    now = time.time()
+
+    def approve(rid: str, **extra) -> dict:
+        body = {"subsystem": "skills", "decision": "approve", "ids": [rid],
+                "versions": {rid: items()[rid].get("version", "")}, **extra}
+        return decide(body)
+
+    def skill_text(skill: str, words: str) -> str:
+        return (f"---\nname: {skill}\ndescription: Use when {words}.\nauthor: {author}\n---\n\n"
+                f"# {skill}\n\n{words}\n")
+
+    def stage(tag: str, skill: str | None, words: str, *, origin: str = "foreground", attended=None,
+              sid: str | None = None, age: float = 60.0, hooked: bool = True, payload: dict | None = None) -> str:
+        token = sp.set_current_write_origin(origin)
+        mark = sp.set_review_attended(attended) if attended is not None else None
+        try:
+            body = payload or {"action": "create", "name": skill, "content": skill_text(skill, words)}
+            record = wa.stage_write(wa.SKILLS, body, summary=f"recur {tag}", origin=wa.current_origin())
+            if hooked:
+                assert hook(tool_name="skill_manage", args=dict(body), session_id=sid,
+                            result=json.dumps({"success": True, "staged": True,
+                                               "pending_id": record["id"]})) is None
+        finally:
+            if mark is not None:
+                sp.reset_review_attended(mark)
+            sp.reset_current_write_origin(token)
+        age_record(record["id"], age)
+        return record["id"]
+
+    def age_record(rid: str, age: float) -> None:
+        path = home / "pending" / "skills" / f"{rid}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["created_at"] = now - age
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        book = home / "state" / "pending-approvals" / "recurrence.json"
+        if book.exists():
+            rows = json.loads(book.read_text(encoding="utf-8"))
+            if rid in rows["rows"]:
+                rows["rows"][rid]["at"] = now - age
+                _atomic_write(book, json.dumps(rows))
+
+    def ledger() -> dict:
+        return json.loads((home / "state" / "pending-approvals" / "recurrence.json").read_text(encoding="utf-8"))
+
+    def put_ledger(data: dict) -> None:
+        _atomic_write(home / "state" / "pending-approvals" / "recurrence.json", json.dumps(data))
+
+    def items() -> dict:
+        listed = pending()
+        assert isinstance(listed, dict), getattr(listed, "body", listed)
+        return {i["id"]: i for i in listed["skills"] + listed["candidates"]}
+
+    def settle(*rids: str) -> dict:
+        for _ in range(400):
+            found = items()
+            states = [found[r]["review"]["status"] for r in rids if r in found]
+            if "queued" in states:
+                reviews_start({})
+            elif "running" not in states and not _REVIEW_RUNNING:
+                return found
+            time.sleep(0.05)
+        raise AssertionError("the candidate reviews never settled")
+
+    def reset() -> None:
+        for _ in range(400):
+            if not _REVIEW_RUNNING:
+                break
+            time.sleep(0.05)
+        for path in (home / "pending").glob("*/*.json"):
+            path.unlink()
+        shutil.rmtree(home / "state" / "pending-approvals", ignore_errors=True)
+        _ISSUES.clear()
+        calls.clear()
+        replies.clear()
+
+    def card(rid: str, path: int, found: dict, *words: str) -> None:
+        recur = found[rid]["recur"]
+        assert recur["track"] == "card" and recur["path"] == path, (rid, recur)
+        assert all(w in recur["why"] for w in words), (rid, recur["why"], words)
+
+    def candidate(rid: str, found: dict, check: str = "") -> None:
+        recur = found[rid]["recur"]
+        assert recur["track"] == "candidate" and recur.get("check", "") == check, (rid, recur)
+
+    try:
+        assert pending()["candidates"] == [], "an empty home has candidates"
+
+        un = stage("unassigned", "own-unassigned", "keep the unassigned checklist",
+                   sid=session("s-unassigned", "desktop", ("user", "please save the unassigned checklist skill")))
+        card(un, 6, items(), "Could not tell")
+        reset()
+
+        settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
+        p1 = stage("pone", "own-release", "release checklist verify tags",
+                   sid=session("s-p1", "desktop", ("assistant", "anything else"),
+                               ("user", "Please save a skill for the release checklist."),
+                               ("assistant", "I will save it.")))
+        replies["pone"] = {"requested_by_owner": "yes", "owner_quote": "save a skill for the release checklist"}
+        p2 = stage("ptwo", "own-weather", "weather lookup cities forecast",
+                   sid=session("s-p2", "desktop", ("user", "What is the weather in Ankara?")))
+        replies["ptwo"] = {"requested_by_owner": "no", "owner_quote": ""}
+        p3 = stage("pthree", "own-bg", "background lessons gathered quietly", origin="background_review",
+                   attended=False)
+        p4 = stage("pfour", "own-refine", "refined skill wording owner asked", origin="background_review",
+                   attended=True)
+        p5 = {src: stage(f"pfive{src}", f"own-{src}", f"{src} automation notes {src}",
+                         sid=session(f"s-{src}", src, ("user", "run the job"))) for src in RECURRENCE["auto"]}
+        first = items()
+        assert not calls, "reading /pending started a paid review"
+        candidate(p1, first, "owner")
+        candidate(p2, first, "owner")
+        candidate(p3, first)
+        card(p4, 4, first, "/refine")
+        for rid in p5.values():
+            candidate(rid, first)
+            assert "leaves this list on" in first[rid]["recur"]["why"], first[rid]["recur"]
+        found = settle(p1, p2, p3)
+        card(p1, 1, found, "You asked for this in chat", "save a skill for the release checklist")
+        candidate(p2, found)
+        candidate(p3, found)
+        owner_calls = [c for c in calls if "OWNER MESSAGE" in c["prompt"]]
+        assert sorted(c["tag"] for c in owner_calls) == ["pone", "ptwo"], [c["tag"] for c in calls]
+        assert "Please save a skill for the release checklist." in next(
+            c["prompt"] for c in owner_calls if c["tag"] == "pone")
+        assert "requested_by_owner" in calls[0]["system"], "the skill review prompt lacks the owner question"
+        reset()
+
+        sixes: dict = {}
+        sixes["no_file"] = stage("sixa", "six-a", "alpha words here", hooked=False)
+        rid = stage("sixb", "six-b", "bravo words here", hooked=False)
+        (home / "state" / "pending-approvals" / "sources").mkdir(parents=True, exist_ok=True)
+        (home / "state" / "pending-approvals" / "sources" / f"{rid}.json").write_text("{bad", encoding="utf-8")
+        sixes["bad_json"] = rid
+        rid = stage("sixc", "six-c", "charlie words here", sid=session("s-c", "kanban"))
+        src = home / "state" / "pending-approvals" / "sources" / f"{rid}.json"
+        data = json.loads(src.read_text(encoding="utf-8"))
+        src.write_text(json.dumps({**data, "pending_id": "0badc0de"}), encoding="utf-8")
+        sixes["wrong_id"] = rid
+        rid = stage("sixd", "six-d", "delta words here", sid=session("s-d", "kanban"))
+        src = home / "state" / "pending-approvals" / "sources" / f"{rid}.json"
+        src.write_text(json.dumps({**json.loads(src.read_text(encoding="utf-8")), "origin": "background_review"}),
+                       encoding="utf-8")
+        sixes["origin_mismatch"] = rid
+        db.rename(home / "state.db.keep")
+        sixes["db_missing"] = stage("sixe", "six-e", "echo words here", sid="s-e")
+        make_db(db, tables=False)
+        sixes["table_missing"] = stage("sixf", "six-f", "foxtrot words here", sid="s-f")
+        db.unlink()
+        (home / "state.db.keep").rename(db)
+        sixes["row_absent"] = stage("sixg", "six-g", "golf words here", sid="s-nowhere")
+        sixes["telegram"] = stage("sixh", "six-h", "hotel words here", sid=session("s-h", "telegram"))
+        blocked = sys.modules.get("tools.skill_provenance")
+        sys.modules["tools.skill_provenance"] = None
+        try:
+            sixes["import_blocked"] = stage("sixi", "six-i", "india words here", origin="background_review",
+                                            attended=False)
+        finally:
+            sys.modules["tools.skill_provenance"] = blocked
+        rid = stage("sixj", "six-j", "juliet words here", origin="background_review", attended=False)
+        src = home / "state" / "pending-approvals" / "sources" / f"{rid}.json"
+        src.write_text(json.dumps({**json.loads(src.read_text(encoding="utf-8")), "attended": None}),
+                       encoding="utf-8")
+        sixes["attended_null"] = rid
+        sixes["no_owner_message"] = stage("sixk", "six-k", "kilo words here", sid=session("s-k", "desktop"))
+        sixes["unclear"] = stage("sixl", "six-l", "lima words here",
+                                 sid=session("s-l", "desktop", ("user", "ok")))
+        replies["sixl"] = {"requested_by_owner": "unclear"}
+        sixes["quote_missing"] = stage("sixm", "six-m", "mike words here",
+                                       sid=session("s-m", "desktop", ("user", "tidy the mike notes")))
+        replies["sixm"] = {"requested_by_owner": "yes", "owner_quote": "save the november skill now please"}
+        sixes["failed"] = stage("sixn", "six-n", "november words here",
+                                sid=session("s-n", "desktop", ("user", "save the november skill")))
+        replies["sixn"] = "boom"
+        sixes["no_name"] = stage("sixo", None, "", payload={"action": "create",
+                                                              "content": skill_text("six-o", "oscar words")})
+        sixes["delete_only"] = stage("sixp", None, "", payload={"action": "delete", "name": "six-p"})
+        found = settle(*sixes.values())
+        for why, rid in sixes.items():
+            assert found[rid]["recur"]["track"] == "card" and found[rid]["recur"]["path"] == 6, \
+                (why, found[rid]["recur"])
+        assert "no new words" in found[sixes["delete_only"]]["recur"]["why"], found[sixes["delete_only"]]["recur"]
+        for why in ("unclear", "quote_missing", "failed"):
+            assert "Could not tell" in found[sixes[why]]["recur"]["why"], (why, found[sixes[why]]["recur"])
+        assert found[sixes["failed"]]["review"]["status"] == "failed", found[sixes["failed"]]["review"]
+        reset()
+
+        late = stage("late", "own-late", "late review words",
+                     sid=session("s-late", "desktop", ("user", "save the late skill")))
+        candidate(late, items(), "owner")
+        rows = ledger()
+        rows["rows"][late]["seen"] -= RECURRENCE["check_limit_s"] + 1
+        put_ledger(rows)
+        card(late, 6, items(), "Could not tell")
+        assert not calls, "the stalled owner check started a review by itself"
+        reset()
+
+        early = stage("early", "own-early", "early words", hooked=False, age=1)
+        card(early, 6, items())
+        (home / "state" / "pending-approvals" / "sources").mkdir(parents=True, exist_ok=True)
+        fresh = stage("fresh", "own-fresh", "fresh words", hooked=False, age=1)
+        candidate(fresh, items(), "source")
+        age_record(fresh, RECURRENCE["source_wait_s"] + 1)
+        card(fresh, 6, items())
+        reset()
+
+        text = "deploy the staging cluster rollback database migration verify health dashboards"
+        ea = stage("ra", "rec-a", text, sid=session("s-ra", "kanban"), age=4 * 3600)
+        eb = stage("rb", "rec-a", text + " carefully", sid=session("s-rb", "kanban"), age=3600)
+        da = stage("da", "rec-b", "write poems about autumn leaves rivers", sid=session("s-da", "cron"),
+                   age=4 * 3600)
+        db_ = stage("dbb", "rec-b", "configure printer drivers spooler queue", sid=session("s-db", "cron"),
+                    age=3600)
+        na = stage("na", "rec-c", text, sid=session("s-na", "subagent"), age=1800)
+        nb = stage("nb", "rec-c", text, sid=session("s-nb", "subagent"), age=60)
+        fa = stage("fa", "rec-d", text, sid=session("s-fa", "tool"), age=15 * 86400)
+        fb = stage("fb", "rec-d", text, sid=session("s-fb", "tool"), age=60)
+        (home / "pending" / "memory" / "eeeeeeee.json").write_text(json.dumps({
+            "id": "eeeeeeee", "subsystem": "memory", "action": "batch", "summary": "recur memory",
+            "origin": "foreground", "created_at": now - 3600,
+            "payload": {"action": "batch", "target": "memory", "operations": [{"action": "add", "content": text}]}}),
+            encoding="utf-8")
+        listed = pending()
+        found = {i["id"]: i for i in listed["skills"] + listed["candidates"]}
+        card(eb, 5, found, "Recurring", _recur_date(now - 4 * 3600))
+        card(ea, 5, found, "Recurring", _recur_date(now - 3600))
+        candidate(da, found)
+        candidate(db_, found)
+        candidate(na, found)
+        candidate(nb, found)
+        candidate(fb, found)
+        assert fa not in found, "a candidate older than the window stayed pending"
+        assert [i["id"] for i in listed["memory"]] == ["eeeeeeee"] and listed["counts"]["memory"] == 1, listed["counts"]
+        assert all(i["id"] != "eeeeeeee" for i in listed["candidates"]), "a memory record became a candidate"
+        reset()
+
+        c1 = stage("cone", "cnt-a", "one alpha line", origin="background_review", attended=True)
+        c2 = stage("ctwo", "cnt-grp", "grouped card words", origin="background_review", attended=True)
+        k1 = stage("kone", "cnt-grp", "unrelated candidate words entirely", sid=session("s-k1", "kanban"))
+        k2 = stage("ktwo", "cnt-b", "second candidate", sid=session("s-k2", "kanban"))
+        k3 = stage("kthree", "cnt-c", "third candidate", sid=session("s-k3", "kanban"))
+        listed = pending()
+        assert sorted(i["id"] for i in listed["skills"]) == sorted([c1, c2]), listed["skills"]
+        assert sorted(i["id"] for i in listed["candidates"]) == sorted([k1, k2, k3]), listed["candidates"]
+        assert all(i["recur"]["track"] == "candidate" for i in listed["candidates"])
+        assert listed["counts"]["skills"] == 2 and listed["records"]["skills"] == 5, (listed["counts"],
+                                                                                       listed["records"])
+        assert listed["candidate_days"] == 14, listed["candidate_days"]
+        counted = count()
+        assert counted["counts"]["skills"] == 2 and counted["records"]["skills"] == 5 \
+            and counted["candidates"] == 3, counted
+        assert all(k1 not in g["members"] for g in listed["groups"]["skills"]), listed["groups"]
+        settings.pop("auxiliary")
+        out = approve(k1, skip_review=True)
+        settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
+        assert out["results"][0]["ok"], out
+        assert out["results"][0].get("error") != _tx("err_member_approve"), out
+        reset()
+
+        ok1 = stage("okone", "app-a", "approve after review words", sid=session("s-ok1", "kanban"))
+        found = settle(ok1)
+        assert found[ok1]["review"]["status"] == "done", found[ok1]["review"]
+        out = approve(ok1)
+        assert out["results"][0]["ok"], out
+        applied = [e for e in _entries() if e.get("record_id") == ok1]
+        assert applied and applied[0]["kind"] in UNDOABLE, applied
+        assert undo({"id": applied[0]["id"]})["ok"], "the approved candidate could not be undone"
+        settings.pop("auxiliary")
+        ok2 = stage("oktwo", "app-b", "skip review words", sid=session("s-ok2", "kanban"))
+        out = approve(ok2, skip_review=True)
+        assert out["results"][0]["ok"], out
+        settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
+        rj = stage("rj", "app-c", "reject me words", sid=session("s-rj", "kanban"))
+        out = decide({"subsystem": "skills", "decision": "reject", "ids": [rj]})
+        assert out["results"][0]["ok"], out
+        rejected = next(e for e in history(100)["entries"] if e.get("record_id") == rj)
+        assert rejected["kind"] == "rejected" and rejected.get("restorable"), rejected
+        st = stage("stale", "app-d", "stale version words", sid=session("s-st", "kanban"))
+        out = decide({"subsystem": "skills", "decision": "approve", "ids": [st], "skip_review": True,
+                      "versions": {st: "not-the-version"}})
+        assert not out["results"][0]["ok"], f"a stale version approved a candidate: {out}"
+        reset()
+
+        ex = stage("ex", "exp-a", "expire me words", sid=session("s-ex", "kanban"), age=3600)
+        settle(ex)
+        keep = stage("keep", "exp-b", "keep me words", sid=session("s-keep", "kanban"),
+                     age=RECURRENCE["window_s"] - 60)
+        rows = ledger()
+        rows["rows"][ex]["at"] = now - RECURRENCE["window_s"] - 1
+        put_ledger(rows)
+        found = items()
+        assert ex not in found and keep in found, sorted(found)
+        assert not (home / "pending" / "skills" / f"{ex}.json").exists(), "an expired candidate stayed pending"
+        row = next(e for e in history(100)["entries"] if e.get("record_id") == ex)
+        assert row["kind"] == "expired" and row["copy"] is True and row.get("restorable"), row
+        assert (home / "state" / "pending-approvals" / "snapshots" / row["id"] / "record.json").exists()
+        assert _entries() and history(100)["counts"]["applied"] == 0, "an expired row counted as applied"
+        back = restore({"id": row["id"]})
+        assert back.get("ok"), back
+        found = items()
+        new_id = back["id"]
+        card(new_id, 6, found)
+        assert found[new_id]["review"]["status"] == "done", found[new_id]["review"]
+        assert next(e for e in history(100)["entries"] if e["id"] == row["id"]).get("restored"), "row not restored"
+        again = restore({"id": row["id"]})
+        assert not again.get("ok"), again
+        stuck = stage("stuck", "exp-c", "stuck words", sid=session("s-stuck", "kanban"), age=3600)
+        items()
+        rows = ledger()
+        rows["rows"][stuck]["at"] = now - RECURRENCE["window_s"] - 1
+        put_ledger(rows)
+        real_write = globals()["_atomic_write"]
+
+        def refuse(path, text):
+            if "snapshots" in Path(path).parts:
+                raise PermissionError("selftest: snapshot folder is not writable")
+            return real_write(path, text)
+
+        globals()["_atomic_write"] = refuse
+        try:
+            listed = pending()
+        finally:
+            globals()["_atomic_write"] = real_write
+        assert (home / "pending" / "skills" / f"{stuck}.json").exists(), "an unsaved expiry deleted the record"
+        assert any("could not be moved to Activity" in i for i in listed["issues"]), listed["issues"]
+        reset()
+
+        b1 = stage("bone", "bad-a", "ledger words one", sid=session("s-b1", "kanban"))
+        b2 = stage("btwo", "bad-b", "ledger words two", sid=session("s-b2", "kanban"))
+        candidate(b1, items())
+        (home / "state" / "pending-approvals" / "recurrence.json").write_text("{torn", encoding="utf-8")
+        listed = pending()
+        assert (home / "state" / "pending-approvals" / "recurrence.json.bad").exists()
+        assert any("recurrence.json.bad" in i for i in listed["issues"]), listed["issues"]
+        assert listed["candidates"] == [] and sorted(i["id"] for i in listed["skills"]) == sorted([b1, b2])
+        assert all(i["recur"]["path"] == 6 for i in listed["skills"]), [i["recur"] for i in listed["skills"]]
+        reset()
+    finally:
+        globals()["_config"], globals()["_review_call"] = saved_config, saved_call
+        if saved_env is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = saved_env
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def wa_get(subsystem: str, rid: str) -> dict:
@@ -1811,6 +2245,7 @@ def _selftest() -> int:
     _integrity_selftest(tmp)
     _groups_selftest(tmp)
     _outside_home_selftest(tmp)
+    _recurrence_selftest(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
     print("plugin_api selftest OK: one English message table behind _tx, pending list, approve, "
           "history, conflict, force-undo, second undo refused, a memory undo leaves the other "

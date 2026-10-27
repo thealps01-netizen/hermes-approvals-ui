@@ -6,6 +6,8 @@ description: >-
   Approvals — review, approve and undo the memory/skill writes Hermes is holding for approval.
 author: enesa
 kind: standalone
+provides_hooks:
+  - post_tool_call
 license: MIT
 homepage: https://github.com/thealps01-netizen/hermes-approvals-ui
 tags:

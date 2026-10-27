@@ -4,6 +4,7 @@ import contextvars
 import hashlib
 import difflib
 import json
+import math
 import os
 import re
 import shutil
@@ -29,6 +30,19 @@ _LOCK = threading.RLock()
 _ISSUES: dict = {}
 _ISSUE_TTL = 3600
 _MEMO: contextvars.ContextVar = contextvars.ContextVar("pa_memo", default=None)
+RECURRENCE = {
+    "gap_s": 7200,
+    "window_s": 14 * 86400,
+    "threshold": 0.25,
+    "source_wait_s": 10,
+    "check_limit_s": 1800,
+    "keep_s": 30 * 86400,
+    "person": ("desktop", "local", "gui"),
+    "auto": ("kanban", "cron", "subagent", "oneshot", "tool"),
+    "foreground": ("foreground", "assistant_tool"),
+    "token": r"[a-zA-Z\u00e7\u011f\u0131\u00f6\u015f\u00fc\u00c7\u011e\u0130\u00d6\u015e\u00dc0-9_]{3,}",
+    "months": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+}
 
 
 @contextmanager
@@ -445,6 +459,7 @@ def _counts(listed: dict | None = None) -> dict:
     if listed is None:
         landed = _landed()
         listed = {s: _sweep_landed(s, _list_pending(wa, s), landed) for s in (wa.MEMORY, wa.SKILLS)}
+        listed[wa.SKILLS] = _recur_split(listed[wa.SKILLS])[0]
     folded = sum(len(m) - 1 for m in _skill_groups(listed[wa.SKILLS]))
     return {wa.MEMORY: len(listed[wa.MEMORY]), wa.SKILLS: len(listed[wa.SKILLS]) - folded}
 
@@ -750,6 +765,20 @@ _TEXT = {
     'err_member_approve': 'This record is one change of a group: save the group as a whole, '
                           'or leave out the changes you do not want first.',
     'err_group_scope': 'Only skill records form groups.',
+    'recur_asked': 'You asked for this in chat: “{quote}”.',
+    'recur_refine': 'You started this with /refine.',
+    'recur_recurring': 'Recurring: a similar change to this skill came on {date}.',
+    'recur_unknown': 'Where this change came from could not be checked, so it waits here for you.',
+    'recur_unclear': 'Could not tell whether you asked for this change in chat, so it waits here for you.',
+    'recur_no_words': 'This change adds no new words to compare, so it waits here for you.',
+    'recur_checking': 'Checking where this change came from.',
+    'recur_candidate': 'First change to this skill in {days} days. It leaves this list on {date} '
+                       'unless a similar change comes.',
+    'recur_ledger_bad': 'The list of earlier skill changes was unreadable; it was set aside as {name}, '
+                        'and every waiting skill change is shown.',
+    'recur_expire_failed': 'A candidate skill change ({id}) could not be moved to Activity, so it keeps '
+                           'waiting: {error}',
+    'recur_no_copy': 'no copy of it could be kept.',
 }
 
 
@@ -1106,8 +1135,12 @@ def count():
     from tools import write_approval as wa
 
     try:
-        listed = {s: _list_pending(wa, s) for s in (wa.MEMORY, wa.SKILLS)}
-        return {"counts": _counts(listed), "records": {s: len(r) for s, r in listed.items()}}
+        with _LOCK, _memo():
+            listed = {s: _list_pending(wa, s) for s in (wa.MEMORY, wa.SKILLS)}
+            cards, candidates, _view = _recur_split(listed[wa.SKILLS], expire=True)
+            return {"counts": _counts({wa.MEMORY: listed[wa.MEMORY], wa.SKILLS: cards}),
+                    "records": {wa.MEMORY: len(listed[wa.MEMORY]), wa.SKILLS: len(cards) + len(candidates)},
+                    "candidates": len(candidates)}
     except Exception as exc:
         return _read_failed("/count", exc)
 
@@ -1196,7 +1229,7 @@ def _skill_groups(records: list[dict]) -> list[list[dict]]:
 def _groups_now() -> dict:
     from tools import write_approval as wa
 
-    return {_group_id(m): m for m in _skill_groups(_list_pending(wa, wa.SKILLS))}
+    return {_group_id(m): m for m in _skill_groups(_recur_split(_list_pending(wa, wa.SKILLS))[0])}
 
 
 def _combined(gid: str, members: list[dict]) -> dict:
@@ -1807,10 +1840,300 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
     return None, members, _tx("group_untested") if _untested(gid, _combined(gid, members), members) else "", queued
 
 
+def _recur_dir() -> Path:
+    return _state() / "sources"
+
+
+def _recur_ledger_path() -> Path:
+    return _state() / "recurrence.json"
+
+
+def _recur_date(at: float) -> str:
+    moment = time.localtime(at)
+    return f"{moment.tm_mday} {RECURRENCE['months'][moment.tm_mon - 1]}"
+
+
+def _recur_tokens(text: object) -> Counter:
+    return Counter(match.lower() for match in re.findall(RECURRENCE["token"], str(text or "")))
+
+
+def _recur_fingerprint(record: dict) -> dict | None:
+    from tools import write_approval as wa
+
+    names = sorted(_target_names(wa.SKILLS, record))
+    try:
+        ops = _raw_ops(record)
+    except ValueError:
+        return None
+    if not names or not ops:
+        return None
+    tokens: Counter = Counter()
+    for op in ops:
+        action = str(op.get("action") or "")
+        if action in ("create", "edit", "write_file") or (action == "patch" and op.get("content")):
+            tokens.update(_recur_tokens(str(op.get("content") or "") + "\n" + str(op.get("file_content") or "")))
+        elif action == "patch":
+            old = set(_recur_tokens(op.get("old_string")))
+            tokens.update(Counter({t: n for t, n in _recur_tokens(op.get("new_string")).items() if t not in old}))
+    return {"skills": names, "tokens": dict(tokens)}
+
+
+def _recur_idf(rows: dict) -> dict:
+    df: Counter = Counter()
+    for row in rows.values():
+        df.update(set(row.get("tokens") or {}))
+    n = len(rows)
+    return {t: math.log((1 + n) / (1 + d)) + 1 for t, d in df.items()}
+
+
+def _recur_cosine(a: dict, b: dict, idf: dict) -> float:
+    if not a or not b:
+        return 0.0
+    va = {t: c * idf.get(t, 1.0) for t, c in a.items()}
+    vb = {t: c * idf.get(t, 1.0) for t, c in b.items()}
+    dot = sum(w * vb[t] for t, w in va.items() if t in vb)
+    norm = math.sqrt(sum(w * w for w in va.values())) * math.sqrt(sum(w * w for w in vb.values()))
+    return dot / norm if norm else 0.0
+
+
+def _recur_matches(rid: str, row: dict, rows: dict, idf: dict) -> list[str]:
+    found = []
+    for other_id, other in rows.items():
+        if other_id == rid or not set(other.get("skills") or []) & set(row.get("skills") or []):
+            continue
+        age = float(row.get("at") or 0) - float(other.get("at") or 0)
+        if not RECURRENCE["gap_s"] <= age <= RECURRENCE["window_s"]:
+            continue
+        if _recur_cosine(row.get("tokens") or {}, other.get("tokens") or {}, idf) >= RECURRENCE["threshold"]:
+            found.append(other_id)
+    return found
+
+
+def _recur_source(record: dict) -> tuple[str, dict]:
+    rid = _valid_id(record.get("id"))
+    if not rid:
+        return "invalid", {}
+    path = _recur_dir() / f"{rid}.json"
+    if not path.exists():
+        return "missing", {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "invalid", {}
+    if not isinstance(data, dict) or data.get("v") != 1 or data.get("pending_id") != rid:
+        return "invalid", {}
+    if data.get("origin") != record.get("origin") or not isinstance(data.get("source"), (str, type(None))):
+        return "invalid", {}
+    return "ok", data
+
+
+def _recur_path(source: dict) -> int:
+    origin, where = source.get("origin"), source.get("source")
+    if origin in RECURRENCE["foreground"]:
+        if where in RECURRENCE["person"] and str(source.get("owner_message") or "").strip():
+            return 2
+        return 5 if where in RECURRENCE["auto"] else 6
+    if origin == "background_review" and source.get("attended") is False:
+        return 3
+    if origin == "background_review" and source.get("attended") is True:
+        return 4
+    return 6
+
+
+def _recur_owner_message(record: dict) -> str | None:
+    state, source = _recur_source(record)
+    if state != "ok" or _recur_path(source) != 2:
+        return None
+    return str(source.get("owner_message") or "")
+
+
+def _recur_set(row: dict, track: str, path: int, why: str, check: str = "", **extra) -> None:
+    row.update(track=track, path=path, why=why, check=check, **extra)
+
+
+def _recur_wait(row: dict) -> str:
+    days = RECURRENCE["window_s"] // 86400
+    return _tx("recur_candidate", days=days, date=_recur_date(float(row["at"]) + RECURRENCE["window_s"]))
+
+
+def _recur_load() -> dict | None:
+    path = _recur_ledger_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, dict) or not all(isinstance(r, dict) for r in rows.values()):
+        return None
+    return rows
+
+
+def _recur_set_aside() -> None:
+    path = _recur_ledger_path()
+    bad = path.with_name(path.name + ".bad")
+    try:
+        os.replace(path, bad)
+    except OSError as exc:
+        _log(f"the unreadable recurrence list could not be set aside: {exc!r}")
+    _note_issue("recurrence", _tx("recur_ledger_bad", name=bad.name))
+
+
+def _recur_owner(record: dict, row: dict, source: dict, now: float) -> None:
+    from tools import write_approval as wa
+
+    state = _review_state(wa.SKILLS, record)
+    status = state.get("status")
+    asked = state.get("requested") if isinstance(state.get("requested"), dict) else {}
+    answer, quote = str(asked.get("answer") or ""), str(asked.get("quote") or "")
+    if status in ("queued", "running") and now - float(row.get("seen") or now) <= RECURRENCE["check_limit_s"]:
+        _recur_set(row, "candidate", 2, _tx("recur_checking"), "owner")
+    elif status == "done" and answer == "yes" and _quoted(quote, _proof(source.get("owner_message"))):
+        _recur_set(row, "card", 1, _tx("recur_asked", quote=quote), quote=quote)
+    elif status == "done" and answer == "no":
+        _recur_set(row, "candidate", 2, _recur_wait(row))
+    else:
+        _recur_set(row, "card", 6, _tx("recur_unclear"))
+
+
+def _recur_decide(record: dict, row: dict, rows: dict, idf: dict, now: float) -> None:
+    rid = str(record.get("id"))
+    matched = _recur_matches(rid, row, rows, idf) if row.get("tokens") else []
+    for other_id in matched:
+        if rows[other_id].get("track") == "candidate":
+            _recur_set(rows[other_id], "card", rows[other_id].get("path") or 6,
+                       _tx("recur_recurring", date=_recur_date(float(row["at"]))), **{"with": rid})
+    if row.get("track") == "card":
+        return
+    state, source = _recur_source(record)
+    if state == "missing" and _recur_dir().is_dir() and now - float(row["at"]) < RECURRENCE["source_wait_s"]:
+        _recur_set(row, "candidate", 6, _tx("recur_checking"), "source")
+        return
+    path = _recur_path(source) if state == "ok" else 6
+    if path == 4:
+        _recur_set(row, "card", 4, _tx("recur_refine"))
+    elif path == 6:
+        _recur_set(row, "card", 6, _tx("recur_unknown"))
+    elif matched:
+        last = max(matched, key=lambda i: float(rows[i].get("at") or 0))
+        _recur_set(row, "card", path, _tx("recur_recurring", date=_recur_date(float(rows[last]["at"]))),
+                   **{"with": last})
+    elif path == 2:
+        _recur_owner(record, row, source, now)
+    else:
+        _recur_set(row, "candidate", path, _recur_wait(row))
+
+
+def _recur_tidy(rows: dict, live: set, now: float) -> None:
+    keep = RECURRENCE["keep_s"]
+    for rid in [r for r, row in rows.items() if r not in live and now - float(row.get("at") or 0) > keep]:
+        del rows[rid]
+    folder = _recur_dir()
+    if folder.is_dir():
+        for path in folder.glob("*.json"):
+            with suppress(OSError):
+                if path.stem not in live and now - path.stat().st_mtime > keep:
+                    path.unlink()
+
+
+def _recur_judge(records: list[dict], force: tuple = (), tidy: bool = False) -> dict:
+    from tools import write_approval as wa
+
+    asked, now = list(records), time.time()
+    with _LOCK:
+        rows = _recur_load()
+        broken = rows is None
+        if broken:
+            _recur_set_aside()
+            rows = {}
+            records = [*records, *_list_pending(wa, wa.SKILLS)]
+            force = tuple(str(r.get("id")) for r in records)
+        before = json.dumps(rows, sort_keys=True)
+        order = sorted(records, key=lambda r: (float(r.get("created_at") or 0), str(r.get("id"))))
+        for record in order:
+            rid = str(record.get("id"))
+            if rid in rows:
+                continue
+            found = _recur_fingerprint(record)
+            row = rows[rid] = {"skills": (found or {}).get("skills") or [], "at": float(record.get("created_at") or 0),
+                               "seen": now, "tokens": (found or {}).get("tokens") or {}, "track": "", "path": 6,
+                               "check": "", "why": "", "with": "", "quote": ""}
+            if broken or found is None or rid in force:
+                _recur_set(row, "card", 6, _tx("recur_unknown"))
+            elif not found["tokens"]:
+                _recur_set(row, "card", 6, _tx("recur_no_words"))
+        idf = _recur_idf(rows)
+        for record in order:
+            row = rows[str(record.get("id"))]
+            if row.get("seen") == now or row.get("check") in ("source", "owner"):
+                _recur_decide(record, row, rows, idf, now)
+        if tidy:
+            _recur_tidy(rows, {str(r.get("id")) for r in records}, now)
+        if json.dumps(rows, sort_keys=True) != before:
+            _atomic_write(_recur_ledger_path(), json.dumps({"v": 1, "rows": rows}, ensure_ascii=False))
+        return {str(r.get("id")): rows[str(r.get("id"))] for r in asked}
+
+
+def _recur_mark(records: list[dict]) -> None:
+    try:
+        _recur_judge([r for r in records if isinstance(r, dict) and r.get("id")],
+                     force=tuple(str(r.get("id")) for r in records if isinstance(r, dict)))
+    except Exception as exc:
+        _log(f"restaged skill records could not be marked as cards: {exc!r}")
+
+
+def _recur_expire(records: list[dict], view: dict) -> list[dict]:
+    from tools import write_approval as wa
+
+    now, left = time.time(), []
+    for record in records:
+        rid = str(record.get("id"))
+        row = view.get(rid) or {}
+        if row.get("track") != "candidate" or now - float(row.get("at") or 0) <= RECURRENCE["window_s"]:
+            left.append(record)
+            continue
+        kept = _keep_rejected(wa.SKILLS, record)
+        ok, message = False, _tx("recur_no_copy")
+        if (_state() / "snapshots" / kept / "record.json").exists():
+            ok, message = _apply(wa.SKILLS, rid, "reject")
+        if not ok:
+            shutil.rmtree(_state() / "snapshots" / kept, ignore_errors=True)
+            _note_issue(f"expire-{rid}", _tx("recur_expire_failed", id=rid, error=_short_error(message)))
+            left.append(record)
+            continue
+        _append({"id": kept, "ts": now, "kind": "expired", "subsystem": wa.SKILLS, "record_id": rid,
+                 "summary": record.get("summary", ""), "files": [], "undone": False, "copy": True})
+    return left
+
+
+def _recur_split(records: list[dict], expire: bool = False) -> tuple[list[dict], list[dict], dict]:
+    try:
+        view = _recur_judge(records, tidy=expire)
+        if expire:
+            records = _recur_expire(records, view)
+    except Exception as exc:
+        _log(f"the recurrence gate could not judge the waiting skill changes, so all are shown: {exc!r}")
+        return records, [], {}
+    waiting = {str(r.get("id")) for r in records if (view.get(str(r.get("id"))) or {}).get("track") == "candidate"}
+    return ([r for r in records if str(r.get("id")) not in waiting],
+            [r for r in records if str(r.get("id")) in waiting], view)
+
+
+def _recur_public(row: dict | None) -> dict:
+    row = row or {}
+    track = "candidate" if row.get("track") == "candidate" else "card"
+    out = {"track": track, "path": row.get("path") or 6, "why": row.get("why") or _tx("recur_unknown")}
+    if track == "candidate":
+        out.update(expires=float(row.get("at") or 0) + RECURRENCE["window_s"], check=row.get("check") or "")
+    return out
+
+
 def _pending() -> dict:
     from tools import write_approval as wa
 
-    out: dict = {"groups": {wa.MEMORY: [], wa.SKILLS: []}}
+    out: dict = {"groups": {wa.MEMORY: [], wa.SKILLS: []}, "candidates": [],
+                 "candidate_days": RECURRENCE["window_s"] // 86400}
     live: set = set()
     failed: list[str] = []
     steps = _approved_steps()
@@ -1818,6 +2141,9 @@ def _pending() -> dict:
     _unclaim_left()
     for subsystem in (wa.MEMORY, wa.SKILLS):
         records = _sweep_landed(subsystem, _list_pending(wa, subsystem), landed)
+        waiting, judged = [], {}
+        if subsystem == wa.SKILLS:
+            records, waiting, judged = _recur_split(records, expire=True)
         groups = {_group_id(m): m for m in (_skill_groups(records) if subsystem == wa.SKILLS else [])}
         cards: dict = {}
         broken: dict = {}
@@ -1855,11 +2181,21 @@ def _pending() -> dict:
                 cards[gid]["group"]["test"] = view
         out["groups"][subsystem] = [cards[gid]["group"] for gid in groups if gid not in broken]
         out[subsystem] = [item for gid, item in built if gid not in broken]
-    out["records"] = {s: len(out[s]) for s in (wa.MEMORY, wa.SKILLS)}
+        for record in waiting:
+            live.add(f"{subsystem}-{record.get('id')}")
+            try:
+                out["candidates"].append(_pending_item(wa, subsystem, record, "", 0, cards, steps))
+            except Exception as exc:
+                failed.append(_card_failed(subsystem, record, exc))
+        if subsystem == wa.SKILLS:
+            for item in out[subsystem] + out["candidates"]:
+                item["recur"] = _recur_public(judged.get(str(item.get("id"))))
+    out["records"] = {wa.MEMORY: len(out[wa.MEMORY]), wa.SKILLS: len(out[wa.SKILLS]) + len(out["candidates"])}
     out["counts"] = {s: len(out[s]) - sum(len(g["members"]) - 1 for g in out["groups"][s])
                      for s in (wa.MEMORY, wa.SKILLS)}
     _review_prune(live)
-    _test_prune({str(i.get("id")) for i in out[wa.SKILLS]} | {g["id"] for g in out["groups"][wa.SKILLS]})
+    _test_prune({str(i.get("id")) for i in out[wa.SKILLS] + out["candidates"]}
+                | {g["id"] for g in out["groups"][wa.SKILLS]})
     out["issues"] = _issues() + failed
     return out
 
@@ -2166,7 +2502,18 @@ _SKILL_RULES = (
     "Findings 5 to 7 are fix unless they also break an owner rule.\n"
 )
 _REVIEW_SYSTEM = _REVIEW_HEAD + _REVIEW_BLOCKS + _REVIEW_OTHERS + _REVIEW_RULES
-_REVIEW_PROMPT_V = hashlib.sha256((_REVIEW_SYSTEM + _SKILL_RULES + _SKILL_KINDS).encode("utf-8")).hexdigest()[:8]
+RECURRENCE_ASK = (
+    "9. OWNER MESSAGE, when present, holds what the owner last wrote in the session that made this change. "
+    "Then also add two keys to the JSON object: \"requested_by_owner\" and \"owner_quote\". "
+    "\"requested_by_owner\" is \"yes\" when the message asks to create, change or save this skill, or approves "
+    "such a proposal; \"no\" when the message is about something else and does not mention saving or changing "
+    "a skill; \"unclear\" in every other case, including a bare acknowledgement or continuation with no "
+    "content of its own (such as \"ok\", \"go on\", \"sure\", in any language). \"owner_quote\" is an exact "
+    "quote from the OWNER MESSAGE that asks for it, copied character for character; empty unless the answer is "
+    "\"yes\". Without an OWNER MESSAGE block leave both keys out.\n"
+)
+_REVIEW_PROMPT_V = hashlib.sha256((_REVIEW_SYSTEM + _SKILL_RULES + RECURRENCE_ASK + _SKILL_KINDS).encode(
+    "utf-8")).hexdigest()[:8]
 _GROUP_SYSTEM = (
     "You review a GROUP of pending writes to an AI assistant's long-term {what} before its owner decides on "
     "them as one unit. They all change the same skill and are numbered #1, #2, ... in the order they would be "
@@ -2931,9 +3278,10 @@ def _review_job(subsystem: str, record_id: str, model: dict, tag: str) -> None:
                          "assigned": model, "siblings": len(siblings), "cut": cuts,
                          "seen": {str(r.get("id")): _payload_hash(r.get("payload")) for r in siblings}}
                 proof = _proof(_write_text(subsystem, record))
+                owner = _recur_owner_message(record) if subsystem == wa.SKILLS else None
             started = time.time()
             try:
-                state = {"status": "done", **_review_run(subsystem, prompt, model, nonce, proof)}
+                state = {"status": "done", **_review_run(subsystem, prompt, model, nonce, proof, owner=owner)}
             except Exception as exc:
                 _log(f"pre-review of {record_id} failed: {exc!r}")
                 state = {"status": "failed", "error": _short_error(str(exc) or repr(exc)), **model}
@@ -3046,6 +3394,10 @@ def _review_input(subsystem: str, record: dict, hard: list, siblings: list, nonc
         file_name = _MEM_FILE.get(str((record.get("payload") or {}).get("target") or "memory"), "MEMORY.md")
         parts.append(_block(nonce, f"THE WRITE (memory change to {file_name})",
                             _cut(_write_shown(wa, subsystem, record), "write", cuts)))
+    owner = _recur_owner_message(record) if subsystem == wa.SKILLS else None
+    if owner is not None:
+        parts.append(_block(nonce, "OWNER MESSAGE (what the owner last wrote in the session that made this change)",
+                            owner))
     if siblings:
         others = "\n\n".join(f"### pending write {r.get('id')}\n" + _write_shown(wa, subsystem, r) for r in siblings)
         parts.append(_block(nonce, "OTHER PENDING WRITES (waiting for approval, not applied yet)",
@@ -3113,7 +3465,8 @@ def _answer_json(text: str) -> dict | None:
     return None
 
 
-def _review_parse(text: str, proof: str | None = None, changes: int = 0, material: str | None = None) -> dict:
+def _review_parse(text: str, proof: str | None = None, changes: int = 0, material: str | None = None,
+                  asked: bool = False) -> dict:
     data = _answer_json(str(text or ""))
     if not isinstance(data, dict) or not isinstance(data.get("findings"), list) \
             or not all(isinstance(item, dict) for item in data["findings"]):
@@ -3152,8 +3505,13 @@ def _review_parse(text: str, proof: str | None = None, changes: int = 0, materia
     findings.sort(key=lambda f: (bool(f.get("unverified")), _SEVERITY.index(f["severity"])))
     counted = [f for f in findings if not f.get("unverified")]
     verdict = next((s for s in _SEVERITY[:2] if any(f["severity"] == s for f in counted)), "approve")
-    return {"verdict": {"block": "reject"}.get(verdict, verdict), "summary": str(data.get("summary") or "")[:600],
-            "findings": findings[:15]}
+    out = {"verdict": {"block": "reject"}.get(verdict, verdict), "summary": str(data.get("summary") or "")[:600],
+           "findings": findings[:15]}
+    if asked:
+        answer = str(data.get("requested_by_owner") or "").strip().lower()
+        out["requested"] = {"answer": answer if answer in ("yes", "no") else "unclear",
+                            "quote": str(data.get("owner_quote") or "")[:800]}
+    return out
 
 
 def _review_usage(response, provider: str, model: str) -> dict:
@@ -3174,14 +3532,15 @@ def _review_usage(response, provider: str, model: str) -> dict:
 
 
 def _review_run(subsystem: str, prompt: str, model: dict, nonce: str, proof: str | None = None,
-                system: str = "", changes: int = 0) -> dict:
+                system: str = "", changes: int = 0, owner: str | None = None) -> dict:
     from agent.auxiliary_client import extract_content_or_reasoning
     from tools import write_approval as wa
 
     what = "skills" if subsystem == wa.SKILLS else "memory"
     route: dict = {}
     skills = subsystem == wa.SKILLS
-    head = (system or _REVIEW_SYSTEM).format(what=what, nonce=nonce, skill=_SKILL_RULES if skills else "",
+    rules = _SKILL_RULES + ("" if system else RECURRENCE_ASK)
+    head = (system or _REVIEW_SYSTEM).format(what=what, nonce=nonce, skill=rules if skills else "",
                                              kinds=_SKILL_KINDS if skills else "")
     response = _review_call(_REVIEW_TASK, timeout=_REVIEW_TIMEOUT, max_tokens=6000, route_info=route,
                             messages=[{"role": "system", "content": head},
@@ -3189,8 +3548,8 @@ def _review_run(subsystem: str, prompt: str, model: dict, nonce: str, proof: str
     provider = route.get("provider") or model.get("provider") or ""
     used = route.get("model") or model.get("model") or ""
     material = _proof(prompt) if proof is not None else None
-    return {**_review_parse(extract_content_or_reasoning(response), proof, changes, material), "provider": provider,
-            "model": used,
+    return {**_review_parse(extract_content_or_reasoning(response), proof, changes, material, owner is not None),
+            "provider": provider, "model": used,
             "usage": _review_usage(response, provider, used)}
 
 
@@ -3570,7 +3929,7 @@ def _reviews_start() -> dict:
         steps = _approved_steps()
         for subsystem in (wa.MEMORY, wa.SKILLS):
             records = _list_pending(wa, subsystem)
-            groups = _skill_groups(records) if subsystem == wa.SKILLS else []
+            groups = _skill_groups(_recur_split(records)[0]) if subsystem == wa.SKILLS else []
             inside = {str(r.get("id")) for members in groups for r in members}
             for record in records:
                 if str(record.get("id")) in inside:
@@ -3945,11 +4304,11 @@ def _approve_subset(record: dict, only: list[str]) -> tuple[bool, str]:
 
     if rest_ops:
         names = sorted({op.get("name") for op in rest_ops if op.get("name")})
-        wa.stage_write(wa.SKILLS, {"action": "batch", "operations": rest_ops},
-                       summary=(f"remaining operations ({', '.join(names)}) — the part of "
-                                f"record '{record['id']}' that was not selected, "
-                                f"{len(rest_ops)} operation(s)"),
-                       origin=record.get("origin") or "foreground")
+        _recur_mark([wa.stage_write(wa.SKILLS, {"action": "batch", "operations": rest_ops},
+                                    summary=(f"remaining operations ({', '.join(names)}) — the part of "
+                                             f"record '{record['id']}' that was not selected, "
+                                             f"{len(rest_ops)} operation(s)"),
+                                    origin=record.get("origin") or "foreground")])
     wa.discard_pending(wa.SKILLS, record["id"])
 
     _finalize_entry(entry, wa.SKILLS, apply_ops, before)
@@ -4141,8 +4500,8 @@ def _keep_rejected(subsystem: str, record: dict) -> str:
 
 def _restorable(entry: dict) -> bool:
     entry_id = _valid_id(entry.get("id"))
-    return bool(entry.get("kind") == "rejected" and entry.get("copy") and not entry.get("restored") and entry_id
-                and (_state() / "snapshots" / entry_id / "record.json").exists())
+    return bool(entry.get("kind") in ("rejected", "expired") and entry.get("copy") and not entry.get("restored")
+                and entry_id and (_state() / "snapshots" / entry_id / "record.json").exists())
 
 
 @router.post("/restore")
@@ -4161,7 +4520,7 @@ def _restore_locked(body: dict) -> dict:
     entry = next((e for e in _entries(MAX_ENTRIES) if e.get("id") == entry_id), None)
     if not entry:
         return {"ok": False, "error": _tx("fix_gone")}
-    if entry.get("kind") != "rejected":
+    if entry.get("kind") not in ("rejected", "expired"):
         return {"ok": False, "error": _tx("err_not_restorable")}
     if entry.get("restored"):
         return {"ok": False, "error": _tx("err_already_restored")}
@@ -4190,6 +4549,8 @@ def _restore_locked(body: dict) -> dict:
             _atomic_write(wa._pending_path(subsystem, new_id), json.dumps(fresh, ensure_ascii=False))
         last = float(fresh.get("created_at") or 0)
         new_ids.append(new_id)
+        if subsystem == wa.SKILLS:
+            _recur_mark([fresh])
         review = kept.get("review") if many is None else reviews.get(str(record.get("id")))
         if isinstance(review, dict) and review.get("status") in ("done", "failed"):
             target = _review_path(subsystem, new_id)
