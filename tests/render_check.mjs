@@ -343,17 +343,24 @@ export function EmptyState({ title, description, className }) {
 }
 
 export function PanelEmpty({ title, description, icon = 'inbox', action, className }) {
-  return jsxs('div', {
+  return jsx('div', {
     'data-icon': icon,
     'data-slot': 'panel-empty',
-    className,
-    style: { display: 'grid', placeItems: 'center', textAlign: 'center', padding: '20px 12px' },
-    children: [
-      jsx('span', { 'aria-hidden': 'true', 'data-icon-mark': icon, style: { color: UI.quaternary }, children: '*' }, 'icon'),
-      title ? jsx('p', { style: { margin: 0, fontSize: 12.5, fontWeight: 600, color: UI.primary }, children: title }, 'title') : null,
-      description ? jsx('p', { style: { margin: 0, fontSize: 11, color: UI.tertiary }, children: description }, 'desc') : null,
-      action ? jsx('span', { children: action }, 'action') : null
-    ]
+    className: ['grid flex-1 place-items-center px-6 py-10 text-center', className].filter(Boolean).join(' '),
+    children: jsxs('div', {
+      className: 'flex flex-col items-center gap-2',
+      children: [
+        jsx('i', {
+          'aria-hidden': 'true', 'data-icon-mark': icon, className: 'codicon codicon-' + icon + ' text-muted-foreground/50',
+          style: { fontSize: '1.25rem' }
+        }, 'icon'),
+        title ? jsx('p', { className: 'text-sm font-medium text-foreground/90', children: title }, 'title') : null,
+        description
+          ? jsx('p', { className: 'max-w-sm text-xs leading-relaxed text-muted-foreground/70', children: description }, 'desc')
+          : null,
+        action ? jsx('div', { className: 'mt-2', children: action }, 'action') : null
+      ]
+    })
   })
 }
 
@@ -387,29 +394,60 @@ export function Switch({ checked, onCheckedChange, size = 'default', className, 
 export function ErrorState({ title, description, children, icon, className }) {
   return jsxs('div', {
     'data-slot': 'error-state',
-    className,
-    style: { display: 'grid', gap: 8, justifyItems: 'center', textAlign: 'center' },
+    className: ['grid gap-5', className].filter(Boolean).join(' '),
     children: [
-      icon || jsx('span', { 'aria-hidden': 'true', 'data-error-icon': 'true', style: { color: UI.danger }, children: '!' }, 'icon'),
-      typeof title === 'string'
-        ? jsx('h2', { style: { margin: 0, fontSize: 15, fontWeight: 600, color: UI.primary }, children: title }, 'title')
-        : title,
-      typeof description === 'string'
-        ? jsx('p', { style: { margin: 0, fontSize: 11.5, color: UI.tertiary }, children: description }, 'desc')
-        : description,
-      children ? jsx('div', { children }, 'actions') : null
+      jsxs('div', {
+        className: 'flex flex-col items-center gap-3 text-center',
+        children: [
+          icon || jsx('i', {
+            'aria-hidden': 'true', 'data-error-icon': 'true', className: 'codicon codicon-error text-destructive',
+            style: { fontSize: '1.75rem' }
+          }, 'icon'),
+          typeof title === 'string'
+            ? jsx('h2', { className: 'text-center text-xl font-semibold tracking-tight', children: title }, 'title')
+            : title,
+          typeof description === 'string'
+            ? jsx('p', { className: 'max-w-prose text-center text-sm leading-5 text-muted-foreground', children: description },
+              'desc')
+            : description
+        ]
+      }, 'copy'),
+      children ? jsx('div', { className: 'grid gap-2', children }, 'actions') : null
     ]
   })
 }
 
-export function Loader({ className, label, type }) {
+// One still frame of the app's lemniscate Loader (the app animates it; a shot must not depend on the instant).
+const lemniscate = (turn, scale) => {
+  const a = turn * Math.PI * 2
+  const d = 1 + Math.sin(a) ** 2
+  return [50 + (scale * Math.cos(a)) / d, 50 + (scale * Math.sin(a) * Math.cos(a)) / d]
+}
+const LOADER_PATH = Array.from({ length: 121 }, (_, i) => {
+  const [x, y] = lemniscate(i / 120, 27)
+  return (i ? 'L ' : 'M ') + x.toFixed(2) + ' ' + y.toFixed(2)
+}).join(' ')
+const LOADER_DOTS = Array.from({ length: 14 }, (_, i) => {
+  const [cx, cy] = lemniscate(0.3 - (i / 14) * 0.4, 27)
+  const fade = (1 - i / 14) ** 0.56
+  return { cx, cy, r: 0.9 + fade * 2.7, opacity: 0.04 + fade * 0.96 }
+})
+
+export function Loader({ className, label = 'Loading', type, style }) {
   return jsx('div', {
     'aria-label': label,
     'data-loader': type,
     'data-slot': 'loader',
-    className,
+    className: ['inline-grid size-10 place-items-center text-primary', className].filter(Boolean).join(' '),
     role: 'status',
-    style: { display: 'inline-block', width: 22, height: 22, borderRadius: 999, border: '2px solid ' + UI.stroke }
+    style,
+    children: jsxs('svg', {
+      'aria-hidden': 'true', className: 'size-full overflow-visible', fill: 'none', viewBox: '0 0 100 100',
+      children: [
+        jsx('path', { d: LOADER_PATH, opacity: 0.1, stroke: 'currentColor', strokeWidth: 4.8, strokeLinecap: 'round' }, 'p'),
+        ...LOADER_DOTS.map((dot, i) => jsx('circle', { ...dot, fill: 'currentColor' }, i))
+      ]
+    })
   })
 }
 
@@ -1446,10 +1484,12 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   if (!(panel?.textContent || '').includes('A profile note') || (panel?.textContent || '').includes('A note to add')) {
     fail('selecting Profile does not show the Profile notes')
   }
-  if (!(panel?.querySelector('.pa-dh .pa-crumb')?.textContent || '').startsWith('Profile')
-      || !(panel?.textContent || '').includes('Profile · 1 note')
+  if ((panel?.querySelector('.pa-dh [role="heading"]')?.textContent || '') !== 'Profile · 1 note'
+      || panel?.querySelector('.pa-dh .pa-crumb')
+      || !panel?.querySelector('.pa-dh .pa-dtitle > .pa-crumb-icon svg')
       || (panel?.querySelector('.pa-dh')?.textContent || '').includes('USER.md')) {
-    fail('the Profile detail is not headed by its own name and note count, without the file name')
+    fail('the Profile detail is not headed once by its icon, name and note count (no crumb repeating the name), '
+      + 'without the file name')
   }
   await click(panel?.querySelector('.pa-tech-fold'), 30)
   if (!(en.hostEl.querySelector('.pa-memory .pa-detail .pa-tech')?.textContent || '').includes('USER.md')) {
@@ -1484,7 +1524,7 @@ const actFind = async (hostEl, text) => {
   const wraps = [...en.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
   if (wraps.length !== 4) fail(`expected one Activity row per entry (4), found ${wraps.length}`)
   const heights = [...new Set(wraps.map(w => w.style.height))]
-  if (heights.length !== 1 || heights[0] !== '58px') fail(`the Activity rows are not one fixed height: ${heights}`)
+  if (heights.length !== 1 || heights[0] !== '74px') fail(`the Activity rows are not one fixed height: ${heights}`)
   if (en.hostEl.querySelectorAll('.pa-activity .pa-detail .pa-card').length !== 1) {
     fail('the Activity tab draws more than the one selected detail')
   }
@@ -1796,17 +1836,20 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   }
   if (icon?.getAttribute('aria-label') !== 'Refresh') fail('the refresh control is not named "Refresh"')
   const shell = en.hostEl.querySelector('style')?.textContent || ''
-  if (!/@container \(min-width:761px\)\{\s*\.pa-root>\.pa-bar\{grid-column:1;grid-row:1 \/ -1;width:184px/.test(shell)) {
-    fail('vitality: a wide pane does not turn the bar into the left rail (184px, full height)')
+  if (!/@container \(min-width:761px\)\{\s*\.pa-root>\.pa-bar\{grid-column:1;grid-row:1 \/ -1;width:208px/.test(shell)
+      || !/border-right:1px solid var\(--ui-stroke-tertiary\);[^}]*background:var\(--ui-sidebar-surface-background\)/
+        .test(shell)) {
+    fail('flat: a wide pane does not draw the app\u2019s overlay side menu (208px, sidebar surface, one hairline)')
   }
-  if (!/--pa-deep:color-mix\(in oklab,var\(--ui-accent\) \d+%,var\(--pa-surface\)\)/.test(shell)
-      || !/--pa-on-deep:var\(--ui-text-primary\)/.test(shell)
-      || !/--pa-shell:[^;]*oklch\(from var\(--ui-bg-elevated\) calc\(l - \.\d+\)/.test(shell)) {
-    fail('vitality: the rail and top card are not the content cards’ surface tinted by the accent over a darker'
-      + ' shell (a grey accent turned them into grey slabs)')
+  const flatRules = [...shell.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(m => /\.pa-(root|bar|strip|top|hero|list|detail|split)\b/.test(m[1]))
+  const boxed = flatRules.filter(m => /linear-gradient|box-shadow:var\(--pa-|--pa-(shell|lift|deep)/.test(m[2]))
+  if (boxed.length) {
+    fail(`flat: the shell paints cards, a tinted ground or a gradient (the app's DESIGN.md: flat, not boxed): ${
+      boxed.map(m => m[1].trim()).join(' ')}`)
   }
-  if (!/\.pa-list,\.pa-detail\{background:var\(--pa-surface\);border-radius:20px;box-shadow:var\(--pa-lift\)/.test(shell)) {
-    fail('vitality: the list and the detail are not separate cards on the panel ground')
+  if (!/\.pa-list,\.pa-detail\{overflow:hidden\}/.test(shell)) {
+    fail('flat: the list and the detail are boxed again (they sit on the page, split by one hairline)')
   }
   if (badge?.getAttribute('data-variant') !== 'solid') {
     fail('vitality: the count badge is not the solid kit badge (the soft one is unreadable on the rail)')
@@ -2411,7 +2454,8 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const boxes = ['.pa-verdict', '.pa-file-head', '.pa-review', '.pa-done', '.pa-done[data-k="reject"]', '.pa-bar-side']
   const filled = boxes.filter(b => /background(?:-color|-image)?:(?!transparent|none)/.test(own(b)))
   if (filled.length) fail(`one fill: inner boxes paint their own fill instead of the card’s: ${filled.join(' ')}`)
-  const ringed = ['.pa-verdict', '.pa-review', '.pa-done', '.pa-bar-side'].filter(b => !/border:|box-shadow:inset/.test(own(b)))
+  const ringed = ['.pa-verdict', '.pa-review', '.pa-done', '.pa-bar-side']
+    .filter(b => !/border(?:-top)?:|box-shadow:inset/.test(own(b)))
   if (ringed.length) fail(`one fill: inner boxes lost the hairline that sets them apart: ${ringed.join(' ')}`)
 }
 
@@ -4658,8 +4702,8 @@ REST.scan = 'ok'
   const sheet = pg.hostEl.querySelector('style')?.textContent || ''
   const rule = sel => sheet.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}'))?.[0] || ''
   const rowHeights = [...pg.hostEl.querySelectorAll('.pa-split .pa-list-rows > .pa-rowwrap')].map(r => r.style.height)
-  if (rowHeights.length !== 3 || new Set(rowHeights).size !== 1 || rowHeights[0] !== '78px') {
-    fail(`alignment: the Needs you rows are not one fixed 78 px height: ${JSON.stringify(rowHeights)}`)
+  if (rowHeights.length !== 3 || new Set(rowHeights).size !== 1 || rowHeights[0] !== '96px') {
+    fail(`alignment: the Needs you rows are not one fixed 96 px height: ${JSON.stringify(rowHeights)}`)
   }
   if (!/padding:0 14px/.test(rule('.pa-day'))) {
     fail('alignment: the day heading inside the Activity list has no padding and touches the list border')
@@ -4993,10 +5037,13 @@ REST.scan = 'ok'
     }
   }
 
-  // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the primary keeps the top
-  // row at its right end and Later / Review again move to the second row.
+  // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the decision buttons stay
+  // on one row with the primary at its right end; Later sits beside them when they fit (a footer row of its
+  // own read as leftover text) and the memory meter takes a row of its own.
   const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
-  if (!narrow.includes('.pa-dfoot>.pa-actions{order:-1;flex:1 1 100%;flex-wrap:nowrap;margin-left:0}')
+  const narrowBlock = narrow.split('\n@')[0]
+  if (!narrowBlock.includes('.pa-dfoot>.pa-actions{flex-wrap:nowrap}')
+      || !narrowBlock.includes('.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}') || narrowBlock.includes('order:-1')
       || /\.pa-actions\{margin-left:0;justify-content:flex-start\}/.test(memCss)) {
     fail('rework 2 item 4: the narrow footer does not keep the decision buttons together on the first row, right-aligned')
   }
@@ -5325,8 +5372,12 @@ REST.scan = 'ok'
   const d = await mount('en', 'page')
   await click(tab(d.hostEl, /Activity/), 60)
   const sheet = d.hostEl.querySelector('style')?.textContent || ''
-  if (/\.pa-rowwrap\+\.pa-rowwrap\{border-top/.test(sheet) || !/\.pa-rowwrap\{[^}]*border-radius:10px/.test(sheet)) {
-    fail('row cards: the list rows are still rows of one table split by lines, not separate cards')
+  if (/\.pa-rowwrap\+\.pa-rowwrap\{border-top/.test(sheet) || !/\.pa-rowwrap\{[^}]*border-radius:6px/.test(sheet)
+      || /\.pa-rowwrap\{[^}]*(border:|background:)/.test(sheet)
+      || !/\.pa-rowwrap\[data-on="1"\]\{background:var\(--ui-row-active-background\)\}/.test(sheet)
+      || !/\.pa-root \.pa-row:hover\{background:var\(--ui-row-hover-background\)\}/.test(sheet)) {
+    fail('flat rows: the list rows are not the app\u2019s list rows (no frame, no lines between them, the app\u2019s'
+      + ' row hover and row selection fills)')
   }
   const wraps = () => [...d.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
   if (wraps().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${wraps().length} rows)`)
@@ -5348,8 +5399,8 @@ REST.scan = 'ok'
   await click(head(), 40)
   const subs = () => [...(deck()?.querySelectorAll('.pa-act-sub[data-entry]') || [])]
   if (head()?.getAttribute('aria-expanded') !== 'true' || subs().map(s => s.dataset.entry).join() !== 'deck0001,deck0002,deck0003'
-    || deck()?.style.height !== '157px') {
-    fail(`decks: opening the deck does not show its 3 records in one 157 px card (${deck()?.style.height})`)
+    || deck()?.style.height !== '173px') {
+    fail(`decks: opening the deck does not show its 3 records in one 173 px card (${deck()?.style.height})`)
   }
   if (actDetail(d.hostEl)?.getAttribute('data-entry') !== 'deck0001' || subs()[0]?.getAttribute('aria-current') !== 'true') {
     fail('decks: the newest record of the opened deck is not the one shown')
@@ -5365,7 +5416,7 @@ REST.scan = 'ok'
   await click(subs()[0], 40)
   if (!buttons(actDetail(d.hostEl), /^Undo$/).length) fail('decks: a record inside a deck lost its own Undo')
   await click(head(), 40)
-  if (head()?.getAttribute('aria-expanded') !== 'false' || subs().length || deck()?.style.height !== '58px') {
+  if (head()?.getAttribute('aria-expanded') !== 'false' || subs().length || deck()?.style.height !== '74px') {
     fail('decks: the opened deck does not close again')
   }
   d.root.unmount()
@@ -5408,6 +5459,43 @@ REST.scan = 'ok'
   d.hostEl.remove()
   REST.history = null
   REST.changes = null
+}
+
+// --- visual review 1.15.1: what the other tabs say, a file over its limit, a group row's second line ------
+{
+  REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
+  REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
+  const v = await mount('en', 'page')
+  for (const name of [/^Activity/, /^Memory/]) {
+    await click(tab(v.hostEl, name), 60)
+    if (/the change waits here until you decide/.test(v.hostEl.querySelector('.pa-root > .pa-top')?.textContent || '')) {
+      fail(`visual review: the ${name.source.slice(1)} tab repeats the Needs you explanation in its top card`)
+    }
+  }
+  v.root.unmount()
+  v.hostEl.remove()
+  REST.history = null
+  REST.memory = { ...MEMORY, memory: { ...MEMORY.memory, chars: 2250, percent: 102 } }
+  const m = await mount('en', 'page')
+  await click(tab(m.hostEl, /^Memory/), 60)
+  const pct = [...m.hostEl.querySelectorAll('.pa-memrow-top > b')].map(b => [b.textContent, b.getAttribute('data-full')])
+  if (!pct.some(([text, k]) => text === '102% · full' && k === 'bad')) {
+    fail(`visual review: a file over its limit still reads “nearly full” in the warning tone: ${JSON.stringify(pct)}`)
+  }
+  m.root.unmount()
+  m.hostEl.remove()
+  REST.memory = null
+  REST.pending = null
+  REST.mode = 'groups'
+  const g = await mount('en', 'page')
+  await selectMode(g.hostEl)
+  const preview = g.hostEl.querySelector(`.pa-row[data-key="skills:${CLEAN_GROUP}"] .pa-row-preview`)?.textContent
+  if (preview !== 'SKILL.md · notes.md') {
+    fail(`visual review: a group row's second line repeats its title instead of naming its files: ${JSON.stringify(preview)}`)
+  }
+  g.root.unmount()
+  g.hostEl.remove()
+  REST.mode = 'normal'
 }
 
 if (problems.length) {

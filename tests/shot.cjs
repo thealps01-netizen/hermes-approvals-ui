@@ -18,7 +18,7 @@
  *   kit traces     `[data-slot="button"]` count 0, `[data-variant="destructive"]` (Reject) absent,
  *                  the four frames / the card and tab counters missing
  *   layers         a declared fixed height of the split layout (bar 48 · list head 38 · footers 57 ·
- *                  back bar 36 · rows 78/58/72/38 · day 30 · prose 80) that does not render at its
+ *                  back bar 36 · rows 96/74/72/38 · day 30 · prose 80) that does not render at its
  *                  declared px — the preflight/box-sizing lie
  *   alignment      the app's geometry: one left edge (top bar, list column, notice strip); every row
  *                  of one list has one width and one height; text keeps >= 8 px off the list and
@@ -76,13 +76,14 @@ const MEASURE = `(() => {
   const qa = sel => [...document.querySelectorAll(sel)]
   const txt = el => ((el && el.textContent) || '').replace(/\\\\s+/g, ' ').trim()
   const box = el => el.getBoundingClientRect()
-  const LAYERS = [48, 38, 57, 36, 78, 58, 72, 30, 80]
+  const LAYERS = [48, 38, 57, 36, 96, 74, 72, 30, 80]
   // A designed scroll region (the panel's fixed-layer text boxes) is NOT a clip; a hidden or
   // ellipsis box whose content is bigger than its window IS one. The one exception is a list row's
   // one-line ellipsis: the row is a pointer to the record, whose full text the detail column draws
   // (the panel convention: long text is ellipsised, never swapped). Those are counted in rowEllipsis.
-  const rowCut = el => el.closest('.pa-list-rows') && getComputedStyle(el).textOverflow === 'ellipsis'
-    && el.scrollHeight <= el.clientHeight + 1
+  // A row line clamped to a set number of lines (-webkit-line-clamp) follows the same convention.
+  const rowCut = el => el.closest('.pa-list-rows') && ((getComputedStyle(el).textOverflow === 'ellipsis'
+    && el.scrollHeight <= el.clientHeight + 1) || getComputedStyle(el).webkitLineClamp !== 'none')
   const clip = el => {
     const s = getComputedStyle(el)
     if (s.overflowY === 'auto' || s.overflowY === 'scroll') return null
@@ -284,7 +285,8 @@ const MEASURE = `(() => {
   })
   const compare = qa('.pa-cmp').map(el => ({
     cols: getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length,
-    cells: [...el.children].map(c => Math.round(box(c).height))
+    cells: [...el.children].map(c => Math.round(box(c).height)),
+    narrow: Boolean(el.closest('.pa-frame')) && box(el.closest('.pa-frame')).width < 600
   }))
   // --- a warning is never below a fold ------------------------------------------------------------
   // A designed scroll box is not a clip for ordinary text (see clip above), but it IS one for a
@@ -434,6 +436,9 @@ const MEASURE = `(() => {
       }
       // Two texts painted over each other (the narrow bar once drew "Approvals" across "5 of 7 decided"):
       // every visible text box of the frame, cut to its clipping ancestors, must not cross another one.
+      // A sticky bar (the narrow record's back bar and footer) paints over the text that scrolls under it,
+      // so that text is cut to the part the bar leaves visible, like a clipping ancestor.
+      const stuck = [...f.querySelectorAll('*')].filter(el => getComputedStyle(el).position === 'sticky')
       const boxes = []
       const tw = document.createTreeWalker(f, NodeFilter.SHOW_TEXT)
       let tn
@@ -449,6 +454,13 @@ const MEASURE = `(() => {
             if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
             const c = box(p)
             l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); bt = Math.min(bt, c.bottom)
+          }
+          for (const s of stuck) {
+            if (s.contains(tn)) continue
+            const c = box(s)
+            if (c.left > l + 1 || c.right < rt - 1) continue
+            if (c.top <= t && c.bottom > t) t = c.bottom
+            if (c.bottom >= bt && c.top < bt) bt = c.top
           }
           if (rt - l > 1 && bt - t > 1) boxes.push({ n: tn, l, t, rt, bt })
         }
@@ -543,7 +555,7 @@ const MEASURE = `(() => {
       fonts: [...new Set(pills.map(p => p.font))]
     },
     compare,
-    compareBad: compare.filter(c => c.cols !== 2 || new Set(c.cells).size > 1).length
+    compareBad: compare.filter(c => (c.narrow ? c.cols !== 1 : c.cols !== 2 || new Set(c.cells).size > 1)).length
   }
 })()`
 
@@ -767,11 +779,13 @@ app.whenReady().then(async () => {
       bad.push(`hiddenWarnings=${m.hiddenWarnings.length}: ${named.join(' · ')}`)
     }
     // Floors re-pinned from a fresh render of the 17 split-layout frames (51 tabs, 17 cells, 50 rows, 51-83 layers,
-    // 27 pills, 1 comparison grid at 1000 px); each floor is non-zero so a lost surface fails.
+    // 27 pills, 1 comparison grid at 1000 px); each floor is non-zero so a lost surface fails. Below 760 px the
+    // five record frames show the record instead of its list (35 layers at 640 and 420 px), so the floor drops.
     if (m.tabs < 45) bad.push(`tabs=${m.tabs}`)
     if (m.cells < 12) bad.push(`cells=${m.cells}`)
     if (m.rows < 30) bad.push(`rows=${m.rows} (the list rows are not drawn)`)
-    if (m.layers.length < 45) bad.push(`layers=${m.layers.length} (the fixed heights are not drawn)`)
+    const layerFloor = m.frames.some(f => f.paneW > 760) ? 45 : 30
+    if (m.layers.length < layerFloor) bad.push(`layers=${m.layers.length} (the fixed heights are not drawn)`)
     if (m.kit.buttons === 0) bad.push('kit.buttons=0 (the kit is not drawn)')
     if (m.kit.destructive === 0) bad.push('kit.destructive=0 (Reject is not a destructive kit Button)')
     if (!m.appStylesheet.twVarsOnButton) bad.push('appStylesheet.twVarsOnButton=null (the app stylesheet is not in force)')

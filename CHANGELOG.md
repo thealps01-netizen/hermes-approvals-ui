@@ -305,6 +305,33 @@ and Activity and Memory drawn the same way.
   and 1000 px wide the day count ran into the meters. The bar now checks what fits at its own width:
   first the day dots and meter bars go, then the day count, and they come back when there is room.
 
+* **More of the change is visible in a narrow pane.** Below about 760 px the whole record now scrolls
+  as one page, with the back line at the top and the decision buttons at the bottom staying in place.
+  Before, only the change box scrolled and it was about 120 px tall. "Later" now sits beside the
+  decision buttons instead of alone on a row under them.
+
+* **Activity and Memory no longer repeat the "Needs you" explanation.** On a first day the line at the
+  top of those tabs said what "Needs you" is for, right above "No activity yet". It now says how many
+  were decided today, like the rest of the page.
+
+* **A memory file over its limit says "full" in red.** At 102 % it still read "nearly full" with an
+  amber dot.
+
+* **List rows show two lines of text.** The title of a waiting record and the summary of an Activity
+  entry used to stop after one line ("MEMORY.md updated — …"); they now get a second line before they
+  are cut. A group's second line names its files instead of repeating "3 changes".
+
+* **The Memory and Profile meters have room around them in a narrow pane,** and the note list is
+  headed once ("Memory · 3 notes" with its icon) instead of "Memory" twice.
+
+* **Long record titles break into even lines** instead of leaving the last word alone on a line.
+
+* **The page looks like the rest of Hermes.** The grey ground, the shadowed rounded cards and the
+  gradient side menu are gone: the page sits on the app's own background, the side menu is drawn like
+  the menu in Settings, Cron and Profiles, and the list and the record are split by one thin line.
+  List rows are plain rows like the app's session list: no frame around each one, and the chosen
+  row is marked by the app's own selection colour instead of a blue ring.
+
 ## 1.14.0
 
 Found by an independent review of 1.13.2 in the real Hermes desktop app, used with the keyboard only

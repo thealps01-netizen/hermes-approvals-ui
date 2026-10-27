@@ -38,7 +38,7 @@
  */
 import './clock.mjs'
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { DESKTOP_APP } from './env.mjs'
 
@@ -414,8 +414,12 @@ const rowOf = (hostEl, key) => hostEl.querySelector(`.pa-row[data-key="${key}"]`
 const detailOf = (hostEl, key) => hostEl.querySelector(`.pa-detail[data-key="${key}"] .pa-card`)
 const primary = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
   .find(b => b.getAttribute('data-variant') === 'default')
+const narrowList = hostEl => hostEl.querySelector('.pa-split')?.getAttribute('data-open') === '0' && WIDE <= 760
+const showDetail = async hostEl => {
+  if (narrowList(hostEl)) await click(hostEl.querySelector('.pa-split [aria-current="true"]'), 'the selected list row')
+}
 const pick = async (hostEl, key) => {
-  if (!detailOf(hostEl, key)) await click(rowOf(hostEl, key), `the list row ${key}`)
+  if (!detailOf(hostEl, key) || narrowList(hostEl)) await click(rowOf(hostEl, key), `the list row ${key}`)
   const card = detailOf(hostEl, key)
   if (!card) problems.push(`the detail of ${key} is not drawn after picking its row`)
   return card
@@ -483,6 +487,7 @@ add('f08', 'Needs you — a narrow 420 px pane, the detail view with its back ba
 
 add('f09', 'Activity — day sections, an apply entry selected: the outcome card, the asked-for → saved diff, Undo', await frame(async hostEl => {
   await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+  await showDetail(hostEl)
   need(hostEl.querySelector('.pa-activity .pa-detail .pa-file'), 'f09: the asked-for → saved comparison is not drawn')
   need(/removed \d+ of the \d+ new words/.test(hostEl.querySelector('.pa-detail .pa-outcome')?.textContent || ''),
     'f09: the amended entry draws no fix-effect chip')
@@ -491,6 +496,7 @@ add('f09', 'Activity — day sections, an apply entry selected: the outcome card
 
 add('f10', 'Activity — Undo answered with a conflict: the alert and Force undo', await frame(async hostEl => {
   await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+  await showDetail(hostEl)
   await click(byText(hostEl.querySelector('.pa-detail'), /^Undo$/), 'Undo (reports a conflict)')
   need(byText(hostEl, /^Force undo$/), 'f10: a reported conflict did not turn Undo into Force undo')
 }))
@@ -614,6 +620,7 @@ add('f28', 'Memory — MEMORY.md over its limit (the stop tone), Details open on
 add('f29', 'Activity — an entry selected with its Details open: the record id and the file paths',
   await frame(async hostEl => {
     await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+    await showDetail(hostEl)
     await click(hostEl.querySelector('.pa-activity .pa-detail .pa-tech-fold'), 'Details on the entry')
     need(hostEl.querySelector('.pa-activity .pa-tech .pa-act-files'), 'f29: Details shows no file paths')
   }))
@@ -699,6 +706,7 @@ const newestCss = pattern => {
 }
 const APP_CSS_FILES = [newestCss(/^index-.*\.css$/), newestCss(/^tooltip-.*\.css$/)].filter(Boolean)
 const appCss = APP_CSS_FILES.map(name => readFileSync(`${DIST_ASSETS}/${name}`, 'utf8')).join('\n')
+  .replace(/url\(\.\//g, `url(${pathToFileURL(`${DIST_ASSETS}/`).href}`)
 const kitSelectorCount = (appCss.match(/\[data-slot=/g) || []).length
 const kitStyles = appCss
   ? `kit stylesheet ${APP_CSS_FILES.join(' + ')} (${Math.round(appCss.length / 1024)} kB · ${kitSelectorCount} data-slot selectors)`
