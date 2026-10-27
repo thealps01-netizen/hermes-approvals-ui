@@ -331,6 +331,24 @@ and Activity and Memory drawn the same way.
   the menu in Settings, Cron and Profiles, and the list and the record are split by one thin line.
   List rows are plain rows like the app's session list: no frame around each one, and the chosen
   row is marked by the app's own selection colour instead of a blue ring.
+* **The app's own controls.** Tags, key hints, the With the fix / As written switch, the select
+  boxes and the open/close arrows are now the same controls the rest of Hermes uses, so they look
+  and behave like the app. Scroll bars are the app's thin ones that show on hover, text follows the
+  app's sizes, and movements are shorter; a decided record no longer waits before it leaves.
+* **No boxes inside boxes.** The check is one line with a coloured dot at every width (it was a box
+  with a large round icon in narrow and wide panes). The review, the selection summary, the Activity
+  file list, the memory notes and the saved / not-saved row are plain sections or rows. Warnings and
+  alerts are one flat callout; in the light theme the warnings show their amber again.
+* **Tidier layout.** A blocked group says once what unlocks saving, inside its alert. Review again
+  sits at the right edge of the check on every record. In a narrow pane the memory meter shares the
+  row with Later, Don't save and Save when they fit, and the buttons keep together on the right when
+  they do not; the right edge no longer moves when a record scrolls. Memory note lengths move under
+  the note in a narrow pane, so the note keeps its width. Retry is a small centred button, and
+  Undo, Clear all, Select all and Cancel look like buttons.
+* **The memory meter under a record shows its state.** It is green, amber near the limit and red over
+  it, the same colours as the meters in the side menu (it was grey at every level).
+* **A memory write over the file limit says why.** Its alert now says the write would take the file over
+  its limit; it used to say the text it changes was no longer in the file.
 
 ## 1.14.0
 

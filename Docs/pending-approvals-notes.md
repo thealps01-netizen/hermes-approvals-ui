@@ -1747,3 +1747,68 @@ This supersedes "Cards on a tinted ground" and "One material" above:
   under "One fill" above.
 - render_check's "flat" block fails on the shell painting a gradient or a `--pa-*` card shadow, on the
   list and detail being boxed again, and on a rail that is not the side-menu surface.
+
+## Kit controls and no nested boxes (1.15.0)
+
+A full review (code against `apps/desktop/DESIGN.md` and the SDK exports, plus every preview frame at
+1000, 640 and 420 px in both themes) found the panel still hand-building controls the kit ships and
+still nesting boxes. Every replacement below is exported by the SDK at the CI pin (v0.22.0) and the
+render stub copies the pinned component, not a newer one.
+
+- **Kit controls, not copies.** `Badge` is used as shipped (no `style: TAG`, no `.pa-pill`,
+  `.pa-deck-count`); tags inside a framed file box are `muted`, not `outline`, so no frame sits in a
+  frame. The fix view switch is `SegmentedControl`; the bulk box is `Checkbox` (its own focus ring);
+  key hints are `Kbd` (`size sm`, `inverted` on a button); open/close arrows are `DisclosureCaret`.
+  This supersedes "one tag form" and the hand-built checkbox above.
+- **The app's scroll bars, font and scale.** `THIN_SCROLL` and the `::-webkit-scrollbar` block are gone
+  (the app's hover-only thumb applies; render_check fails if the panel paints its own). Mono is
+  `var(--font-mono)` (the static audit allows it as an app token). `FS` sits on the app's 12/13/14
+  scale (detail title 15, hero 18); list titles are weight 500.
+- **Motion follows state.** Hover paints at once and eases only on the way back; enter and exit are
+  150 ms, and the leave timer is the exit length plus 10 ms instead of 340 ms.
+- **Flat check at every width.** `.pa-verdict` is one line over `HAIRLINE` with the tone dot at all
+  widths; the seal column, its halo and the running gradient are gone. render_check fails on a
+  framed or gradient verdict anywhere.
+- **No nested boxes.** `R` is `{ box: 6, ctl: 6, pill: 999 }` (the app's surfaces stop near 6 px).
+  The review is a section under a hairline with one quote rule (the dashed rule is gone); the
+  selection summary, Activity files, memory notes and memory rows are rows without frames or
+  dividers; the list tile is a bare glyph like the app's row lead. Alerts and banners share
+  `CALLOUT`: a 12 % tone tint and a 55 % tone ring at the control radius (a left bar was tried and
+  breaks the "no left bar" callout rule above). The scan strip has no hairline of its own, so a
+  strip alert is not a box inside a band.
+- **Layout.** A stale group's "Saving unlocks when…" line is inside its alert, not a fourth repeat
+  under it. Review again sits at the right edge of the verdict block in every layout (on its line when wide, under the checks in narrower bands). The footer meter is
+  `flex:1 1 160px` and Later travels with the decision buttons in `.pa-dfoot-right`, so a narrow
+  footer is one row when it fits and meter-over-buttons (right-aligned) when it does not. The record
+  scroller sets `scrollbar-gutter:stable`. Narrow memory notes put the length under the text. The
+  error state's actions sit in a centred grid like the app's own error overlays (`resume-exhausted-
+  overlay.tsx`), so Retry is not stretched. Undo, Clear all, Select all and Cancel are ghost buttons.
+- **Kept on purpose.** The time stays off the title line ("software…" cut, above); the Activity
+  preview uses `text-wrap:balance` instead. The top card stays hidden when Activity fails to load:
+  without it the card would claim "0 decided today". Focus rings stay (keyboard users need them,
+  although the app draws none). The tab track stays the panel's own: the kit's tabs cannot carry a
+  count. Save confirmations stay inline: `ConfirmDialog` opens focused on Confirm, so Enter would
+  save.
+
+### Frames for the states nobody had looked at (f32-f45)
+
+The inventory found 36 surfaces no preview frame drew. `tests/preview.mjs` now draws the ones the
+panel paints itself: the in-row Not saved row with Restore (f32), an opened red check (f33), the
+reject-advised Save anyway arm (f34), the armed bulk Save bar (f35), a long change opened with Show
+less (f36), a Profile record (f37), no reviewer model (f38), a plain skill change with no edits (f39),
+a memory write over the limit, which the backend marks Cannot be applied (f40), Activity failed /
+outside-Approvals / long-path entries (f41-f43), the Profile memory file (f44) and muted alerts (f45).
+Each frame checks its own state, so a frame that stops reaching it fails the preview. `PA_WIDTH=1280`
+draws the wide layout (over 1100 px), which had no frame.
+
+Not drawn on purpose: toasts and tooltip bubbles are the app's (`host.notify`, `Tip`; the panel only
+supplies the words, which the render check reads), and hover / focus colours are the app's row and
+kit tokens. The kit SegmentedControl has no `data-slot` at the pin, so `shot.cjs` counts what sits
+under `.pa-toggle` as kit markup when it splits panel and kit contrast.
+
+The footer memory meter takes `--pa-tone` from `fill()` like the side meters (green, amber from
+90 %, red at the limit); it was a neutral grey at every level.
+
+f40 showed the single-record stale lead ("the text it changes is no longer in the file") on a memory
+write the backend refuses for size. A record whose `fit.after` exceeds `fit.limit` now leads with
+`pa.status.staleFullWhy`; render_check case 29b holds it and the red meter.

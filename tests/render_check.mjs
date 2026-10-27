@@ -276,6 +276,83 @@ export function Badge({ variant = 'default', size = 'default', className, childr
   })
 }
 
+const cx = (...parts) => parts.filter(Boolean).join(' ')
+
+export function SegmentedControl({ options = [], value, onChange, className, disabled = false }) {
+  return jsx('div', {
+    className: cx('inline-grid w-fit auto-cols-fr grid-flow-col gap-0.5 rounded-[5px] bg-(--ui-bg-tertiary) p-0.5',
+      disabled && 'opacity-50', className),
+    children: options.map(o => jsx('button', {
+      type: 'button', 'aria-pressed': value === o.id, disabled: disabled || undefined,
+      className: cx('flex min-w-0 items-center justify-center gap-1 rounded-[3px] px-2.5 py-0.5 text-[0.6875rem]',
+        'font-medium whitespace-nowrap transition-colors disabled:cursor-default',
+        value === o.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'),
+      onClick: () => onChange && onChange(o.id),
+      children: jsx('span', { className: 'min-w-0 truncate', children: o.label })
+    }, o.id))
+  })
+}
+
+const CHECK_BOX = 'group peer size-4 shrink-0 rounded-sm border border-input shadow-xs outline-none transition-shadow'
+  + ' data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground'
+
+export function Checkbox({ checked, onCheckedChange, className, disabled, ...rest }) {
+  const on = checked === true
+  return jsx('button', {
+    ...rest,
+    type: 'button', role: 'checkbox', 'aria-checked': on, 'data-state': on ? 'checked' : 'unchecked',
+    'data-slot': 'checkbox', disabled: disabled || undefined,
+    className: cx(CHECK_BOX, 'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
+      'disabled:cursor-not-allowed disabled:opacity-50', className),
+    onClick: e => {
+      if (rest.onClick) rest.onClick(e)
+      if (!e.defaultPrevented && onCheckedChange) onCheckedChange(!on)
+    },
+    children: on
+      ? jsx('span', {
+          'data-slot': 'checkbox-indicator', className: 'flex items-center justify-center text-current',
+          children: jsx('i', { 'aria-hidden': 'true', className: 'codicon codicon-check', style: { fontSize: '0.875rem' } })
+        })
+      : null
+  })
+}
+
+const KBD_SURFACE = 'border-[color-mix(in_srgb,var(--ui-stroke-secondary)_75%,transparent)]'
+  + ' bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,var(--dt-foreground)_6%)]'
+  + ' text-[color-mix(in_srgb,var(--dt-foreground)_58%,transparent)]'
+  + ' shadow-[0_1px_0_0_color-mix(in_srgb,var(--ui-stroke-tertiary)_85%,transparent),0_1px_2px_0_color-mix(in_srgb,var(--dt-foreground)_7%,transparent)]'
+const KBD_VARIANT = {
+  default: KBD_SURFACE,
+  inverted: 'border-[color-mix(in_srgb,currentColor_22%,transparent)] bg-[color-mix(in_srgb,currentColor_12%,transparent)]'
+    + ' text-[color-mix(in_srgb,currentColor_88%,transparent)] shadow-[0_1px_0_0_color-mix(in_srgb,currentColor_18%,transparent)]'
+}
+const KBD_SIZE = { sm: 'rounded-[0.2rem] text-[0.625rem]', md: 'rounded-[0.25rem] text-[0.6875rem]' }
+
+export function Kbd({ children, className, size = 'md', variant = 'default', ...rest }) {
+  const label = typeof children === 'string' ? children : ''
+  const compact = Array.from(label).length === 1
+  const shape = size === 'sm'
+    ? (compact ? 'size-[1.125rem] px-0' : 'h-[1.125rem] min-w-[1.125rem] px-1')
+    : (compact ? 'size-[1.375rem] px-0' : 'h-[1.375rem] min-w-[1.375rem] px-1.5')
+  return jsx('kbd', {
+    ...rest,
+    'data-slot': 'kbd',
+    className: cx('inline-flex shrink-0 items-center justify-center border [font-family:var(--dt-font-kbd)] font-normal',
+      'leading-none select-none', KBD_VARIANT[variant] || KBD_VARIANT.default, KBD_SIZE[size] || KBD_SIZE.md, shape, className),
+    children
+  })
+}
+
+export function DisclosureCaret({ open, className, size = '0.75rem', ...rest }) {
+  return jsx('i', {
+    ...rest,
+    'aria-hidden': 'true',
+    'data-slot': 'disclosure-caret',
+    className: cx('codicon codicon-chevron-right shrink-0 transition-transform duration-150', open && 'rotate-90', className),
+    style: { fontSize: size }
+  })
+}
+
 export function PanelSectionLabel({ className, children }) {
   return jsx('div', {
     'data-slot': 'panel-section-label',
@@ -1144,10 +1221,12 @@ for (const mounted of [en, other]) {
   if (!html.includes('.pa-leaving{opacity:0')) fail('the leaving animation class is not defined')
   must(html, [
     'cubic-bezier(0.2, 0, 0.38, 0.9)', 'cubic-bezier(0, 0, 0.38, 0.9)', 'cubic-bezier(0.4, 0, 1, 1)',
-    'animation:pa-in 240ms', 'opacity 200ms',
-    '::-webkit-scrollbar-thumb',
+    'animation:pa-in 150ms', 'opacity 150ms',
     'transition:none !important;animation:none !important'
-  ], 'the motion table and the themed scrollbars')
+  ], 'the motion table')
+  if (/::-webkit-scrollbar|scrollbar-width|scrollbar-color/.test(html)) {
+    fail('the panel paints its own scrollbars again; the app\u2019s hover-only thumb is the one to use')
+  }
   if (!en.hostEl.querySelector('.pa-pane')) fail('the pane root lost its pa-pane class')
   for (const key of keys) {
     await toFront(en.hostEl, key)
@@ -1345,10 +1424,9 @@ for (const mounted of [en, other]) {
   }
   if (/font-size:10\.5px/.test(sheet)) fail('10.5px text is back (FS.micro below 11px)')
   const tags = [...en.hostEl.querySelectorAll('[data-slot="badge"]')]
-  const odd = tags.filter(b => !b.classList.contains('pa-tag') || b.style.height !== '20px'
-    || b.style.borderRadius !== '999px' || b.style.fontWeight !== '600')
-  if (!tags.length || odd.length) {
-    fail(`a status tag is not drawn in the one tag form: ${JSON.stringify(odd.map(b => b.textContent))}`)
+  const odd = tags.filter(b => b.style.height || b.style.borderRadius !== '3px' || b.style.fontWeight)
+  if (!tags.length || odd.length || /\.pa-pill\{|\.pa-deck-count\{/.test(sheet)) {
+    fail(`a tag is restyled or hand-built instead of the kit Badge: ${JSON.stringify(odd.map(b => b.textContent))}`)
   }
   if (!/\.pa-chips\{[^}]*flex-wrap:wrap/.test(sheet) || !/\.pa-chip\{[^}]*display:inline-flex/.test(sheet)) {
     fail('the check chips of the verdict card do not wrap as one row of chips')
@@ -2045,11 +2123,11 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const cardOf = h => h.hostEl.querySelector('.pa-detail .pa-bulk')
   const bar = barOf(bulk)
   if (bulk.hostEl.querySelector('.pa-list .pa-bulk')) fail('the bulk actions are still drawn inside the list')
-  const picks = [...bulk.hostEl.querySelectorAll('input.pa-pick')]
+  const picks = [...bulk.hostEl.querySelectorAll('.pa-pick')]
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('input.pa-pick')
+    ?.querySelector('.pa-pick')
   if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
@@ -2256,7 +2334,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
   }
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
-  if (!/\.pa-detail>\.pa-card\{[^}]*animation:pa-in 240ms/.test(sheet)) fail('the detail card has no rise-in animation')
+  if (!/\.pa-detail>\.pa-card\{[^}]*animation:pa-in 150ms/.test(sheet)) fail('the detail card has no rise-in animation')
   await refresh()
   const first = cardNow()
   await refresh()
@@ -2299,7 +2377,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   await toFront(fresh.hostEl, 'skills:aaa11111')
   const rejectBtn = [declineBtn(fresh.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]'))].filter(Boolean)[0]
   if (rejectBtn) await click(rejectBtn, 0)
-  const leaveIds = [...timers].filter(([, ms]) => ms === 340).map(([id]) => id)
+  const leaveIds = [...timers].filter(([, ms]) => ms === 160).map(([id]) => id)
   if (!leaveIds.length) fail('no leave timer was started by a successful decision')
   await act(async () => { fresh.root.unmount() })
   if (leaveIds.some(id => !cleared.has(id))) fail('a leave timer survives the unmount (setTimeout never cleared)')
@@ -2434,10 +2512,15 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
 {
   const css = en.hostEl.querySelector('style')?.textContent || ''
   const band = css.split('@container (min-width:761px) and (max-width:1100px){')[1]?.split('\n}')[0] || ''
+  const flat = [
+    [/(^|\n)\.pa-verdict\{[^}]*border-bottom:1px solid var\(--ui-stroke-tertiary\)/, 'the check is not one line over a hairline'],
+    [/(^|\n)\.pa-verdict>\.pa-seal\{display:none\}/, 'the 34 px seal keeps its own column'],
+    [/(^|\n)\.pa-vtitle::before\{[^}]*background:var\(--pa-tone\)/, 'the verdict tone is lost with the seal'],
+  ].filter(([re]) => !re.test(css)).map(([, why]) => why)
+  if (/(^|\n)\.pa-verdict\{[^}]*(border:|border-radius|linear-gradient)/.test(css)) flat.push('the check is a framed card again')
+  if (flat.length) fail(`flat check at every width: ${flat.join('; ')}`)
   const miss = [
-    [/\.pa-verdict\{grid-template-columns:minmax\(0,1fr\);[^}]*border:0/, 'the check is a boxed card with a seal column'],
-    [/\.pa-verdict>\.pa-seal\{display:none\}/, 'the 34 px seal keeps its own column'],
-    [/\.pa-vtitle::before\{[^}]*background:var\(--pa-tone\)/, 'the verdict tone is lost with the seal'],
+    [/\.pa-verdict\{grid-template-columns:minmax\(0,1fr\);/, 'the check keeps its side column'],
     [/\.pa-dbody\{padding:12px 14px\}/, 'the record keeps its 20 px side padding'],
     [/\.pa-root \.pa-row\{grid-template-columns:22px /, 'the list rows keep the 28 px tile column'],
     [/\.pa-cb\{left:10px;top:8px;width:22px;height:22px\}/, 'the select box stays 28 px and covers the title'],
@@ -2454,8 +2537,8 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const boxes = ['.pa-verdict', '.pa-file-head', '.pa-review', '.pa-done', '.pa-done[data-k="reject"]', '.pa-bar-side']
   const filled = boxes.filter(b => /background(?:-color|-image)?:(?!transparent|none)/.test(own(b)))
   if (filled.length) fail(`one fill: inner boxes paint their own fill instead of the card’s: ${filled.join(' ')}`)
-  const ringed = ['.pa-verdict', '.pa-review', '.pa-done', '.pa-bar-side']
-    .filter(b => !/border(?:-top)?:|box-shadow:inset/.test(own(b)))
+  const ringed = ['.pa-verdict', '.pa-review', '.pa-bar-side']
+    .filter(b => !/border(?:-top|-bottom)?:|box-shadow:inset/.test(own(b)))
   if (ringed.length) fail(`one fill: inner boxes lost the hairline that sets them apart: ${ringed.join(' ')}`)
 }
 
@@ -2633,6 +2716,11 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (!/unavailable/i.test(broken.chipText)) fail(`the status chip has no error state: ${JSON.stringify(broken.chipText)}`)
   const retry = buttons(broken.hostEl, /^Retry$/)[0]
   if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error state carries no kit Retry button')
+  const errCss = broken.hostEl.querySelector('style')?.textContent || ''
+  if (!retry?.closest('[data-slot="error-state"] .pa-state-actions')
+      || !/\.pa-state-actions\{display:grid;justify-items:center/.test(errCss)) {
+    fail('Retry is stretched across the error state (the app centres its error actions in a grid)')
+  }
   REST.mode = 'issues'
   const before = REST.gets
   if (retry) await click(retry, 80)
@@ -2667,9 +2755,9 @@ REST.scan = 'ok'
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
-  const pickDisabled = (host, key) => (cell(host, key)?.querySelector('input.pa-pick')
+  const pickDisabled = (host, key) => (cell(host, key)?.querySelector('.pa-pick')
     || host.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-      ?.querySelector('input.pa-pick'))?.disabled
+      ?.querySelector('.pa-pick'))?.disabled
   const openFull = async (host, key) => {
     await toFront(host, key)
     const btn = buttons(cell(host, key), /^Show the full review$/)[0]
@@ -2938,7 +3026,7 @@ REST.scan = 'ok'
   {
     const order = [...(card?.querySelectorAll(FOCUSABLE) || [])].filter(el => el.getAttribute('tabindex') !== '-1')
       .filter(el => !el.closest('.pa-back'))
-      .map(el => (el.tagName === 'INPUT' ? 'checkbox' : name(el).trim()))
+      .map(el => (el.getAttribute('role') === 'checkbox' ? 'checkbox' : name(el).trim()))
     const want = ['Review again', 'Hide the full review', 'Details', 'Later', 'Don’t save', 'Save skill']
     if (JSON.stringify(order) !== JSON.stringify(want)) fail(`the card's Tab order changed: ${JSON.stringify(order)}`)
   }
@@ -3061,12 +3149,20 @@ REST.scan = 'ok'
   must(cleanHead?.textContent, ['alpha-skill · 2 changes', '+3 −1'], 'clean group header')
   if (cleanHead?.querySelectorAll('[data-slot="badge"]').length) fail('a clean group header wears a state badge')
   if (!g.hostEl.querySelector(`.pa-row[data-key="${ck(CLEAN_GROUP)}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('input[type="checkbox"]')) fail('a group row has no checkbox')
+    ?.querySelector('[role="checkbox"]')) fail('a group row has no checkbox')
 
   await toFront(g.hostEl, ck(STALE_GROUP))
   const stale = () => cell(g.hostEl, ck(STALE_GROUP))
   must(`${stale()?.querySelector('.pa-dh')?.textContent} | ${stale()?.querySelector('.pa-verdict')?.textContent}`,
     ['beta-skill, gamma-skill · 3 changes', '+5 −2', 'Cannot be applied'], 'stale group header')
+  {
+    const holds = [...(stale()?.querySelectorAll('.pa-hold') || [])]
+    if (holds.length !== 1 || !holds[0].closest('.pa-alert')) {
+      fail('stale group: "Saving unlocks when…" is not said once, inside the alert (it was a fourth repeat under it)')
+    }
+    const side = stale()?.querySelector('.pa-verdict .pa-vside')
+    if (!side || !buttons(side, /^Review again$/).length) fail('stale group: Review again is not at the end of the check line')
+  }
 
   // Each reachable record still carries exactly one review section (the stage shows one at a time now,
   // so the panel-wide "4 review sections at once" count is replaced by a per-card sweep of the same 4 keys).
@@ -3110,7 +3206,7 @@ REST.scan = 'ok'
     const boxes = [...(clean()?.querySelectorAll('.pa-dbody > .pa-change .pa-file') || [])]
     must(boxes.map(b => b.textContent).join(' | '), ['alpha-skill/SKILL.md', 'Changed', 'RESULT-CHANGED-LINE',
       'alpha-skill/references/notes.md', 'New file', 'RESULT-NEW-LINE', '+2 −0'], 'group Result')
-    if (boxes.some(b => !b.querySelector('.pa-file-head .pa-pill'))) fail('a group Result file box has no status pill')
+    if (boxes.some(b => !b.querySelector('.pa-file-head [data-slot="badge"]'))) fail('a group Result file box has no status pill')
   }
 
   await click(buttons(clean(), /^Don’t save #2$/)[0], 60)
@@ -3145,7 +3241,7 @@ REST.scan = 'ok'
   noRawKeys(g.hostEl.textContent, 'group cards')
 
   const pick = key => g.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('input[type="checkbox"]')
+    ?.querySelector('[role="checkbox"]')
   for (const key of [ck(CLEAN_GROUP), 'skills:c3000003']) {
     const cb = pick(key)
     if (cb) await click(cb)
@@ -3540,7 +3636,7 @@ REST.scan = 'ok'
 }
 
 // --- 26) 1.13: a decision outlives a tab switch; every view it changes is read again ---------------
-// The busy state and the 340 ms leave timer lived in the card, so switching tabs during or just after a
+// The busy state and the 160 ms leave timer lived in the card, so switching tabs during or just after a
 // decision dropped both: the decided card came back with Approve enabled (a second send) and the list was
 // not read again. The in-flight / leaving set now sits above the tab switch. A card on its way out is
 // inert (no pointer, no focus, hidden from assistive tech, buttons disabled). A decision, an undo or a
@@ -3902,14 +3998,14 @@ REST.scan = 'ok'
   REST.pending = two
   const pair = await mount('en', 'page')
   await selectMode(pair.hostEl)
-  for (const box of pair.hostEl.querySelectorAll('input.pa-pick')) await click(box, 20)
+  for (const box of pair.hostEl.querySelectorAll('.pa-pick')) await click(box, 20)
   if (pair.hostEl.querySelector('.pa-sel-count')?.textContent !== '2 selected') fail('setup: two cards could not both be ticked')
   REST.pending = { ...two, skills: [], counts: { memory: 1, skills: 0 } }
   await toFront(pair.hostEl, 'skills:aaa11111')
   await click([primaryBtn(cellOf(pair, 'skills:aaa11111'))].filter(Boolean)[0], 700)
   REST.pending = { ...two, skills: [PENDING.skills[0]] }
   await click(pair.hostEl.querySelector('.pa-refresh'), 150)
-  const ticked = [...pair.hostEl.querySelectorAll('input.pa-pick')].filter(b => b.checked).map(b => b.getAttribute('aria-label'))
+  const ticked = [...pair.hostEl.querySelectorAll('.pa-pick')].filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.getAttribute('aria-label'))
   const said = pair.hostEl.querySelector('.pa-sel-count')?.textContent
   if (ticked.length || said !== undefined) {
     fail(`selection mode outlived a one-record queue and came back by itself: "${said}", ${JSON.stringify(ticked)} ticked`)
@@ -3929,7 +4025,7 @@ REST.scan = 'ok'
   const cellAt = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const barOf = h => h.hostEl.querySelector('.pa-bulk')
   const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('input.pa-pick')
+    ?.querySelector('.pa-pick')
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const doc = dom.window.document
   const pid = stub.calls.registered.at(-1).id
@@ -4254,8 +4350,29 @@ REST.scan = 'ok'
   if (!near(used, 2100) || !near(add?.style.left, 2100) || !near(add?.style.width, 2152 - 2100)) {
     fail(`the meter widths do not come from fit: used ${used}, add ${add?.style.left}/${add?.style.width}`)
   }
+  if (box?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
+    fail(`the footer meter at 97 % is not the warn tone the side meters use: ${box?.style.getPropertyValue('--pa-tone')}`)
+  }
   REST.pending = null
   fit.hostEl.remove()
+}
+
+// --- 29b) a memory write over the file limit says so, not "the text it changes is no longer in the file" -----
+{
+  const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
+  REST.pending = { ...PENDING, memory: [{ ...PENDING.memory[0],
+    plain: { ...PENDING.memory[0].plain, fit: { file: 'MEMORY.md', before: 2150, after: 2262, limit: 2200, over: 62 },
+      stale: ['MEMORY.md: this change would put the file at 2262/2200 characters (62 over).'] } }] }
+  const over = await mount('en')
+  await toFront(over.hostEl, 'memory:abc12345')
+  const alert = cell(over.hostEl, 'memory:abc12345')?.querySelector('.pa-alert')?.textContent || ''
+  if (!/over its limit/.test(alert) || /no longer in the file/.test(alert)) {
+    fail(`an over-limit memory write blames a changed file instead of the limit: ${alert.slice(0, 120)}`)
+  }
+  const tone = cell(over.hostEl, 'memory:abc12345')?.querySelector('.pa-meter-box')?.style.getPropertyValue('--pa-tone')
+  if (tone !== 'var(--ui-red)') fail(`the footer meter past 100 % is not red: ${tone}`)
+  REST.pending = null
+  over.hostEl.remove()
 }
 
 // --- 30) hero-why: "Why Hermes wants this: <text>" shows only when plain.why is set (F8) ----------------
@@ -4471,20 +4588,21 @@ REST.scan = 'ok'
 // footer holds "Reject N" (outline, not red) and "Approve N" (primary). Esc or Cancel leaves; nothing stays.
 {
   const sm = await mount('en', 'page')
-  const picksOf = () => [...sm.hostEl.querySelectorAll('input.pa-pick')]
+  const picksOf = () => [...sm.hostEl.querySelectorAll('.pa-pick')]
   const barNow = () => sm.hostEl.querySelector('.pa-bulk')
   const head = () => sm.hostEl.querySelector('.pa-split .pa-list-head')
   if (picksOf().length || barNow()) fail('select-mode: checkboxes or the bulk bar show before "Select" is pressed')
   const on = head()?.querySelector('.pa-select')
   if (name(on) !== 'Select') fail(`select-mode: "Select" is not in the list header: ${name(on)}`)
   if (on) await click(on, 40)
-  const tileBoxes = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap[data-picking="1"] > .pa-cb > input.pa-pick')]
+  const tileBoxes = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap[data-picking="1"] > .pa-cb > .pa-pick')]
   if (picksOf().length !== 3 || tileBoxes.length !== 3) {
     fail(`select-mode: each row's tile must turn into its checkbox, got ${tileBoxes.length} of ${picksOf().length}`)
   }
   const sheet = sm.hostEl.querySelector('style')?.textContent || ''
   if (!sheet.includes('.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}')
       || !/\.pa-cb\{position:absolute;left:12px;top:10px;width:28px;height:28px/.test(sheet)
+      || tileBoxes.some(b => b.getAttribute('data-slot') !== 'checkbox')
       || !/\.pa-root \.pa-row\{[^}]*padding:10px 12px;/.test(sheet)) {
     fail('select-mode: the checkbox is not drawn in the place of the 28 px icon tile')
   }
@@ -4495,7 +4613,7 @@ REST.scan = 'ok'
   const picks = picksOf()
   for (const box of picks.slice(0, 2)) await click(box, 20)
   const ticked = [...sm.hostEl.querySelectorAll('.pa-cb[data-on="1"]')]
-  if (ticked.length !== 2 || ticked.some(cb => !cb.querySelector('.pa-cbx svg'))
+  if (ticked.length !== 2 || ticked.some(cb => !cb.querySelector('[data-slot="checkbox"][data-state="checked"]'))
       || sm.hostEl.querySelectorAll('.pa-rowwrap[data-picked="1"]').length !== 2) {
     fail('select-mode: a ticked tile is not filled with its check, or its row is not tinted')
   }
@@ -4564,7 +4682,7 @@ REST.scan = 'ok'
   REST.gone = new Set()
   const bk = await mount('en', 'page')
   await selectMode(bk.hostEl)
-  for (const box of [...bk.hostEl.querySelectorAll('input.pa-pick')].slice(0, 2)) await click(box, 20)
+  for (const box of [...bk.hostEl.querySelectorAll('.pa-pick')].slice(0, 2)) await click(box, 20)
   const noticesBefore = stub.calls.notify.length
   await click(buttons(bk.hostEl.querySelector('.pa-bulk'), /^Don’t save 2$/)[0], 40)
   await click(bk.hostEl.querySelector('.pa-bulk-go'), 400)
@@ -5019,7 +5137,7 @@ REST.scan = 'ok'
   // selected file's banner and notes directly below; no list→detail step and no back bar.
   const mem = await mount('en', 'page')
   const memCss = sheetOf(mem)
-  for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;',
+  for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}',
     '.pa-split.pa-memory>.pa-list{display:flex;flex:none;', '.pa-split.pa-memory>.pa-detail{display:flex;flex:none}',
     '.pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}']) {
     const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
@@ -5039,11 +5157,22 @@ REST.scan = 'ok'
 
   // item 4 (the layout half; the shot gate measures the rows): at 760 px and below the decision buttons stay
   // on one row with the primary at its right end; Later sits beside them when they fit (a footer row of its
-  // own read as leftover text) and the memory meter takes a row of its own.
+  // own read as leftover text) and the memory meter shares that row when it fits (160 px or more), else it
+  // wraps above them (a meter row of its own at every width cost 36 px of record).
   const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
   const narrowBlock = narrow.split('\n@')[0]
+  const rightGroup = /(^|\n)\.pa-dfoot-right\{[^}]*margin-left:auto;flex:none/.test(memCss)
+  const narrowNote = /\.pa-note-row>\.pa-note-len\{grid-column:2;grid-row:2/.test(narrowBlock)
+  const gutter = /\.pa-detail>\.pa-card\{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable\}/.test(narrowBlock)
+  if (!rightGroup || !narrowNote || !gutter) {
+    fail(`narrow footer and notes: ${[!rightGroup && 'Later splits from the buttons when the footer wraps',
+      !narrowNote && 'a note length squeezes the note text', !gutter && 'the right edge moves when a record scrolls']
+      .filter(Boolean).join('; ')}`)
+  }
   if (!narrowBlock.includes('.pa-dfoot>.pa-actions{flex-wrap:nowrap}')
-      || !narrowBlock.includes('.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}') || narrowBlock.includes('order:-1')
+      || !/(^|\n)\.pa-dfoot-left\{[^}]*flex:1 1 160px\}/.test(memCss)
+      || /pa-dfoot-left\{flex:1 1 100%\}/.test(memCss)
+      || narrowBlock.includes('order:-1')
       || /\.pa-actions\{margin-left:0;justify-content:flex-start\}/.test(memCss)) {
     fail('rework 2 item 4: the narrow footer does not keep the decision buttons together on the first row, right-aligned')
   }
@@ -5266,7 +5395,8 @@ REST.scan = 'ok'
   const n = await mount('en', 'page')
   await toFront(n.hostEl, 'memory:abc12345')
   const detail = n.hostEl.querySelector('.pa-detail')
-  if (detail?.querySelector('.pa-pill-id') || (detail?.querySelector('.pa-crumb')?.textContent || '').includes('#abc')) {
+  if (detail?.querySelector('.pa-crumb [data-slot="badge"]')
+      || (detail?.querySelector('.pa-crumb')?.textContent || '').includes('#abc')) {
     fail('real data: the record number still sits in the card head (it belongs under Details)')
   }
   const added = [...(detail?.querySelectorAll('.pa-dl[data-k="+"]') || [])].map(d => d.textContent)
@@ -5282,8 +5412,9 @@ REST.scan = 'ok'
   const tiny = [...css.matchAll(/([^{}]+)\{[^}]*?font-size:(\d+(?:\.\d+)?)px/g)]
     .filter(m => Number(m[2]) < 12 && !/kbd/.test(m[1])).map(m => `${m[1].trim()} ${m[2]}px`)
   if (tiny.length) fail(`real data: text under 12 px: ${tiny.slice(0, 4).join(', ')}`)
-  if (!/\.pa-fold-btn::before\{content:'▸'/.test(css)
-      || !buttons(detail, /^Details$/).every(b => b.classList.contains('pa-fold-btn'))) {
+  const folds = [...n.hostEl.querySelectorAll('.pa-fold-btn')]
+  if (/\.pa-fold-btn::before/.test(css) || !folds.length
+      || !folds.every(b => b.querySelector('[data-slot="disclosure-caret"]'))) {
     fail('real data: a fold button does not show which way it opens')
   }
   n.root.unmount()
@@ -5390,7 +5521,7 @@ REST.scan = 'ok'
   const own = sheet.match(/oklch\((?!from var\(--ui-)|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
   if (own) fail(`theme colours: the panel paints colours of its own instead of the Hermes theme's: ${own.join(' ')}`)
   const pips = [...(deck()?.querySelectorAll('.pa-ko') || [])].map(p => p.getAttribute('data-k')).join()
-  if (deck()?.querySelector('.pa-deck-count')?.textContent !== '3' || pips !== 'apply,rejected,apply'
+  if (deck()?.querySelector('[data-slot="badge"]')?.textContent !== '3' || pips !== 'apply,rejected,apply'
     || !(head()?.textContent || '').includes('2 saved · 1 not saved') || head()?.getAttribute('aria-expanded') !== 'false'
     || deck()?.querySelector('.pa-act-sub')) {
     fail(`decks: the closed deck does not read "software-factory 3 · 2 saved · 1 not saved" with pips ${pips}`)

@@ -280,6 +280,22 @@ const UNCHECKED = pendingOf([{
     old_current_note: 'The file now says: “Calendar reminders run weekly, on Sundays at 10:00.”' }]
 }], [EDIT_REC])
 const EMPTY = pendingOf([], [])
+// Full-review frames (f32-f45): states no earlier frame draws.
+const PROFILE_ONLY = pendingOf([FIRST], [])
+const UNASSIGNED = pendingOf([{ ...MEMORY_REC, review: { status: 'unassigned', hard: [], findings: [] } }], [])
+const PLAIN_SKILL = pendingOf([], [{
+  ...EDIT_REC, id: '5ki11001',
+  review: { status: 'done', verdict: 'approve', summary: 'The rule is new and fits the skill.', hard: [], findings: [],
+    edits: 0, model: 'gpt-5.5', usage: { input: 5120, output: 160, cost_usd: 0, cost_status: 'included' } }
+}])
+const OVERFULL = pendingOf([{
+  ...MEMORY_REC, id: 'abc99999',
+  plain: { ...MEMORY_REC.plain, fit: { file: 'MEMORY.md', before: 2150, after: 2262, limit: 2200, over: 62 },
+    stale: ['MEMORY.md: this change would put the file at 2262/2200 characters (62 over). Hermes refuses the write; '
+      + 'a change that frees room (merge or remove) must be saved first.'],
+    recommendation: { verdict: 'Don’t save', reason: '1 operation(s) can no longer be applied. The record is saved as a '
+      + 'whole, so saving it fails and writes nothing — choosing "Don’t save" and waiting for a fresh proposal is cleaner.' } }
+}], [])
 
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', record_id: 'r0000001', summary: 'MEMORY.md updated — 2 notes',
@@ -444,14 +460,14 @@ add('f01', 'Needs you — 3 waiting (memory safe, one edit, group checking), a S
 
 add('f02', 'Needs you — a record needing one edit, “With the fix” shown', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:ed170001')
-  need(card?.querySelector('.pa-toggle-btn[aria-pressed="true"]')?.textContent === 'With the fix',
+  need(card?.querySelector('.pa-toggle button[aria-pressed="true"]')?.textContent === 'With the fix',
     'f02: “With the fix” is not the pressed view')
 }))
 
 add('f03', 'Needs you — the same record, “As written” pressed', await frame(async hostEl => {
   const card = await pick(hostEl, 'skills:ed170001')
   await click(byText(card, /^As written$/), 'As written')
-  need(detailOf(hostEl, 'skills:ed170001')?.querySelector('.pa-toggle-btn[aria-pressed="true"]')?.textContent
+  need(detailOf(hostEl, 'skills:ed170001')?.querySelector('.pa-toggle button[aria-pressed="true"]')?.textContent
     === 'As written', 'f03: “As written” did not press')
   need(byText(detailOf(hostEl, 'skills:ed170001'), /^Show 120 more lines$/), 'f03: the long op has no “Show N more lines”')
 }))
@@ -467,7 +483,7 @@ add('f05', 'Needs you — checking: a group whose review runs, a deleted file bo
   await frame(async hostEl => {
     const card = await pick(hostEl, `skills:${GROUP_ID}`)
     need(card?.querySelector('.pa-verdict[data-k="running"]'), 'f05: the running group has no checking verdict')
-    need([...(card?.querySelectorAll('.pa-file .pa-pill') || [])].some(p => p.textContent === 'Deleted'),
+    need([...(card?.querySelectorAll('.pa-file [data-slot="badge"]') || [])].some(p => p.textContent === 'Deleted'),
       'f05: no deleted file box')
   }, CHECKING))
 
@@ -628,7 +644,7 @@ add('f29', 'Activity — an entry selected with its Details open: the record id 
 add('f13', 'Needs you — select mode: tile checkboxes, “2 selected · Select all · Cancel”, the summary',
   await frame(async hostEl => {
   await click(byText(hostEl.querySelector('.pa-list-head'), /^Select$/), 'Select in the list header')
-  const boxes = [...hostEl.querySelectorAll('.pa-list input.pa-pick')]
+  const boxes = [...hostEl.querySelectorAll('.pa-list .pa-pick')]
   need(boxes.length === 3, `f13: select mode draws ${boxes.length} list checkboxes, not 3`)
   for (const box of boxes.slice(0, 2)) await click(box, 'a selection checkbox')
   need(/2 selected/.test(hostEl.querySelector('.pa-list-head')?.textContent || ''), 'f13: the list header does not count 2')
@@ -676,6 +692,98 @@ add('f17', 'Needs you — not checked (the review failed): “Save without revie
     need(/The file now says/.test(detailOf(hostEl, 'memory:abc12345')?.textContent || ''),
       'f17: the op’s note about the current file is not drawn')
   }, UNCHECKED))
+
+add('f32', 'Needs you — Don’t save pressed: the in-row “Not saved” row with Restore', await frame(async hostEl => {
+  const card = await pick(hostEl, 'memory:mem00004')
+  await click(byText(card?.querySelector('.pa-dfoot'), /^Don’t save/), 'Don’t save on mem00004', 600)
+  need(hostEl.querySelector('.pa-list-rows > .pa-done[data-k="reject"]'), 'f32: no in-row Not saved row')
+  need(byText(hostEl.querySelector('.pa-list-rows > .pa-done'), /^Restore$/), 'f32: the Not saved row has no Restore')
+}, MAIN))
+
+add('f33', 'Needs you — a red check opened: the finding, its kind, the quote and the suggested removal',
+  await frame(async hostEl => {
+    const card = await pick(hostEl, 'skills:aaa11111')
+    await click(card?.querySelector('.pa-chip-btn'), 'the first red check')
+    need(detailOf(hostEl, 'skills:aaa11111')?.querySelector('.pa-chip-btn[aria-expanded="true"]'),
+      'f33: the red check did not open')
+  }))
+
+add('f34', 'Needs you — reject advised, a Save button pressed: “Save it anyway?” and Save anyway',
+  await frame(async hostEl => {
+    const card = await pick(hostEl, 'skills:aaa11111')
+    await click(byText(card?.querySelector('.pa-dfoot'), /^Save (as written|with the fix)/), 'a Save button in the footer')
+    need(byText(detailOf(hostEl, 'skills:aaa11111'), /^Save anyway/), 'f34: the advised record did not ask Save anyway')
+  }))
+
+add('f35', 'Needs you — select mode, “Save 2” pressed: the bulk confirm bar', await frame(async hostEl => {
+  await click(byText(hostEl.querySelector('.pa-list-head'), /^Select$/), 'Select in the list header')
+  const boxes = [...hostEl.querySelectorAll('.pa-list .pa-pick')]
+  for (const box of boxes.slice(0, 2)) await click(box, 'a selection checkbox')
+  await click(hostEl.querySelector('[data-arms="approve"]'), 'Save 2')
+  need(byText(hostEl, /^Cancel$/) && /Save 2|save 2/i.test(hostEl.querySelector('.pa-bulk')?.textContent || ''),
+    'f35: Save 2 did not arm its confirm bar')
+}))
+
+add('f36', 'Needs you — “Show 120 more lines” opened on a long change', await frame(async hostEl => {
+  const card = await pick(hostEl, 'skills:ed170001')
+  await click(byText(card, /^As written$/), 'As written')
+  await click(byText(detailOf(hostEl, 'skills:ed170001'), /^Show 120 more lines$/), 'Show 120 more lines')
+  need(byText(detailOf(hostEl, 'skills:ed170001'), /^Show less$/), 'f36: the long change did not open')
+}))
+
+add('f37', 'Needs you — a Profile (USER.md) record: the profile tile and its meter', await frame(async hostEl => {
+  const card = await pick(hostEl, 'memory:mem00004')
+  need(/Profile/.test(card?.textContent || ''), 'f37: the profile record does not say Profile')
+}, PROFILE_ONLY))
+
+add('f38', 'Needs you — no reviewer model is set: the record is not checked', await frame(async hostEl => {
+  const card = await pick(hostEl, 'memory:abc12345')
+  need(/no review model is set/i.test(card?.textContent || ''), 'f38: the unassigned review is not explained')
+}, UNASSIGNED))
+
+add('f39', 'Needs you — a plain skill change the reviewer approved with no edits', await frame(async hostEl => {
+  const card = await pick(hostEl, 'skills:5ki11001')
+  need(card?.querySelector('.pa-verdict[data-k="safe"]'), 'f39: the plain skill change has no safe verdict')
+}, PLAIN_SKILL))
+
+add('f40', 'Needs you — saving would take MEMORY.md over its limit: cannot be applied, the footer meter past 100 %',
+  await frame(async hostEl => {
+    const card = await pick(hostEl, 'memory:abc99999')
+    need(card?.querySelector('.pa-dfoot .pa-meter-box'), 'f40: the footer meter is not drawn')
+    need(card?.querySelector('.pa-verdict[data-k="stale"]'), 'f40: a write over the limit is not marked Cannot be applied')
+  }, OVERFULL))
+
+const actEntry = async (hostEl, id) => {
+  await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+  await click(hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`), `the Activity row ${id}`)
+  need(hostEl.querySelector('.pa-activity .pa-detail'), `the Activity detail of ${id} is not drawn`)
+}
+
+add('f41', 'Activity — a failed save selected: what Hermes refused', await frame(async hostEl => {
+  await actEntry(hostEl, 'dd44ee55')
+}))
+
+add('f42', 'Activity — a change made outside Approvals selected', await frame(async hostEl => {
+  await actEntry(hostEl, 'cc33dd44')
+}))
+
+add('f43', 'Activity — a skill with a very long file path, Details open', await frame(async hostEl => {
+  await actEntry(hostEl, 'e2e0d001')
+  await click(hostEl.querySelector('.pa-activity .pa-detail .pa-tech-fold'), 'Details on the entry')
+  need(/an-unbreakable-path/.test(hostEl.querySelector('.pa-activity .pa-detail')?.textContent || ''),
+    'f43: the long path is not drawn')
+}))
+
+add('f44', 'Memory — the Profile file selected', await frame(async hostEl => {
+  await click(findTab(hostEl, /^Memory/), 'the Memory tab')
+  await click(hostEl.querySelectorAll('.pa-memrow')[1], 'the Profile row')
+  need(hostEl.querySelectorAll('.pa-memory .pa-note-row').length === 1, 'f44: the Profile file does not show its one note')
+}))
+
+add('f45', 'Needs you — alerts muted from the switch', await frame(async hostEl => {
+  await click(hostEl.querySelector('[role="switch"]'), 'the Alerts switch')
+  need(hostEl.querySelector('[role="switch"][aria-checked="false"]'), 'f45: the Alerts switch did not turn off')
+}))
 
 for (const f of frames) {
   const text = f.html.replace(/<style[\s\S]*?<\/style>/g, ' ')
