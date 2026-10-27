@@ -1685,3 +1685,65 @@ Not built from the approved mockups, on purpose: the side column with the space 
 repeats the rail's Memory and Profile meters and the list beside it; and "decision card above the
 hero at 420 px" has nothing to move, because in a narrow pane an open record already fills the pane
 and the hero only exists on the empty all-clear.
+
+## Visual review at 1000, 640 and 420 px (1.15.0)
+
+Three design reviewers read every preview frame at the three pane widths in both themes; the decisions:
+
+- **A narrow record scrolls as one page.** Below 760 px the card itself is the scroller (`.pa-detail >
+  .pa-card`): the back line and the footer are `position: sticky`, the body stops being its own scroll
+  box. With only the body scrolling, the bar, back line, title and verdict left about 120 px for the
+  change at 640 px. The top card hides while a record is open at every narrow width, not only below
+  560 px. The shot gate cuts a text box to the part a sticky bar leaves visible, as it does for a
+  clipping ancestor, so text scrolled under the footer is not reported as "text over text".
+- **Later stays on the decision row.** The narrow footer no longer forces the decision buttons onto a
+  row of their own (`order:-1; flex:1 1 100%`); Later sat alone under them and read as leftover text.
+  The memory meter (`.pa-dfoot-left`) is the part that takes a full row now.
+- **The other tabs never carry the Needs you explanation.** `TopCard` gets `away` (any tab but Needs
+  you); there the first-day body falls back to the decided-today line.
+- **Over the limit is the stop tone.** `MemFileRow` reads the file's `fill()` tone: `bad` says
+  "N % · full" with a red dot; 90–99 % keeps "nearly full" in amber.
+- **Rows get a second line.** A waiting row's title and an Activity row's summary clamp at two lines
+  (`-webkit-line-clamp`), so the rows grew to 96 and 74 px (`H.row`, `H.actRow`). The shot gate counts a
+  clamped list-row line like the one-line row ellipsis: the record's full text is in the detail. A
+  group row's second line names the files the group results in; "N changes" is already in its title.
+- **The Memory detail is headed once:** icon plus "Memory · 3 notes", without a crumb that repeats the
+  file's label.
+- **Titles balance** (`text-wrap: balance`) so a long title does not leave one word on its last line.
+- **The preview draws the kit's empty, error and loading states as the app does.** The SDK stub that
+  `render_check.mjs` writes (`sdk-stub.mjs`)
+  had a 5 px "*", "!" and a grey ring where the app draws a codicon (`PanelEmpty`, `ErrorState`) and
+  the animated Loader; reviewers took those for panel defects. The stubs now use the app's markup and
+  class names, and `preview.mjs` points the stylesheet's `url(./…)` fonts at the app's asset folder so
+  the codicons render. Frames that select a record (f09, f10, f14, f29, f30) now open it below 760 px
+  instead of shooting the list again; the layer floor of the shot gate is 30 below that width.
+- **Checked and left as they are:** a half-visible line at the edge of a scroll box (that is the scroll
+  hint), the red notice above a refused retry in f04 (it says a different fact), the note numbers'
+  inset (they sit in the note box's padding), kit key hints and light-theme hairlines (host-owned).
+
+## Flat, like the app's own pages (1.15.0)
+
+The owner asked for a look that fits Hermes. Measured against the app itself (an isolated desktop run with
+the plugin loaded, next to Capabilities, Settings, Cron and Profiles) and its `apps/desktop/DESIGN.md`
+("Flat, not boxed": no card-in-card, group with whitespace and a single hairline; tokens, no one-off
+shadows), the panel was the only page drawn as shadowed cards on a tinted ground with a gradient rail.
+This supersedes "Cards on a tinted ground" and "One material" above:
+
+- **No ground, no cards, no gradient.** `.pa-root` has no padding, fill or shadow; `--pa-shell`,
+  `--pa-deep`, `--pa-lift` and `LIT_EDGE` are gone. The bar, strip and top card are bands split by
+  `HAIRLINE`; the list and the detail sit on the page with the list's own right hairline between them.
+  `--pa-surface` (the fill under the narrow sticky back line and footer) is `--ui-bg-chrome`, the token
+  the app's page background reads.
+- **The wide rail is the overlay side menu.** 208 px, `--ui-sidebar-surface-background`, one right
+  hairline; tabs are 28 px rows with the `OverlayNavItem` treatment (hover `--ui-control-hover-background`,
+  active `--ui-bg-tertiary` with a `--ui-stroke-tertiary` border). The rail's foot is set apart by a
+  top hairline instead of a ring.
+- **No seal in the top card.** The large tinted check read as a badge no other page draws; the title
+  carries the state. The seal stays in the DOM for the all-clear check.
+- **Rows are the app's list rows.** `.pa-rowwrap` has no frame and no fill, 6 px corners, 2 px apart;
+  hover is `--ui-row-hover-background` and the chosen row `--ui-row-active-background`, the pair the
+  session list, Capabilities and master-detail rows use. The accent ring and the closed group's stacked
+  shadow are gone; the memory file rows use the same pair. This supersedes "selections (row ring, ...)"
+  under "One fill" above.
+- render_check's "flat" block fails on the shell painting a gradient or a `--pa-*` card shadow, on the
+  list and detail being boxed again, and on a rail that is not the side-menu surface.

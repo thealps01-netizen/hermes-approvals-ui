@@ -227,17 +227,16 @@ def check_card_surface_from_table() -> None:
     no floating card: the frame is the segmented tab track, its active pill and the tinted list
     column (spec R1.2, R10). Each sheet rule reads its ground, stroke and radius from the shared
     constants (`--hx-field`/`--hx-raised`, `${HAIRLINE}`, `${R.*}px`, `tint(...)`): a literal `8px`
-    or a hand-written stroke in the sheet is how the class and the constant drift apart."""
+    or a hand-written stroke in the sheet is how the class and the constant drift apart. The pane root
+    and the list column paint no ground and no edge: the app's own pages are flat."""
     js = JS.read_text(encoding="utf-8")
-    for rule, needles in ((".pa-root{", (("box-shadow:${LIT_EDGE}", "the lit edge"),)),
-                          (".pa-tabs{", (("var(--hx-field)", "the track ground"),
+    for rule, needles in ((".pa-tabs{", (("var(--hx-field)", "the track ground"),
                                          ("border-radius:${R.box}px", "the track radius"))),
                           (".pa-root .pa-tab{", (("border-radius:${R.ctl}px", "the tab radius"),)),
                           ('.pa-root .pa-tab[data-on="1"]{', (("var(--hx-raised)", "the active tab ground"),
                                                               ("var(--ui-stroke-secondary)",
                                                                "the active tab ring"))),
-                          (".pa-list{", (("border-right:${HAIRLINE}", "the hairline stroke"),
-                                         ("${tint('var(--ui-text-primary)', 1.5)}", "the list ground"))),
+                          (".pa-list{", (("border-right:${HAIRLINE}", "the hairline stroke"),)),
                           (".pa-verdict{", (("border-radius:${R.verdict}px", "the verdict radius"),)),
                           (".pa-file{", (("border-radius:${R.file}px", "the file box radius"),))):
         if rule not in js:
@@ -247,6 +246,11 @@ def check_card_surface_from_table() -> None:
         for needle, why in needles:
             if needle not in body:
                 _report(f"plugin.js: {rule[:-1]} does not read {why} from the shared constant")
+    for rule in (".pa-root{", ".pa-list{"):
+        body = js.split(rule, 1)[-1].split("\n.", 1)[0]
+        if "box-shadow" in body or "background" in body:
+            _report(f"plugin.js: {rule[:-1]} paints a ground or an edge again — the app's pages are flat "
+                    "(apps/desktop/DESIGN.md: flat, not boxed)")
 
 
 def check_no_comments() -> None:
