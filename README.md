@@ -230,6 +230,10 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   describes the core change that would close it.
 * **No silent truncation.** An operation body is drawn whole in its own scrolling box with its size in
   the label; the backend caps a body at 20 000 characters and still reports the full length.
+* **The source hook reads, never writes, the session database.** A `post_tool_call` hook in the root
+  `__init__.py` opens `state.db` read-only after each staged skill write and keeps the session's source,
+  parent and the owner's last message (at most 4000 characters) in `state/pending-approvals/sources/`.
+  For a skill write the agent made in a chat with you, that last message is part of the review input.
 * **Outbound content is inspection only.** The panel reads memory and skill state; it never uploads
   anything and holds no credentials of its own.
 
@@ -243,7 +247,8 @@ contradict the app. The backend keeps one English message table behind `_tx(...)
 ## Layout
 
 ```
-plugin.yaml                  identity, version, license, homepage
+plugin.yaml                  identity, version, license, homepage, provides_hooks
+__init__.py                  registers the auxiliary tasks and the post_tool_call source hook
 dashboard/manifest.json      Dashboard manifest (same version)
 dashboard/plugin_api.py      FastAPI router: pending list, count, reviews, decide, fix, undo, restore, memory, history
 desktop/plugin.js            the Desktop panel (ESM disk plugin, no build step)
