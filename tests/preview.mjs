@@ -297,6 +297,25 @@ const OVERFULL = pendingOf([{
       + 'whole, so saving it fails and writes nothing — choosing "Don’t save" and waiting for a fresh proposal is cleaner.' } }
 }], [])
 
+// f46-f47 (recurrence gate): two cards, one recurring; three candidates under the collapsed section.
+const CAND_WHY = 'First change to this skill in 14 days. It leaves this list on 9 Nov unless a similar change comes.'
+const candOf = (id, name) => ({
+  ...EDIT_REC, id, staged_at: NOW - 5400, recur: { track: 'candidate', path: 5, why: CAND_WHY },
+  summary: `Adds a rule to ${name}.`,
+  ops: [{ ...EDIT_REC.ops[0], name }],
+  plain: { ...EDIT_REC.plain, target: name, headline: `${name}: 21 lines are added`,
+    groups: [{ kind: 'update', name, ops: [{ action: 'patch' }] }] }
+})
+const RECURRING = {
+  ...pendingOf([], [{ ...EDIT_REC, recur: { track: 'card', path: 5,
+    why: 'Recurring: a similar change to this skill came on 21 Oct.' } },
+  { ...REJECT_REC, recur: { track: 'card', path: 1, why: 'You asked for this in chat: “save a skill for new plugins”.' } }]),
+  candidate_days: 14,
+  candidates: [candOf('cand0001', 'release-notes'), candOf('cand0002', 'kanban-routing'),
+    candOf('cand0003', 'a-skill-name-that-is-one-long-unbreakable-word-from-a-job-' + 'x'.repeat(40))]
+}
+RECURRING.records = { ...RECURRING.records, skills: RECURRING.records.skills + RECURRING.candidates.length }
+
 const HISTORY = { entries: [
   { id: 'aa11bb22', ts: NOW - 600, kind: 'apply', subsystem: 'memory', record_id: 'r0000001', summary: 'MEMORY.md updated — 2 notes',
     files: [{ path: 'memories/MEMORY.md' }], undoable: true,
@@ -784,6 +803,23 @@ add('f45', 'Needs you — alerts muted from the switch', await frame(async hostE
   await click(hostEl.querySelector('[role="switch"]'), 'the Alerts switch')
   need(hostEl.querySelector('[role="switch"][aria-checked="false"]'), 'f45: the Alerts switch did not turn off')
 }))
+
+add('f46', 'Needs you — two cards (one recurring) and the collapsed Candidates section', await frame(async hostEl => {
+  const head = hostEl.querySelector('.pa-cand-head')
+  need(head?.getAttribute('aria-expanded') === 'false' && /Candidates · 3/.test(head?.textContent || ''),
+    'f46: the Candidates header is not drawn collapsed with its count')
+  need(!hostEl.querySelector('.pa-cand-rows'), 'f46: a collapsed section draws candidate rows')
+  need(/Waiting · 2/.test(hostEl.querySelector('.pa-list-head')?.textContent || ''), 'f46: the list head counts candidates')
+  const card = await pick(hostEl, 'skills:ed170001')
+  need(/Recurring: a similar change/.test(card?.textContent || ''), 'f46: the recurring card lacks its reason')
+}, RECURRING))
+
+add('f47', 'Needs you — Candidates expanded, a candidate open', await frame(async hostEl => {
+  await click(hostEl.querySelector('.pa-cand-head'), 'the Candidates header')
+  need(hostEl.querySelectorAll('.pa-cand-rows .pa-row').length === 3, 'f47: the expanded section does not draw 3 rows')
+  const card = await pick(hostEl, 'skills:cand0001')
+  need(card?.textContent.includes(CAND_WHY), 'f47: the open candidate lacks its reason')
+}, RECURRING))
 
 for (const f of frames) {
   const text = f.html.replace(/<style[\s\S]*?<\/style>/g, ' ')
