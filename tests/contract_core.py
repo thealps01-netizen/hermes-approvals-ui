@@ -104,6 +104,10 @@ CONTRACT: dict[str, dict[str, Any]] = {
             "extract_content_or_reasoning": (1, ()),
         },
     },
+    "agent/account_usage.py": {
+        "names": (),
+        "calls": {"fetch_account_usage": (1, ("read_only",))},
+    },
     "agent/usage_pricing.py": {
         "names": (),
         "calls": {"normalize_usage": (1, ("provider",)), "estimate_usage_cost": (2, ("provider",))},

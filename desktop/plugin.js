@@ -198,6 +198,30 @@ const BUNDLES = {
         delete: 'Delete',
         multi: 'This record touches more than one skill — you can apply just one',
       },
+      test: {
+        title: 'Side-by-side test',
+        size: (skill, before, after) => `${skill} · ${before} → ${after} lines`,
+        cost: 'about 6 answers + 3 gradings',
+        week: p => `this week ${Math.round(p)}% used`,
+        notRun: 'Not run',
+        stale: 'Not run on this version — the change moved on since the last test',
+        running: 'Testing old and new form…',
+        better: 'The new form is better',
+        notBetter: 'The new form is not better',
+        none: 'No task could be judged',
+        failed: why => `The test failed: ${why}`,
+        run: 'Test',
+        again: 'Test again',
+        noTasks: 'No test tasks for this skill yet',
+        untested: 'Saving without a test marks the history entry “untested”.',
+        row: (id, who, reason) => `${id} · ${who}${reason ? ` — ${reason}` : ''}`,
+        winner: {
+          new: 'new form wins',
+          old: 'old form wins',
+          tie: 'tie',
+          skipped: 'skipped',
+        },
+      },
       grp: {
         select: 'Select these changes',
         changes: n => plural(n, 'change', 'changes'),
@@ -238,6 +262,10 @@ const BUNDLES = {
           wrong: 'Wrong',
           evidence: 'Evidence',
           rule: 'Rule',
+          known: 'Already known',
+          session: 'Only this session',
+          trim: 'Delete instead',
+          drift: 'Purpose or safety drift',
         },
         other: 'Against',
         tokens: (i, o) => `${grouped(i)} in / ${grouped(o)} out`,
@@ -454,6 +482,10 @@ const BUNDLES = {
         contradiction: 'No contradiction',
         wrong: 'Facts hold',
         rule: 'Your rules',
+        known: 'Nothing already known',
+        session: 'Not tied to one session',
+        trim: 'Nothing to delete instead',
+        drift: 'No drift',
         pending: n => (n ? `${n} awaiting approval` : 'No pending approvals'),
         error: 'Approvals unavailable',
       },
@@ -500,6 +532,10 @@ const BUNDLES = {
         wrong: 'No wrong facts found',
         ruleMemory: 'Follows your rules · written in English',
         ruleSkill: 'Follows your rules · authorship, owner',
+        known: 'Nothing the model already knows',
+        session: 'Nothing tied to one session',
+        trim: 'No simpler fix by deleting',
+        drift: 'Purpose and safety rules kept',
         notRun: reason => `Not checked yet — ${reason}`,
         reasonRunning: 'the reviewer is still reading this',
         reasonUnassigned: 'no review model is set',
@@ -595,6 +631,7 @@ const api = {
       }
     }),
   review: (subsystem, id) => ctxRef.rest('/review', { method: 'POST', body: { subsystem, id } }),
+  test: id => ctxRef.rest('/test', { method: 'POST', body: { id } }),
   changes: id => ctxRef.rest(`/history/changes?id=${encodeURIComponent(id)}`),
   undo: (id, force) => ctxRef.rest('/undo', { method: 'POST', body: { id, force: Boolean(force) } })
 }
@@ -944,6 +981,13 @@ const STYLE = `
   color:var(--ui-text-secondary);text-align:right;min-width:0}
 .pa-toggle{display:flex}
 .pa-vside>.pa-again{margin-left:auto}
+.pa-test{margin:10px 20px 0;padding:0 0 12px;border-bottom:${HAIRLINE};display:flex;flex-direction:column;gap:4px;flex:none;
+  font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-test-head{display:flex;align-items:baseline;gap:${G.xs}px;flex-wrap:wrap;color:var(--ui-text-primary)}
+.pa-test-title{font-weight:600}
+.pa-test-row[data-w="new"]{color:var(--ui-green)}
+.pa-test-row[data-w="old"]{color:var(--ui-red)}
+.pa-test-act{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;margin-top:4px}
 .pa-dbody{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 20px;display:flex;flex-direction:column;
   gap:10px;mask-image:linear-gradient(to bottom,transparent 0,var(--pa-surface) ${G.base}px);scrollbar-gutter:stable}
 .pa-dbody>*{flex:none}
@@ -1126,7 +1170,7 @@ const STYLE = `
   .pa-memory>.pa-detail>.pa-card{flex:none}
   .pa-memory .pa-dbody{flex:none;overflow:visible}
   .pa-back{display:flex}
-  .pa-dh{padding:12px 12px 0}.pa-verdict{margin:12px 12px 0}.pa-dbody{padding:12px}
+  .pa-dh{padding:12px 12px 0}.pa-verdict{margin:12px 12px 0}.pa-test{margin:10px 12px 0}.pa-dbody{padding:12px}
   .pa-dfoot{padding:${G.xs}px 12px}
   .pa-dfoot>.pa-actions{flex-wrap:nowrap}
   .pa-detail>.pa-card{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
@@ -1224,6 +1268,7 @@ const STYLE = `
   .pa-split{grid-template-columns:${W.listMid}px minmax(0,1fr)}
   .pa-dh{padding:12px 14px 0}.pa-dbody{padding:12px 14px}.pa-dfoot{padding:${G.xs}px 14px}
   .pa-verdict{grid-template-columns:minmax(0,1fr);margin:12px 14px 0}
+  .pa-test{margin:10px 14px 0}
   .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}
   .pa-root .pa-row{grid-template-columns:22px minmax(0,1fr) auto auto;padding:8px 10px;column-gap:8px}
   .pa-tile{width:22px;height:22px}.pa-cb{left:10px;top:8px;width:22px;height:22px}
@@ -1318,7 +1363,7 @@ function usePending() {
   const [fast, setFast] = useState(false)
   const { data, error, at, seq, refresh } = usePolling(load, fast ? 4000 : 15000)
   useEffect(() => {
-    setFast(reviewUnits(data).some(reviewWaits))
+    setFast(reviewUnits(data).some(u => reviewWaits(u) || (u.test || {}).status === 'running'))
   }, [data])
   return { data, error, at, seq, refresh, n: total(data?.counts) }
 }
@@ -1583,7 +1628,11 @@ const FINDING_KIND = {
   contradiction: 'pa.review.kind.contradiction',
   wrong: 'pa.review.kind.wrong',
   evidence: 'pa.review.kind.evidence',
-  rule: 'pa.review.kind.rule'
+  rule: 'pa.review.kind.rule',
+  known: 'pa.review.kind.known',
+  session: 'pa.review.kind.session',
+  trim: 'pa.review.kind.trim',
+  drift: 'pa.review.kind.drift'
 }
 const CUT_PART = {
   write: 'pa.review.part.write',
@@ -1596,6 +1645,9 @@ const OUTDATED = {
   rules: 'pa.review.outdated.rules'
 }
 const UNVERIFIED = ['pa.review.unverified', 'muted']
+const SKILL_FAMILIES = {
+  known: 'pa.check.known', session: 'pa.check.session', trim: 'pa.check.trim', drift: 'pa.check.drift'
+}
 const tagOf = x => (x?.change ? `#${x.change} · ` : '')
 const reviewFacts = review => {
   const findings = (review.findings || []).filter(f => f.kind !== 'evidence')
@@ -1731,7 +1783,9 @@ const checkRows = (subsystem, item) => {
     ['duplicate', major.filter(f => f.kind === 'duplicate'), subsystem === 'memory' ? 'pa.check.duplicateMemory' : 'pa.check.duplicateSkill'],
     ['contradiction', major.filter(f => f.kind === 'contradiction'), 'pa.check.contradiction'],
     ['wrong', major.filter(f => f.kind === 'wrong'), 'pa.check.wrong'],
-    ['rule', ruleFindings, subsystem === 'memory' ? 'pa.check.ruleMemory' : 'pa.check.ruleSkill']
+    ['rule', ruleFindings, subsystem === 'memory' ? 'pa.check.ruleMemory' : 'pa.check.ruleSkill'],
+    ...(subsystem === 'memory' ? [] : Object.entries(SKILL_FAMILIES)
+      .map(([k, key]) => [k, major.filter(f => f.kind === k), key]))
   ]
   const rows = []
   for (const [kind, findings, okKey] of families) {
@@ -1825,6 +1879,62 @@ const fixView = (fix, t, busy, key, onApply) => jsxs('div', {
       : null
   ]
 }, 'fix')
+
+const WINNER = {
+  new: 'pa.test.winner.new', old: 'pa.test.winner.old', tie: 'pa.test.winner.tie', skipped: 'pa.test.winner.skipped'
+}
+const testHead = (t, test, status) => (status === 'running' ? t('pa.test.running')
+  : status === 'failed' ? t('pa.test.failed', test.error || '')
+    : status === 'done' ? t(test.verdict === 'better' ? 'pa.test.better'
+      : test.verdict === 'none' ? 'pa.test.none' : 'pa.test.notBetter')
+      : t(test.stale ? 'pa.test.stale' : 'pa.test.notRun'))
+
+function TestPanel({ t, test, id, busy, run, onChanged }) {
+  const status = test.status || 'none'
+  const start = () => run('test', async () => {
+    const res = await api.test(id)
+    if (!res?.ok) host.notify({ kind: 'error', message: res?.error || t('pa.notify.failed') })
+    onChanged()
+    return res
+  })
+  const meta = [t('pa.test.size', test.skill, test.before, test.after), t('pa.test.cost'),
+    typeof test.week === 'number' ? t('pa.test.week', test.week) : null].filter(Boolean).join(' · ')
+  const rows = status === 'done'
+    ? (test.results || []).map(r => jsx('div', {
+        className: 'pa-test-row', 'data-w': r.winner,
+        children: t('pa.test.row', r.id, t(WINNER[r.winner] || 'pa.test.winner.tie'), r.reason || '')
+      }, `r-${r.id}`))
+    : []
+  const button = jsx(Button, {
+    variant: 'outline', size: 'sm',
+    disabled: status === 'running' || (Boolean(busy) && busy !== 'test'),
+    loading: busy === 'test' || status === 'running',
+    onClick: () => void start(),
+    children: t(status === 'done' ? 'pa.test.again' : 'pa.test.run')
+  }, 'btn')
+  return jsxs('div', {
+    className: 'pa-test',
+    'data-s': status,
+    children: [
+      jsxs('div', {
+        className: 'pa-test-head',
+        children: [jsx('span', { className: 'pa-test-title', children: t('pa.test.title') }, 'title'),
+          jsx('span', { role: 'status', children: testHead(t, test, status) }, 'state')]
+      }, 'head'),
+      jsx('div', { className: 'pa-test-meta', children: meta }, 'meta'),
+      ...rows,
+      jsxs('div', {
+        className: 'pa-test-act',
+        children: [
+          test.tasks ? button : jsx('span', { className: 'pa-test-meta', children: t('pa.test.noTasks') }, 'none'),
+          test.grows && status !== 'done'
+            ? jsx('span', { className: 'pa-test-meta', children: t('pa.test.untested') }, 'untested')
+            : null
+        ]
+      }, 'act')
+    ]
+  }, 'test')
+}
 
 function Finding({ finding }) {
   const t = usePluginI18n(ID)
@@ -2280,7 +2390,8 @@ const ROW_WORD = {
 }
 const FAMILIES = ['duplicate', 'contradiction', 'wrong', 'rule']
 const FAMILY_CHIP = {
-  duplicate: 'pa.chip.duplicate', contradiction: 'pa.chip.contradiction', wrong: 'pa.chip.wrong', rule: 'pa.chip.rule'
+  duplicate: 'pa.chip.duplicate', contradiction: 'pa.chip.contradiction', wrong: 'pa.chip.wrong', rule: 'pa.chip.rule',
+  known: 'pa.chip.known', session: 'pa.chip.session', trim: 'pa.chip.trim', drift: 'pa.chip.drift'
 }
 const dotStates = (subsystem, item) => {
   if ((item.review || {}).status !== 'done') return FAMILIES.map(() => 'wait')
@@ -2968,6 +3079,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         ]
       }, 'head'),
       verdictCard,
+      item.test ? jsx(TestPanel, { t, test: item.test, id: item.id, busy, run, onChanged }, 'test') : null,
       jsxs('div', {
         className: 'pa-dbody',
         children: [

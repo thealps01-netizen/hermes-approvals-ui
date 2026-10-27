@@ -1812,3 +1812,21 @@ The footer memory meter takes `--pa-tone` from `fill()` like the side meters (gr
 f40 showed the single-record stale lead ("the text it changes is no longer in the file") on a memory
 write the backend refuses for size. A record whose `fit.after` exceeds `fit.limit` now leads with
 `pa.status.staleFullWhy`; render_check case 29b holds it and the red meter.
+
+## Side-by-side skill test (1.16.0)
+
+- **Why a direct model call and not `hermes -z`.** Measured 2026-10-27: one-shot mode with `-t todo`
+  and with `--safe-mode` still offered the deferred tool catalog (`mcp__tool_search/describe/call`)
+  while it sets `HERMES_YOLO_MODE=1`, kept owner rules in the prompt and stored each run as a session.
+  A test that can call tools with approvals bypassed is not a test, so answers go through `call_llm`
+  with no tools. Cost of that probe: 7.6k–10.7k tokens per run for a 33-line skill.
+- **What it does not measure.** Only the answer text is compared, not how the agent uses tools.
+- **Why tasks live in panel state.** `state/pending-approvals/evals/<skill>.json` is outside the skill
+  folder, so the agent never loads the tasks it is tested on. Exactly three tasks; any other shape is
+  ignored and logged.
+- **Why the session window.** Records carry no session id, so a task is skipped when its source
+  session's window (start … end + 1 h) contains the record's creation time.
+- **Verdict rule.** Better = at least one win and no loss (wiki: shrink-not-delete measurement, 15 Oct).
+- **Who picks the model.** Answers: the "Approvals side-by-side test" auxiliary task (auto = main
+  model, the model the skill really runs with). Grading: the "Approvals review" task.
+

@@ -98,6 +98,8 @@ auxiliary:
   approvals_review:                # or pick it in Settings → Models → Approvals review
     provider: anthropic          # measured: see Docs/pending-approvals-notes.md §5
     model: claude-sonnet-5
+  approvals_test:                  # optional: answers for the side-by-side skill test (auto = main model)
+    provider: auto
 ```
 
 Then enable `Approvals` in **Settings → Plugins** if it shows as disabled, and restart the desktop app
