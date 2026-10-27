@@ -39,8 +39,8 @@
  *                  comparing each node's resolved color against the resolved tone tokens, so a
  *                  tone used as text cannot hide behind a stylesheet, a class or a shorthand. Same
  *                  panel/host split as `contrast`.
- *   pills          the op pills are ONE pill language: a single height, a single radius, a single
- *                  padding across every `.pa-pill` (the cursor `timeline-pill-*` shape)
+ *   pills          the tags are ONE tag language: every kit Badge in the panel (the tab count aside) has
+ *                  a single inner height, radius and padding — the kit's own, never restyled
  *   compare        every `.pa-cmp` (the cursor `comparison-card` layout) is really 2 columns and its
  *                  cells share one row height
  *
@@ -240,6 +240,12 @@ const MEASURE = `(() => {
         owner = 'kit:' + slot
         break
       }
+      // The kit SegmentedControl carries no data-slot (v0.22.0 and v0.22.5); the .pa-toggle wrapper holds it
+      // and nothing else, so everything under the wrapper is the kit's markup.
+      if (n.parentElement && n.parentElement.classList && n.parentElement.classList.contains('pa-toggle')) {
+        owner = 'kit:segmented-control'
+        break
+      }
     }
     measured.push({
       text: txt(el).slice(0, 34), size: Math.round(size * 10) / 10, weight, large, need,
@@ -277,9 +283,9 @@ const MEASURE = `(() => {
     groups[k].lowest = Math.min(groups[k].lowest, row.ratio)
   }
   // --- one pill language + the comparison-card grid ----------------------------------------------
-  const pills = qa('.pa-pill').filter(el => box(el).width > 0).map(el => {
+  const pills = qa('.pa-root [data-slot="badge"]:not(.pa-tag)').filter(el => box(el).width > 0).map(el => {
     const s = getComputedStyle(el)
-    return { text: txt(el).slice(0, 20), h: Math.round(box(el).height), r: s.borderTopLeftRadius,
+    return { text: txt(el).slice(0, 20), h: el.clientHeight, r: s.borderTopLeftRadius,
       pad: s.paddingTop + '/' + s.paddingRight + '/' + s.paddingBottom + '/' + s.paddingLeft,
       font: s.fontSize + ' ' + s.fontWeight, track: s.letterSpacing, upper: s.textTransform }
   })
@@ -803,7 +809,7 @@ app.whenReady().then(async () => {
       if (m.pillLang.radii.length !== 1) bad.push(`pill radii=${JSON.stringify(m.pillLang.radii)}`)
       if (m.pillLang.paddings.length !== 1) bad.push(`pill paddings=${JSON.stringify(m.pillLang.paddings)}`)
     } else {
-      bad.push(`pills=${m.pills.length} (the op list carries no uniform pill)`)
+      bad.push(`pills=${m.pills.length} (fewer than 6 kit tags are drawn)`)
     }
     if (m.compare.length < 1) bad.push(`compare=${m.compare.length} (no comparison-card grid is drawn)`)
     if (m.compareBad > 0) bad.push(`compareBad=${m.compareBad} ${JSON.stringify(m.compare)}`)

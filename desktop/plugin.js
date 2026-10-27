@@ -1,6 +1,6 @@
 import {
-  Badge, Button, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
-  Switch, Tip, haptic, host, icons, usePluginI18n
+  Badge, Button, Checkbox, DisclosureCaret, ErrorState, Kbd, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
+  SegmentedControl, Switch, Tip, haptic, host, icons, usePluginI18n
 } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -13,8 +13,8 @@ const AREA_SIDEBAR_NAV = 'sidebar.nav'
 const AREA_PALETTE = 'palette'
 
 const KIT = {
-  Badge, Button, ErrorState, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
-  Switch, Tip
+  Badge, Button, Checkbox, DisclosureCaret, ErrorState, Kbd, Loader, LogView, PanelBlock, PanelEmpty, PanelMeta,
+  SegmentedControl, Switch, Tip
 }
 const kitMissing = Object.keys(KIT).filter(k => !KIT[k])
 if (kitMissing.length) console.log('[pending-approvals] SDK kit components missing:', kitMissing.join(', '))
@@ -183,6 +183,7 @@ const BUNDLES = {
         rule: 'Rule check failed',
         stale: 'Cannot be applied',
         staleWhy: 'Hermes cannot apply this write as staged: the text it changes is no longer in the file. Choose “Don’t save”; the change can be staged again against the current file.',
+        staleFullWhy: 'Hermes cannot apply this write: it would take the file over its limit. Choose “Don’t save”, or save a change that frees room first.',
         fixFirst: 'Shorten first',
         failedBefore: 'Save failed',
       },
@@ -749,10 +750,10 @@ const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const WARN = 'var(--ui-yellow)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
-const R = { tag: 4, box: 8, ctl: 6, file: 9, verdict: 10, pill: 999, row: 12, panel: 20 }
+const R = { box: 6, ctl: 6, pill: 999 }
 const FS = {
-  micro: 12, meta: 12, body: 12.5, lead: 13.5, bar: 14, tab: 12, row: 13, preview: 12, kbd: 11, detail: 17, empty: 15,
-  brand: 15, hero: 22
+  micro: 12, meta: 12, body: 13, lead: 13, bar: 14, tab: 12, row: 13, preview: 12, detail: 15, empty: 14,
+  brand: 14, hero: 18
 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
@@ -762,10 +763,6 @@ const H = {
 const W = { list: 300, listMid: 260, rail: 208 }
 const LINE = 16
 const inset = (height, frame) => (height - frame - Math.floor((height - frame - G.xs) / LINE) * LINE) / 2
-const TAG = {
-  height: 20, padding: '0 8px', borderRadius: R.pill, fontSize: FS.micro, fontWeight: 600,
-  letterSpacing: '.02em', lineHeight: 1, textTransform: 'none'
-}
 const tint = (tone, pct) => `color-mix(in srgb, ${tone} ${pct}%, transparent)`
 const label = { fontSize: FS.micro, fontWeight: 500, letterSpacing: '.02em', color: 'var(--ui-text-secondary)' }
 const hintLine = { fontSize: FS.meta, lineHeight: 1.5, color: 'var(--ui-text-secondary)', whiteSpace: 'pre-wrap' }
@@ -775,16 +772,16 @@ const EASE = {
   exit: 'cubic-bezier(0.4, 0, 1, 1)'
 }
 const MOTION = {
-  hover: { ms: 120, ease: 'standard' },
-  enter: { ms: 240, ease: 'enter' },
-  exit: { ms: 200, ease: 'exit' }
+  hover: { ms: 100, ease: 'standard' },
+  enter: { ms: 150, ease: 'enter' },
+  exit: { ms: 150, ease: 'exit' }
 }
 const move = (job, props) => props.split(',')
   .map(p => `${p.trim()} ${MOTION[job].ms}ms ${EASE[MOTION[job].ease]}`).join(', ')
 const rise = job => `pa-in ${MOTION[job].ms}ms ${EASE[MOTION[job].ease]} both`
-const THIN_SCROLL = 'scrollbar-width:thin;'
-  + 'scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 45%,transparent) transparent'
-const MONO = 'font-family:ui-monospace,\'Cascadia Code\',Consolas,monospace'
+const MONO = 'font-family:var(--font-mono)'
+const CALLOUT = `border-radius:${R.ctl}px;background:color-mix(in srgb,var(--pa-ct) 12%,transparent);`
+  + 'box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pa-ct) 55%,transparent)'
 const STYLE = `
 .pa-root{container-type:inline-size;
   --hx-field:color-mix(in srgb,var(--ui-text-primary) 6%,transparent);
@@ -795,15 +792,7 @@ const STYLE = `
 .pa-root button:focus-visible,.pa-root input:focus-visible,.pa-root summary:focus-visible,
 .pa-root [role="button"]:focus-visible,.pa-root .pa-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
-.pa-cb{position:absolute;left:12px;top:10px;width:28px;height:28px;cursor:pointer;z-index:1}
-.pa-pick{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
-.pa-cbx{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;border:${HAIRLINE};box-sizing:border-box;
-  background:var(--hx-raised);pointer-events:none}
-.pa-cbx>i{width:14px;height:14px;border-radius:4px;box-sizing:border-box;display:grid;place-items:center;
-  border:1.5px solid ${tint('var(--ui-text-primary)', 45)}}
-.pa-cb[data-on="1"]>.pa-cbx{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-bg-chrome)}
-.pa-cb[data-on="1"]>.pa-cbx>i{border:0}
-.pa-pick:focus-visible+.pa-cbx{outline:2px solid var(--ui-accent);outline-offset:2px}
+.pa-cb{position:absolute;left:12px;top:10px;width:28px;height:28px;display:grid;place-items:center;z-index:1}
 .pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}
 .pa-rowwrap[data-picked="1"]{background:${tint('var(--ui-accent)', 10)}}
 .pa-gms{display:flex;align-items:center;gap:14px;flex:none}
@@ -819,14 +808,14 @@ const STYLE = `
 .pa-bar-side{display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
 .pa-alerts-row{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:${FS.meta}px;
   color:var(--ui-text-secondary);white-space:nowrap}
-.pa-tabs{display:flex;align-items:center;gap:2px;padding:2px;border-radius:${R.box}px;background:var(--hx-field);
-  min-width:0;overflow-x:auto;overflow-y:hidden;${THIN_SCROLL}}
+.pa-tabs{display:flex;align-items:center;gap:2px;padding:2px;border-radius:${R.box}px;background:var(--ui-bg-tertiary);
+  min-width:0;overflow-x:auto;overflow-y:hidden}
 .pa-root .pa-tab{display:flex;align-items:center;gap:6px;margin:0;padding:3px 10px;border:0;border-radius:${R.ctl}px;
   background:transparent;font:inherit;font-size:${FS.tab}px;font-weight:500;color:var(--ui-text-secondary);
   cursor:pointer;white-space:nowrap;flex-shrink:0;transition:${move('hover', 'color, background-color')}}
 .pa-root .pa-tab:hover{color:var(--ui-text-primary)}
-.pa-root .pa-tab[data-on="1"]{background:var(--hx-raised);color:var(--ui-text-primary);
-  box-shadow:0 0 0 1px var(--ui-stroke-secondary)}
+.pa-root .pa-tab[data-on="1"]{background:var(--ui-bg-chrome);color:var(--ui-text-primary);
+  box-shadow:0 1px 2px color-mix(in srgb,var(--ui-text-primary) 12%,transparent),0 0 0 1px var(--ui-stroke-tertiary)}
 .pa-tab:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px}
 .pa-progress{display:flex;align-items:center;gap:10px;font-size:${FS.meta}px;color:var(--ui-text-secondary);
   white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
@@ -834,7 +823,7 @@ const STYLE = `
 .pa-pip{width:10px;height:6px;border-radius:2px;background:${tint('var(--ui-text-primary)', 14)}}
 .pa-pip[data-k="apply"]{background:var(--ui-green)}
 .pa-pip[data-k="rejected"]{background:${tint('var(--ui-text-primary)', 40)}}
-.pa-strip{display:flex;flex-direction:column;gap:${G.xs}px;padding:${G.xs}px 16px;border-bottom:${HAIRLINE};flex:none}
+.pa-strip{display:flex;flex-direction:column;gap:${G.xs}px;padding:${G.xs}px 16px;flex:none}
 .pa-body{flex:1;min-height:0;display:flex;min-width:0}
 .pa-split{display:grid;grid-template-columns:${W.list}px minmax(0,1fr);flex:1;min-height:0;min-width:0}
 .pa-split.pa-split-clear{grid-template-columns:minmax(0,1fr)}
@@ -843,15 +832,12 @@ const STYLE = `
   font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-list-head>.pa-select,.pa-list-head>.pa-list-side{margin-left:auto}
 .pa-list-rows{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
-  padding:${G.xs}px;box-sizing:border-box;${THIN_SCROLL}}
+  padding:${G.xs}px;box-sizing:border-box}
 .pa-list-foot{margin-top:auto;display:flex;align-items:center;gap:14px;padding:0 14px;box-sizing:border-box;flex:none;
   border-top:${HAIRLINE};font-size:${FS.micro}px;color:var(--ui-text-secondary);min-width:0}
 .pa-list-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .pa-legend{display:flex;align-items:center;gap:14px;min-width:0;flex-wrap:wrap}
-.pa-kbd{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;
-  border:${HAIRLINE};border-bottom-width:2px;border-radius:4px;font-size:${FS.kbd}px;font-weight:600;
-  color:var(--ui-text-secondary);line-height:1}
-.pa-root .pa-btn-kbd{margin-left:8px;border-color:color-mix(in srgb,currentColor 35%,transparent);color:inherit}
+.pa-root .pa-btn-kbd{margin-left:8px}
 .pa-rowwrap{--pa-hc:color-mix(in oklch,var(--pa-id,var(--ui-accent)) 62%,var(--ui-accent));display:flex;
   align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box;border-radius:${R.ctl}px;
   overflow:hidden}
@@ -860,7 +846,7 @@ const STYLE = `
   cursor:pointer;position:relative;box-sizing:border-box;transition:${move('hover', 'background-color')}}
 .pa-root .pa-row:hover{background:var(--ui-row-hover-background)}
 .pa-rowwrap[data-on="1"]{background:var(--ui-row-active-background)}
-.pa-rowwrap .pa-tile{color:var(--pa-hc);background:${tint('var(--pa-hc)', 20)};border-color:${tint('var(--pa-hc)', 36)}}
+.pa-rowwrap .pa-tile{color:var(--pa-hc)}
 .pa-deck[data-open="1"]{flex-direction:column}
 .pa-deck[data-open="1"]>.pa-row{flex:none;height:${H.actRow}px}
 .pa-root .pa-row{grid-template-columns:28px minmax(0,1fr) auto auto;row-gap:2px}
@@ -876,14 +862,11 @@ const STYLE = `
 .pa-row:has(.pa-row-meta) .pa-row-title,.pa-act-row .pa-row-preview{display:-webkit-box;-webkit-box-orient:vertical;
   -webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
 .pa-act-row>.pa-row-time{align-self:start;padding-top:1px}
+.pa-act-row .pa-row-preview{text-wrap:balance}
 .pa-deck-row .pa-row-preview{grid-column:2}
 .pa-deck-title{display:flex;align-items:center;gap:6px;min-width:0}
 .pa-deck-title>.pa-row-title{min-width:0}
-.pa-deck-count{flex:none;padding:0 6px;border-radius:${R.pill}px;font-size:${FS.micro}px;font-weight:700;
-  color:var(--ui-text-primary);background:${tint('var(--ui-text-primary)', 12)}}
-.pa-deck-chev{display:inline-flex;flex:none;color:var(--ui-text-secondary);transform:rotate(180deg);
-  transition:${move('hover', 'transform')}}
-.pa-deck[data-open="1"] .pa-deck-chev{transform:rotate(270deg)}
+.pa-deck-chev{color:var(--ui-text-secondary)}
 .pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center;margin-right:2px}
 .pa-ko{width:8px;height:8px;border-radius:50%;box-sizing:border-box;flex:none;background:var(--pa-tone)}
 .pa-ko[data-k="rejected"]{background:transparent;border:1.5px solid var(--ui-text-secondary)}
@@ -892,17 +875,17 @@ const STYLE = `
   height:${H.actSub}px;margin:0;padding:0 8px 0 22px;border:0;border-radius:7px;background:transparent;font:inherit;
   font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
   transition:${move('hover', 'background-color')}}
-.pa-root .pa-act-sub:hover{background:var(--hx-field)}
-.pa-root .pa-act-sub[aria-current="true"]{background:${tint('var(--ui-accent)', 22)};color:var(--ui-text-primary)}
+.pa-root .pa-act-sub:hover{background:var(--ui-row-hover-background)}
+.pa-root .pa-act-sub[aria-current="true"]{background:var(--ui-row-active-background);color:var(--ui-text-primary)}
 .pa-act-sub-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pa-act-sub-text>b{font-weight:600;color:var(--ui-text-primary)}
 .pa-act-sub-time{font-variant-numeric:tabular-nums;white-space:nowrap}
-.pa-tile{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;border:${HAIRLINE};box-sizing:border-box;
-  color:var(--ui-text-secondary);background:var(--hx-raised);flex:none}
+.pa-tile{width:28px;height:28px;display:grid;place-items:center;box-sizing:border-box;
+  color:var(--ui-text-secondary);flex:none}
 .pa-row-text{min-width:0;display:flex;flex-direction:column;gap:2px}
-.pa-row-title{font-size:${FS.row}px;font-weight:600;color:var(--ui-text-primary);white-space:nowrap;overflow:hidden;
+.pa-row-title{font-size:${FS.row}px;font-weight:500;color:var(--ui-text-primary);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
-.pa-row-preview{font-size:${FS.preview}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;
+.pa-row-preview{font-size:${FS.preview}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-wrap:pretty;
   text-overflow:ellipsis}
 .pa-row-meta{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:${FS.micro}px;color:var(--ui-text-secondary);
   min-width:0;white-space:nowrap}
@@ -914,8 +897,7 @@ const STYLE = `
 .pa-dot[data-k="bad"]{background:var(--ui-red)}
 .pa-dot[data-k="warn"]{background:${WARN}}
 .pa-done{display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box;flex:none;
-  border:1px solid ${tint('var(--ui-stroke-tertiary)', 55)};border-radius:10px;font-size:${FS.preview}px;color:var(--ui-text-secondary);
-  background:transparent;min-width:0}
+  border-radius:${R.ctl}px;font-size:${FS.preview}px;color:var(--ui-text-secondary);min-width:0}
 .pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}
 .pa-done-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pa-detail{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
@@ -928,7 +910,7 @@ const STYLE = `
 .pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
   flex-wrap:nowrap;white-space:nowrap}
 .pa-crumb>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.pa-crumb>.pa-crumb-end,.pa-crumb>.pa-crumb-icon,.pa-crumb>.pa-crumb-sep,.pa-crumb>.pa-pill{flex:none}
+.pa-crumb>.pa-crumb-end,.pa-crumb>.pa-crumb-icon,.pa-crumb>.pa-crumb-sep{flex:none}
 .pa-crumb>.pa-crumb-end{margin-left:auto}
 .pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-crumb-sep{color:var(--ui-text-secondary)}
@@ -936,9 +918,11 @@ const STYLE = `
 .pa-dtitle{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;font-size:${FS.detail}px;font-weight:600;
   letter-spacing:-.015em;color:var(--ui-text-primary);min-width:0;text-wrap:balance}
 .pa-dtitle>[role="heading"]{text-wrap:balance}
-.pa-verdict{margin:14px 20px 0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;
-  padding:12px 14px;border:${HAIRLINE};border-radius:${R.verdict}px;flex:none;background:transparent}
-.pa-verdict[data-k="running"]{background:linear-gradient(90deg,transparent,${tint('var(--ui-accent)', 14)},transparent)}
+.pa-verdict{margin:14px 20px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;
+  padding:0 0 12px;border-bottom:${HAIRLINE};flex:none}
+.pa-verdict>.pa-seal{display:none}
+.pa-vtitle::before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;
+  background:var(--pa-tone);vertical-align:.08em}
 .pa-seal{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--pa-tone);
   background:color-mix(in srgb,var(--pa-tone) 16%,transparent);
   box-shadow:0 0 0 4px color-mix(in srgb,var(--pa-tone) 7%,transparent)}
@@ -958,11 +942,12 @@ const STYLE = `
 .pa-step-ring{width:9px;height:9px;border-radius:50%;border:2px solid ${tint('var(--ui-text-primary)', 25)};flex:none}
 .pa-vside{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:${FS.micro}px;line-height:1.5;
   color:var(--ui-text-secondary);text-align:right;min-width:0}
-.pa-toggle{display:flex;padding:2px;border-radius:7px;background:var(--hx-field);gap:2px}
+.pa-toggle{display:flex}
+.pa-vside>.pa-again{margin-left:auto}
 .pa-dbody{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 20px;display:flex;flex-direction:column;
-  gap:10px;${THIN_SCROLL};mask-image:linear-gradient(to bottom,transparent 0,var(--pa-surface) ${G.base}px)}
+  gap:10px;mask-image:linear-gradient(to bottom,transparent 0,var(--pa-surface) ${G.base}px);scrollbar-gutter:stable}
 .pa-dbody>*{flex:none}
-.pa-file{border:${HAIRLINE};border-radius:${R.file}px;overflow:hidden;min-width:0}
+.pa-file{border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden;min-width:0}
 .pa-file-head{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:${FS.meta}px;
   color:var(--ui-text-secondary);border-bottom:${HAIRLINE};background:transparent;min-width:0}
 .pa-file-path{${MONO};min-width:0;flex:1;overflow-wrap:anywhere}
@@ -987,9 +972,9 @@ const STYLE = `
 .pa-why>b{color:var(--ui-text-primary);font-weight:500}
 .pa-dfoot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px 14px;padding:${G.xs}px 20px;box-sizing:border-box;
   border-top:${HAIRLINE};flex:none;min-width:0}
-.pa-dfoot-left{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex:0 1 auto}
+.pa-dfoot-left{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex:1 1 160px}
 .pa-actions{display:flex;flex-wrap:nowrap;flex:none;justify-content:flex-end;align-items:center;gap:${G.xs}px;margin-left:auto;min-width:0}
-.pa-later{margin-left:auto}
+.pa-dfoot-right{display:flex;align-items:center;gap:${G.xs}px;margin-left:auto;flex:none;min-width:0}
 .pa-later+.pa-actions{margin-left:0}
 .pa-dfoot[data-armed="1"]{flex-wrap:nowrap}
 .pa-dfoot[data-armed="1"]>.pa-actions{flex:none;flex-wrap:nowrap}
@@ -998,7 +983,7 @@ const STYLE = `
 .pa-meter-label>b{margin-left:auto;color:var(--ui-text-primary);font-weight:500;font-variant-numeric:tabular-nums}
 .pa-meter{position:relative;height:6px;border-radius:3px;background:${tint('var(--ui-text-primary)', 12)};overflow:hidden}
 .pa-meter-used{position:absolute;top:0;bottom:0;left:0;border-radius:3px 0 0 3px;
-  background:${tint('var(--ui-text-primary)', 45)}}
+  background:var(--pa-tone)}
 .pa-meter-add{position:absolute;top:0;bottom:0;background:var(--ui-orange);background-image:repeating-linear-gradient(45deg,
   transparent 0 3px,color-mix(in srgb,var(--ui-bg-chrome) 35%,transparent) 3px 5px)}
 .pa-meter-thin{height:5px}
@@ -1019,13 +1004,14 @@ const STYLE = `
 .pa-state{flex:1;min-width:0;display:grid;place-items:center;align-content:center;gap:${G.sm}px;padding:${G.lg}px;
   text-align:center}
 .pa-state>*{max-width:48ch}
+.pa-state-actions{display:grid;justify-items:center;gap:6px}
 .pa-state-label{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-tech{display:flex;flex-direction:column;align-items:flex-start;gap:${G.xs}px;min-width:0}
 .pa-act-places{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pa-clear-body{font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-clear-last{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
   font-size:${FS.preview}px;color:var(--ui-text-secondary)}
-.pa-act-files{border:${HAIRLINE};border-radius:${R.box}px;padding:8px 12px;${MONO};font-size:${FS.meta}px;
+.pa-act-files{${MONO};font-size:${FS.meta}px;
   color:var(--ui-text-primary);overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
 .pa-act-said{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);overflow-wrap:anywhere;min-width:0}
 .pa-dtitle .pa-act-said{font:inherit;line-height:1.35}
@@ -1034,34 +1020,31 @@ const STYLE = `
   font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-outcome{margin:2px 20px 0}
 .pa-chip-dot{width:6px;height:6px;border-radius:50%;background:var(--pa-tone)}
-.pa-section{font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
+.pa-section{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
 .pa-memrows{display:flex;flex-direction:column;min-width:0}
 .pa-root .pa-memrow{display:flex;flex-direction:column;justify-content:center;gap:6px;margin:0;padding:0 14px;border:0;
-  border-bottom:1px solid ${tint('var(--ui-stroke-tertiary)', 55)};background:transparent;font:inherit;color:inherit;
+  border-radius:${R.ctl}px;background:transparent;font:inherit;color:inherit;
   text-align:left;cursor:pointer;position:relative;box-sizing:border-box;flex:none;min-width:0}
 .pa-root .pa-memrow:hover{background:var(--ui-row-hover-background)}
-.pa-root .pa-memrow[data-on="1"]{background:var(--ui-row-active-background);border-radius:${R.ctl}px}
-.pa-memrow-top{display:flex;align-items:baseline;gap:8px;font-size:${FS.row}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-root .pa-memrow[data-on="1"]{background:var(--ui-row-active-background)}
+.pa-memrow-top{display:flex;align-items:baseline;gap:8px;font-size:${FS.row}px;font-weight:500;color:var(--ui-text-primary)}
 .pa-memrow-top>b{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pa-memrow-top>b[data-full]::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;
   background:${WARN};margin-right:6px;vertical-align:middle}
 .pa-memrow-top>b[data-full="bad"]::before{background:var(--ui-red)}
 .pa-memrow-sub{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
-.pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:8px 12px;border-radius:${R.box}px;
-  --pa-ct:${WARN};background:color-mix(in srgb,var(--pa-ct) 9%,transparent);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pa-ct) 30%,transparent);font-size:${FS.meta}px;
-  color:var(--ui-text-primary)}
+.pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:8px 12px;
+  --pa-ct:${WARN};${CALLOUT};font-size:${FS.meta}px;color:var(--ui-text-primary)}
 .pa-banner>span{flex:1 1 220px;min-width:0}
-.pa-notes{display:flex;flex-direction:column;border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden}
+.pa-notes{display:flex;flex-direction:column;gap:2px}
 .pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:start;padding:10px 12px;
-  border-bottom:${HAIRLINE}}
+  border-radius:${R.ctl}px}
 .pa-note-row[data-longest="1"] .pa-note-len{color:var(--ui-text-primary);font-weight:600}
 .pa-note-row[data-longest="1"] .pa-note-len::before{content:'';display:inline-block;width:6px;height:6px;margin-right:6px;
   border-radius:50%;background:${WARN};vertical-align:middle}
 .pa-note-len{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;
   padding-top:2px}
-.pa-note-row:last-child{border-bottom:none}
 .pa-note-row[data-armed="1"]{background:var(--hx-field)}
 .pa-note-n{font-size:${FS.micro}px;color:var(--ui-text-secondary);text-align:right;padding-top:2px;
   font-variant-numeric:tabular-nums}
@@ -1071,8 +1054,8 @@ const STYLE = `
 .pa-note-ask>span{flex:1 1 200px;min-width:0}
 .pa-sel-count{color:var(--ui-text-primary);font-weight:600;font-variant-numeric:tabular-nums}
 .pa-sum{display:flex;flex-direction:column;gap:6px}
-.pa-sum-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;
-  border:${HAIRLINE};border-radius:${R.box}px;min-width:0}
+.pa-sum-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;
+  min-width:0}
 .pa-sum-text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-sum-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pa-sum-chip{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
@@ -1088,19 +1071,11 @@ const STYLE = `
 .pa-wrap{white-space:normal;overflow-wrap:anywhere}
 .pa-finding{display:flex;flex-direction:column;gap:${G.xxs}px;padding-top:${G.xs}px;border-top:${HAIRLINE}}
 .pa-fullchange-toggle{align-self:flex-start}
-.pa-root .pa-fold-btn::before{content:'▸' / '';display:inline-block;width:1em;flex:none}
-.pa-root .pa-fold-btn[aria-expanded="true"]::before{content:'▾' / ''}
 .pa-held{opacity:.5;cursor:not-allowed}
-.pa-pill{display:inline-flex;align-items:center;height:${TAG.height}px;padding:${TAG.padding};
-  border-radius:${TAG.borderRadius}px;border:${HAIRLINE};background:transparent;
-  color:var(--ui-text-secondary);font-size:${TAG.fontSize}px;font-weight:${TAG.fontWeight};
-  letter-spacing:${TAG.letterSpacing};line-height:1;white-space:nowrap;flex-shrink:0}
-.pa-pill-id{font-variant-numeric:tabular-nums;${MONO}}
 .pa-change-stat{font-size:${FS.micro}px;font-variant-numeric:tabular-nums;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-gist{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary)}
 .pa-alert-sub{margin-top:4px;color:var(--ui-text-secondary)}
-.pa-review{display:flex;flex-direction:column;gap:${G.xs}px;border-radius:${R.box}px;padding:${G.xs}px ${G.sm}px;
-  background:transparent;border:${HAIRLINE}}
+.pa-review{display:flex;flex-direction:column;gap:${G.xs}px;padding-top:${G.sm}px;border-top:${HAIRLINE}}
 .pa-review-head{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex-wrap:wrap}
 .pa-majors{display:flex;flex-direction:column;gap:${G.sm}px}
 .pa-quote{font-size:${FS.micro}px;line-height:1.5;color:var(--ui-text-secondary);padding-left:${G.xs}px;
@@ -1108,7 +1083,6 @@ const STYLE = `
 .pa-major-wrap{display:flex;flex-direction:column;gap:${G.xxs}px}
 .pa-major{display:flex;align-items:baseline;gap:${G.xs}px;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
 .pa-major>span:last-child{min-width:0}
-.pa-muted{padding-left:${G.xs}px;border-left:2px dashed var(--ui-stroke-tertiary)}
 .pa-aside{font-size:${FS.micro}px;line-height:1.5;color:var(--ui-text-secondary)}
 .pa-groups,.pa-fix{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-members{display:flex;flex-direction:column;gap:${G.xs}px}
@@ -1124,21 +1098,14 @@ const STYLE = `
 .pa-ln-mark{flex:none;width:10px;opacity:.7;user-select:none}
 .pa-ln-text{min-width:0;flex:1}
 .pa-note{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
-.pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);border-radius:${R.box}px;--pa-ct:${WARN};
-  background:color-mix(in srgb,var(--pa-ct) 9%,transparent);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pa-ct) 30%,transparent);padding:8px 12px}
+.pa-alert{font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-primary);--pa-ct:${WARN};${CALLOUT};
+  padding:8px 12px}
 .pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
 .pa-stale>span{flex:1 1 220px;min-width:0}
 .pa-alert-danger{--pa-ct:var(--ui-red)}
-.pa-scroll{${THIN_SCROLL}}
-.pa-pane ::-webkit-scrollbar{width:8px;height:8px}
-.pa-pane ::-webkit-scrollbar-track{background:transparent}
-.pa-pane ::-webkit-scrollbar-button{display:none;width:0;height:0}
-.pa-pane ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ui-text-tertiary) 42%,transparent);
-  border-radius:4px}
-.pa-pane ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ui-text-tertiary) 62%,transparent)}
 @keyframes pa-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .pa-view{animation:${rise('enter')}}
+.pa-root .pa-row:hover,.pa-root .pa-tab:hover,.pa-root .pa-memrow:hover,.pa-root .pa-act-sub:hover{transition:none}
 @container (max-width:760px){
   .pa-bar{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:${H.bar}px auto;padding:0}
   .pa-bar-title{padding-left:12px}.pa-bar-side{padding-right:12px}
@@ -1152,7 +1119,7 @@ const STYLE = `
   .pa-split[data-selecting="1"]>.pa-detail{display:flex;flex:none;border-top:${HAIRLINE}}
   .pa-split[data-selecting="1"]>.pa-detail>.pa-card{flex:none}
   .pa-split[data-selecting="1"] .pa-bulk>.pa-dh,.pa-split[data-selecting="1"] .pa-bulk>.pa-dbody{display:none}
-  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;${THIN_SCROLL}}
+  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}
   .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:${HAIRLINE}}
   .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
   .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
@@ -1162,20 +1129,22 @@ const STYLE = `
   .pa-dh{padding:12px 12px 0}.pa-verdict{margin:12px 12px 0}.pa-dbody{padding:12px}
   .pa-dfoot{padding:${G.xs}px 12px}
   .pa-dfoot>.pa-actions{flex-wrap:nowrap}
-  .pa-dfoot>.pa-dfoot-left{flex:1 1 100%}
-  .pa-detail>.pa-card{overflow-y:auto;overflow-x:hidden;${THIN_SCROLL}}
+  .pa-detail>.pa-card{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
   .pa-detail>.pa-card>.pa-dbody{flex:none;overflow:visible;mask-image:none}
   .pa-detail>.pa-card>.pa-back{position:sticky;top:0;z-index:1;background:var(--pa-surface)}
   .pa-detail>.pa-card>.pa-dfoot{position:sticky;bottom:0;z-index:1;margin-top:auto;background:var(--pa-surface)}
   .pa-root:has(.pa-split[data-open="1"]>.pa-detail>.pa-card)>.pa-top{display:none}
   .pa-memory .pa-memrows{gap:${G.xs}px;padding:${G.xs}px}
-  .pa-memory .pa-memrow{border-bottom:0}}
+  .pa-memory .pa-memrow{border-bottom:0}
+  .pa-note-row{grid-template-columns:22px minmax(0,1fr) auto}
+  .pa-note-row>.pa-note-len{grid-column:2;grid-row:2;padding-top:0}
+  .pa-note-row>.pa-tipwrap{grid-column:3;grid-row:1}}
 @container (max-width:560px){
   .pa-crumb>.pa-crumb-end[data-when]{display:none}
   .pa-dh-when{display:block}
   .pa-meter-box{flex:1 1 100%;min-width:0}
   .pa-btn-kbd{display:none}
-  .pa-verdict{grid-template-columns:auto minmax(0,1fr)}
+  .pa-verdict{grid-template-columns:minmax(0,1fr)}
   .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}}
 @container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
 @container (max-width:480px){.pa-bar .pa-progress{display:none}}
@@ -1188,9 +1157,6 @@ const STYLE = `
 .pa-root>.pa-body{grid-column:1 / -1;grid-row:4;min-height:0}
 .pa-list,.pa-detail{overflow:hidden}
 .pa-tab>.pa-tag{margin-left:${G.xxs}px}
-.pa-tile{border-radius:9px}
-.pa-verdict{border-radius:${R.panel - 4}px}
-.pa-file,.pa-notes{border-radius:${R.box + 4}px}
 .pa-sum-text>.pa-row-title{white-space:normal;overflow:visible}
 .pa-top{justify-content:flex-start;align-items:stretch;padding:0;gap:0;border-bottom:${HAIRLINE};overflow:hidden}
 .pa-top>.pa-hero{margin-bottom:0}
@@ -1212,7 +1178,7 @@ const STYLE = `
 .pa-hero .pa-clear-title{color:var(--pa-on-deep);font-size:${FS.hero}px;letter-spacing:-.02em}
 .pa-hero .pa-clear-body{color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
 .pa-week{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
-.pa-week-title{font-size:${FS.meta}px;font-weight:600}
+.pa-week-title{font-size:${FS.meta}px;font-weight:500}
 .pa-week-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:${G.xs}px;height:${H.week}px}
 .pa-week-day{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;font-size:${FS.micro}px;
   color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
@@ -1254,21 +1220,16 @@ const STYLE = `
   .pa-progress{flex-wrap:wrap;row-gap:6px}
   .pa-gms{flex-direction:column;align-items:stretch;gap:8px}
   .pa-gm>.pa-gm-bar{flex:1;width:auto}}
-@container (min-width:761px) and (max-width:1100px){.pa-dfoot>.pa-dfoot-left{flex:1 1 100%}.pa-meter-box{flex:1}
+@container (min-width:761px) and (max-width:1100px){.pa-meter-box{flex:1}
   .pa-split{grid-template-columns:${W.listMid}px minmax(0,1fr)}
   .pa-dh{padding:12px 14px 0}.pa-dbody{padding:12px 14px}.pa-dfoot{padding:${G.xs}px 14px}
-  .pa-verdict{grid-template-columns:minmax(0,1fr);margin:12px 14px 0;padding:0 0 12px;border:0;border-radius:0;
-    border-bottom:${HAIRLINE}}
-  .pa-verdict>.pa-seal{display:none}
-  .pa-verdict[data-k="running"]{background:none}
-  .pa-vtitle::before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;
-    background:var(--pa-tone);vertical-align:.08em}
+  .pa-verdict{grid-template-columns:minmax(0,1fr);margin:12px 14px 0}
   .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}
   .pa-root .pa-row{grid-template-columns:22px minmax(0,1fr) auto auto;padding:8px 10px;column-gap:8px}
-  .pa-tile,.pa-cbx{width:22px;height:22px;border-radius:7px}.pa-cb{left:10px;top:8px;width:22px;height:22px}
+  .pa-tile{width:22px;height:22px}.pa-cb{left:10px;top:8px;width:22px;height:22px}
   .pa-sum-row{grid-template-columns:22px minmax(0,1fr);gap:4px 8px;padding:8px}
   .pa-sum-row>.pa-sum-chip{grid-column:2}
-  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto;${THIN_SCROLL}}
+  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}
   .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:0}
   .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
   .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
@@ -1442,7 +1403,7 @@ function Field({ label: title, children }) {
 
 const TONE_COLOR = { ok: 'var(--ui-green)', warn: WARN, bad: 'var(--ui-red)', off: 'var(--ui-text-tertiary)' }
 const pendingBadge = n => jsx(Badge, {
-  className: 'pa-tag', style: TAG, variant: 'solid', children: String(n)
+  className: 'pa-tag', variant: 'solid', children: String(n)
 }, 'badge')
 
 const errText = e => {
@@ -1477,7 +1438,8 @@ function TechDetails({ t, rows }) {
     children: [
       jsx(Button, {
         variant: 'text', size: 'inline', className: 'pa-tech-fold pa-fold-btn', 'aria-expanded': open,
-        onClick: () => setOpen(v => !v), children: t(open ? 'pa.tech.hide' : 'pa.tech.show')
+        onClick: () => setOpen(v => !v),
+        children: [jsx(DisclosureCaret, { open }, 'caret'), t(open ? 'pa.tech.hide' : 'pa.tech.show')]
       }, 'fold'),
       open ? jsx(PanelMeta, { className: 'pa-tech-rows', rows: shown }, 'rows') : null
     ]
@@ -1491,10 +1453,13 @@ function LoadError({ title: heading, error, onRetry }) {
     children: jsx(ErrorState, {
       title: heading,
       description: t('pa.empty.errorBody'),
-      children: [
-        jsx(Button, { variant: 'outline', size: 'sm', onClick: onRetry, children: t('pa.empty.retry') }, 'retry'),
-        jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech')
-      ]
+      children: jsxs('div', {
+        className: 'pa-state-actions',
+        children: [
+          jsx(Button, { variant: 'outline', size: 'sm', onClick: onRetry, children: t('pa.empty.retry') }, 'retry'),
+          jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech')
+        ]
+      }, 'actions')
     }, 'error')
   }, 'error')
 }
@@ -1554,7 +1519,7 @@ function useLeave(key) {
       leaveTimers.delete(id)
       const until = refreshPane()
       if (held.get(key)?.leaving) setHeld(key, { leaving: true, until })
-    }, 340)
+    }, MOTION.exit.ms + 10)
     leaveTimers.add(id)
   }
   return { leaving, leave }
@@ -1870,8 +1835,8 @@ function Finding({ finding }) {
       jsxs('div', {
         style: { display: 'flex', alignItems: 'center', gap: G.xs, flexWrap: 'wrap' },
         children: [
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant, children: t(label) }, 'severity'),
-          jsx('span', { className: 'pa-pill', children: t(FINDING_KIND[finding.kind] || FINDING_KIND.rule) }, 'kind')
+          jsx(Badge, { variant, children: t(label) }, 'severity'),
+          jsx(Badge, { variant: 'muted', children: t(FINDING_KIND[finding.kind] || FINDING_KIND.rule) }, 'kind')
         ]
       }, 'head'),
       finding.unverified ? jsx('div', { className: 'pa-aside', children: t('pa.review.unverifiedWhy') }, 'why') : null,
@@ -1945,7 +1910,7 @@ function ReviewSection({ review, facts, tone, ids }) {
       jsxs('div', {
         className: 'pa-major',
         children: [
-          jsx(Badge, { className: 'pa-tag', style: TAG, variant, children: badge }, 'sev'),
+          jsx(Badge, { variant, children: badge }, 'sev'),
           jsx('span', { children: text }, 'text')
         ]
       }, 'line'),
@@ -1960,9 +1925,7 @@ function ReviewSection({ review, facts, tone, ids }) {
       jsxs('div', {
         className: 'pa-major',
         children: [
-          jsx(Badge, {
-            className: 'pa-tag', style: TAG, variant: 'muted', children: t('pa.review.unverified')
-          }, 'sev'),
+          jsx(Badge, { variant: 'muted', children: t('pa.review.unverified') }, 'sev'),
           jsx('span', { children: `${tagOf(f)}${f.explain}` }, 'text')
         ]
       }, 'line'),
@@ -2103,8 +2066,9 @@ function WeekChart({ t, entries, cut }) {
 const decidedToday = entries => entries
   .filter(e => (e.kind === 'apply' || e.kind === 'rejected') && dayKey(e.ts) === dayKey(Date.now() / 1000))
   .sort((a, b) => a.ts - b.ts)
-const kbd = (text, extra) => jsx('span', {
-  className: extra ? `pa-kbd ${extra}` : 'pa-kbd', 'aria-hidden': true, children: text
+const kbd = (text, extra) => jsx(Kbd, {
+  size: 'sm', variant: extra ? 'inverted' : 'default', className: extra ? `pa-kbd ${extra}` : 'pa-kbd',
+  'aria-hidden': true, children: text
 }, `kbd-${text}`)
 const typing = el => {
   if (!el || !el.closest) return false
@@ -2341,20 +2305,14 @@ function QueueRow({ unit, on, t, onSelect, picking, picked, onPick }) {
     style: { height: H.row, '--pa-id': markOf(subsystem, recordFile(subsystem, item)) },
     children: [
       picking
-        ? jsxs('label', {
+        ? jsx('span', {
             className: 'pa-cb',
             'data-on': picked ? '1' : '0',
-            children: [
-              jsx('input', {
-                type: 'checkbox', className: 'pa-pick', checked: picked === true,
-                'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
-                onChange: () => onPick(key)
-              }, 'pick'),
-              jsx('span', {
-                className: 'pa-cbx', 'aria-hidden': true,
-                children: jsx('i', { children: picked ? icon(CheckIcon, 12) : null }, 'box')
-              }, 'box')
-            ]
+            children: jsx(Checkbox, {
+              className: 'pa-pick', checked: picked === true,
+              'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
+              onCheckedChange: () => onPick(key)
+            })
           }, 'pick')
         : null,
       jsxs('button', {
@@ -2433,9 +2391,10 @@ function Meter({ fit }) {
   const lo = at(Math.min(fit.before, fit.after))
   const hi = at(Math.max(fit.before, fit.after))
   const before = fill({ chars: fit.before, limit: fit.limit }).pct
-  const after = fill({ chars: fit.after, limit: fit.limit }).pct
+  const { pct: after, tone } = fill({ chars: fit.after, limit: fit.limit })
   return jsxs('div', {
     className: 'pa-meter-box',
+    style: { '--pa-tone': TONE_COLOR[tone] },
     children: [
       jsxs('div', {
         className: 'pa-meter-label',
@@ -2515,7 +2474,7 @@ function FileDiff({ path, rows, op, badge, deleted }) {
             className: 'pa-file-head',
             children: [
               jsx('span', { className: 'pa-file-path', children: path }, 'path'),
-              badge ? jsx('span', { className: 'pa-pill', children: badge }, 'badge') : null,
+              badge ? jsx(Badge, { variant: 'muted', children: badge }, 'badge') : null,
               gone && !badge
                 ? jsx('span', { className: 'pa-file-n pa-file-del', children: t('pa.file.deleted') }, 'deleted')
                 : jsxs('span', {
@@ -2727,10 +2686,10 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         className: 'pa-toggle',
         role: 'group',
         'aria-label': t('pa.fixview.label'),
-        children: [['fix', 'pa.fixview.fix'], ['as', 'pa.fixview.as']].map(([id, k]) => jsx(Button, {
-          variant: view === id ? 'secondary' : 'text', size: 'sm', 'aria-pressed': view === id,
-          className: 'pa-toggle-btn', onClick: () => setView(id), children: t(k)
-        }, id))
+        children: jsx(SegmentedControl, {
+          options: [{ id: 'fix', label: t('pa.fixview.fix') }, { id: 'as', label: t('pa.fixview.as') }],
+          value: view, onChange: setView
+        })
       }, 'toggle')
     : null
   const verdictCard = jsxs('div', {
@@ -2766,14 +2725,15 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const alerts = [
     stale.length
       ? alertBox('stale', [
-          isGroup ? t('pa.grp.staleWhy') : t('pa.status.staleWhy'),
+          isGroup ? t('pa.grp.staleWhy')
+            : t(fit && fit.after > fit.limit ? 'pa.status.staleFullWhy' : 'pa.status.staleWhy'),
           ...stale.map((s, i) => jsx('div', {
             className: 'pa-alert-sub', children: isGroup ? `#${s.change} · ${s.text}` : s
-          }, isGroup ? `s${s.change}` : `${i}:${s}`))
+          }, isGroup ? `s${s.change}` : `${i}:${s}`)),
+          isGroup
+            ? jsx('div', { className: 'pa-alert-sub pa-hold', children: t('pa.grp.staleHeld', changeList(stale)) }, 'hold')
+            : null
         ], true)
-      : null,
-    stale.length && isGroup
-      ? jsx('div', { className: 'pa-note pa-hold', children: t('pa.grp.staleHeld', changeList(stale)) }, 'hold')
       : null,
     failedBefore
       ? alertBox('failed', isGroup
@@ -2825,7 +2785,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
             style: { display: 'flex', alignItems: 'center', gap: G.xs },
             children: [
               jsx(Badge, {
-                className: 'pa-tag', style: TAG,
                 variant: g.kind === 'new' ? 'success' : g.kind === 'delete' ? 'destructive' : 'muted',
                 children: t(g.kind === 'new' ? 'pa.group.new' : g.kind === 'delete' ? 'pa.group.delete' : 'pa.group.update')
               }, 'kind'),
@@ -2868,7 +2827,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         jsxs('div', {
           className: 'pa-member-head',
           children: [
-            jsx('span', { className: 'pa-pill pa-pill-id', children: `#${part.change}` }, 'n'),
+            jsx(Badge, { variant: 'muted', children: `#${part.change}` }, 'n'),
             jsx('span', { className: 'pa-change-stat', children: part.id }, 'id'),
             jsx('span', {
               className: 'pa-member-what', children: (pPlain.what || []).join(' · ') || pPlain.headline || ''
@@ -2879,9 +2838,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
                 : t('pa.op.lines', tally(ops, '+'), tally(ops, '-'))
             }, 'stat'),
             staleAt && staleAt.has(part.change)
-              ? jsx(Badge, {
-                  className: 'pa-tag', style: TAG, variant: 'destructive', children: t('pa.status.stale')
-                }, 'stale')
+              ? jsx(Badge, { variant: 'destructive', children: t('pa.status.stale') }, 'stale')
               : null,
             jsx(Button, {
               variant: 'text',
@@ -2890,7 +2847,9 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
               'aria-expanded': lines,
               className: 'pa-fold-btn',
               onClick: () => toggleLines(part.id),
-              children: t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
+              children: [
+                jsx(DisclosureCaret, { open: lines }, 'caret'), t(lines ? 'pa.grp.hideLines' : 'pa.grp.showLines')
+              ]
             }, 'fold'),
             jsx(Button, {
               variant: 'outline',
@@ -3032,7 +2991,9 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
             'aria-expanded': open,
             'aria-controls': detailsId,
             onClick: () => setOpen(v => !v),
-            children: t(open ? 'pa.btn.fullReviewHide' : 'pa.btn.fullReview')
+            children: [
+              jsx(DisclosureCaret, { open }, 'caret'), t(open ? 'pa.btn.fullReviewHide' : 'pa.btn.fullReview')
+            ]
           }, 'details'),
           fullReview
         ]
@@ -3072,40 +3033,45 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           }, 'actions')
         ] : [
           fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit }, 'meter') }, 'left') : null,
-          onLater
-            ? jsx(Button, {
-                variant: 'text', size: 'sm', className: 'pa-later', disabled: leaving,
-                'aria-keyshortcuts': 'L', onClick: () => onLater(),
-                children: [t('pa.btn.later'), kbd(t('pa.key.l'), 'pa-btn-kbd')]
-              }, 'later')
-            : null,
           jsxs('div', {
-            className: 'pa-actions',
+            className: 'pa-dfoot-right',
             children: [
-              canSkip
+              onLater
                 ? jsx(Button, {
-                    variant: 'outline', size: 'sm',
-                    disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
-                    'aria-keyshortcuts': skipHot ? 'A' : undefined,
-                    onClick: () => setSkipArmed(true),
-                    children: skipHot
-                      ? [t('pa.btn.skipReview'), kbd(t('pa.key.a'), 'pa-btn-kbd')]
-                      : t('pa.btn.skipReview')
-                  }, 'skip')
+                    variant: 'text', size: 'sm', className: 'pa-later', disabled: leaving,
+                    'aria-keyshortcuts': 'L', onClick: () => onLater(),
+                    children: [t('pa.btn.later'), kbd(t('pa.key.l'), 'pa-btn-kbd')]
+                  }, 'later')
                 : null,
-              jsxs(Button, {
-                variant: declineIsDelete ? 'destructive' : 'outline',
-                size: 'sm',
-                className: 'pa-decline',
-                'aria-keyshortcuts': 'X',
-                disabled: Boolean(busy) && busy !== 'reject',
-                loading: busy === 'reject',
-                onClick: () => void decide('reject'),
-                children: [labelDecline, kbd(t('pa.key.x'), 'pa-btn-kbd')]
-              }, 'reject'),
-              ...primaries
+              jsxs('div', {
+                className: 'pa-actions',
+                children: [
+                  canSkip
+                    ? jsx(Button, {
+                        variant: 'outline', size: 'sm',
+                        disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
+                        'aria-keyshortcuts': skipHot ? 'A' : undefined,
+                        onClick: () => setSkipArmed(true),
+                        children: skipHot
+                          ? [t('pa.btn.skipReview'), kbd(t('pa.key.a'), 'pa-btn-kbd')]
+                          : t('pa.btn.skipReview')
+                      }, 'skip')
+                    : null,
+                  jsxs(Button, {
+                    variant: declineIsDelete ? 'destructive' : 'outline',
+                    size: 'sm',
+                    className: 'pa-decline',
+                    'aria-keyshortcuts': 'X',
+                    disabled: Boolean(busy) && busy !== 'reject',
+                    loading: busy === 'reject',
+                    onClick: () => void decide('reject'),
+                    children: [labelDecline, kbd(t('pa.key.x'), 'pa-btn-kbd')]
+                  }, 'reject'),
+                  ...primaries
+                ]
+              }, 'actions')
             ]
-          }, 'actions')
+          }, 'right')
         ]
       }, 'foot')
     ]
@@ -3412,7 +3378,7 @@ function TopCard({ t, entries, cut, n: waiting, slim, away, onChanged, mem, onOp
               }, 'text'),
               canUndo || canRestore
                 ? jsx(Button, {
-                    variant: 'textStrong', size: 'inline', loading: busy,
+                    variant: 'ghost', size: 'sm', loading: busy,
                     className: canUndo ? 'pa-clear-undo' : 'pa-restore',
                     onClick: async () => {
                       setBusy(true)
@@ -3592,18 +3558,18 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
           ...(selecting ? [
             jsx('span', { className: 'pa-sel-count', children: t('pa.bulk.selected', picked.size) }, 'count'),
             jsx(Button, {
-              className: 'pa-select-all', variant: 'text', size: 'inline',
+              className: 'pa-select-all', variant: 'ghost', size: 'sm',
               onClick: () => pickSet(picked.size === keys.length ? new Set() : new Set(keys)),
               children: t(picked.size === keys.length ? 'pa.bulk.none' : 'pa.bulk.all')
             }, 'all'),
             jsx(Button, {
-              className: 'pa-select', variant: 'text', size: 'inline', onClick: toggleSelect, children: t('pa.bulk.done')
+              className: 'pa-select', variant: 'ghost', size: 'sm', onClick: toggleSelect, children: t('pa.bulk.done')
             }, 'select')
           ] : [
             jsx('span', { children: t('pa.list.waiting', keys.length) }, 'count'),
             canSelect
               ? jsx(Button, {
-                  className: 'pa-select', variant: 'text', size: 'inline', onClick: toggleSelect,
+                  className: 'pa-select', variant: 'ghost', size: 'sm', onClick: toggleSelect,
                   children: t('pa.stage.select')
                 }, 'select')
               : null
@@ -3731,8 +3697,8 @@ function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
             className: 'pa-deck-title',
             children: [
               jsx('span', { className: 'pa-row-title', children: line.name }, 'title'),
-              jsx('span', { className: 'pa-deck-count', children: String(n) }, 'count'),
-              jsx('span', { className: 'pa-deck-chev', 'aria-hidden': true, children: icon(BackIcon, 13) }, 'chev')
+              jsx(Badge, { variant: 'muted', children: String(n) }, 'count'),
+              jsx(DisclosureCaret, { open, className: 'pa-deck-chev' }, 'chev')
             ]
           }, 'top'),
           jsx('span', { className: 'pa-row-preview', children: tally }, 'preview')
@@ -4008,7 +3974,10 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
                   jsx(Button, {
                     variant: 'text', size: 'inline', style: { alignSelf: 'flex-start' }, 'aria-expanded': fold,
                     className: 'pa-fold-btn', onClick: () => setFold(v => !v),
-                    children: fold ? t('pa.hist.changesHide') : t('pa.grp.list', changes.length)
+                    children: [
+                      jsx(DisclosureCaret, { open: fold }, 'caret'),
+                      fold ? t('pa.hist.changesHide') : t('pa.grp.list', changes.length)
+                    ]
                   }, 'fold'),
                   ...(fold ? sameOnce(changes.map(c => plainGist(t, c))).map(r => jsx('div', {
                     className: 'pa-aside', children: `${r.at.map(n => `#${n}`).join(', ')} · ${r.text}`
@@ -4155,7 +4124,7 @@ function HistoryList({ data, error, refresh, onChanged, onOpen }) {
                   ]
                 }, 'arming')
               : jsx(Button, {
-                  variant: 'text', size: 'inline', className: 'pa-activity-clear',
+                  variant: 'ghost', size: 'sm', className: 'pa-activity-clear',
                   onClick: () => setConfirming(true), children: t('pa.hist.clear', all)
                 }, 'arm')
           }, 'foot')

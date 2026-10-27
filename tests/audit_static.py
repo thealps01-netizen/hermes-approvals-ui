@@ -226,19 +226,19 @@ def check_card_surface_from_table() -> None:
     """The app frame's surfaces are defined once, not twice. Since the split layout (2026-10) there is
     no floating card: the frame is the segmented tab track, its active pill and the tinted list
     column (spec R1.2, R10). Each sheet rule reads its ground, stroke and radius from the shared
-    constants (`--hx-field`/`--hx-raised`, `${HAIRLINE}`, `${R.*}px`, `tint(...)`): a literal `8px`
+    constants (the app's `--ui-bg-*` tokens, `${HAIRLINE}`, `${R.*}px`, `tint(...)`): a literal `8px`
     or a hand-written stroke in the sheet is how the class and the constant drift apart. The pane root
     and the list column paint no ground and no edge: the app's own pages are flat."""
     js = JS.read_text(encoding="utf-8")
-    for rule, needles in ((".pa-tabs{", (("var(--hx-field)", "the track ground"),
+    for rule, needles in ((".pa-tabs{", (("var(--ui-bg-tertiary)", "the track ground"),
                                          ("border-radius:${R.box}px", "the track radius"))),
                           (".pa-root .pa-tab{", (("border-radius:${R.ctl}px", "the tab radius"),)),
-                          ('.pa-root .pa-tab[data-on="1"]{', (("var(--hx-raised)", "the active tab ground"),
-                                                              ("var(--ui-stroke-secondary)",
+                          ('.pa-root .pa-tab[data-on="1"]{', (("var(--ui-bg-chrome)", "the active tab ground"),
+                                                              ("var(--ui-stroke-tertiary)",
                                                                "the active tab ring"))),
                           (".pa-list{", (("border-right:${HAIRLINE}", "the hairline stroke"),)),
-                          (".pa-verdict{", (("border-radius:${R.verdict}px", "the verdict radius"),)),
-                          (".pa-file{", (("border-radius:${R.file}px", "the file box radius"),))):
+                          (".pa-verdict{", (("border-bottom:${HAIRLINE}", "the verdict hairline"),)),
+                          (".pa-file{", (("border-radius:${R.box}px", "the file box radius"),))):
         if rule not in js:
             _report(f"plugin.js: the {rule[:-1]!r} rule is gone — the app frame lost its class")
             continue
@@ -615,15 +615,18 @@ def check_colors() -> None:
             hit(m.start(), m.group(0))
 
 
+APP_TOKENS = {"--font-mono"}
+
+
 def check_theme_vars() -> None:
     """Every `var(--x)` in plugin.js is one of the app's (`--ui-*`) or the plugin's own (`--hx-*`,
-    `--pa-*`) (spec R11.2). The mockups were drawn with the chat-widget names (`--foreground`,
+    `--pa-*`) (spec R11.2), or one of APP_TOKENS (the app's own mono stack). The mockups were drawn with the chat-widget names (`--foreground`,
     `--card`, `--muted-foreground` …); those are not defined on a desktop panel, so a copied rule
     styles nothing — an invisible text or a missing surface, not an error."""
     src = _js_without_comments(JS.read_text(encoding="utf-8"))
     for m in re.finditer(r"var\(\s*(--[A-Za-z0-9_-]+)", src):
         name = m.group(1)
-        if name.startswith(("--ui-", "--hx-", "--pa-")):
+        if name.startswith(("--ui-", "--hx-", "--pa-")) or name in APP_TOKENS:
             continue
         line = src.count("\n", 0, m.start()) + 1
         if name in CHAT_WIDGET_VARS:
@@ -680,8 +683,9 @@ def check_app_layout() -> None:
             or "const a = advised ? '' : t('pa.key.a')" not in detail:
         _report("plugin.js: the primary action lost aria-keyshortcuts A — the key is not announced "
                 "and finds no button")
-    if "'aria-pressed': view === id" not in detail:
-        _report("plugin.js: the fix toggle lost aria-pressed — With the fix and As written read the same")
+    if "jsx(SegmentedControl, {" not in detail or "value: view, onChange: setView" not in detail:
+        _report("plugin.js: the fix toggle is not the kit SegmentedControl — its buttons carry aria-pressed, "
+                "so With the fix and As written read the same without it")
     if "'aria-current': on ? 'true' : undefined" not in row:
         _report("plugin.js: the selected list row lost aria-current — nothing says which record the "
                 "detail shows")
@@ -1037,7 +1041,8 @@ def check_visual_scale() -> None:
 def check_round3_surface() -> None:
     """Round 3 (2026-09-23) look, locked: a fixed text box shows whole lines (its line height and
     padding come from LINE/inset, so the box height is a whole number of lines), an overflowing box
-    fades at the bottom instead of cutting, every kit Badge in the panel wears the one tag form, and
+    fades at the bottom instead of cutting, every kit Badge keeps the kit's own form (driven by
+    variant/size, never restyled through style=), and
     a lone last card spans the row instead of sitting in half of it."""
     js = JS.read_text(encoding="utf-8")
     if ("paddingTop: pad, paddingBottom: pad" not in js or "const pad = height ? inset(height, 2)" not in js):
@@ -1048,10 +1053,12 @@ def check_round3_surface() -> None:
         _report("plugin.js: an overflowing fixed box has no bottom fade — it reads as clipped "
                 "(the mask is opaque var(--ui-base) fading to transparent)")
     for m in re.finditer(r"jsx\(Badge, \{", js):
-        head = js[m.end():m.end() + 80]
-        if "className: 'pa-tag'" not in head:
+        head = js[m.end():js.find("}", m.end())]
+        if "style:" in head:
             line = js.count("\n", 0, m.start()) + 1
-            _report(f"plugin.js:{line}: a Badge outside the one tag form (className 'pa-tag' + TAG)")
+            _report(f"plugin.js:{line}: a Badge restyled through style= — drive it by variant/size")
+    if re.search(r"^\.pa-(pill|deck-count|kbd)\{", js, re.M):
+        _report("plugin.js: a hand-built pill or key chip is back — use the kit Badge/Kbd")
     history = _function_body(js, "HistoryList")
     if (".pa-list{display:flex;flex-direction:column" not in js
             or js.count("className: 'pa-list pa-activity-list'") != 1
