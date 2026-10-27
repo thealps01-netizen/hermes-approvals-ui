@@ -42,7 +42,7 @@
  *      themed `Tip` / an `aria-label` owns hover text; every button keeps an accessible name).
  */
 import './clock.mjs'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 
@@ -537,11 +537,23 @@ export function Tip({ label, children }) {
 
 export default { host, haptic, relativeTime, EmptyState, icons }
 `
-writeFileSync(`${HERE}sdk-stub.mjs`, STUB)
+// The stub is the same for every run: it is rewritten only when it differs, through a rename, so a run
+// started at the same time never imports a half-written stub.
+let stubNow = null
+try { stubNow = readFileSync(`${HERE}sdk-stub.mjs`, 'utf8') } catch {}
+if (stubNow !== STUB) {
+  writeFileSync(`${HERE}sdk-stub.${process.pid}.tmp`, STUB)
+  renameSync(`${HERE}sdk-stub.${process.pid}.tmp`, `${HERE}sdk-stub.mjs`)
+}
 
 // The mirror under test: byte-for-byte the panel, with ONLY the SDK import line pointed at the stub.
+// Named for THIS run and removed when it ends: with one shared name, a second run at the same time
+// (a check against an older plugin.js) overwrote it, and every later mount here tested that panel.
 const src = readFileSync(SRC, 'utf8').replace("'@hermes/plugin-sdk'", "'./sdk-stub.mjs'")
-writeFileSync(`${HERE}plugin-under-test.mjs`, src)
+const MIRROR_NAME = `plugin-under-test.${process.pid}.mjs`
+const MIRROR = `${HERE}${MIRROR_NAME}`
+writeFileSync(MIRROR, src)
+process.on('exit', () => { try { unlinkSync(MIRROR) } catch {} })
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true })
 global.window = dom.window
@@ -1011,7 +1023,7 @@ async function mount(appLocale, parts = 'both') {
     },
     register: r => registrations.push(r)
   }
-  const plugin = (await import(`${HERE_URL.href}plugin-under-test.mjs?v=${++version}`)).default
+  const plugin = (await import(`${HERE_URL.href}${MIRROR_NAME}?v=${++version}`)).default
   plugin.register(ctx)
   const pageReg = registrations.find(r => r.area === 'routes')
   const chipReg = registrations.find(r => r.area === 'statusBar.right')
@@ -5852,6 +5864,10 @@ REST.scan = 'ok'
   REST.history = null
   hist.hostEl.remove()
 }
+
+// Every mount re-imports the mirror, so a mirror rewritten mid-run by another run (a check against an
+// older plugin.js started at the same time) silently tests that other panel from then on.
+if (readFileSync(MIRROR, 'utf8') !== src) fail('the mirror under test was rewritten by another run while this one ran')
 
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)

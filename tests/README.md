@@ -47,8 +47,8 @@ On an MSYS shell, remember that `/tmp` and `$LOCALAPPDATA` are not the strings a
 pass native paths (`C:/…`) to Python, node and Electron, and keep the measured gate's page/output
 arguments RELATIVE.
 
-Generated, never committed (`../.gitignore`): `sdk-stub.mjs`, `plugin-under-test.mjs`,
-`plugin-preview.mjs`, `preview.html`, `preview-light.html` and every `*.measure.json`. `preview.png`,
+Generated, never committed (`../.gitignore`): `sdk-stub.mjs`, `plugin-under-test.<pid>.mjs`,
+`plugin-preview.<pid>.mjs`, `preview.html`, `preview-light.html` and every `*.measure.json`. `preview.png`,
 `preview-light.png` and `canary.png` ARE
 committed — they are the measured evidence and the README's screenshots.
 
@@ -73,16 +73,21 @@ committed — they are the measured evidence and the README's screenshots.
 
 ## Notes
 
-* `render_check.mjs` writes `sdk-stub.mjs` and the mirror `plugin-under-test.mjs` on every run: the
-  mirror is the panel byte for byte with ONLY the SDK import line pointed at the stub, so
-  `diff ../desktop/plugin.js plugin-under-test.mjs` is a single line. `sdk-stub.mjs` carries the fake
+* `render_check.mjs` writes `sdk-stub.mjs` and the mirror `plugin-under-test.<pid>.mjs` on every run:
+  the mirror is the panel byte for byte with ONLY the SDK import line pointed at the stub (diffed
+  against `../desktop/plugin.js` it differs in that single line). The mirror is named for the run and
+  removed when it ends, because every mount re-imports it: with one shared name, a run against an
+  older `plugin.js` started at the same time overwrote it, and the other run then failed exactly the
+  checks that older panel fails. The run fails with "the mirror under test was rewritten" if its
+  mirror changed under it. The stub is the same for every run and is replaced only through a rename.
+  `sdk-stub.mjs` carries the fake
   plugin-i18n registry (the same dot-path resolution the app translator uses) AND a stub of every kit
   component the panel imports — `Button`, `Badge`, `PanelMeta`, `PanelSectionLabel`, `PanelBlock`,
   `PanelEmpty`, `EmptyState`, `Loader`, `ErrorState`, `LogView`, `Tip`, plus the `icons` namespace — each
   rendered with the KIT's own contract (`data-slot`, `data-variant`, `data-size`, `role`, `aria-*`,
   className/children pass-through) written as `jsx(type, props, key)` with the children INSIDE props,
   because the third argument of `jsx` is a KEY (a child there draws nothing).
-* `preview.mjs` writes `plugin-preview.mjs` (the same one-line mirror) and draws SIX frames, each a
+* `preview.mjs` writes `plugin-preview.<pid>.mjs` (the same one-line mirror, also per run) and draws SIX frames, each a
   separate panel copy over the same fake data; it reuses `sdk-stub.mjs`, so run `node render_check.mjs`
   once after a fresh checkout.
 * `render_check.mjs` ends with `process.exit(0)`: the panel's polling timers stay open and the process

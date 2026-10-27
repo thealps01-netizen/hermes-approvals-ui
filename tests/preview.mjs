@@ -37,7 +37,7 @@
  * (the kit classes are then unstyled and the picture is not representative).
  */
 import './clock.mjs'
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { DESKTOP_APP } from './env.mjs'
@@ -62,7 +62,10 @@ try {
 }
 
 const src = readFileSync(SRC, 'utf8').replace("'@hermes/plugin-sdk'", "'./sdk-stub.mjs'")
-writeFileSync(`${HERE}plugin-preview.mjs`, src)
+// Named for THIS run and removed when it ends, so two runs at once (PA_WIDTH variants) never share it.
+const MIRROR = `plugin-preview.${process.pid}.mjs`
+writeFileSync(`${HERE}${MIRROR}`, src)
+process.on('exit', () => { try { unlinkSync(`${HERE}${MIRROR}`) } catch {} })
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true })
 global.window = dom.window
@@ -416,7 +419,7 @@ async function frame(actions, start = PENDING, history = HISTORY, memory = MEMOR
     },
     register: r => registrations.push(r)
   }
-  const plugin = (await import(`${HERE_URL.href}plugin-preview.mjs?v=${++version}`)).default
+  const plugin = (await import(`${HERE_URL.href}${MIRROR}?v=${++version}`)).default
   plugin.register(ctx)
   const page = registrations.find(r => r.area === 'routes')
   if (!page) {
