@@ -100,7 +100,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
     "agent/auxiliary_client.py": {
         "names": (),
         "calls": {
-            "call_llm": (1, ("timeout", "max_tokens", "route_info", "messages", "provider", "model")),
+            "call_llm": (1, ("timeout", "max_tokens", "route_info", "messages")),
             "extract_content_or_reasoning": (1, ()),
         },
     },

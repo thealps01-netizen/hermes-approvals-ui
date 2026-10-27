@@ -721,7 +721,6 @@ _TEXT = {
     'group_untested': ' — saved untested',
     'test_not_owner': 'Only a change to one of your own skills can be tested side by side.',
     'test_no_tasks': '{name} has no test tasks yet, so it cannot be tested side by side.',
-    'test_no_model': 'No main model is set in Hermes, so the test cannot run.',
     'test_no_reviewer': 'No model is assigned to the approvals review (Settings → Models); it grades the test.',
     'test_busy': 'Another side-by-side test is running. Start this one when it has finished.',
     'test_same_session': 'Skipped: this task comes from the session that wrote the change.',
@@ -3381,21 +3380,20 @@ def _untested(unit: str, record: dict, members: list[dict]) -> bool:
     return bool(view and view["grows"] and view["status"] != "done")
 
 
-def _test_usage(usage: dict, response, model: dict) -> None:
-    got = _review_usage(response, model.get("provider") or "", model.get("model") or "")
+def _test_usage(usage: dict, response, route: dict) -> None:
+    got = _review_usage(response, route.get("provider") or "", route.get("model") or "")
     for k in ("input", "output"):
         usage[k] = usage.get(k, 0) + int(got.get(k) or 0)
 
 
-def _test_answer(model: dict, skill: str | None, prompt: str, usage: dict) -> str:
+def _test_answer(skill: str | None, prompt: str, usage: dict, route: dict) -> str:
     from agent.auxiliary_client import extract_content_or_reasoning
 
     nonce = uuid.uuid4().hex[:12]
     system = _TEST_PLAIN if skill is None else _TEST_GUIDED + _block(nonce, "SKILL", skill)
-    response = _review_call(_TEST_TASK, provider=model["provider"], model=model["model"],
-                            timeout=_TEST_TIMEOUT, max_tokens=2000,
+    response = _review_call(_TEST_TASK, timeout=_TEST_TIMEOUT, max_tokens=2000, route_info=route,
                             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
-    _test_usage(usage, response, model)
+    _test_usage(usage, response, route)
     text = str(extract_content_or_reasoning(response) or "").strip()
     if not text:
         raise ValueError(_tx("test_empty"))
@@ -3409,10 +3407,11 @@ def _test_grade(task: dict, a: str, b: str, usage: dict) -> dict:
     material = "\n\n".join((_block(nonce, "TASK", str(task.get("prompt"))),
                              _block(nonce, "EXPECTED", str(task.get("expect"))),
                              _block(nonce, "ANSWER A", a), _block(nonce, "ANSWER B", b)))
-    response = _review_call(_REVIEW_TASK, timeout=_TEST_TIMEOUT, max_tokens=1000,
+    route: dict = {}
+    response = _review_call(_REVIEW_TASK, timeout=_TEST_TIMEOUT, max_tokens=1000, route_info=route,
                             messages=[{"role": "system", "content": _TEST_GRADE.format(nonce=nonce)},
                                       {"role": "user", "content": material}])
-    _test_usage(usage, response, _review_model())
+    _test_usage(usage, response, route)
     text = str(extract_content_or_reasoning(response) or "")
     decoder = json.JSONDecoder()
     for at in [m.start() for m in re.finditer(r"\{", text)]:
@@ -3437,7 +3436,7 @@ def _test_run(subject: dict, tasks: list[dict], created: float, rng=None) -> dic
     import random
 
     rng = rng or random.Random()
-    model = _main_model()
+    route: dict = {}
     usage: dict = {"input": 0, "output": 0}
     results = []
     for n, task in enumerate(tasks, 1):
@@ -3445,8 +3444,8 @@ def _test_run(subject: dict, tasks: list[dict], created: float, rng=None) -> dic
         if _test_near(task, created):
             results.append({"id": tid, "winner": "skipped", "reason": _tx("test_same_session")})
             continue
-        old = _test_answer(model, subject["before"], str(task["prompt"]), usage)
-        new = _test_answer(model, subject["after"], str(task["prompt"]), usage)
+        old = _test_answer(subject["before"], str(task["prompt"]), usage, route)
+        new = _test_answer(subject["after"], str(task["prompt"]), usage, route)
         flip = rng.random() < 0.5
         said = _test_grade(task, new if flip else old, old if flip else new, usage)
         winner = {"A": "new" if flip else "old", "B": "old" if flip else "new"}.get(said["winner"], "tie")
@@ -3456,7 +3455,7 @@ def _test_run(subject: dict, tasks: list[dict], created: float, rng=None) -> dic
         verdict = "none"
     else:
         verdict = "better" if "new" in judged and "old" not in judged else "not_better"
-    return {"status": "done", "verdict": verdict, "results": results, "usage": usage, "model": model["model"]}
+    return {"status": "done", "verdict": verdict, "results": results, "usage": usage, "model": route.get("model") or ""}
 
 
 def _test_job(unit: str, key: str, subject: dict, tasks: list[dict], created: float) -> None:
@@ -3505,8 +3504,6 @@ def _test_start(body: dict) -> dict:
     tasks = _test_tasks(subject["name"])
     if not tasks:
         return {"ok": False, "error": _tx("test_no_tasks", name=subject["name"])}
-    if not _main_model():
-        return {"ok": False, "error": _tx("test_no_model")}
     if not _review_model():
         return {"ok": False, "error": _tx("test_no_reviewer")}
     if unit in _TEST_RUNNING:

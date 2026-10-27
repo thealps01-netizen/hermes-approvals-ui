@@ -5,6 +5,28 @@ Notable changes to the Approvals panel. The version is carried in three places �
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.16.0
+
+Skill changes are checked for what makes skills worse over time, and can be tested side by side.
+
+### Added
+
+* **Four more questions in every skill review.** The reviewer now also quotes added lines that tell the
+  model what it already does without being told, lines that only fit the session that wrote them, an
+  addition where deleting or simplifying an existing line would do, and a change that alters what the
+  skill is for or drops a safety rule. Each question has its own check row and chip on the card. Memory
+  reviews are unchanged. Changing the review prompt re-reviews each open card once.
+* **Side-by-side test on the card.** A change to one of your own skills shows its size
+  (`<skill> · <before> → <after> lines`) and a Test button once the skill has three stored test tasks
+  (`state/pending-approvals/evals/<skill>.json`). Test answers each task with the old and the new
+  SKILL.md through a direct model call — no tools, no session — and the review model grades each pair
+  without knowing which is which. The new form counts as better only when it wins at least one task and
+  loses none. A task from the session that wrote the change is skipped. Nothing runs until you press
+  Test; the card shows this week's usage beside the button. The answers use the new "Approvals
+  side-by-side test" model task (auto = your main model).
+* **"saved untested" in the history.** Saving a change that makes a skill longer without a finished
+  test on that version adds "saved untested" to its history line.
+
 ## 1.15.0
 
 The page is redesigned around "Needs you": one list of what waits for you, the decision card beside it,
