@@ -1532,7 +1532,7 @@ group repeats ("Deste") from a drawn sheet with his own Activity records.
   opened lines, per-line selection and Undo, and closing again. The preview has a deck frame (f31).
   The old "mockup-match: rows of one list" assertion is retired, because this decision replaces it.
 
-## Recurrence gate (Unreleased)
+## Recurrence gate (1.17.0)
 
 **Why.** The owner counted 70 skill cards between 16 and 27 Oct 2026, of which about 15 were changes he
 had asked for or that kept coming back; the rest were one-off edits the agent made on its own. That
