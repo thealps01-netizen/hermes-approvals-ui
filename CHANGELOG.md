@@ -12,6 +12,9 @@ look has no version at all.
 * **Related skills that cannot load.** A skill change that adds a name to `related_skills` that is turned
   off or not installed gets an advice line on its card, naming the active skill of that name when a
   plugin provides one (for example `superpowers:systematic-debugging`). It advises; Approve stays open.
+* **Advice shows on the verdict card.** A record with pre-review advice carries an "N checks to read"
+  chip under its verdict that opens the full review. Before, the card read "Safe to save" and the advice
+  was only inside "Show the full review".
 
 ## 1.17.0
 

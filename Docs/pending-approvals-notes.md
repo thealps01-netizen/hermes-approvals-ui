@@ -1914,3 +1914,10 @@ yet, the call is idempotent, and core's own dashboard routes do the same. Withou
 
 Not covered: two different skills that do the same job. A word-overlap measure tried on the owner's
 library did not separate real overlaps (0.20) from unrelated pairs (0.16), so it was not added.
+
+Seen on the rendered screen before merge: the advice line sat only inside "Show the full review" while
+the verdict card read "Safe to save", so the owner would most likely save without reading it. Every
+advice line had the same problem. The verdict card now shows an "N checks to read" chip (warning-tone
+glyph, a `pa-chip-btn` like the finding chips) that opens the full review; the verdict title and the
+other chips are unchanged. render_check's "Advice chip" block is red on the 1.17.0 `plugin.js` (4
+problems) and checks the one/two counts, the collapsed-then-expanded state and no chip without advice.

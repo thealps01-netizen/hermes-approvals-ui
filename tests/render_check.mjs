@@ -5865,6 +5865,65 @@ REST.scan = 'ok'
   hist.hostEl.remove()
 }
 
+// --- Advice chip (Unreleased): advice is visible on the verdict card -----------------------------------
+// A pre-review advice line (for example a related_skills name that cannot load) used to sit only inside
+// "Show the full review" while the card read "Safe to save". The verdict card now carries an "N checks to
+// read" chip button that opens the full review; a record without advice draws no such chip.
+{
+  const ADV_ID = 'ad71ce01'
+  const ADV_TEXT = "mine: related_skills names skills that cannot be loaded: 'gone' is not installed."
+  const base = PENDING.skills[0]
+  const recOf = advice => ({
+    ...base, id: ADV_ID,
+    review: { status: 'done', verdict: 'approve', summary: 'The change fits your rules.', findings: [], hard: [], advice },
+    plain: { ...base.plain, fix: undefined, recommendation: undefined, last_error: undefined }
+  })
+  const pendingOf = advice => ({ ...PENDING, memory: [], skills: [recOf(advice)], counts: { memory: 0, skills: 1 } })
+  const cellOf = h => h.querySelector(`.pa-cell[data-key="skills:${ADV_ID}"]`)
+  const chipBtn = h => cellOf(h)?.querySelector('.pa-verdict .pa-chip-advice button.pa-chip-btn')
+  REST.mode = 'normal'
+
+  REST.pending = pendingOf([{ name: 'mine', text: ADV_TEXT }])
+  const one = await mount('en')
+  await toFront(one.hostEl, `skills:${ADV_ID}`)
+  const title = cellOf(one.hostEl)?.querySelector('.pa-vtitle')?.textContent
+  if (title !== 'Safe to save') fail(`advice chip: the fixture is not a safe record: ${title}`)
+  const b1 = chipBtn(one.hostEl)
+  if (!b1) fail('advice chip: a record with advice shows no "checks to read" chip on the verdict card')
+  if (b1 && b1.textContent !== '1 check to read') fail(`advice chip: one advice reads ${JSON.stringify(b1.textContent)}`)
+  if (b1 && (b1.getAttribute('aria-expanded') !== 'false' || !b1.getAttribute('aria-controls'))) {
+    fail('advice chip: the chip is not a collapsed button naming the review it opens')
+  }
+  if (b1 && !b1.closest('.pa-chip-advice')?.querySelector('.pa-chip-glyph[data-k="warn"][aria-hidden="true"]')) {
+    fail('advice chip: the chip has no hidden warning-tone glyph')
+  }
+  if ((cellOf(one.hostEl)?.textContent || '').includes(ADV_TEXT)) fail('advice chip: the advice text shows before opening')
+  if (b1) await click(b1, 60)
+  if (chipBtn(one.hostEl)?.getAttribute('aria-expanded') !== 'true') fail('advice chip: opening does not say it is expanded')
+  if (!(cellOf(one.hostEl)?.textContent || '').includes(ADV_TEXT)) fail('advice chip: the chip does not open the advice text')
+  noRawKeys(liveText(one.hostEl), 'advice chip en')
+  if (one.hostEl.querySelectorAll('[title]').length) fail('advice chip: a native title= is drawn')
+  one.hostEl.remove()
+  one.chipEl.remove()
+
+  REST.pending = pendingOf([{ name: 'mine', text: ADV_TEXT }, { name: 'mine', text: 'mine: a second advice line.' }])
+  const two = await mount('en')
+  await toFront(two.hostEl, `skills:${ADV_ID}`)
+  if (chipBtn(two.hostEl)?.textContent !== '2 checks to read') {
+    fail(`advice chip: two advice lines read ${JSON.stringify(chipBtn(two.hostEl)?.textContent)}`)
+  }
+  two.hostEl.remove()
+  two.chipEl.remove()
+
+  REST.pending = pendingOf([])
+  const none = await mount('en')
+  await toFront(none.hostEl, `skills:${ADV_ID}`)
+  if (cellOf(none.hostEl)?.querySelector('.pa-chip-advice')) fail('advice chip: a record without advice draws the chip')
+  none.hostEl.remove()
+  none.chipEl.remove()
+  REST.pending = null
+}
+
 // Every mount re-imports the mirror, so a mirror rewritten mid-run by another run (a check against an
 // older plugin.js started at the same time) silently tests that other panel from then on.
 if (readFileSync(MIRROR, 'utf8') !== src) fail('the mirror under test was rewritten by another run while this one ran')
