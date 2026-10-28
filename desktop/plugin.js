@@ -56,6 +56,12 @@ const BUNDLES = {
         today: 'Today',
         decided: (n, all) => `${n} of ${all} decided`,
       },
+      cand: {
+        title: n => `Candidates · ${n}`,
+        hint: days => `Skill changes the agent made on its own. Each waits here up to ${days} days; `
+          + 'a similar change makes it a card.',
+        word: 'Candidate',
+      },
       list: {
         waiting: n => `Waiting · ${n}`,
         waitingShort: n => `${n} waiting`,
@@ -401,6 +407,8 @@ const BUNDLES = {
         dayYesterday: 'Yesterday',
         headSaved: n => `${n} saved`,
         headNotSaved: n => `${n} not saved`,
+        headExpired: n => `${n} expired`,
+        expired: 'Expired',
         headFailed: n => `${n} failed`,
         headOutside: n => `${n} changed outside`,
         deckN: n => plural(n, 'record', 'records'),
@@ -673,9 +681,14 @@ const refocus = from => {
 }
 const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).status)
-const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || [])]
+const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || []),
+  ...(d?.candidates || [])]
+const setAside = entry => entry?.kind === 'rejected' || entry?.kind === 'expired'
 
-const HIST_KEY = { apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed' }
+const HIST_KEY = {
+  apply: 'pa.hist.apply', rejected: 'pa.hist.rejected', external: 'pa.hist.external', failed: 'pa.hist.failed',
+  expired: 'pa.hist.expired'
+}
 const historyWords = (t, entry) => {
   if (entry.kind === 'apply') {
     if (entry.subsystem === 'skills') return t('pa.hist.wordsSkill')
@@ -795,7 +808,7 @@ const FS = {
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
 const H = {
   prose: 80, bar: 48, listHead: 38, listFoot: 57, back: 36, detailFoot: 57, row: 96, doneRow: 38, actRow: 74,
-  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76
+  actSub: 30, memRow: 72, day: 30, week: 120, weekNarrow: 76, candHead: 38
 }
 const W = { list: 300, listMid: 260, rail: 208 }
 const LINE = 16
@@ -874,6 +887,17 @@ const STYLE = `
   border-top:${HAIRLINE};font-size:${FS.micro}px;color:var(--ui-text-secondary);min-width:0}
 .pa-list-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .pa-legend{display:flex;align-items:center;gap:14px;min-width:0;flex-wrap:wrap}
+.pa-split[data-lone="1"]{grid-template-columns:minmax(0,1fr)}
+.pa-split[data-lone="1"]>.pa-list{border-right:0}
+.pa-cand{display:flex;flex-direction:column;gap:2px;flex:none;min-width:0;margin-top:${G.xs}px}
+.pa-root .pa-cand-head{display:flex;align-items:center;gap:${G.xs}px;flex:none;box-sizing:border-box;width:100%;
+  min-width:0;margin:0;padding:0 12px;border:0;border-radius:${R.ctl}px;background:transparent;font:inherit;
+  font-size:${FS.meta}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer}
+.pa-root .pa-cand-head:hover{background:var(--hx-field)}
+.pa-cand-title{flex:none;white-space:nowrap;font-weight:500;color:var(--ui-text-primary)}
+.pa-cand-tip{display:flex;flex:1 1 0;min-width:0}
+.pa-cand-hint{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pa-cand-rows{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .pa-root .pa-btn-kbd{margin-left:8px}
 .pa-rowwrap{--pa-hc:color-mix(in oklch,var(--pa-id,var(--ui-accent)) 62%,var(--ui-accent));display:flex;
   align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box;border-radius:${R.ctl}px;
@@ -2400,13 +2424,13 @@ const dotStates = (subsystem, item) => {
   return FAMILIES.map(f => (rows.some(r => r.state === 'bad' && r.key.startsWith(f)) ? flag : 'ok'))
 }
 
-function QueueRow({ unit, on, t, onSelect, picking, picked, onPick }) {
+function QueueRow({ unit, on, t, onSelect, picking, picked, onPick, cand }) {
   const { subsystem, item } = unit
   const key = queueKey(unit)
   const title = rowTitle(t, subsystem, item)
   const typeLabel = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
   const [stateKey] = stateOf(item)
-  const word = t(ROW_WORD[stateKey] || stateKey)
+  const word = cand ? t('pa.cand.word') : t(ROW_WORD[stateKey] || stateKey)
   return jsxs('div', {
     className: 'pa-rowwrap',
     role: 'listitem',
@@ -3086,10 +3110,10 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           ...alerts,
           ...diffs,
           ...fixNotes,
-          plain.why
+          plain.why || item.recur?.why
             ? jsxs('div', {
                 className: 'pa-why',
-                children: [jsx('b', { children: t('pa.why.label') }, 'b'), ' ', plain.why]
+                children: [jsx('b', { children: t('pa.why.label') }, 'b'), ' ', item.recur?.why || plain.why]
               }, 'why')
             : null,
           subsystem !== 'memory' && plain.effect ? jsx('div', { className: 'pa-why', children: plain.effect }, 'effect') : null,
@@ -3446,7 +3470,7 @@ function TopCard({ t, entries, cut, n: waiting, slim, away, onChanged, mem, onOp
   const n = decidedToday(entries).length
   const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
   const canUndo = Boolean(last?.undoable) && !last?.undone
-  const canRestore = !canUndo && last?.kind === 'rejected' && last?.restorable === true && !last?.restored
+  const canRestore = !canUndo && setAside(last) && last?.restorable === true && !last?.restored
   const said = last ? plainGist(t, String(last.summary || '')) : ''
   const first = !n && !last && !waiting
   const full = ['memory', 'user'].map(id => (mem?.[id] ? { id, ...fill(mem[id]) } : null))
@@ -3534,6 +3558,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   const [open, setOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
   const [selectOn, setSelectOn] = useState(false)
+  const [candOpen, setCandOpen] = useState(false)
   const focusRow = useRef(false)
   const focusSel = useRef(false)
   const lastAt = useRef(0)
@@ -3543,7 +3568,10 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   const queue = useQueue(items)
   const order = queue.order
   const keys = order.map(queueKey)
-  const selKey = keys.includes(sel) ? sel : (keys[Math.min(lastAt.current, keys.length - 1)] || null)
+  const cands = (data?.candidates || []).map(item => ({ subsystem: 'skills', item, cand: true }))
+  const candKeys = candOpen ? cands.map(queueKey) : []
+  const selKey = keys.includes(sel) || candKeys.includes(sel) ? sel
+    : (keys[Math.min(lastAt.current, keys.length - 1)] || null)
   const canSelect = items.length > 1
   const selecting = selectOn && canSelect
   useEffect(() => {
@@ -3557,10 +3585,11 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
       return kept.length === prev.size ? prev : new Set(kept)
     })
   }, [sig])
+  const allSig = [...keys, ...candKeys].join('\n')
   useEffect(() => {
     if (selKey && keys.includes(selKey)) lastAt.current = keys.indexOf(selKey)
     const was = prevSel.current
-    if (was && was !== selKey && !keys.includes(was)) {
+    if (was && was !== selKey && !keys.includes(was) && !candKeys.includes(was)) {
       const mine = Boolean(held.get(was)?.leaving || held.get(was)?.busy) || decidedHere.has(was)
         || doneHere.some(d => d.key === was)
       decidedHere.delete(was)
@@ -3568,7 +3597,7 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
     }
     prevSel.current = selKey
     if (sel !== selKey && selKey) setSel(selKey)
-  }, [selKey, sig])
+  }, [selKey, allSig])
   useEffect(() => {
     if (!focusRow.current) return
     focusRow.current = false
@@ -3656,10 +3685,48 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingPending') }, 'loading')
   const entries = hist?.data?.entries || []
-  if (!keys.length) return jsx('div', { ref: rootAt, className: 'pa-split pa-split-clear', 'data-open': '1' }, 'split')
-  const front = order.find(u => queueKey(u) === selKey) || null
-  const position = selKey ? keys.indexOf(selKey) + 1 : 0
+  if (!keys.length && !cands.length) {
+    return jsx('div', { ref: rootAt, className: 'pa-split pa-split-clear', 'data-open': '1' }, 'split')
+  }
+  const front = order.find(u => queueKey(u) === selKey) || cands.find(u => candKeys.includes(selKey)
+    && queueKey(u) === selKey) || null
+  const pool = front?.cand ? candKeys : keys
+  const position = selKey ? pool.indexOf(selKey) + 1 : 0
   const showBulk = selecting && picked.size > 0 && !peek
+  const candHint = t('pa.cand.hint', data.candidate_days || 14)
+  const candSection = cands.length ? jsxs('div', {
+    className: 'pa-cand',
+    role: 'listitem',
+    children: [
+      jsxs('button', {
+        type: 'button',
+        className: 'pa-cand-head',
+        'aria-expanded': candOpen ? 'true' : 'false',
+        'aria-controls': 'pa-cand-rows',
+        style: { height: H.candHead },
+        onClick: () => setCandOpen(!candOpen),
+        children: [
+          jsx(DisclosureCaret, { open: candOpen, className: 'pa-deck-chev' }, 'chev'),
+          jsx('span', { className: 'pa-cand-title', children: t('pa.cand.title', cands.length) }, 'title'),
+          jsx(Tip, {
+            label: candHint,
+            children: jsx('span', { className: 'pa-cand-tip', children: jsx('span', {
+              className: 'pa-cand-hint', children: candHint
+            }) })
+          }, 'hint')
+        ]
+      }, 'head'),
+      candOpen ? jsx('div', {
+        id: 'pa-cand-rows',
+        className: 'pa-cand-rows',
+        role: 'list',
+        'aria-label': t('pa.cand.title', cands.length),
+        children: cands.map(u => jsx(QueueRow, {
+          unit: u, on: !showBulk && queueKey(u) === selKey, t, onSelect: choose, picking: false, cand: true
+        }, queueKey(u)))
+      }, 'rows') : null
+    ]
+  }, 'cand') : null
   const list = jsxs('div', {
     className: 'pa-list',
     children: [
@@ -3699,7 +3766,8 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
             picking: selecting, picked: picked.has(queueKey(u)), onPick: togglePick
           }, queueKey(u))),
           ...done.filter(d => !keys.includes(d.key))
-            .map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`))
+            .map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`)),
+          candSection
         ]
       }, 'rows'),
       jsx('div', {
@@ -3732,17 +3800,19 @@ function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
       ? jsx(RecordDetail, {
           subsystem: front.subsystem, item: front.item, onChanged, keyOf: selKey,
           onLater: () => later(selKey), onBack: back,
-          back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, keys.length) }
+          back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, pool.length) }
         }, selKey)
       : null
   }, 'detail')
+  const lone = !keys.length && !front
   return jsxs('div', {
     ref: rootAt,
     className: 'pa-split',
-    'data-open': !showBulk && (open || !front) ? '1' : '0',
+    'data-lone': lone ? '1' : undefined,
+    'data-open': !lone && !showBulk && (open || !front) ? '1' : '0',
     'data-selecting': showBulk ? '1' : undefined,
     onKeyDown,
-    children: [list, detail]
+    children: lone ? [list] : [list, detail]
   }, 'split')
 }
 
@@ -3758,11 +3828,12 @@ const sameOnce = texts => texts.reduce((rows, text, i) => {
 const OUTCOME = {
   apply: ['var(--ui-green)', CheckIcon],
   rejected: ['var(--ui-text-secondary)', CrossIcon],
+  expired: ['var(--ui-text-tertiary)', CrossIcon],
   failed: [WARN, AlertIcon],
   external: ['var(--ui-accent)', AlertIcon]
 }
 const histChip = entry => (entry.undoable && !entry.undone ? ['pa.act.canUndo', 'var(--ui-green)']
-  : entry.kind === 'rejected' && entry.restorable === true && !entry.restored ? ['pa.act.canRestore', 'var(--ui-accent)']
+  : setAside(entry) && entry.restorable === true && !entry.restored ? ['pa.act.canRestore', 'var(--ui-accent)']
     : entry.undone ? ['pa.act.undone', 'var(--ui-text-tertiary)']
       : entry.restored ? ['pa.act.restored', 'var(--ui-text-tertiary)'] : ['pa.act.cannot', 'var(--ui-text-tertiary)'])
 
@@ -3780,7 +3851,7 @@ const actLine = (t, entry) => {
   return { name, words, change, said, deck, mark }
 }
 const DECK_TALLY = [['apply', 'pa.hist.headSaved'], ['external', 'pa.hist.headOutside'],
-  ['rejected', 'pa.hist.headNotSaved'], ['failed', 'pa.hist.headFailed']]
+  ['rejected', 'pa.hist.headNotSaved'], ['expired', 'pa.hist.headExpired'], ['failed', 'pa.hist.headFailed']]
 const decksOf = (t, entries) => entries.reduce((out, entry) => {
   const line = actLine(t, entry)
   const last = out[out.length - 1]
@@ -3913,7 +3984,7 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   const amended = entry.amended && typeof entry.amended === 'object' ? entry.amended : null
   const written = amended ? amended.written : []
   const applied = (amended && amended.applied) || []
-  const restorable = entry.kind === 'rejected' && entry.restorable === true && !entry.restored
+  const restorable = setAside(entry) && entry.restorable === true && !entry.restored
   const said = entry.kind === 'external' && files.length ? t('pa.hist.externalDetail', files.length)
     : String(entry.summary || '')
   const named = plainGist(t, entry.summary).slice(0, 80)

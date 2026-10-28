@@ -5,6 +5,30 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.17.0
+
+Skill changes the agent makes on its own wait aside until they come back.
+
+### Added
+
+* **Candidates.** A skill change the agent made on its own (a background review nobody started, or a
+  Kanban, cron, subagent, one-shot or tool session), or one the owner did not ask for in chat, no longer
+  raises a card. It waits under a collapsed **Candidates Â· N** header at the foot of the Needs you list;
+  the status chip, the tab badge and the list head do not count it. A candidate opens into the same
+  detail as a card and can be approved or rejected there.
+* **The Recurring reason.** When a similar change to the same skill comes again between 2 hours and 14
+  days later, both become cards and read "Recurring: a similar change to this skill came on <day>".
+  A change you asked for in chat, a /refine and anything the panel cannot place stay normal cards.
+* **Expiry to Activity.** A candidate left alone for 14 days leaves the list and shows in Activity as
+  "Expired", with a plain **Restore** that puts it back as a card. The Expired row and its copy stay for
+  30 days, even when more than 100 newer Activity rows arrive.
+* **Where a skill change came from.** A small hook records, for each staged skill write, which session
+  made it, how that session was started and the owner's last message in it. It reads the session
+  database read-only, never calls a model and never slows the agent by more than two seconds.
+* **One more question in skill reviews.** For a change made in a chat with you, the reviewer is also
+  asked whether your last message asked for it, with an exact quote. Open skill reviews are marked
+  outdated once by this prompt change.
+
 ## 1.16.0
 
 Skill changes are checked for what makes skills worse over time, and can be tested side by side.

@@ -42,7 +42,7 @@
  *      themed `Tip` / an `aria-label` owns hover text; every button keeps an accessible name).
  */
 import './clock.mjs'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 
@@ -537,11 +537,23 @@ export function Tip({ label, children }) {
 
 export default { host, haptic, relativeTime, EmptyState, icons }
 `
-writeFileSync(`${HERE}sdk-stub.mjs`, STUB)
+// The stub is the same for every run: it is rewritten only when it differs, through a rename, so a run
+// started at the same time never imports a half-written stub.
+let stubNow = null
+try { stubNow = readFileSync(`${HERE}sdk-stub.mjs`, 'utf8') } catch {}
+if (stubNow !== STUB) {
+  writeFileSync(`${HERE}sdk-stub.${process.pid}.tmp`, STUB)
+  renameSync(`${HERE}sdk-stub.${process.pid}.tmp`, `${HERE}sdk-stub.mjs`)
+}
 
 // The mirror under test: byte-for-byte the panel, with ONLY the SDK import line pointed at the stub.
+// Named for THIS run and removed when it ends: with one shared name, a second run at the same time
+// (a check against an older plugin.js) overwrote it, and every later mount here tested that panel.
 const src = readFileSync(SRC, 'utf8').replace("'@hermes/plugin-sdk'", "'./sdk-stub.mjs'")
-writeFileSync(`${HERE}plugin-under-test.mjs`, src)
+const MIRROR_NAME = `plugin-under-test.${process.pid}.mjs`
+const MIRROR = `${HERE}${MIRROR_NAME}`
+writeFileSync(MIRROR, src)
+process.on('exit', () => { try { unlinkSync(MIRROR) } catch {} })
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true })
 global.window = dom.window
@@ -702,6 +714,23 @@ const HISTORY_RESTORE = { entries: [
   { id: '0a1b2c3d', ts: Date.now() / 1000 - 1900, kind: 'rejected', subsystem: 'memory', summary: 'an old rejection',
     files: [], undoable: false }
 ], counts: { applied: 57, failed: 1, undoable: 0 } }
+// Recurrence gate (Unreleased): two cards (one recurring), three candidates; an expired Activity row.
+const H_CAND = 38
+const RECUR_WHY = 'Recurring: a similar change to this skill came on 12 Oct.'
+const CAND_WHY = 'First change to this skill in 14 days. It leaves this list on 9 Nov unless a similar change comes.'
+const candOf = id => ({ ...PENDING.skills[1], id, version: `v-${id}`, staged_at: Date.now() / 1000 - 600,
+  recur: { track: 'candidate', path: 5, why: CAND_WHY } })
+const PENDING_CAND = {
+  counts: { memory: 0, skills: 2 }, records: { memory: 0, skills: 5 }, candidate_days: 14, memory: [],
+  skills: [{ ...PENDING.skills[1], recur: { track: 'card', path: 5, why: RECUR_WHY } },
+    { ...PENDING.skills[0], recur: { track: 'card', path: 6, why: '' } }],
+  candidates: ['c0ffee01', 'c0ffee02', 'c0ffee03'].map(candOf)
+}
+const EXPIRED_ID = 'e0e0e0e1'
+const HISTORY_EXPIRED = { entries: [
+  { id: EXPIRED_ID, ts: Date.now() / 1000 - 300, kind: 'expired', subsystem: 'skills', record_id: 'c0ffee09',
+    summary: 'new-skill expired', files: [], undoable: false, copy: true, restorable: true }
+], counts: { applied: 0, failed: 0, undoable: 0 } }
 const MEMORY = {
   memory: { file: 'MEMORY.md', chars: 2189, limit: 2200, percent: 100, entries: ['A note', 'A note'],
             updated: Date.now() / 1000 - 600 },
@@ -823,6 +852,7 @@ const CHIP_RECORDS = skills => ({ counts: { memory: 1, skills: 2 }, records: { m
 const STORE = new Map()
 const ISSUE = 'The watch index was unreadable and was set aside — outside changes made meanwhile were not recorded.'
 const pendingFor = mode => (mode === 'refused' ? REFUSED
+  : mode === 'cand' ? PENDING_CAND
   : mode === 'issues' ? { ...PENDING, issues: [ISSUE] }
   : mode === 'reviewing' ? REVIEWING
   : mode === 'reviewed' ? REVIEWED
@@ -906,6 +936,7 @@ async function mount(appLocale, parts = 'both') {
           return { ok: true, results, counts: { memory: 0, skills: 0 } }
         }
         if (path === '/restore') {
+          if (opts.body.id === EXPIRED_ID) return { ok: true, id: RESTORED_AS }
           if (opts.body.id === GROUP_REJECTED) return { ok: true, id: GROUP_RESTORED[0], ids: GROUP_RESTORED }
           return opts.body.id === RESTORE_ID ? { ok: true, id: RESTORED_AS }
             : { ok: false, error: 'This record was already restored.' }
@@ -953,7 +984,8 @@ async function mount(appLocale, parts = 'both') {
         return (REST.changes || {})[decodeURIComponent(path.split('=')[1])] || { ok: true, files: [] }
       }
       const left = d => (REST.gone ? { ...d, memory: (d.memory || []).filter(r => !REST.gone.has(r.id)),
-        skills: (d.skills || []).filter(r => !REST.gone.has(r.id)) } : d)
+        skills: (d.skills || []).filter(r => !REST.gone.has(r.id)),
+        ...(d.candidates ? { candidates: d.candidates.filter(r => !REST.gone.has(r.id)) } : {}) } : d)
       const table = {
         '/pending': REST.pending || left(pendingFor(REST.mode)),
         '/count': REST.count || { counts: (REST.mode === 'chipzero' ? { memory: 0, skills: 0 }
@@ -991,7 +1023,7 @@ async function mount(appLocale, parts = 'both') {
     },
     register: r => registrations.push(r)
   }
-  const plugin = (await import(`${HERE_URL.href}plugin-under-test.mjs?v=${++version}`)).default
+  const plugin = (await import(`${HERE_URL.href}${MIRROR_NAME}?v=${++version}`)).default
   plugin.register(ctx)
   const pageReg = registrations.find(r => r.area === 'routes')
   const chipReg = registrations.find(r => r.area === 'statusBar.right')
@@ -5694,6 +5726,148 @@ REST.scan = 'ok'
   g.hostEl.remove()
   REST.mode = 'normal'
 }
+
+// --- 30) Recurrence gate (Unreleased): candidates wait in their own collapsed section ----------------
+// Skill changes the agent made on its own arrive as `candidates`; they never count as waiting cards
+// (chip, tab badge, list head), sit under one collapsed "Candidates · N" header in the list column and
+// open into the same detail as a card. An expired candidate is an Activity row with a plain Restore.
+{
+  const cellOf = (h, key) => h.querySelector(`.pa-cell[data-key="${key}"]`)
+  const head = h => h.querySelector('.pa-cand-head')
+  const candRows = h => [...h.querySelectorAll('.pa-cand-rows .pa-rowwrap')]
+  const listHead = h => h.querySelector('.pa-split .pa-list-head')?.textContent || ''
+  REST.mode = 'cand'
+  const page = await mount('en')
+  if (!/^2 awaiting approval/.test(page.chipText)) fail(`candidates: the chip counts candidates: ${page.chipText}`)
+  if (page.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '2') {
+    fail('candidates: the Needs you badge counts candidates')
+  }
+  if (!listHead(page.hostEl).startsWith('Waiting · 2')) fail(`candidates: list head counts candidates: ${listHead(page.hostEl)}`)
+  const h0 = head(page.hostEl)
+  if (!h0 || h0.tagName !== 'BUTTON' || h0.getAttribute('type') !== 'button') fail('candidates: the header is not a button')
+  if (h0?.getAttribute('aria-expanded') !== 'false') fail('candidates: the section does not start collapsed')
+  if (!h0?.getAttribute('aria-controls')) fail('candidates: the header names no controlled region')
+  if (h0?.style.height !== `${H_CAND}px`) fail(`candidates: header height is not H.candHead: ${h0?.style.height}`)
+  if (!(h0?.textContent || '').includes('Candidates · 3')) fail(`candidates: header text wrong: ${h0?.textContent}`)
+  const hint = page.hostEl.querySelector('.pa-cand-hint')
+  if (!/14 days/.test(hint?.textContent || '') || hint?.closest('[data-tip]') === null) {
+    fail('candidates: the one-line hint is missing, does not name the days or has no Tip')
+  }
+  if (candRows(page.hostEl).length || page.hostEl.querySelector('.pa-row[data-key="skills:c0ffee01"]')) {
+    fail('candidates: a collapsed section still draws candidate rows')
+  }
+  await click(h0, 40)
+  if (head(page.hostEl)?.getAttribute('aria-expanded') !== 'true') fail('candidates: the header does not expand')
+  const rows = candRows(page.hostEl)
+  const cardRow = page.hostEl.querySelector('.pa-list-rows > .pa-rowwrap')
+  if (rows.length !== 3 || rows.some(r => r.style.height !== cardRow?.style.height)) {
+    fail(`candidates: expanded rows are not 3 of the card row height: ${rows.map(r => r.style.height)}`)
+  }
+  if (rows.some(r => r.querySelector('.pa-cb')) || !rows.every(r => r.textContent.includes('Candidate'))) {
+    fail('candidates: a candidate row has a checkbox or lacks the word "Candidate"')
+  }
+  if (!listHead(page.hostEl).startsWith('Waiting · 2')) fail('candidates: expanding changed the list head count')
+  await click(page.hostEl.querySelector('.pa-row[data-key="skills:c0ffee01"]'), 60)
+  const cell = cellOf(page.hostEl, 'skills:c0ffee01')
+  if (!cell?.querySelector('.pa-card') || !primaryBtn(cell) || !declineBtn(cell)) {
+    fail('candidates: opening a candidate does not show the record detail with its buttons')
+  }
+  if (!(cell?.textContent || '').includes(CAND_WHY)) fail('candidates: the candidate detail lacks its recur.why line')
+  const from = stub.calls.posts.filter(p => p.path === '/decide').length
+  REST.gone = new Set()
+  await click(primaryBtn(cell), 120)
+  const sent = stub.calls.posts.filter(p => p.path === '/decide').slice(from)
+  if (sent.length !== 1 || JSON.stringify(sent[0].body.ids) !== '["c0ffee01"]'
+      || JSON.stringify(sent[0].body.versions) !== '{"c0ffee01":"v-c0ffee01"}') {
+    fail(`candidates: Approve does not post /decide with its id and version: ${JSON.stringify(sent.map(p => p.body))}`)
+  }
+  await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+  if (page.hostEl.querySelector('.pa-detail[data-key="skills:c0ffee01"] .pa-card')) {
+    fail('candidates: the detail still shows the decided candidate')
+  }
+  await toFront(page.hostEl, 'skills:aaa11111')
+  if (!(cellOf(page.hostEl, 'skills:aaa11111')?.textContent || '').includes(RECUR_WHY)) {
+    fail('candidates: a recurring card does not show the Recurring sentence')
+  }
+  noRawKeys(liveText(page.hostEl), 'candidates en')
+  if (page.hostEl.querySelectorAll('[title]').length) fail('candidates: a native title= is drawn')
+  if (page.registrations.some(r => r.area === 'panes')) fail('candidates: the panel claims `panes`')
+  page.hostEl.remove()
+  page.chipEl.remove()
+  REST.gone = null
+
+  const tr = await mount('tr')
+  await click(head(tr.hostEl), 40)
+  noRawKeys(liveText(tr.hostEl), 'candidates tr')
+  if (!liveText(tr.hostEl).includes('Candidates · 3')) fail('candidates: the header is not English under tr')
+  tr.hostEl.remove()
+  tr.chipEl.remove()
+
+  REST.pending = { ...PENDING_CAND, skills: [], counts: { memory: 0, skills: 0 }, candidates: PENDING_CAND.candidates.slice(0, 2) }
+  REST.count = { counts: { memory: 0, skills: 0 }, records: { memory: 0, skills: 2 }, candidates: 2 }
+  const lone = await mount('en')
+  if (lone.hostEl.querySelector('.pa-root > .pa-top .pa-clear-title')?.textContent !== 'All caught up') {
+    fail('candidates: 0 cards + 2 candidates does not read "All caught up"')
+  }
+  if (!(head(lone.hostEl)?.textContent || '').includes('Candidates · 2') || head(lone.hostEl)?.getAttribute('aria-expanded') !== 'false') {
+    fail('candidates: 0 cards + 2 candidates does not show the collapsed section')
+  }
+  if (lone.hostEl.querySelector('[role="tab"] [data-slot="badge"]')) fail('candidates: the badge shows for candidates only')
+  lone.hostEl.remove()
+  lone.chipEl.remove()
+
+  REST.pending = { ...PENDING_CAND, candidates: [] }
+  REST.count = null
+  const none = await mount('en')
+  if (head(none.hostEl)) fail('candidates: 0 candidates still draws the section')
+  none.hostEl.remove()
+  none.chipEl.remove()
+
+  const { candidates: _drop, candidate_days: _days, ...older } = PENDING_CAND
+  REST.pending = older
+  const before = problems.length
+  const old = await mount('en')
+  if (head(old.hostEl) || !old.hostEl.querySelector('.pa-row[data-key="skills:aaa11111"]')) {
+    fail('candidates: a /pending without `candidates` does not render its cards')
+  }
+  if (problems.length !== before) fail('candidates: a /pending without `candidates` raised an error')
+  old.hostEl.remove()
+  old.chipEl.remove()
+  REST.pending = null
+
+  REST.mode = 'normal'
+  REST.history = HISTORY_EXPIRED
+  const hist = await mount('en', 'page')
+  await click(tab(hist.hostEl, /Activity/), 60)
+  const actHead = hist.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent || ''
+  if (!actHead.startsWith('Today') || /saved/.test(actHead)) {
+    fail(`expired: the Activity day tally counts an expired row: ${actHead}`)
+  }
+  const exp = await actFind(hist.hostEl, 'Expired')
+  if (!exp) fail('expired: no Activity row reads "Expired"')
+  if ((exp?.textContent || '').includes('By you')) fail('expired: an expired row names "By you"')
+  const btn = buttons(exp || hist.hostEl, /^Restore$/)[0]
+  if (!btn || btn.getAttribute('data-slot') !== 'button' || btn.getAttribute('data-variant') === 'destructive') {
+    fail('expired: a restorable expired row offers no plain kit "Restore" button')
+  }
+  const reads = [GETS.filter(p => p === '/pending').length, GETS.filter(p => p === '/history?limit=50').length]
+  REST.history = { ...HISTORY_EXPIRED, entries: HISTORY_EXPIRED.entries.map(e => ({ ...e, restorable: false, restored: RESTORED_AS })) }
+  if (btn) await click(btn, 80)
+  const posted = stub.calls.posts.filter(p => p.path === '/restore').at(-1)
+  if (posted?.body?.id !== EXPIRED_ID) fail(`expired: Restore did not post /restore with the row id: ${JSON.stringify(posted?.body)}`)
+  if (GETS.filter(p => p === '/pending').length <= reads[0]) fail('expired: Restore does not re-read the pending list')
+  if (GETS.filter(p => p === '/history?limit=50').length <= reads[1]) fail('expired: Restore does not re-read the history')
+  await act(async () => { await new Promise(r => setTimeout(r, 200)) })
+  const after = await actFind(hist.hostEl, 'Expired')
+  if (!(after?.textContent || '').includes('Restored')) fail('expired: a restored expired row does not read "Restored"')
+  noRawKeys(liveText(hist.hostEl), 'expired activity')
+  REST.history = null
+  hist.hostEl.remove()
+}
+
+// Every mount re-imports the mirror, so a mirror rewritten mid-run by another run (a check against an
+// older plugin.js started at the same time) silently tests that other panel from then on.
+if (readFileSync(MIRROR, 'utf8') !== src) fail('the mirror under test was rewritten by another run while this one ran')
 
 if (problems.length) {
   console.error(`\nRENDER: ${problems.length} problem(s)`)
