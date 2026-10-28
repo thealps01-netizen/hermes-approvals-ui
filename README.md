@@ -234,6 +234,12 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   `__init__.py` opens `state.db` read-only after each staged skill write and keeps the session's source,
   parent and the owner's last message (at most 4000 characters) in `state/pending-approvals/sources/`.
   For a skill write the agent made in a chat with you, that last message is part of the review input.
+  These source files are plain JSON: an agent that can write any file could forge one, turning its own
+  write into a candidate or showing a made-up "You asked for this" quote. That is outside what the panel
+  guards against, because such an agent could skip the approval gate altogether by writing the skill
+  file directly.
+* **An expired candidate is not lost to history trimming.** Activity keeps its last 100 rows, but an
+  "Expired" row and its copy stay for 30 days from expiry however many rows come after it.
 * **Outbound content is inspection only.** The panel reads memory and skill state; it never uploads
   anything and holds no credentials of its own.
 

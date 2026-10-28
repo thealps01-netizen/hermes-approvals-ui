@@ -20,7 +20,8 @@ Skill changes the agent makes on its own wait aside until they come back.
   days later, both become cards and read "Recurring: a similar change to this skill came on <day>".
   A change you asked for in chat, a /refine and anything the panel cannot place stay normal cards.
 * **Expiry to Activity.** A candidate left alone for 14 days leaves the list and shows in Activity as
-  "Expired", with a plain **Restore** that puts it back as a card.
+  "Expired", with a plain **Restore** that puts it back as a card. The Expired row and its copy stay for
+  30 days, even when more than 100 newer Activity rows arrive.
 * **Where a skill change came from.** A small hook records, for each staged skill write, which session
   made it, how that session was started and the owner's last message in it. It reads the session
   database read-only, never calls a model and never slows the agent by more than two seconds.

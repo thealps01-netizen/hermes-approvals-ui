@@ -1579,6 +1579,18 @@ reopened app). `plugin_api.py` and `plugin.js` must be reloaded together: an old
 backend never draws candidates (they stay out of `skills`), a new panel on the old backend sees no
 `candidates` key and draws only cards.
 
+**Expired rows outlive the history cut.** `_prune` keeps the newest `MAX_ENTRIES` (100) history rows.
+An expired candidate is a change the owner never saw, so losing its row and `snapshots/<id>/` copy to
+that cut would lose the change for good (about 70 skill cards in 11 days fill 100 rows within weeks).
+An `expired` row whose `ts` is at most `RECURRENCE["keep_s"]` (30 days) old is therefore kept, with its
+snapshot, regardless of `MAX_ENTRIES`, and `_entries` lists it even past its `limit`; after 30 days it
+is cut like any other row. Case `recur_keep_expired` (150 newer rows) fails on the code before this.
+
+**The source label can be forged.** Files in `state/pending-approvals/sources/` are plain JSON. An agent
+with general file-write access could write one itself, turning its own skill write into a candidate or
+showing a made-up "You asked for this in chat" quote. This is outside the panel's threat model and is
+not hardened: such an agent can bypass the approval gate altogether by writing the skill file directly.
+
 **Cost.** Candidates are reviewed like cards (path 2 needs the review's answer and Approve needs a
 review), so model spend is unchanged by this feature. Expiry runs on reads of `/pending` and `/count`,
 like the landed-record sweep; no timer or route was added.
