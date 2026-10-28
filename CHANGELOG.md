@@ -5,6 +5,14 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## Unreleased
+
+### Added
+
+* **Related skills that cannot load.** A skill change that adds a name to `related_skills` that is turned
+  off or not installed gets an advice line on its card, naming the active skill of that name when a
+  plugin provides one (for example `superpowers:systematic-debugging`). It advises; Approve stays open.
+
 ## 1.17.0
 
 Skill changes the agent makes on its own wait aside until they come back.

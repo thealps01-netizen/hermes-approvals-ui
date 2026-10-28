@@ -1893,3 +1893,24 @@ write the backend refuses for size. A record whose `fit.after` exceeds `fit.limi
 - **Who picks the model.** Answers: the "Approvals side-by-side test" auxiliary task (auto = main
   model, the model the skill really runs with). Grading: the "Approvals review" task.
 
+
+## Related skills that cannot load (Unreleased)
+
+A skill names its neighbours in `related_skills` (top level or `metadata.hermes`). When a write adds a
+name there that the agent cannot load, the reader is sent to nothing. An audit of the owner's library
+found 25 such names: bare names of skills that were turned off after a plugin shipped the same skill
+under a prefix (`systematic-debugging` → `superpowers:systematic-debugging`), and renamed skills
+(`llm-wiki` → `llm-wiki-desktop`).
+
+The pre-review now adds one advice line per skill: each added name that is turned off
+(`skills.disabled`) or not installed, with the active plugin skill of the same bare name when there is
+one. It is advice, never a block. Left alone: names the skill already had (only the change is judged),
+active skills, skills created in the same record, and `owner:name` references to a plugin the panel
+cannot list. No model call. The installed and disabled lists are cached like the other skill lists.
+Plugin skills are listed after `discover_plugins()`: the dashboard process may not have loaded plugins
+yet, the call is idempotent, and core's own dashboard routes do the same. Without it the active
+`superpowers:` names were missing in a fresh process (0 of 29 plugin skills listed).
+`tests/regress_audit.py::related_skills_that_cannot_load_are_advice` is red on the 1.17.0 code.
+
+Not covered: two different skills that do the same job. A word-overlap measure tried on the owner's
+library did not separate real overlaps (0.20) from unrelated pairs (0.16), so it was not added.
