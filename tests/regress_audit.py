@@ -1277,6 +1277,440 @@ def test_runs_on_a_skill_group():
     assert view["status"] == "done" and sum("NEW-RULE: one more" in s for s in env.seen) == 3, view
 
 
+# ---------------------------------------------------------------------------------------------------
+# Recurrence gate (Unreleased): skill changes the agent makes alone wait as candidates until they recur.
+# PA_INIT=<path to a root __init__.py> runs the hook cases against another copy of the hook.
+# ---------------------------------------------------------------------------------------------------
+
+INIT = Path(os.environ.get("PA_INIT") or HERE.parent / "__init__.py")
+
+
+def _recur_record(rid: str, payload: dict, at: float | None = None, origin: str = "foreground") -> dict:
+    return {"id": rid, "subsystem": "skills", "origin": origin, "summary": f"regress {rid}",
+            "created_at": time.time() if at is None else at, "payload": payload}
+
+
+def _recur_stage(env: Env, rid: str, name: str, text: str, age: float, origin: str = "foreground",
+                 source: str | None = "kanban", file: bool = True) -> None:
+    record = _recur_record(rid, {"action": "create", "name": name, "content": text}, time.time() - age, origin)
+    (env.home / "pending" / "skills" / f"{rid}.json").write_text(json.dumps(record), encoding="utf-8")
+    folder = env.home / "state" / "pending-approvals" / "sources"
+    folder.mkdir(parents=True, exist_ok=True)
+    if file:
+        (folder / f"{rid}.json").write_text(json.dumps({
+            "v": 1, "pending_id": rid, "session_id": f"s-{rid}", "source": source, "parent_session_id": None,
+            "origin": origin, "attended": True if origin == "background_review" else None,
+            "owner_message": None, "owner_message_at": None, "at": record["created_at"]}), encoding="utf-8")
+
+
+def _recur_view(env: Env) -> dict:
+    out = env.listing()
+    return {i["id"]: i["recur"] for i in out["skills"] + out["candidates"]}
+
+
+def _recur_init():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("pa_root_init", str(INIT))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _recur_db(path: Path) -> None:
+    import sqlite3
+
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, parent_session_id TEXT)")
+        conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, "
+                     "timestamp REAL)")
+        conn.executemany("INSERT INTO sessions VALUES (?, ?, ?)",
+                         [("s-desk", "desktop", "s-parent"), ("s-kan", "kanban", None)])
+        conn.executemany("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)", [
+            ("s-desk", "user", "first message", 1.0), ("s-desk", "user", "x" * 5000 + " please save it", 2.0),
+            ("s-desk", "assistant", "later assistant row", 3.0), ("s-desk", "tool", "later tool row", 4.0),
+            ("s-kan", "user", "kanban task body", 1.0)])
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _recur_listing(root: Path) -> set:
+    return {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
+
+
+_STAGED = {"success": True, "staged": True, "pending_id": "abcdef12"}
+
+
+@case
+def recur_fingerprint():
+    env = Env()
+    fp = env.pa._recur_fingerprint
+    got = fp(_recur_record("a1", {"action": "patch", "name": "s", "old_string": "keep the alpha rule",
+                                  "new_string": "keep the alpha rule and bravo bravo"}))
+    assert got["skills"] == ["s"] and got["tokens"] == {"and": 1, "bravo": 2}, got
+    for action in ("create", "edit"):
+        got = fp(_recur_record("a2", {"action": action, "name": "s", "content": "one two three three"}))
+        assert got["tokens"] == {"one": 1, "two": 1, "three": 2}, (action, got)
+    got = fp(_recur_record("a3", {"action": "write_file", "name": "s", "file_path": "references/x.md",
+                                  "file_content": "gamma delta"}))
+    assert got["tokens"] == {"gamma": 1, "delta": 1}, got
+    for payload in ({"action": "delete", "name": "s"},
+                    {"action": "remove_file", "name": "s", "file_path": "references/x.md"}):
+        got = fp(_recur_record("a4", payload))
+        assert got is not None and got["tokens"] == {}, (payload, got)
+    long = "word " * 4300 + "lateword " + "tail " * 800
+    assert len(long) > 25000 and long.index("lateword") > 21000, (len(long), long.index("lateword"))
+    got = fp(_recur_record("a5", {"action": "create", "name": "s", "content": long}))
+    assert got["tokens"].get("lateword") == 1, "a token after the display cap was not counted"
+    got = fp(_recur_record("a6", {"action": "create", "name": "s",
+                                  "content": "Kaydet \u0131\u015f\u0131k \u0130stanbul \u00e7al\u0131\u015f ab"}))
+    assert set(got["tokens"]) == {"kaydet", "\u0131\u015f\u0131k", "i\u0307stanbul", "\u00e7al\u0131\u015f"}, got
+    assert fp(_recur_record("a7", {"action": "create", "content": "no name here"})) is None
+
+
+@case
+def recur_similarity():
+    import math
+
+    env = Env()
+    pa = env.pa
+    a = {"deploy": 2, "cluster": 1, "rollback": 1, "verify": 1}
+    b = {"deploy": 1, "cluster": 1, "database": 2, "notes": 1}
+    rows = {"x": {"tokens": a}, "y": {"tokens": b}}
+    idf = pa._recur_idf(rows)
+
+    def plain(u: dict, v: dict) -> float:
+        n = 2
+        df = {t: (t in u) + (t in v) for t in set(u) | set(v)}
+        w = {t: math.log((1 + n) / (1 + df[t])) + 1 for t in df}
+        dot = sum(u[t] * w[t] * v.get(t, 0) * w[t] for t in u)
+        nu = math.sqrt(sum((c * w[t]) ** 2 for t, c in u.items()))
+        nv = math.sqrt(sum((c * w[t]) ** 2 for t, c in v.items()))
+        return dot / (nu * nv)
+
+    got = pa._recur_cosine(a, b, idf)
+    assert round(got, 3) == round(plain(a, b), 3) == 0.291, (got, plain(a, b))
+    assert round(pa._recur_cosine(a, a, idf), 9) == 1.0
+    assert pa._recur_cosine(a, {"other": 3}, idf) == 0.0
+    assert pa._recur_cosine({}, a, idf) == 0.0 and pa._recur_cosine(a, {}, idf) == 0.0
+    at = 100000.0
+    base = {"skills": ["s"], "at": at - 3 * 3600}
+
+    def verdict(u: dict, v: dict) -> bool:
+        earlier, later = dict(base, tokens=u), {"skills": ["s"], "at": at, "tokens": v}
+        return bool(pa._recur_matches("L", later, {"E": earlier, "L": later}, {}))
+
+    below = ({"s1": 1, "a1": 1, "a2": 1, "a3": 1, "a4": 1}, {"s1": 1, "b1": 1, "b2": 1, "b3": 1, "b4": 1})
+    above = ({"s1": 1, "a1": 1, "a2": 1}, {"s1": 1, "b1": 1, "b2": 1, "b3": 1})
+    edge = ({"s1": 1, "a1": 1, "a2": 1, "a3": 1}, {"s1": 1, "b1": 1, "b2": 1, "b3": 1})
+    assert pa._recur_cosine(*below, {}) < pa.RECURRENCE["threshold"] < pa._recur_cosine(*above, {})
+    assert not verdict(*below) and verdict(*above), "the 0.25 threshold does not flip the verdict"
+    assert pa._recur_cosine(*edge, {}) == 0.25 and verdict(*edge), "the threshold is not inclusive"
+    assert not verdict({}, {}), "an empty Counter matched"
+
+
+@case
+def recur_window():
+    env = Env()
+    pa = env.pa
+    at = 10 ** 7
+    words = {"alpha": 1, "bravo": 1}
+    later = {"skills": ["s"], "at": at, "tokens": words}
+    for age, hit in ((7199, False), (7200, True), (1209600, True), (1209601, False)):
+        rows = {"E": {"skills": ["s"], "at": at - age, "tokens": words}, "L": later}
+        assert bool(pa._recur_matches("L", later, rows, {})) is hit, (age, hit)
+    rows = {"E": {"skills": ["other"], "at": at - 3 * 3600, "tokens": words}, "L": later}
+    assert not pa._recur_matches("L", later, rows, {}), "a change to another skill matched"
+    rows = {"E": {"skills": ["s"], "at": at + 3 * 3600, "tokens": words}, "L": later}
+    assert not pa._recur_matches("L", later, rows, {}), "a later change counted as an earlier one"
+    text = "deploy the staging cluster rollback database migration verify health dashboards"
+    for how in ("rejected", "applied", "expired"):
+        env = Env()
+        _recur_stage(env, "e1000001", "same", text, 4 * 3600 if how != "expired" else 14 * 86400 + 60)
+        if how == "expired":
+            assert "e1000001" not in _recur_view(env), "the expired candidate stayed"
+            assert any(e.get("kind") == "expired" for e in env.entries())
+        else:
+            assert _recur_view(env)["e1000001"]["track"] == "candidate"
+        if how == "rejected":
+            assert env.pa.decide({"subsystem": "skills", "decision": "reject", "ids": ["e1000001"]})["ok"]
+        elif how == "applied":
+            (env.home / "pending" / "skills" / "e1000001.json").unlink()
+        late_age = 3600 if how != "expired" else 14 * 86400 + 60 - 3 * 3600
+        _recur_stage(env, "e1000002", "same", text + " again", late_age)
+        got = _recur_view(env)["e1000002"]
+        assert got["track"] == "card" and got["why"].startswith("Recurring"), (how, got)
+
+
+@case
+def recur_promote():
+    text = "deploy the staging cluster rollback database migration verify health dashboards"
+    for kind in ("path4", "path6", "other"):
+        env = Env()
+        _recur_stage(env, "f1000001", "same", text, 4 * 3600)
+        assert _recur_view(env)["f1000001"]["track"] == "candidate"
+        if kind == "path4":
+            _recur_stage(env, "f1000002", "same", text, 3600, origin="background_review", source=None)
+        elif kind == "path6":
+            _recur_stage(env, "f1000002", "same", text, 3600, file=False)
+        else:
+            _recur_stage(env, "f1000002", "same", "write poems about autumn leaves rivers mountains", 3600)
+        view = _recur_view(env)
+        if kind == "other":
+            assert view["f1000001"]["track"] == "candidate", view
+            continue
+        assert view["f1000002"]["track"] == "card", view
+        assert view["f1000001"]["track"] == "card" and env.pa._recur_date(time.time() - 3600) in \
+            view["f1000001"]["why"], (kind, view)
+        assert _recur_view(env)["f1000001"]["track"] == "card", "a card turned back into a candidate"
+        again = Env.__new__(Env)
+        again.__dict__.update(env.__dict__)
+        spec = importlib.util.spec_from_file_location("plugin_api_again", str(MODULE))
+        again.pa = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(again.pa)
+        again.pa._config, again.pa._log, again.pa._review_call = env.pa._config, env.logs.append, env._judge
+        assert _recur_view(again)["f1000001"]["track"] == "card", "a module restart turned a card into a candidate"
+        env.assign()
+        (env.home / "pending" / "skills" / "f1000002.json").unlink()
+        env.settle("skills", "f1000001")
+        env.pa.review_again({"id": "f1000001", "subsystem": "skills"})
+        env.settle("skills", "f1000001")
+        assert _recur_view(env)["f1000001"]["track"] == "card", "a re-run review turned a card into a candidate"
+
+
+@case
+def recur_no_model():
+    env = Env()
+    env.assign()
+    _recur_stage(env, "a2000001", "own-a", "release checklist verify tags", 3600)
+    _recur_stage(env, "a2000002", "own-b", "old candidate expires today", 14 * 86400 + 60)
+    folder = env.home / "state" / "pending-approvals" / "sources"
+    data = json.loads((folder / "a2000001.json").read_text(encoding="utf-8"))
+    data.update(source="desktop", owner_message="Please save a skill for the release checklist.")
+    (folder / "a2000001.json").write_text(json.dumps(data), encoding="utf-8")
+    _recur_stage(env, "a2000003", "own-c", "kanban notes words", 3600)
+    out = env.listing()
+    env.pa.count()
+    env.pa._recur_judge([json.loads(p.read_text(encoding="utf-8"))
+                         for p in (env.home / "pending" / "skills").glob("*.json")])
+    assert not env.calls, f"a read called the reviewer {len(env.calls)} time(s)"
+    assert any(e.get("kind") == "expired" for e in env.entries()), "the old candidate did not expire"
+    assert {i["id"] for i in out["candidates"]} == {"a2000001", "a2000003"}, out["candidates"]
+    env.pa.reviews_start({})
+    for _ in range(300):
+        if len(env.calls) >= 2 and not env.pa._REVIEW_RUNNING:
+            break
+        time.sleep(0.05)
+    prompts = {c["messages"][1]["content"].split("summary: regress ")[1][:8]: c for c in env.calls}
+    assert set(prompts) == {"a2000001", "a2000003"}, sorted(prompts)
+    assert "OWNER MESSAGE" in prompts["a2000001"]["messages"][1]["content"]
+    assert "Please save a skill for the release checklist." in prompts["a2000001"]["messages"][1]["content"]
+    assert "OWNER MESSAGE" not in prompts["a2000003"]["messages"][1]["content"]
+    system = prompts["a2000001"]["messages"][0]["content"]
+    assert all(w in system for w in ("requested_by_owner", '"yes"', '"no"', '"unclear"', "acknowledgement",
+                                     '"ok"')), system
+
+
+@case
+def recur_hook():
+    import copy
+    import sqlite3
+
+    init = _recur_init()
+    env = Env()
+    seen: list = []
+    ctx = SimpleNamespace(register_auxiliary_task=lambda *a, **k: seen.append(("task", a, k)),
+                          register_hook=lambda name, fn: seen.append(("hook", name, fn)))
+    init.register(ctx)
+    tasks = [s for s in seen if s[0] == "task"]
+    assert [t[1][0] for t in tasks] == ["approvals_review", "approvals_test"], tasks
+    assert tasks[0][2]["defaults"] == {"timeout": 300} and tasks[1][2]["defaults"] == {"timeout": 300}
+    hooks = [s for s in seen if s[0] == "hook"]
+    assert len(hooks) == 1 and hooks[0][1] == "post_tool_call", hooks
+    hook = hooks[0][2]
+    db = env.home / "state.db"
+    _recur_db(db)
+    before_db = (db.read_bytes(), db.stat().st_mtime_ns)
+    listing = _recur_listing(env.home)
+    real_connect = sqlite3.connect
+
+    def refuse(*a, **k):
+        raise AssertionError("sqlite opened for another tool")
+
+    init.sqlite3.connect = refuse
+    try:
+        assert hook(tool_name="terminal", args={"command": "ls"}, result="{}", session_id="s-desk") is None
+        assert hook(tool_name="skill_manage", args={}, result=json.dumps(dict(_STAGED, pending_id="XYZ")),
+                    session_id="s-desk") is None
+        assert hook(tool_name="skill_manage", args={}, result=json.dumps(dict(_STAGED, staged=False)),
+                    session_id="s-desk") is None
+        assert hook(tool_name="skill_manage", args={}, result="not json", session_id="s-desk") is None
+    finally:
+        init.sqlite3.connect = real_connect
+    assert _recur_listing(env.home) == listing, "a call that is not a staged skill write touched the disk"
+    args = {"action": "create", "name": "x", "content": "y"}
+    result = json.dumps(_STAGED)
+    args_copy, result_copy = copy.deepcopy(args), copy.deepcopy(result)
+    assert hook(tool_name="skill_manage", args=args, result=result, session_id="s-desk") is None
+    assert args == args_copy and result == result_copy, "the hook changed its arguments"
+    assert _recur_listing(env.home) - listing == {"state/pending-approvals/sources/abcdef12.json"}, \
+        _recur_listing(env.home) ^ listing
+    assert listing - _recur_listing(env.home) == set()
+    assert (db.read_bytes(), db.stat().st_mtime_ns) == before_db, "state.db changed"
+    for name, target, attr in (("sqlite", init.sqlite3, "connect"), ("json", init.json, "dump"),
+                               ("mkdir", Path, "mkdir"), ("write", init.os, "replace")):
+        real = getattr(target, attr)
+
+        def boom(*a, **k):
+            raise OSError(f"patched {name}")
+
+        setattr(target, attr, boom)
+        try:
+            assert hook(tool_name="skill_manage", args={}, result=json.dumps(dict(_STAGED, pending_id="0000aaaa")),
+                        session_id="s-desk") is None, name
+        finally:
+            setattr(target, attr, real)
+    leftovers = [p.name for p in (env.home / "state" / "pending-approvals" / "sources").glob(".src-*")]
+    assert not leftovers, f"temporary files were left behind: {leftovers}"
+    lock = sqlite3.connect(str(db))
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        started = time.time()
+        assert hook(tool_name="skill_manage", args={}, result=json.dumps(dict(_STAGED, pending_id="0000bbbb")),
+                    session_id="s-desk") is None
+        assert time.time() - started <= init.HOOK_BUDGET_S + 1, "a locked state.db stalled the hook"
+    finally:
+        lock.rollback()
+        lock.close()
+    real_session = init._source_session
+    init._source_session = lambda *a, **k: time.sleep(6) or {}
+    try:
+        started = time.time()
+        assert hook(tool_name="skill_manage", args={}, result=json.dumps(dict(_STAGED, pending_id="0000cccc")),
+                    session_id="s-desk") is None
+        assert time.time() - started <= init.HOOK_BUDGET_S + 1, "a stalled reader stalled the hook"
+    finally:
+        init._source_session = real_session
+    assert (db.read_bytes(), db.stat().st_mtime_ns) == before_db, "state.db changed"
+
+
+@case
+def recur_hook_record():
+    from tools import skill_provenance as sp
+
+    init = _recur_init()
+    env = Env()
+    _recur_db(env.home / "state.db")
+    folder = env.home / "state" / "pending-approvals" / "sources"
+
+    def run(rid: str, sid: str) -> dict:
+        init._source_hook(tool_name="skill_manage", args={}, result=dict(_STAGED, pending_id=rid), session_id=sid)
+        return json.loads((folder / f"{rid}.json").read_text(encoding="utf-8"))
+
+    got = run("10000001", "s-desk")
+    assert set(got) == {"v", "pending_id", "session_id", "source", "parent_session_id", "origin", "attended",
+                        "owner_message", "owner_message_at", "at"}, sorted(got)
+    assert got["v"] == 1 and got["pending_id"] == "10000001" and got["session_id"] == "s-desk"
+    assert got["source"] == "desktop" and got["parent_session_id"] == "s-parent", got
+    assert got["owner_message"] == ("x" * 5000 + " please save it")[:4000] and got["owner_message_at"] == 2.0, \
+        (len(got["owner_message"]), got["owner_message_at"])
+    assert got["origin"] == "foreground" and got["attended"] is None, got
+    got = run("10000002", "s-kan")
+    assert got["source"] == "kanban" and got["owner_message"] is None and got["owner_message_at"] is None, got
+    for attended in (True, False):
+        token, mark = sp.set_current_write_origin("background_review"), sp.set_review_attended(attended)
+        try:
+            got = run(f"1000000{3 + attended}", "s-kan")
+        finally:
+            sp.reset_review_attended(mark)
+            sp.reset_current_write_origin(token)
+        assert got["origin"] == "background_review" and got["attended"] is attended, got
+
+
+@case
+def recur_join():
+    env = Env()
+    now = time.time() - 600
+    for rid in ("b3000001", "b3000002"):
+        record = _recur_record(rid, {"action": "create", "name": rid, "content": f"words for {rid}"}, now)
+        (env.home / "pending" / "skills" / f"{rid}.json").write_text(json.dumps(record), encoding="utf-8")
+    folder = env.home / "state" / "pending-approvals" / "sources"
+    folder.mkdir(parents=True, exist_ok=True)
+    source = {"v": 1, "pending_id": "b3000001", "session_id": "s", "source": "kanban", "parent_session_id": None,
+              "origin": "foreground", "attended": None, "owner_message": None, "owner_message_at": None, "at": now}
+    (folder / "b3000001.json").write_text(json.dumps(source), encoding="utf-8")
+    view = _recur_view(env)
+    assert view["b3000001"]["track"] == "candidate", view
+    assert view["b3000002"]["track"] == "card" and view["b3000002"]["path"] == 6, view
+    env2 = Env()
+    record = _recur_record("b3000003", {"action": "create", "name": "j", "content": "join words"}, now)
+    (env2.home / "pending" / "skills" / "b3000003.json").write_text(json.dumps(record), encoding="utf-8")
+    folder = env2.home / "state" / "pending-approvals" / "sources"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "b3000003.json").write_text(json.dumps(source), encoding="utf-8")
+    view = _recur_view(env2)
+    assert view["b3000003"]["track"] == "card" and view["b3000003"]["path"] == 6, view
+
+
+@case
+def recur_prune():
+    env = Env()
+    keep = env.pa.RECURRENCE["keep_s"]
+    folder = env.home / "state" / "pending-approvals" / "sources"
+    _recur_stage(env, "c4000001", "live", "live words", 3600)
+    old = time.time() - keep - 3600
+    for name in ("c4000002", "c4000003"):
+        (folder / f"{name}.json").write_text("{}", encoding="utf-8")
+    os.utime(folder / "c4000002.json", (old, old))
+    os.utime(folder / "c4000001.json", (old, old))
+    book = env.home / "state" / "pending-approvals" / "recurrence.json"
+    rows = {"c4000009": {"skills": ["gone"], "at": old, "seen": old, "tokens": {"gone": 1}, "track": "card",
+                         "path": 6, "check": "", "why": "", "with": "", "quote": ""},
+            "c4000008": {"skills": ["gone"], "at": time.time() - 3600, "seen": old, "tokens": {"gone": 1},
+                         "track": "card", "path": 6, "check": "", "why": "", "with": "", "quote": ""}}
+    book.write_text(json.dumps({"v": 1, "rows": rows}), encoding="utf-8")
+    env.listing()
+    assert not (folder / "c4000002.json").exists(), "an old source file of a decided record was kept"
+    assert (folder / "c4000003.json").exists() and (folder / "c4000001.json").exists()
+    kept = json.loads(book.read_text(encoding="utf-8"))["rows"]
+    assert "c4000009" not in kept and "c4000008" in kept and "c4000001" in kept, sorted(kept)
+
+
+@case
+def recur_keep_expired():
+    env = Env()
+    keep = env.pa.RECURRENCE["keep_s"]
+    text = "rotate the release signing keys before tagging the build"
+    _recur_stage(env, "c5000001", "young", text, 14 * 86400 + 60)
+    _recur_stage(env, "c5000002", "old", text + " later", 14 * 86400 + 60)
+    env.listing()
+    expired = {e["record_id"]: e for e in env.entries() if e.get("kind") == "expired"}
+    assert set(expired) == {"c5000001", "c5000002"}, sorted(expired)
+    young, old = expired["c5000001"]["id"], expired["c5000002"]["id"]
+    path = env.home / "state" / "pending-approvals" / "history.jsonl"
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    for row in rows:
+        if row.get("id") == young:
+            row["ts"] = time.time() - 86400
+        elif row.get("id") == old:
+            row["ts"] = time.time() - keep - 86400
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    snaps = env.home / "state" / "pending-approvals" / "snapshots"
+    for n in range(150):
+        env.pa._append({"id": f"f{n:07d}", "ts": time.time(), "kind": "failed", "subsystem": "skills",
+                        "record_id": f"r{n:07d}", "summary": "newer row", "files": [], "undone": False})
+    listed = {e["id"]: e for e in env.pa._history(50)["entries"]}
+    assert young in listed, "an expired row inside the keep time was pruned by newer rows"
+    assert listed[young].get("restorable"), listed[young]
+    assert (snaps / young / "record.json").exists(), "the expired row's copy was deleted"
+    assert old not in listed and not (snaps / old).exists(), "an expired row past the keep time was kept"
+    back = env.pa.restore({"id": young})
+    assert back["ok"], back
+    assert any(i["summary"] == "regress c5000001" for i in env.listing()["skills"] + env.listing()["candidates"])
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

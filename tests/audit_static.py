@@ -53,6 +53,7 @@ API = HERE.parent / "dashboard" / "plugin_api.py"
 JS = HERE.parent / "desktop" / "plugin.js"
 MANIFEST = HERE.parent / "dashboard" / "manifest.json"
 PLUGIN_YAML = HERE.parent / "plugin.yaml"
+INIT = HERE.parent / "__init__.py"
 CHANGELOG = HERE.parent / "CHANGELOG.md"
 PREFIX = "pa"
 
@@ -260,11 +261,16 @@ def check_no_comments() -> None:
     for line, body in comments:
         _report(f"plugin.js:{line}: a comment came back ({body.strip()[:50]!r}) — the reason belongs "
                 "in Docs/pending-approvals-notes.md")
-    py_src = API.read_text(encoding="utf-8")
-    with tokenize.open(API) as handle:
+    for path in (API, INIT):
+        _py_comments(path)
+
+
+def _py_comments(path: Path) -> None:
+    py_src = path.read_text(encoding="utf-8")
+    with tokenize.open(path) as handle:
         for token in tokenize.generate_tokens(handle.readline):
             if token.type == tokenize.COMMENT:
-                _report(f"plugin_api.py:{token.start[0]}: a comment came back "
+                _report(f"{path.name}:{token.start[0]}: a comment came back "
                         f"({token.string.strip()[:50]!r}) — the reason belongs in "
                         "Docs/pending-approvals-notes.md")
     tree = ast.parse(py_src)
@@ -280,7 +286,7 @@ def check_no_comments() -> None:
                     and isinstance(body[0].value.value, str)):
                 docs.append((node.lineno, f"docstring of {node.name}"))
     for line, what in docs:
-        _report(f"plugin_api.py:{line}: a {what} came back — the reason belongs in "
+        _report(f"{path.name}:{line}: a {what} came back — the reason belongs in "
                 "Docs/pending-approvals-notes.md")
 
 
@@ -313,7 +319,8 @@ def strip_py_strings(src: str) -> str:
 def check_line_length() -> None:
     """No code line runs past 120 characters; a long string literal is exempt (its body is blanked)."""
     for name, src in (("plugin.js", JS.read_text(encoding="utf-8")),
-                      ("plugin_api.py", API.read_text(encoding="utf-8"))):
+                      ("plugin_api.py", API.read_text(encoding="utf-8")),
+                      ("__init__.py", INIT.read_text(encoding="utf-8"))):
         code, _ = scan_js(src, collapse=True) if name.endswith(".js") else (strip_py_strings(src), [])
         for number, line in enumerate(code.splitlines(), 1):
             if len(line) > 120:
@@ -900,6 +907,104 @@ def check_undefined_names(path: Path) -> None:
                     _report(f"{path.name}:{node.lineno} looks like an undefined name: {node.id}")
 
 
+RECURRENCE_KEYS = {"gap_s", "window_s", "threshold", "source_wait_s", "check_limit_s", "keep_s", "person", "auto",
+                   "token"}
+RECURRENCE_LITERALS = re.compile(r"(?<![\w.])(7200|1209600|14 \* 86400|0\.25)(?![\w.])")
+RECUR_MODEL_NAMES = {"_review_call", "_review_run", "_review_start", "call_llm"}
+HOOK_NETWORK = re.compile(r"call_llm|auxiliary_client|requests|httpx|urllib")
+HOOK_SQL_WRITE = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER)\b")
+
+
+def check_recurrence_backend() -> None:
+    """Recurrence gate: every number lives in ONE `RECURRENCE` table (a copy elsewhere drifts silently),
+    and no `_recur*` function can reach a model (the judge runs on every read of /pending and /count)."""
+    src = API.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    tables = [n for n in tree.body if isinstance(n, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == "RECURRENCE" for t in n.targets)]
+    if len(tables) != 1 or not isinstance(tables[0].value, ast.Dict):
+        _report(f"plugin_api.py: the RECURRENCE table is defined {len(tables)} times (expected once, as a dict)")
+        return
+    table = tables[0]
+    keys = {k.value for k in table.value.keys if isinstance(k, ast.Constant)}
+    missing = sorted(RECURRENCE_KEYS - keys)
+    if missing:
+        _report(f"plugin_api.py:{table.lineno}: the RECURRENCE table lacks {', '.join(missing)}")
+    code = strip_py_strings(src).splitlines()
+    for number, line in enumerate(code, 1):
+        if table.lineno <= number <= table.end_lineno:
+            continue
+        hit = RECURRENCE_LITERALS.search(line)
+        if hit:
+            _report(f"plugin_api.py:{number}: a recurrence number ({hit.group(1)}) outside the RECURRENCE table")
+    for fn in tree.body:
+        if isinstance(fn, ast.FunctionDef) and fn.name.startswith("_recur"):
+            for node in ast.walk(fn):
+                name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
+                if name in RECUR_MODEL_NAMES:
+                    _report(f"plugin_api.py:{node.lineno}: {fn.name} reaches a model through {name} — the "
+                            "recurrence judge must stay model-free")
+
+
+def check_source_hook() -> None:
+    """The root `__init__.py` hook runs inside every agent turn: its body is one try/except Exception, the
+    hooks it registers equal `plugin.yaml` `provides_hooks`, it never reaches the network or a model and it
+    opens `state.db` read-only."""
+    src = INIT.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    hooks = {}
+    for node in ast.walk(funcs.get("register") or ast.Module(body=[], type_ignores=[])):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "register_hook"
+                and len(node.args) == 2 and isinstance(node.args[0], ast.Constant) and isinstance(node.args[1], ast.Name)):
+            hooks[node.args[0].value] = node.args[1].id
+    for event, name in hooks.items():
+        fn = funcs.get(name)
+        body = fn.body if fn else []
+        guarded = (len(body) == 1 and isinstance(body[0], ast.Try) and any(
+            isinstance(h.type, ast.Name) and h.type.id == "Exception" for h in body[0].handlers))
+        if not guarded:
+            _report(f"__init__.py: the {event} hook {name} is not one try with an `except Exception` handler — "
+                    "an error in it would reach the agent's turn")
+    declared = set()
+    in_hooks = False
+    for line in PLUGIN_YAML.read_text(encoding="utf-8").splitlines():
+        if line.startswith("provides_hooks:"):
+            in_hooks = True
+            continue
+        if in_hooks and line.startswith("  - "):
+            declared.add(line[4:].strip())
+        elif in_hooks:
+            in_hooks = False
+    if declared != set(hooks):
+        _report(f"plugin.yaml: provides_hooks {sorted(declared)} differs from the hooks register() registers "
+                f"{sorted(hooks)}")
+    hit = HOOK_NETWORK.search(src)
+    if hit:
+        _report(f"__init__.py: the hook file names {hit.group(0)} — it must never reach the network or a model")
+    hit = HOOK_SQL_WRITE.search(src)
+    if hit:
+        _report(f"__init__.py: the hook file holds an SQL write ({hit.group(1)}) — state.db is read-only to it")
+    if "mode=ro" not in src:
+        _report("__init__.py: state.db is not opened with mode=ro")
+
+
+def check_recurrence_panel() -> None:
+    """Panel half of the recurrence gate: the Candidates section starts collapsed, the status chip never counts
+    candidates, Activity knows the `expired` outcome and the review poll includes candidates."""
+    src = JS.read_text(encoding="utf-8")
+    if not re.search(r"\[candOpen, setCandOpen\] = useState\(false\)", src):
+        _report("plugin.js: the Candidates section does not start collapsed (candOpen useState(false))")
+    if "candidates" in _function_body(src, "Chip"):
+        _report("plugin.js: Chip reads `candidates` — the waiting count must leave candidates out")
+    outcome = re.search(r"^const OUTCOME = \{(.*?)^\}", src, re.M | re.S)
+    if not outcome or not re.search(r"^  expired: \[", outcome.group(1), re.M):
+        _report("plugin.js: OUTCOME has no `expired` entry — an expired candidate draws no Activity row")
+    units = re.search(r"^const reviewUnits = .*?\]\n", src, re.M | re.S)
+    if not units or "d?.candidates" not in units.group(0):
+        _report("plugin.js: reviewUnits leaves d?.candidates out — candidates would never be reviewed")
+
+
 def text_table() -> dict:
     src = API.read_text(encoding="utf-8")
     tree = ast.parse(src)
@@ -1137,6 +1242,10 @@ def main() -> int:
     check_skill_groups_panel()
     check_jsx_runtime_import()
     check_undefined_names(API)
+    check_undefined_names(INIT)
+    check_recurrence_backend()
+    check_source_hook()
+    check_recurrence_panel()
     messages = text_table()
     check_tx_keys(messages)
     check_tx_placeholders(API.read_text(encoding="utf-8"))

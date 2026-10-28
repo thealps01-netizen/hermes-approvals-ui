@@ -1532,6 +1532,69 @@ group repeats ("Deste") from a drawn sheet with his own Activity records.
   opened lines, per-line selection and Undo, and closing again. The preview has a deck frame (f31).
   The old "mockup-match: rows of one list" assertion is retired, because this decision replaces it.
 
+## Recurrence gate (Unreleased)
+
+**Why.** The owner counted 70 skill cards between 16 and 27 Oct 2026, of which about 15 were changes he
+had asked for or that kept coming back; the rest were one-off edits the agent made on its own. That
+count is the owner's offline tally, not reproduced by the repo's tests. The gate lets a one-off,
+agent-initiated skill change wait as a **candidate** and raises a card when the change recurs.
+
+**Six paths** (`_recur_path`, the `RECURRENCE` table holds every number):
+
+| Path | Evidence | Track |
+|---|---|---|
+| 1 | path 2 and the reviewer quotes the owner asking for it | card |
+| 2 | foreground write in a person session (`desktop`, `local`, `gui`) with an owner message | recurrence rule, then owner check |
+| 3 | background review nobody started (`attended` false) | recurrence rule |
+| 4 | background review started with /refine (`attended` true) | card |
+| 5 | foreground write in an auto session (`kanban`, `cron`, `subagent`, `oneshot`, `tool`) | recurrence rule |
+| 6 | anything else (no or broken source file, wrong id, unknown source or origin, no words, broken ledger) | card |
+
+**Fail-safe.** The fail-safe principle: where the panel is not sure, it shows a normal card: an error may add a card, never hide
+one. A card never turns back into a candidate. Memory records are never classified.
+
+**Why a ledger.** Applied history rows keep no text, so the judge writes its own row per skill record
+(`state/pending-approvals/recurrence.json`: skill names, time, full word Counter, track, reason) when it
+first judges it and keeps it 30 days after. Decided, rejected and expired changes keep counting through
+it. Changes from before this version have no row and are not counted: a few more candidates for up to
+14 days, never fewer cards. An unreadable ledger is set aside as `.bad`, reported once, and every
+record pending at that moment becomes a card.
+
+**Bounded provisional states.** A path-2 change with no recurrence is a candidate while its owner
+check runs (at most `check_limit_s`, 30 minutes; then a card). A change whose source file has not
+arrived is a candidate for at most `source_wait_s` (10 s). The wait applies only once the
+`sources/` folder exists, i.e. once the hook has run at least once in this home; before that, every
+record is a path-6 card, so an install whose hook never loaded behaves exactly as before.
+
+**The core's foreground origin is `assistant_tool`.** The pinned core (v0.22.0) stamps a chat turn's
+writes with origin `assistant_tool`, not `foreground`; `RECURRENCE["foreground"]` holds both names.
+
+**Join on `pending_id`, never on time.** Two writes staged in the same second from two sessions would
+otherwise swap their sources; the file name and the `pending_id` inside it must both equal the record id,
+and the file's `origin` must equal the record's own.
+
+**The hook loads per process.** `__init__.py` is imported by the app's agent worker and by the gateway
+(platform turns and cron); each keeps the old code until it restarts (`hermes gateway restart`, or a
+reopened app). `plugin_api.py` and `plugin.js` must be reloaded together: an old panel with the new
+backend never draws candidates (they stay out of `skills`), a new panel on the old backend sees no
+`candidates` key and draws only cards.
+
+**Expired rows outlive the history cut.** `_prune` keeps the newest `MAX_ENTRIES` (100) history rows.
+An expired candidate is a change the owner never saw, so losing its row and `snapshots/<id>/` copy to
+that cut would lose the change for good (about 70 skill cards in 11 days fill 100 rows within weeks).
+An `expired` row whose `ts` is at most `RECURRENCE["keep_s"]` (30 days) old is therefore kept, with its
+snapshot, regardless of `MAX_ENTRIES`, and `_entries` lists it even past its `limit`; after 30 days it
+is cut like any other row. Case `recur_keep_expired` (150 newer rows) fails on the code before this.
+
+**The source label can be forged.** Files in `state/pending-approvals/sources/` are plain JSON. An agent
+with general file-write access could write one itself, turning its own skill write into a candidate or
+showing a made-up "You asked for this in chat" quote. This is outside the panel's threat model and is
+not hardened: such an agent can bypass the approval gate altogether by writing the skill file directly.
+
+**Cost.** Candidates are reviewed like cards (path 2 needs the review's answer and Approve needs a
+review), so model spend is unchanged by this feature. Expiry runs on reads of `/pending` and `/count`,
+like the landed-record sweep; no timer or route was added.
+
 ## What a saved record changed (1.15.0)
 
 The owner asked why one software-factory record showed its text and the next only its file paths.

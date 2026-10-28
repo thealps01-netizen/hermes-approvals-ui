@@ -1,7 +1,9 @@
 # Approvals panel (pending-approvals) — agent instructions
 
 A Hermes plugin with two halves: the desktop panel `desktop/plugin.js` (React through the host UI kit)
-and its backend `dashboard/plugin_api.py` (FastAPI routes over Hermes core's write-approval store).
+and its backend `dashboard/plugin_api.py` (FastAPI routes over Hermes core's write-approval store). The
+root `__init__.py` registers the auxiliary tasks and one native `post_tool_call` hook that records where a
+staged skill write came from (read-only on `state.db`, never a model call).
 `tests/README.md` describes every gate; `Docs/pending-approvals-notes.md` records why the code is the
 way it is. Read both before changing the area they cover.
 
@@ -55,8 +57,8 @@ Page and output paths must be relative. Write screenshots to an untracked name; 
 
 ## Rules the gates enforce (and why they exist)
 
-- No comments or docstrings in `desktop/plugin.js` or `dashboard/plugin_api.py`. A "why" goes into
-  `Docs/pending-approvals-notes.md`.
+- No comments or docstrings in `desktop/plugin.js`, `dashboard/plugin_api.py` or the root `__init__.py`.
+  A "why" goes into `Docs/pending-approvals-notes.md`.
 - Lines of at most 120 characters, no trailing whitespace, no tabs, single-quoted JavaScript.
 - User-facing text: only the one `en` bundle in `plugin.js` through `t()`, and the backend's `_TEXT`
   table through `_tx()`. Delete keys nobody uses.

@@ -33,7 +33,8 @@ MANIFEST = HERE.parent / "dashboard" / "manifest.json"
 VERSION = json.loads(MANIFEST.read_text(encoding="utf-8"))["version"]
 PLUGIN_YAML = HERE.parent / "plugin.yaml"
 CHANGELOG = HERE.parent / "CHANGELOG.md"
-FILES = (JS, API, MANIFEST, PLUGIN_YAML, CHANGELOG)
+INIT = HERE.parent / "__init__.py"
+FILES = (JS, API, MANIFEST, PLUGIN_YAML, CHANGELOG, INIT)
 
 ID_LINE = "const ID = 'pending-approvals'\n"
 ROUTE_LINE = "const ROUTE = '/approvals'\n"
@@ -122,8 +123,8 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "lost its text-entry guard"),
     ("the keys ignore modifiers", JS, "if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return",
      "if (e.defaultPrevented) return", 1, "lost its modifier guard"),
-    ("the keys are handled on the split root", JS, "    onKeyDown,\n    children: [list, detail]",
-     "    children: [list, detail]", 1, "are not handled on the split root"),
+    ("the keys are handled on the split root", JS, "    onKeyDown,\n    children: lone ? [list] : [list, detail]",
+     "    children: lone ? [list] : [list, detail]", 1, "are not handled on the split root"),
     ("the primary announces its key", JS, "'aria-keyshortcuts': hot ? 'A' : undefined",
      "'aria-keyshortcuts': undefined", 1, "lost aria-keyshortcuts A"),
     ("the fix toggle is the kit SegmentedControl", JS, "value: view, onChange: setView", "value: view", 1,
@@ -222,6 +223,38 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      "data.counts.memory, data.counts.skills", 1, "the chip ignores `records`"),
     ("one version everywhere", MANIFEST, f'"version": "{VERSION}"', '"version": "9.9.9"', 1,
      "the two must agree"),
+    ("no comment in __init__.py", INIT, "HOOK_BUDGET_S = 2.0\n", "# canary comment\nHOOK_BUDGET_S = 2.0\n", 1,
+     "__init__.py:11: a comment came back"),
+    ("no docstring in __init__.py", INIT, "def _source_origin() -> tuple:\n",
+     "def _source_origin() -> tuple:\n    \"\"\"canary\"\"\"\n", 1, "docstring of _source_origin"),
+    ("__init__.py lines within 120", INIT, "HOOK_BUDGET_S = 2.0\n",
+     "CANARY_LONG = [" + "1, " * 40 + "]\nHOOK_BUDGET_S = 2.0\n", 1, "__init__.py:11: code line is"),
+    ("no undefined name in __init__.py", INIT, "origin, attended = _source_origin()",
+     "origin, attended = _source_origin_x()", 1, "undefined name: _source_origin_x"),
+    ("recurrence numbers live in the table", API, "def _recur_dir() -> Path:\n",
+     "CANARY_GAP = 7200\n\n\ndef _recur_dir() -> Path:\n", 1, "a recurrence number (7200) outside"),
+    ("the recurrence table keeps its keys", API, '    "keep_s": 30 * 86400,\n', "", 1,
+     "RECURRENCE table lacks keep_s"),
+    ("the recurrence judge stays model-free", API, "def _recur_dir() -> Path:\n",
+     "def _recur_dir() -> Path:\n    _review_call\n", 1, "_recur_dir reaches a model through _review_call"),
+    ("the hook body is one try/except Exception", INIT,
+     '    except Exception as exc:\n        _LOG.warning("approvals source hook skipped a record: %r", exc)',
+     '    except ValueError as exc:\n        _LOG.warning("approvals source hook skipped a record: %r", exc)', 1,
+     "is not one try with an `except Exception` handler"),
+    ("provides_hooks matches register", PLUGIN_YAML, "provides_hooks:\n  - post_tool_call\n", "", 1,
+     "differs from the hooks register() registers"),
+    ("the hook never reaches the network", INIT, "import json\n", "import json\nimport requests\n", 1,
+     "the hook file names requests"),
+    ("the hook never writes state.db", INIT, '"SELECT source, parent_session_id FROM sessions WHERE id = ?"',
+     '"DELETE FROM sessions WHERE id = ?"', 1, "holds an SQL write (DELETE)"),
+    ("Candidates start collapsed", JS, "const [candOpen, setCandOpen] = useState(false)",
+     "const [candOpen, setCandOpen] = useState(true)", 1, "does not start collapsed"),
+    ("the chip never counts candidates", JS, "  const n = total(data?.counts)\n",
+     "  const n = total(data?.counts) + (data?.candidates || 0)\n", 1, "Chip reads `candidates`"),
+    ("Activity knows expired", JS, "  expired: ['var(--ui-text-tertiary)', CrossIcon],\n", "", 1,
+     "OUTCOME has no `expired` entry"),
+    ("candidates are reviewed", JS, ",\n  ...(d?.candidates || [])]", "]", 1,
+     "reviewUnits leaves d?.candidates out"),
 ]
 
 
