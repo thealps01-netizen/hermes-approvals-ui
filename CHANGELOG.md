@@ -5,7 +5,7 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
-## Unreleased
+## 1.18.0
 
 ### Added
 

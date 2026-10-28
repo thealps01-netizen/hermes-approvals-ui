@@ -1894,7 +1894,7 @@ write the backend refuses for size. A record whose `fit.after` exceeds `fit.limi
   model, the model the skill really runs with). Grading: the "Approvals review" task.
 
 
-## Related skills that cannot load (Unreleased)
+## Related skills that cannot load (1.18.0)
 
 A skill names its neighbours in `related_skills` (top level or `metadata.hermes`). When a write adds a
 name there that the agent cannot load, the reader is sent to nothing. An audit of the owner's library
