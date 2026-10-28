@@ -725,6 +725,10 @@ _TEXT = {
                    'lines or about {max_tokens} tokens — detail belongs in references/.',
     'advice_form': '{name}: the description does not read "Use when <trigger>. <what it does>."',
     'advice_elsewhere': '{name}: this line is already in the skill {other}: {quote}',
+    'advice_related': '{name}: related_skills names skills that cannot be loaded: {refs}.',
+    'related_off': "'{ref}' is turned off",
+    'related_missing': "'{ref}' is not installed",
+    'related_alt': " (the active one is '{alt}')",
     'hard_memory_duplicate': '{name}: this note is already saved: {quote}',
     'hard_memory_twice': '{name}: this record writes the same note twice: {quote}',
     'review_again_no_model': 'No model is assigned to the approvals review (Settings → Models), so the review was kept as it is.',
@@ -3005,7 +3009,70 @@ def _skill_advice(record: dict, view: dict | None) -> list[dict]:
         mine = author and _skill_author(after) == author
         if mine and desc != _description_of(before) and not _DESC_FORM.fullmatch(desc):
             out.append(_hard(name, _tx("advice_form", name=name)))
+        out += _related_advice(name, before, after, record)
     return out + _elsewhere(record)
+
+
+def _related_of(content: str | None) -> list[str]:
+    from agent.skill_utils import parse_config_string_list, parse_frontmatter
+
+    try:
+        front = parse_frontmatter(str(content or ""))[0]
+    except Exception as exc:
+        _log(f"a frontmatter could not be read for related_skills: {exc!r}")
+        return []
+    meta = front.get("metadata")
+    hermes = meta.get("hermes") if isinstance(meta, dict) else None
+    value = hermes.get("related_skills") if isinstance(hermes, dict) else None
+    if value is None:
+        value = front.get("related_skills")
+    return [str(v).strip() for v in parse_config_string_list(value) if str(v).strip()] if value else []
+
+
+def _active_skills() -> tuple | None:
+    return _remember(("active-skills",), _active_skills_now)
+
+
+def _active_skills_now() -> tuple | None:
+    from agent.skill_utils import parse_config_string_list
+
+    local = _remember(("skill-names",), _skill_names)
+    if local is None:
+        return None
+    skills_cfg = _config().get("skills")
+    raw = skills_cfg.get("disabled") if isinstance(skills_cfg, dict) else None
+    disabled = set(parse_config_string_list(raw)) if raw else set()
+    try:
+        from hermes_cli.plugins import discover_plugins, get_plugin_manager
+
+        discover_plugins()
+        plugin = {str(m.get("name")) for m in get_plugin_manager().list_plugin_skill_metadata()}
+    except Exception as exc:
+        _log(f"plugin skills could not be listed, their names are not checked: {exc!r}")
+        plugin = set()
+    return local, disabled, plugin
+
+
+def _related_advice(name: str, before: str | None, after: str, record: dict) -> list[dict]:
+    added = [r for r in dict.fromkeys(_related_of(after)) if r not in set(_related_of(before))]
+    known = _active_skills() if added else None
+    if not known:
+        return []
+    local, disabled, plugin = known
+    staged = {_bare_skill(op.get("name")) for op in _raw_ops(record)}
+    bad = []
+    for ref in added:
+        if ":" in ref:
+            owner = ref.split(":", 1)[0] + ":"
+            if ref not in plugin and any(p.startswith(owner) for p in plugin):
+                bad.append(_tx("related_missing", ref=ref))
+            continue
+        if ref in staged or ref in local and ref not in disabled:
+            continue
+        alt = next((p for p in sorted(plugin) if p.split(":", 1)[-1] == ref and p not in disabled), "")
+        bad.append(_tx("related_off" if ref in local else "related_missing", ref=ref)
+                   + (_tx("related_alt", alt=alt) if alt else ""))
+    return [_hard(name, _tx("advice_related", name=name, refs="; ".join(bad)))] if bad else []
 
 
 def _elsewhere(record: dict) -> list[dict]:

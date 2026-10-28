@@ -79,7 +79,8 @@ CONTRACT: dict[str, dict[str, Any]] = {
     },
     "agent/skill_utils.py": {
         "names": (),
-        "calls": {"is_excluded_skill_path": (1, ()), "parse_frontmatter": (1, ()), "get_all_skills_dirs": (0, ())},
+        "calls": {"is_excluded_skill_path": (1, ()), "parse_frontmatter": (1, ()), "get_all_skills_dirs": (0, ()),
+                  "parse_config_string_list": (1, ())},
     },
     "tools/fuzzy_match.py": {
         "names": (),
@@ -118,7 +119,7 @@ CONTRACT: dict[str, dict[str, Any]] = {
     },
     "hermes_cli/plugins.py": {
         "names": ("VALID_HOOKS",),
-        "calls": {},
+        "calls": {"get_plugin_manager": (0, ()), "discover_plugins": (0, ())},
     },
 }
 

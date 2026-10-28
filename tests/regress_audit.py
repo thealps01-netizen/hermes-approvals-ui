@@ -1711,6 +1711,50 @@ def recur_keep_expired():
     assert any(i["summary"] == "regress c5000001" for i in env.listing()["skills"] + env.listing()["candidates"])
 
 
+@case
+def related_skills_that_cannot_load_are_advice():
+    """A write that adds related_skills naming a turned-off or missing skill is told so on its card.
+
+    Names the write already had, active skills, skills the same record creates and names of plugins the panel
+    cannot see are left alone; a turned-off or missing name points to the active plugin skill of that name.
+    """
+    import hermes_cli.plugins as plugins
+
+    env = Env()
+    env.skill("have-on", "body\n")
+    env.skill("have-off", "body\n")
+    env.skill("mine", "body\n", extra="related_skills: [gone-before]\n")
+    env.settings["skills"] = {"disabled": ["have-off", "kit:have-on"]}
+    listed = [{"name": "kit:have-off"}, {"name": "kit:have-on"}, {"name": "kit:other"}]
+    real = plugins.get_plugin_manager, plugins.discover_plugins
+    plugins.get_plugin_manager = lambda: SimpleNamespace(list_plugin_skill_metadata=lambda: listed)
+    plugins.discover_plugins = lambda: None
+    try:
+        refs = "[have-on, have-off, gone, gone-before, other, kit:have-off, kit:nope, elsewhere:thing, brand-new-r]"
+        created = (f"---\nname: brand-new-r\ndescription: Use when testing. Does things.\nauthor: {AUTHOR}\n"
+                   "metadata:\n  hermes:\n    related_skills: [have-off, mine]\n---\n\nbody\n")
+        env.stage("skills", "9400a001", {"operations": [
+            {"action": "create", "name": "brand-new-r", "category": "cat", "content": created},
+            {"action": "patch", "name": "mine", "old_string": "related_skills: [gone-before]",
+             "new_string": f"related_skills: {refs}"}]})
+        out = env.listing()
+        card = next(i for i in out["skills"] + out["candidates"] if i["id"] == "9400a001")
+    finally:
+        plugins.get_plugin_manager, plugins.discover_plugins = real
+    review = card["review"]
+    advice = {a["name"]: a["text"] for a in review.get("advice") or [] if "related_skills" in a["text"]}
+    mine, new = advice.get("mine", ""), advice.get("brand-new-r", "")
+    for part in ("'have-off' is turned off (the active one is 'kit:have-off')", "'gone' is not installed",
+                 "'other' is not installed (the active one is 'kit:other')", "'kit:nope' is not installed"):
+        assert part in mine, f"missing {part!r} in the advice for mine: {advice}"
+    for name in ("have-on", "gone-before", "kit:have-off", "elsewhere:thing", "brand-new-r"):
+        assert f"'{name}" not in mine.replace("(the active one is 'kit:have-off')", ""), \
+            f"{name} can be loaded or was there before, yet it is named: {mine}"
+    assert "'have-off' is turned off" in new and "'mine'" not in new, f"nested related_skills of a new skill: {new}"
+    assert not any("related_skills" in h["text"] for h in review.get("hard") or []), \
+        "a related_skills finding advises; it never locks Approve"
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

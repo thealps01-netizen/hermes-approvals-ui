@@ -78,6 +78,7 @@ const BUNDLES = {
         edit1: 'Needs one edit — Hermes already drafted it',
         editN: n => `Needs ${n} edits — Hermes already drafted them`,
         othersFine: n => (n === 1 ? '1 other check fine' : `${n} other checks fine`),
+        advice: n => (n === 1 ? '1 check to read' : `${n} checks to read`),
       },
       fixview: {
         label: 'Version to save',
@@ -2827,6 +2828,17 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         })
       }, 'toggle')
     : null
+  const adviceCount = status === 'done' ? facts.advice.length : 0
+  const adviceChip = adviceCount ? jsxs('span', {
+    className: 'pa-chip pa-chip-advice',
+    children: [
+      jsx('span', { className: 'pa-chip-glyph', 'data-k': 'warn', 'aria-hidden': true, children: icon(AlertIcon, 12) }, 'g'),
+      jsx('button', {
+        type: 'button', className: 'pa-chip-btn', 'aria-expanded': open, 'aria-controls': detailsId,
+        onClick: () => setOpen(true), children: t('pa.verdict.advice', adviceCount)
+      }, 'btn')
+    ]
+  }, 'advice') : null
   const verdictCard = jsxs('div', {
     className: 'pa-verdict',
     'data-k': verdict,
@@ -2843,7 +2855,7 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         className: 'pa-vtext',
         children: [
           jsx('div', { className: 'pa-vtitle', role: 'status', children: verdictTitle }, 'title'),
-          chips ? jsx('div', { className: 'pa-chips', children: chips }, 'chips') : null,
+          chips || adviceChip ? jsx('div', { className: 'pa-chips', children: [adviceChip, ...(chips || [])] }, 'chips') : null,
           steps
         ]
       }, 'text'),
