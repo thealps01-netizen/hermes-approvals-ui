@@ -1678,6 +1678,39 @@ def recur_prune():
     assert "c4000009" not in kept and "c4000008" in kept and "c4000001" in kept, sorted(kept)
 
 
+@case
+def recur_keep_expired():
+    env = Env()
+    keep = env.pa.RECURRENCE["keep_s"]
+    text = "rotate the release signing keys before tagging the build"
+    _recur_stage(env, "c5000001", "young", text, 14 * 86400 + 60)
+    _recur_stage(env, "c5000002", "old", text + " later", 14 * 86400 + 60)
+    env.listing()
+    expired = {e["record_id"]: e for e in env.entries() if e.get("kind") == "expired"}
+    assert set(expired) == {"c5000001", "c5000002"}, sorted(expired)
+    young, old = expired["c5000001"]["id"], expired["c5000002"]["id"]
+    path = env.home / "state" / "pending-approvals" / "history.jsonl"
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    for row in rows:
+        if row.get("id") == young:
+            row["ts"] = time.time() - 86400
+        elif row.get("id") == old:
+            row["ts"] = time.time() - keep - 86400
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    snaps = env.home / "state" / "pending-approvals" / "snapshots"
+    for n in range(150):
+        env.pa._append({"id": f"f{n:07d}", "ts": time.time(), "kind": "failed", "subsystem": "skills",
+                        "record_id": f"r{n:07d}", "summary": "newer row", "files": [], "undone": False})
+    listed = {e["id"]: e for e in env.pa._history(50)["entries"]}
+    assert young in listed, "an expired row inside the keep time was pruned by newer rows"
+    assert listed[young].get("restorable"), listed[young]
+    assert (snaps / young / "record.json").exists(), "the expired row's copy was deleted"
+    assert old not in listed and not (snaps / old).exists(), "an expired row past the keep time was kept"
+    back = env.pa.restore({"id": young})
+    assert back["ok"], back
+    assert any(i["summary"] == "regress c5000001" for i in env.listing()["skills"] + env.listing()["candidates"])
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

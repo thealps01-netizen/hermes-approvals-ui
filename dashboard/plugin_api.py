@@ -309,7 +309,14 @@ def _entries(limit: int = 50) -> list[dict]:
     if bad:
         _note_issue("history", _tx("issue_history", n=bad, file=path.name))
     out.reverse()
-    return out[:limit]
+    now = time.time()
+    return out[:limit] + [row for row in out[limit:] if _kept_expired(row, now)]
+
+
+def _kept_expired(row: dict, now: float) -> bool:
+    ts = row.get("ts")
+    return (row.get("kind") == "expired" and isinstance(ts, (int, float))
+            and now - ts <= RECURRENCE["keep_s"])
 
 
 def _prune() -> None:
@@ -317,11 +324,17 @@ def _prune() -> None:
     lines = _history_lines()
     if len(lines) <= MAX_ENTRIES:
         return
-    dropped, kept = lines[:-MAX_ENTRIES], lines[-MAX_ENTRIES:]
-    for line in dropped:
-        if (row := _history_row(line)) is not None:
+    now, cut = time.time(), len(lines) - MAX_ENTRIES
+    kept, dropped = [], []
+    for n, line in enumerate(lines):
+        row = _history_row(line)
+        (kept if n >= cut or (row is not None and _kept_expired(row, now)) else dropped).append((line, row))
+    if not dropped:
+        return
+    for _, row in dropped:
+        if row is not None:
             _remove_snapshots(row.get("id"))
-    _atomic_write(path, "\n".join(kept) + "\n")
+    _atomic_write(path, "\n".join(line for line, _ in kept) + "\n")
 
 
 def _new_id() -> str:
