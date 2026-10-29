@@ -4478,7 +4478,8 @@ REST.scan = 'ok'
   const a = await mount('en')
   await toFront(a.hostEl, 'skills:aaa11111')
   const panel = cell(a.hostEl, 'skills:aaa11111')?.querySelector('.pa-test')
-  must(panel?.textContent, ['Side-by-side test', 'Not run', 'own-skill · 207 → 287 lines', 'about 6 answers + 3 gradings',
+  must(panel?.textContent, ['Side-by-side test', 'Not run', 'own-skill · 207 → 287 lines', 'up to 18 answers + 18 gradings',
+    'counts as won only when every grading picks the same side',
     'this week 83% used', 'Saving without a test marks the history entry “untested”.'], 'the untested test row')
   await click(buttons(panel, /^Test$/)[0], 60)
   const sent = stub.calls.posts.filter(p => p.path === '/test').pop()
