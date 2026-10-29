@@ -1917,54 +1917,39 @@ const actFind = async (hostEl, text) => {
   loss.hostEl.remove()
 }
 
-// --- 12) The shell (R2 T1-T6, replaces the top gauges): bar title, segmented tablist with its count
-// badge, day progress text + pips, Alerts switch, the refresh ICON with its "Updated" Tip, and the chip --
+// --- 12) The shell: the line header (title, sentence, Alerts, Refresh), the owner's station counted, one record
+// at a time in place of the line with its place named, and the chip ------------------------------------------
 const dayOf = ts => new Date(ts * 1000).toDateString()
 const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kind === 'rejected')
   && dayOf(e.ts) === dayOf(Date.now() / 1000))
 {
-  await click(tab(en.hostEl, /Needs you/), 60)
-  const bar = en.hostEl.querySelector('.pa-root > .pa-bar')
-  if (!bar) fail('shell: the pane has no top bar')
-  if (bar?.style.minHeight !== '48px') fail(`shell: the bar is not 48px high: ${bar?.style.minHeight}`)
-  const title = bar?.querySelector('.pa-bar-title[role="heading"][aria-level="1"]')
-  if (title?.textContent !== 'Approvals') fail(`shell: the bar title is not "Approvals": ${title?.textContent}`)
-  const list = bar?.querySelector('.pa-bar-tabs [role="tablist"].pa-tabs')
-  if (!list || list.querySelectorAll('[role="tab"].pa-tab').length !== 3) {
-    fail('shell: the segmented tablist is not in the bar')
+  await toLine(en.hostEl, 60)
+  const bar = en.hostEl.querySelector('.pa-root > .pa-hd')
+  if (!bar) fail('shell: the pane has no header above the line')
+  const title = bar?.querySelector('.pa-h1[role="heading"][aria-level="1"]')
+  if (title?.textContent !== 'Approvals') fail(`shell: the header title is not "Approvals": ${title?.textContent}`)
+  const litSt = en.hostEl.querySelector('.pa-st[data-lit="1"]')
+  const badge = slot(litSt?.querySelector('.pa-cnt'), 'badge')
+  if (!badge || badge.textContent !== String(litSt.querySelectorAll('.pa-lc').length)) {
+    fail(`shell: the lit station does not count the cards waiting at it: ${badge?.textContent}`)
   }
-  const badge = list?.querySelector('[role="tab"] [data-slot="badge"].pa-tag')
-  if (badge?.textContent !== '3') fail('shell: the Needs you tab carries no count badge')
-  const done = decidedToday(HISTORY.entries)
-  const all = done.length + 3
-  const progress = bar?.querySelector('.pa-bar-side .pa-progress')
-  if (!progress) fail('shell: the day progress is not in the bar')
-  if (progress?.querySelector('.pa-progress-text')?.textContent !== `${done.length} of ${all} decided`) {
-    fail(`shell: the progress text is not "${done.length} of ${all} decided": ${progress?.textContent}`)
-  }
-  if (!(progress?.textContent || '').startsWith('Today')) fail('shell: the progress does not start with "Today"')
-  const pips = progress?.querySelector('.pa-pips[role="img"]')
-  if (pips?.getAttribute('aria-label') !== `${done.length} of ${all} decided`) {
-    fail('shell: the pips are not one labelled image')
-  }
-  const kinds = [...(pips?.querySelectorAll('.pa-pip') || [])].map(p => p.getAttribute('data-k') || 'wait')
-  const want = [...done.sort((a, b) => a.ts - b.ts).map(e => e.kind), 'wait', 'wait', 'wait']
-  if (kinds.join() !== want.join()) fail(`shell: the pips are not decided-then-waiting: ${kinds} (want ${want})`)
-  const alerts = bar?.querySelector('.pa-bar-side .pa-alerts-row')
+  const alerts = bar?.querySelector('.pa-tools .pa-alerts-row')
   if (!(alerts?.textContent || '').includes('Alerts')
       || alerts?.querySelector('.pa-alerts')?.getAttribute('role') !== 'switch') {
-    fail('shell: the Alerts switch is not in the bar')
+    fail('shell: the Alerts switch is not in the header')
   }
-  const split = en.hostEl.querySelector('[role="tabpanel"] > .pa-split')
-  if (!split || split.children.length !== 2 || !split.children[0].classList.contains('pa-list')
-      || !split.children[1].classList.contains('pa-detail')) {
-    fail('shell: the Needs you body is not one split of list + detail')
+  await toFront(en.hostEl, 'skills:def67890')
+  const split = en.hostEl.querySelector('.pa-line[data-open="1"] > .pa-detail.pa-cell')
+  if (!split || split.getAttribute('data-key') !== 'skills:def67890' || en.hostEl.querySelector('.pa-cols, .pa-hd')) {
+    fail('shell: an opened card does not take the place of the line with its one record')
   }
-  const current = [...en.hostEl.querySelectorAll('.pa-split .pa-row[aria-current="true"]')]
-  const shown = split?.querySelector('.pa-detail')?.getAttribute('data-key')
-  if (current.length !== 1 || current[0].getAttribute('data-key') !== shown) {
-    fail('shell: the one aria-current row is not the record the detail shows')
+  if (!/^Skill · [123] of 3 on the line$/.test(split?.querySelector('.pa-back-pos')?.textContent || '')) {
+    fail(`shell: the record does not name its place on the line: ${split?.querySelector('.pa-back-pos')?.textContent}`)
   }
+  if (split?.querySelectorAll('.pa-trip [aria-current="step"]').length !== 1) {
+    fail('shell: the journey strip does not mark the one station the record is at')
+  }
+  await toLine(en.hostEl, 40)
   if (en.hostEl.querySelector('.pa-kpis, .pa-gauges, .pa-footer, .pa-headline')) {
     fail('the KPI boxes, the gauges, the global footer or the headline are still in the DOM')
   }
@@ -1976,29 +1961,20 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (icon?.getAttribute('data-variant') !== 'outline' || icon?.getAttribute('data-size') !== 'icon-xs') {
     fail('the refresh control is not the kit Button (variant outline, size icon-xs)')
   }
-  // The old "Updated HH:MM" header stamp lives in the refresh Tip now (R2 T5, K23).
   if (!/^Refresh · Updated \d\d:\d\d/.test(icon?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
     fail('the refresh control carries no "Refresh · Updated HH:MM" Tip')
   }
   if (icon?.getAttribute('aria-label') !== 'Refresh') fail('the refresh control is not named "Refresh"')
   const shell = en.hostEl.querySelector('style')?.textContent || ''
-  if (!/@container \(min-width:761px\)\{\s*\.pa-root>\.pa-bar\{grid-column:1;grid-row:1 \/ -1;width:208px/.test(shell)
-      || !/border-right:1px solid var\(--ui-stroke-tertiary\);[^}]*background:var\(--ui-sidebar-surface-background\)/
-        .test(shell)) {
-    fail('flat: a wide pane does not draw the app\u2019s overlay side menu (208px, sidebar surface, one hairline)')
-  }
   const flatRules = [...shell.matchAll(/([^{}]+)\{([^}]*)\}/g)]
-    .filter(m => /\.pa-(root|bar|strip|top|hero|list|detail|split)\b/.test(m[1]))
+    .filter(m => /\.pa-(root|hd|strip|line|cols|st|detail|split)\b/.test(m[1]))
   const boxed = flatRules.filter(m => /linear-gradient|box-shadow:var\(--pa-|--pa-(shell|lift|deep)/.test(m[2]))
   if (boxed.length) {
     fail(`flat: the shell paints cards, a tinted ground or a gradient (the app's DESIGN.md: flat, not boxed): ${
       boxed.map(m => m[1].trim()).join(' ')}`)
   }
-  if (!/\.pa-list,\.pa-detail\{overflow:hidden\}/.test(shell)) {
-    fail('flat: the list and the detail are boxed again (they sit on the page, split by one hairline)')
-  }
   if (badge?.getAttribute('data-variant') !== 'solid') {
-    fail('vitality: the count badge is not the solid kit badge (the soft one is unreadable on the rail)')
+    fail('vitality: the lit station\u2019s count is not the solid kit badge')
   }
   if (buttons(en.hostEl, /^(Refresh|Yenile)$/).length) fail('refreshing is a text button again')
   if (!/awaiting approval/.test(en.chipText)) fail(`chip text wrong: ${JSON.stringify(en.chipText)}`)
@@ -2033,7 +2009,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const bad = await mount('en', 'page')
   await click(tab(bad.hostEl, /Activity/), 60)
   const row = bad.hostEl.querySelector('.pa-act-row[data-entry="act20001"]')
-  const word = row?.querySelector('.pa-row-title')?.textContent || ''
+  const word = row?.querySelector('.pa-ent-t')?.textContent || ''
   if (word !== 'Couldn\u2019t save') {
     fail(`activity-badge-short: the failed row must say the short family word only, got ${JSON.stringify(word)}`)
   }
@@ -2041,10 +2017,10 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (!/approving was attempted, Hermes refused: the record left the pending directory/.test(card?.textContent || '')) {
     fail('activity-badge-short: the full reason is gone from the detail, not merely out of the row word')
   }
-  if (!row?.querySelector('.pa-row-time')) fail('activity-badge-short: the time is not the pa-row-time element')
+  if (!row?.querySelector('.pa-ent-time')) fail('activity-badge-short: the time is not the pa-ent-time element')
   const sheet = bad.hostEl.querySelector('style')?.textContent || ''
-  if (!/\.pa-row-time\{[^}]*white-space:nowrap/.test(sheet)) {
-    fail('activity-badge-short: .pa-row-time no longer declares white-space:nowrap — the time can wrap again')
+  if (!/\.pa-ent-time\{[^}]*white-space:nowrap/.test(sheet)) {
+    fail('activity-badge-short: .pa-ent-time no longer declares white-space:nowrap — the time can wrap again')
   }
   bad.root.unmount()
   bad.hostEl.remove()
@@ -2058,29 +2034,26 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   }
 }
 
-// --- 12a) counts (replaces top-headline, R2 K20 → T3/L2/E3): the badge and the list header count the
-// waiting records, the all-clear names today's decisions; no headline -----------------------------------
+// --- 12a) counts: the header sentence and the first station count the waiting records, the all-clear names
+// today's decisions; no headline --------------------------------------------------------------------------
 {
-  const listHead = h => h.querySelector('.pa-split .pa-list-head')?.textContent || ''
-  if (!listHead(en.hostEl).startsWith('Waiting · 3')) fail(`list header wrong for 3 pending: ${listHead(en.hostEl)}`)
+  const headLine = h => h.querySelector('.pa-hd .pa-hd-line')?.textContent || ''
+  const firstCount = h => slot(h.querySelector('.pa-st[data-st="proposes"] .pa-cnt'), 'badge')?.textContent
+  if (!headLine(en.hostEl).startsWith('3 changes are on the line.')) fail(`list header wrong for 3 pending: ${headLine(en.hostEl)}`)
   if (en.hostEl.querySelector('.pa-headline, .pa-counts')) fail('the headline and its counts line are back')
 
   REST.mode = 'remedy'
   const remedy = await mount('en')
-  if (remedy.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '3') {
-    fail('the Needs you badge does not count the hard-finding record')
-  }
+  if (firstCount(remedy.hostEl) !== '3') fail('the line does not count the hard-finding record')
   remedy.root.unmount()
   remedy.hostEl.remove()
   REST.mode = 'normal'
 
   REST.pending = { ...PENDING, memory: [PENDING.memory[0]], skills: [], counts: { memory: 1, skills: 0 } }
   const one = await mount('en')
-  if (!listHead(one.hostEl).startsWith('Waiting · 1')) fail(`list header wrong for 1 pending: ${listHead(one.hostEl)}`)
+  if (!headLine(one.hostEl).startsWith('1 change is on the line.')) fail(`list header wrong for 1 pending: ${headLine(one.hostEl)}`)
   if (buttons(one.hostEl, /^Select$/).length) fail('"Select" is offered for a single waiting record')
-  if (one.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '1') {
-    fail('the badge does not read 1')
-  }
+  if (firstCount(one.hostEl) !== '1') fail('the first station does not read 1')
   one.root.unmount()
   one.hostEl.remove()
   REST.pending = null
@@ -2091,54 +2064,33 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     { id: 'td000002', ts: Date.now() / 1000 - 3 * 86400, kind: 'apply', subsystem: 'memory', summary: 'old', files: [] }
   ], counts: { applied: 47, failed: 0, undoable: 0 } }
   const clear = await mount('en')
-  const allClear = clear.hostEl.querySelector('.pa-root > .pa-top')
-  if (allClear?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') {
-    fail(`all-clear title wrong: ${JSON.stringify(allClear?.querySelector('.pa-clear-title')?.textContent)}`)
+  const allClear = clear.hostEl.querySelector('.pa-cols > .pa-allclear')
+  if (allClear?.querySelector('h2')?.textContent !== 'All caught up') {
+    fail(`all-clear title wrong: ${JSON.stringify(allClear?.querySelector('h2')?.textContent)}`)
   }
-  if (allClear?.querySelector('.pa-clear-body')?.textContent !== '1 decided today · nothing written without you') {
-    fail(`"decided today" counts all-time saves, not today's: ${
-      allClear?.querySelector('.pa-clear-body')?.textContent}`)
+  if (allClear?.querySelector('p')?.textContent !== '1 decided today · nothing waits for you.') {
+    fail(`"decided today" counts all-time saves, not today's: ${allClear?.querySelector('p')?.textContent}`)
   }
   if (allClear?.getAttribute('role') !== 'status') fail('the all-clear is not a polite status region')
-  if (clear.hostEl.querySelector('[role="tab"] [data-slot="badge"]')) fail('the Needs you badge shows at 0')
-  const week = clear.hostEl.querySelector('.pa-clear .pa-hero .pa-week-bars[role="img"]')
-  if (week?.getAttribute('aria-label') !== 'This week: 2 saved, 0 not saved') {
-    fail(`week chart: the all-clear hero has no labelled week chart: ${week?.getAttribute('aria-label')}`)
-  }
-  const wdays = [...(week?.querySelectorAll('.pa-week-day') || [])]
-  if (wdays.length !== 7 || wdays[6]?.getAttribute('data-today') !== '1'
-      || wdays.some(d => d.getAttribute('data-gap') === '1')) {
-    fail('week chart: not seven days ending today, or a gap drawn over a history that is complete')
+  if (clear.hostEl.querySelector('.pa-cnt')) fail('a station shows a count badge at 0')
+  if (!(clear.hostEl.querySelector('.pa-hd-line')?.textContent || '').startsWith('Nothing is on the line.')) {
+    fail('the empty line does not say so in its header sentence')
   }
   clear.root.unmount()
   clear.hostEl.remove()
-  REST.history = { entries: [
-    { id: 'td000003', ts: Date.now() / 1000 - 60, kind: 'apply', subsystem: 'memory', summary: 'today', files: [] },
-    { id: 'td000004', ts: Date.now() / 1000 - 120, kind: 'rejected', subsystem: 'memory', summary: 'today', files: [] }
-  ], counts: { applied: 99, failed: 0, undoable: 0, total: 100 } }
-  const busy = await mount('en')
-  const bars = busy.hostEl.querySelector('.pa-week-bars')
-  const gaps = [...(bars?.querySelectorAll('.pa-week-day') || [])].map(d => d.getAttribute('data-gap')).join('')
-  const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime() / 1000
-  const want = Date.now() / 1000 - 120 >= todayStart ? '1111111' : '1111110'
-  if (gaps !== want || !busy.hostEl.querySelector('.pa-week-note')) {
-    fail(`week chart: days the kept history does not fully cover are not drawn as gaps (${gaps}, want ${want})`)
-  }
-  busy.root.unmount()
-  busy.hostEl.remove()
   REST.pending = null
   REST.history = null
 }
 
-// --- 12x) Alerts in the bar, the promise in the Memory list footer (replaces footer-promise, R2 K22) ---
+// --- 12x) Alerts in the header, the promise in the bundle -----------------------------------------------
 {
   if (en.hostEl.querySelector('.pa-footer')) fail('the global footer strip is back')
-  const toggle = en.hostEl.querySelector('.pa-bar .pa-alerts')
+  const toggle = en.hostEl.querySelector('.pa-hd .pa-alerts')
   if (toggle?.getAttribute('role') !== 'switch' || toggle.getAttribute('aria-checked') !== 'true'
       || toggle.getAttribute('aria-label') !== 'Alerts'
-      || !(en.hostEl.querySelector('.pa-bar .pa-alerts-row')?.textContent || '').includes('Alerts')) {
+      || !(en.hostEl.querySelector('.pa-hd .pa-alerts-row')?.textContent || '').includes('Alerts')) {
     const said = `${toggle?.getAttribute('role')} ${toggle?.getAttribute('aria-checked')}`
-    fail(`the bar Alerts is not the host switch, on: ${said}`)
+    fail(`the header Alerts is not the host switch, on: ${said}`)
   }
   if (/Approve → written/.test(en.hostEl.textContent)) fail('the old footer hint text is still in the DOM')
   if (!src.includes('Nothing is written to your memory without you.')) {

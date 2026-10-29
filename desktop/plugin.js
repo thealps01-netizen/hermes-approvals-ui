@@ -1174,7 +1174,8 @@ const STYLE = `
 .pa-deck[data-open="0"]{margin-bottom:4px}
 .pa-ent-t{display:flex;align-items:center;gap:6px;min-width:0;font-size:${FS.body}px;font-weight:500;
   color:var(--ui-text-primary);overflow-wrap:anywhere}
-.pa-ent-time{font-size:${FS.meta}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;justify-self:end}
+.pa-ent-time{font-size:${FS.meta}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;justify-self:end;
+  white-space:nowrap}
 .pa-ent-s{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);min-width:0;overflow-wrap:anywhere}
 .pa-ent-state{justify-self:end;white-space:nowrap}
 .pa-deck-chev{color:var(--ui-text-secondary)}
