@@ -5287,11 +5287,12 @@ REST.scan = 'ok'
   const narrowAt = (css, w) => css.slice(css.indexOf(`@container (max-width:${w}px){`)).split('}}')[0]
   const m = await mount('en', 'page')
   const css = m.hostEl.querySelector('style')?.textContent || ''
-  if (/\.pa-gm-word/.test(narrowAt(css, 480)) || !m.hostEl.querySelector('.pa-bar .pa-gm .pa-gm-word')) {
-    fail('round 3: at 480 px the bar meters lose their Memory / Profile words (two bare percents)')
+  const words = [...m.hostEl.querySelectorAll('.pa-hd .pa-mring > span')].map(s => s.textContent.replace(/^\d+%/, ''))
+  if (/\.pa-mring/.test(narrowAt(css, 560) + narrowAt(css, 760)) || words.join() !== 'Memory,Profile') {
+    fail(`round 3: at narrow widths the header rings lose their Memory / Profile words: ${words}`)
   }
-  if (!/\.pa-bar \.pa-progress/.test(narrowAt(css, 480))) {
-    fail('round 3: at 480 px the bar keeps the day progress, so the title, the count and the named meters collide')
+  if (!/\.pa-hd\{flex-wrap:wrap/.test(narrowAt(css, 760)) || !/(^|\n)\.pa-hd-text\{[^}]*min-width:0/.test(css)) {
+    fail('round 3: at narrow widths the header does not wrap, so the title, the sentence and the rings collide')
   }
   m.root.unmount()
   m.hostEl.remove()
@@ -5342,19 +5343,20 @@ REST.scan = 'ok'
   const a = await mount('en', 'page')
   await click(tab(a.hostEl, /Activity/), 60)
   const rowText = (id, part) => actRow(a.hostEl, id)?.querySelector(part)?.textContent || ''
-  if (rowText('f5200001', '.pa-row-title') !== 'plugin-authoring'
-      || !rowText('f5200001', '.pa-row-preview').includes('references/gates.md: 3 lines added, 1 removed')
+  const PREV = '.pa-ent-s:not(.pa-ent-state)'
+  if (rowText('f5200001', '.pa-ent-t') !== 'plugin-authoring'
+      || !rowText('f5200001', PREV).includes('references/gates.md: 3 lines added, 1 removed')
       || (actRow(a.hostEl, 'f5200001')?.textContent || '').includes('\\')) {
-    fail(`real data: a skill row does not lead with the skill name in plain words: ${rowText('f5200001', '.pa-row-title')}`
-      + ` / ${rowText('f5200001', '.pa-row-preview')}`)
+    fail(`real data: a skill row does not lead with the skill name in plain words: ${rowText('f5200001', '.pa-ent-t')}`
+      + ` / ${rowText('f5200001', PREV)}`)
   }
-  if (rowText('f5200002', '.pa-row-title') !== 'The workspace is on D:'
-      || !rowText('f5200002', '.pa-row-preview').includes('Edited note')
+  if (rowText('f5200002', '.pa-ent-t') !== 'The workspace is on D:'
+      || !rowText('f5200002', PREV).includes('Edited note')
       || (actRow(a.hostEl, 'f5200002')?.textContent || '').includes('entry matching')) {
     fail(`real data: a memory row reads like code: ${actRow(a.hostEl, 'f5200002')?.textContent}`)
   }
-  if (rowText('f5200003', '.pa-row-title') !== 'Prefers short replies'
-      || !rowText('f5200003', '.pa-row-preview').includes('2 note changes')) {
+  if (rowText('f5200003', '.pa-ent-t') !== 'Prefers short replies'
+      || !rowText('f5200003', PREV).includes('2 note changes')) {
     fail(`real data: a batch memory row reads like code: ${actRow(a.hostEl, 'f5200003')?.textContent}`)
   }
   await click(actRow(a.hostEl, 'f5200001'), 30)
@@ -5374,7 +5376,8 @@ REST.scan = 'ok'
   counts: { applied: 1, failed: 0, undoable: 0 } }
   const quiet = await mount('en', 'page')
   await click(tab(quiet.hostEl, /Activity/), 60)
-  if (!(quiet.hostEl.querySelector('.pa-written .pa-list-head')?.textContent || '').includes('nothing yet')) {
+  const quietDays = [...quiet.hostEl.querySelectorAll('.pa-written .pa-day')].map(x => x.textContent)
+  if (!quietDays.length || quietDays.some(x => /^Today/.test(x))) {
     fail('real data: the Activity head reads a bare "Today" when nothing was decided today')
   }
   quiet.root.unmount()
@@ -5385,7 +5388,8 @@ REST.scan = 'ok'
     summary: 'MEMORY.md rejected', files: [], undoable: false, restorable: true }],
   counts: { applied: 0, failed: 0, undoable: 0 } }
   const clear = await mount('en', 'page')
-  if (!buttons(clear.hostEl.querySelector('.pa-clear'), /^Restore$/).length) {
+  if (!clear.hostEl.querySelector('.pa-cols > .pa-allclear')
+      || !buttons(clear.hostEl.querySelector('.pa-st[data-st="written"]'), /^Restore$/).length) {
     fail('real data: after "Don’t save" the all-caught-up state offers no way back')
   }
   clear.root.unmount()
@@ -5407,7 +5411,7 @@ REST.scan = 'ok'
   if (later?.getAttribute('aria-keyshortcuts') !== 'L' || later.querySelector('.pa-btn-kbd')?.textContent !== 'L') {
     fail('real data: Later does not show its key L like Don’t save (X) and Save (A)')
   }
-  if (/save/i.test(n.hostEl.querySelector('.pa-split .pa-legend')?.textContent || '')) {
+  if (/save/i.test(n.hostEl.querySelector('.pa-legend')?.textContent || '')) {
     fail('real data: the list legend repeats the keys the buttons already show (it wrapped to two lines)')
   }
   const css = n.hostEl.querySelector('style')?.textContent || ''
@@ -5426,67 +5430,41 @@ REST.scan = 'ok'
   REST.memory = { memory: { ...MEMORY.memory, chars: 990, percent: 45, entries: ['A note'] },
     user: { ...MEMORY.user, chars: 1340, percent: 97 } }
   const m = await mount('en', 'page')
-  await click(tab(m.hostEl, /Memory/), 60)
-  const picked = m.hostEl.querySelector('.pa-memrows [role="tab"][aria-selected="true"]')?.textContent || ''
+  const warm = [...m.hostEl.querySelectorAll('.pa-hd .pa-mring')].filter(r => r.querySelector('svg[data-warm="1"]'))
+  if (warm.map(r => r.getAttribute('data-k')).join() !== 'user') {
+    fail(`real data: the header does not mark only the nearly full Profile ring: ${warm.map(r => r.getAttribute('data-k'))}`)
+  }
+  await click(m.hostEl.querySelector('.pa-mring[data-k="user"]'), 60)
+  const picked = m.hostEl.querySelector('.pa-mfiles .pa-mfile[aria-pressed="true"]')?.textContent || ''
   if (!picked.startsWith('Profile') || !picked.includes('nearly full')) {
-    fail(`real data: the Memory tab does not open on the file that is nearly full: ${picked}`)
+    fail(`real data: the nearly full file's ring does not open the Memory page on that file: ${picked}`)
   }
   m.root.unmount()
   m.hostEl.remove()
   REST.memory = null
 }
 
-// --- 53) the top bar fits its pane: 1.15.0 drew "9 of 9 decided" across the Memory meter in an 847 px pane
-// (the dots and meter bars went only below a fixed 760 px). The panel observes its bar and steps down while a
-// bar item is narrower than its text: dots and meter bars first, then the day count; it steps back up when the
-// room returns. jsdom has no layout, so the item's widths are set by hand; the measured gate's width sweep
-// (shot.cjs barSweep) checks the same fitBar against the real layout at every width from 420 to 1100 px.
+// --- 53) the header fits its pane: 1.15.0 drew "9 of 9 decided" across the Memory meter in an 847 px pane. The
+// bar, its pips, meter bars and day count are gone (the line redesign); the header is title + sentence on a flexible
+// column and the rings and tools on a fixed one, wrapping below 761 px and dropping the tools' rule below 561 px.
 {
-  const seen = []
-  dom.window.ResizeObserver = class {
-    constructor(cb) { this.cb = cb; this.els = []; seen.push(this) }
-    observe(el) { this.els.push(el) }
-    disconnect() { this.off = true }
-  }
   const b = await mount('en', 'page')
-  const bar = b.hostEl.querySelector('.pa-bar')
-  const watch = seen.find(o => o.els.includes(bar))
-  if (!watch) {
-    fail('bar fit: the panel does not observe its top bar, so a narrower pane lets bar items draw over each other')
-  } else {
-    const css = b.hostEl.querySelector('style')?.textContent || ''
-    const rule = css.split('\n').find(l => l.startsWith('.pa-bar:is([data-fit="1"],[data-fit="2"])')) || ''
-    if (!/\.pa-pips/.test(rule) || !/\.pa-gm-bar/.test(rule) || !/\.pa-bar\[data-fit="2"\] \.pa-progress/.test(rule)) {
-      fail(`bar fit: step 1 must hide the dots and meter bars, step 2 the day count too: ${rule || 'no rule'}`)
-    }
-    if (bar.getAttribute('data-fit') !== '0') fail(`bar fit: a bar with room starts at ${bar.getAttribute('data-fit')}`)
-    const progress = bar.querySelector('.pa-progress')
-    let tight = 0
-    Object.defineProperty(progress, 'clientWidth', { configurable: true, get: () => 94 })
-    Object.defineProperty(progress, 'scrollWidth', { configurable: true,
-      get: () => (Number(bar.getAttribute('data-fit')) < tight ? 228 : 94) })
-    const step = async need => {
-      tight = need
-      await act(async () => { watch.cb([]) })
-      return bar.getAttribute('data-fit')
-    }
-    const at1 = await step(1)
-    const at2 = await step(2)
-    const back = await step(0)
-    if (at1 !== '1' || at2 !== '2' || back !== '0') {
-      fail(`bar fit: steps read ${at1}/${at2}/${back} for a bar short by the dots, by the count, then roomy (want 1/2/0)`)
-    }
+  const css = b.hostEl.querySelector('style')?.textContent || ''
+  const at = w => css.slice(css.indexOf(`@container (max-width:${w}px){`)).split('}}')[0]
+  if (b.hostEl.querySelector('.pa-bar, .pa-pips, .pa-gm-bar, .pa-progress')) fail('bar fit: the old top bar is back')
+  const hd = b.hostEl.querySelector('.pa-root > .pa-hd')
+  if (!hd?.querySelector(':scope > .pa-hd-text') || !hd.querySelector(':scope > .pa-hd-side > .pa-rings + .pa-tools')
+      || !/(^|\n)\.pa-hd-side\{[^}]*flex:none/.test(css) || !/\.pa-hd-side\{width:100%/.test(at(760))
+      || !/\.pa-tools\{padding-left:0;border-left:0\}/.test(at(560))) {
+    fail('bar fit: the header does not give the words the room and wrap the rings and tools below them')
   }
   b.root.unmount()
-  if (watch && !watch.off) fail('bar fit: the bar observer outlives the panel')
   b.hostEl.remove()
-  delete dom.window.ResizeObserver
 }
 
-// --- 54) row cards and Activity decks: the owner found the list rows plain ("an admin table"). Every row of
-// Needs you and Activity is a small card marked by what it belongs to, and consecutive Activity records of the same thing fold into one deck:
-// "software-factory 3", "2 saved · 1 not saved", one outcome pip per record. The deck opens in place into one
-// line per record, each its own selectable entry with its own detail (Undo stays per record).
+// --- 54) Written pins and decks: every entry is a small card on the timeline with its pin; consecutive records of
+// the same thing fold into one deck: "software-factory 3", "2 saved · 1 not saved". The deck opens in place into
+// one line per record, each its own selectable entry with its own detail (Undo stays per record).
 {
   const NOW = Date.now() / 1000
   const SF = n => `patch 'software-factory' SKILL.md (+${n}/-1 lines)`
@@ -5505,35 +5483,28 @@ REST.scan = 'ok'
   const d = await mount('en', 'page')
   await click(tab(d.hostEl, /Activity/), 60)
   const sheet = d.hostEl.querySelector('style')?.textContent || ''
-  if (/\.pa-rowwrap\+\.pa-rowwrap\{border-top/.test(sheet) || !/\.pa-rowwrap\{[^}]*border-radius:6px/.test(sheet)
-      || /\.pa-rowwrap\{[^}]*(border:|background:)/.test(sheet)
-      || !/\.pa-rowwrap\[data-on="1"\]\{background:var\(--ui-row-active-background\)\}/.test(sheet)
-      || !/\.pa-root \.pa-row:hover\{background:var\(--ui-row-hover-background\)\}/.test(sheet)) {
-    fail('flat rows: the list rows are not the app\u2019s list rows (no frame, no lines between them, the app\u2019s'
-      + ' row hover and row selection fills)')
+  if (!/\.pa-root \.pa-ent-card:hover\{border-color:var\(--ui-stroke-secondary\)\}/.test(sheet)
+      || !/\.pa-ent\[data-on="1"\]>\.pa-ent-card\{border-color:var\(--ui-accent\)\}/.test(sheet)) {
+    fail('flat rows: a Written card has no hover edge or does not mark the chosen entry in the accent')
   }
-  const wraps = () => [...d.hostEl.querySelectorAll('.pa-written .pa-list-rows > .pa-rowwrap')]
-  if (wraps().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${wraps().length} rows)`)
+  const ents = () => [...d.hostEl.querySelectorAll('.pa-written .pa-tl > .pa-ent')]
+  if (ents().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${ents().length} entries)`)
   const deck = () => d.hostEl.querySelector('.pa-written .pa-deck')
   const head = () => deck()?.querySelector('.pa-deck-row')
-  const ids = wraps().map(w => w.style.getPropertyValue('--pa-id'))
-  if (ids.join() !== 'var(--ui-accent),var(--ui-accent),var(--ui-purple)') {
-    fail(`row cards: a row's mark is not the Hermes theme's own colour (skills accent, memory purple): ${ids}`)
-  }
+  const pins = ents().map(e => e.querySelector(':scope > .pa-pin svg')?.getAttribute('data-g'))
+  if (pins.length !== 3 || pins.some(p => !p)) fail(`row cards: a Written entry has no pin: ${pins}`)
   const own = sheet.match(/oklch\((?!from var\(--ui-)|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
   if (own) fail(`theme colours: the panel paints colours of its own instead of the Hermes theme's: ${own.join(' ')}`)
-  const pips = [...(deck()?.querySelectorAll('.pa-ko') || [])].map(p => p.getAttribute('data-k')).join()
-  if (deck()?.querySelector('[data-slot="badge"]')?.textContent !== '3' || pips !== 'apply,rejected,apply'
+  if (deck()?.querySelector('[data-slot="badge"]')?.textContent !== '3'
     || !(head()?.textContent || '').includes('2 saved · 1 not saved') || head()?.getAttribute('aria-expanded') !== 'false'
     || deck()?.querySelector('.pa-act-sub')) {
-    fail(`decks: the closed deck does not read "software-factory 3 · 2 saved · 1 not saved" with pips ${pips}`)
+    fail(`decks: the closed deck does not read "software-factory 3 · 2 saved · 1 not saved": ${head()?.textContent}`)
   }
   if (deck()?.getAttribute('data-on') !== '1') fail('decks: the closed deck holding the selected record is not marked')
   await click(head(), 40)
   const subs = () => [...(deck()?.querySelectorAll('.pa-act-sub[data-entry]') || [])]
-  if (head()?.getAttribute('aria-expanded') !== 'true' || subs().map(s => s.dataset.entry).join() !== 'deck0001,deck0002,deck0003'
-    || deck()?.style.height !== '173px') {
-    fail(`decks: opening the deck does not show its 3 records in one 173 px card (${deck()?.style.height})`)
+  if (head()?.getAttribute('aria-expanded') !== 'true' || subs().map(s => s.dataset.entry).join() !== 'deck0001,deck0002,deck0003') {
+    fail('decks: opening the deck does not show its 3 records in place')
   }
   if (actDetail(d.hostEl)?.getAttribute('data-entry') !== 'deck0001' || subs()[0]?.getAttribute('aria-current') !== 'true') {
     fail('decks: the newest record of the opened deck is not the one shown')
@@ -5549,7 +5520,7 @@ REST.scan = 'ok'
   await click(subs()[0], 40)
   if (!buttons(actDetail(d.hostEl), /^Undo$/).length) fail('decks: a record inside a deck lost its own Undo')
   await click(head(), 40)
-  if (head()?.getAttribute('aria-expanded') !== 'false' || subs().length || deck()?.style.height !== '74px') {
+  if (head()?.getAttribute('aria-expanded') !== 'false' || subs().length) {
     fail('decks: the opened deck does not close again')
   }
   d.root.unmount()
@@ -5601,7 +5572,7 @@ REST.scan = 'ok'
   const v = await mount('en', 'page')
   for (const name of [/^Activity/, /^Memory/]) {
     await click(tab(v.hostEl, name), 60)
-    if (/the change waits here until you decide/.test(v.hostEl.querySelector('.pa-root > .pa-top')?.textContent || '')) {
+    if (/the change waits here until you decide|None is written until you save it/.test(v.hostEl.textContent)) {
       fail(`visual review: the ${name.source.slice(1)} tab repeats the Needs you explanation in its top card`)
     }
   }
@@ -5611,7 +5582,7 @@ REST.scan = 'ok'
   REST.memory = { ...MEMORY, memory: { ...MEMORY.memory, chars: 2250, percent: 102 } }
   const m = await mount('en', 'page')
   await click(tab(m.hostEl, /^Memory/), 60)
-  const pct = [...m.hostEl.querySelectorAll('.pa-memrow-top > b')].map(b => [b.textContent, b.getAttribute('data-full')])
+  const pct = [...m.hostEl.querySelectorAll('.pa-mfile .pa-mfile-pct')].map(b => [b.textContent, b.getAttribute('data-full')])
   if (!pct.some(([text, k]) => text === '102% · full' && k === 'bad')) {
     fail(`visual review: a file over its limit still reads “nearly full” in the warning tone: ${JSON.stringify(pct)}`)
   }
@@ -5621,57 +5592,55 @@ REST.scan = 'ok'
   REST.pending = null
   REST.mode = 'groups'
   const g = await mount('en', 'page')
-  await selectMode(g.hostEl)
-  const preview = g.hostEl.querySelector(`.pa-row[data-key="skills:${CLEAN_GROUP}"] .pa-row-preview`)?.textContent
-  if (preview !== 'SKILL.md · notes.md') {
-    fail(`visual review: a group row's second line repeats its title instead of naming its files: ${JSON.stringify(preview)}`)
+  const gcard = g.hostEl.querySelector(`.pa-lc[data-key="skills:${CLEAN_GROUP}"]`)
+  const preview = gcard?.querySelector('.pa-lc-s')?.textContent || ''
+  if (!preview || preview.includes(gcard?.querySelector('.pa-lc-t')?.textContent || '\u0000')) {
+    fail(`visual review: a group card's second line repeats its title: ${JSON.stringify(preview)}`)
+  }
+  await toFront(g.hostEl, `skills:${CLEAN_GROUP}`)
+  const files = g.hostEl.querySelector('.pa-detail')?.textContent || ''
+  if (!files.includes('SKILL.md') || !files.includes('notes.md')) {
+    fail('visual review: the group record does not name its files SKILL.md and notes.md')
   }
   g.root.unmount()
   g.hostEl.remove()
   REST.mode = 'normal'
 }
 
-// --- 30) Recurrence gate (Unreleased): candidates wait in their own collapsed section ----------------
-// Skill changes the agent made on its own arrive as `candidates`; they never count as waiting cards
-// (chip, tab badge, list head), sit under one collapsed "Candidates · N" header in the list column and
-// open into the same detail as a card. An expired candidate is an Activity row with a plain Restore.
+// --- 30) Recurrence gate (Unreleased): candidates wait on the Parked branch ---------------------------
+// Skill changes the agent made on its own arrive as `candidates`; they never count as waiting cards (chip,
+// station badges, the header sentence), sit as cards on one "Parked · N" branch below the line that names its
+// leave rule, and open into the same Record as a card. An expired candidate is a Written entry with a plain Restore.
 {
-  const cellOf = (h, key) => h.querySelector(`.pa-cell[data-key="${key}"]`)
-  const head = h => h.querySelector('.pa-cand-head')
-  const candRows = h => [...h.querySelectorAll('.pa-cand-rows .pa-rowwrap')]
-  const listHead = h => h.querySelector('.pa-split .pa-list-head')?.textContent || ''
+  const cellOf = (h, key) => h.querySelector(`.pa-detail[data-key="${key}"]`)
+  const park = h => h.querySelector('.pa-line > .pa-park')
+  const candCards = h => [...h.querySelectorAll('.pa-park .pa-park-cards > .pa-lc')]
+  const headLine = h => h.querySelector('.pa-hd .pa-hd-line')?.textContent || ''
+  const badges = h => +(h.querySelector('.pa-st[data-st="proposes"] .pa-cnt')?.textContent || 0)
   REST.mode = 'cand'
   const page = await mount('en')
   if (!/^2 awaiting approval/.test(page.chipText)) fail(`candidates: the chip counts candidates: ${page.chipText}`)
-  if (page.hostEl.querySelector('[role="tab"] [data-slot="badge"]')?.textContent !== '2') {
-    fail('candidates: the Needs you badge counts candidates')
+  if (badges(page.hostEl) !== 2) fail(`candidates: the Hermes proposes badge counts candidates: ${badges(page.hostEl)}`)
+  if (!headLine(page.hostEl).startsWith('2 changes are on the line.')) {
+    fail(`candidates: the header sentence counts candidates: ${headLine(page.hostEl)}`)
   }
-  if (!listHead(page.hostEl).startsWith('Waiting · 2')) fail(`candidates: list head counts candidates: ${listHead(page.hostEl)}`)
-  const h0 = head(page.hostEl)
-  if (!h0 || h0.tagName !== 'BUTTON' || h0.getAttribute('type') !== 'button') fail('candidates: the header is not a button')
-  if (h0?.getAttribute('aria-expanded') !== 'false') fail('candidates: the section does not start collapsed')
-  if (!h0?.getAttribute('aria-controls')) fail('candidates: the header names no controlled region')
-  if (h0?.style.height !== `${H_CAND}px`) fail(`candidates: header height is not H.candHead: ${h0?.style.height}`)
-  if (!(h0?.textContent || '').includes('Candidates · 3')) fail(`candidates: header text wrong: ${h0?.textContent}`)
-  const hint = page.hostEl.querySelector('.pa-cand-hint')
-  if (!/14 days/.test(hint?.textContent || '') || hint?.closest('[data-tip]') === null) {
-    fail('candidates: the one-line hint is missing, does not name the days or has no Tip')
+  const p0 = park(page.hostEl)
+  if (p0?.querySelector('.pa-park-head h3')?.textContent !== 'Parked · 3') {
+    fail(`candidates: the Parked branch is not titled "Parked · 3": ${p0?.querySelector('h3')?.textContent}`)
   }
-  if (candRows(page.hostEl).length || page.hostEl.querySelector('.pa-row[data-key="skills:c0ffee01"]')) {
-    fail('candidates: a collapsed section still draws candidate rows')
+  if (!/14 days/.test(p0?.querySelector('.pa-park-head p')?.textContent || '')) {
+    fail('candidates: the Parked branch does not name the days a candidate waits')
   }
-  await click(h0, 40)
-  if (head(page.hostEl)?.getAttribute('aria-expanded') !== 'true') fail('candidates: the header does not expand')
-  const rows = candRows(page.hostEl)
-  const cardRow = page.hostEl.querySelector('.pa-list-rows > .pa-rowwrap')
-  if (rows.length !== 3 || rows.some(r => r.style.height !== cardRow?.style.height)) {
-    fail(`candidates: expanded rows are not 3 of the card row height: ${rows.map(r => r.style.height)}`)
+  const cards = candCards(page.hostEl)
+  if (cards.length !== 3 || cards.some(c => stationOf(page.hostEl, c.getAttribute('data-key')) !== 'parked')) {
+    fail(`candidates: the branch does not hold the 3 candidates as cards: ${cards.length}`)
   }
-  if (rows.some(r => r.querySelector('.pa-cb')) || !rows.every(r => r.textContent.includes('Candidate'))) {
-    fail('candidates: a candidate row has a checkbox or lacks the word "Candidate"')
-  }
-  if (!listHead(page.hostEl).startsWith('Waiting · 2')) fail('candidates: expanding changed the list head count')
-  await click(page.hostEl.querySelector('.pa-row[data-key="skills:c0ffee01"]'), 60)
+  if (cards.some(c => c.closest('.pa-cols'))) fail('candidates: a candidate is drawn on the line as a waiting card')
+  await selectMode(page.hostEl)
+  if (candCards(page.hostEl).some(c => c.querySelector('.pa-pick'))) fail('candidates: a parked card can be picked')
+  const cancel = buttons(page.hostEl.querySelector('.pa-line > .pa-bulk'), /^Cancel$/)[0]
+  if (cancel) await click(cancel, 30)
+  await click(rowOf(page.hostEl, 'skills:c0ffee01'), 60)
   const cell = cellOf(page.hostEl, 'skills:c0ffee01')
   if (!cell?.querySelector('.pa-card') || !primaryBtn(cell) || !declineBtn(cell)) {
     fail('candidates: opening a candidate does not show the record detail with its buttons')
@@ -5701,29 +5670,34 @@ REST.scan = 'ok'
   REST.gone = null
 
   const tr = await mount('tr')
-  await click(head(tr.hostEl), 40)
   noRawKeys(liveText(tr.hostEl), 'candidates tr')
-  if (!liveText(tr.hostEl).includes('Candidates · 3')) fail('candidates: the header is not English under tr')
+  if (!liveText(tr.hostEl).includes('Parked · 3')) fail('candidates: the branch title is not English under tr')
   tr.hostEl.remove()
   tr.chipEl.remove()
 
   REST.pending = { ...PENDING_CAND, skills: [], counts: { memory: 0, skills: 0 }, candidates: PENDING_CAND.candidates.slice(0, 2) }
   REST.count = { counts: { memory: 0, skills: 0 }, records: { memory: 0, skills: 2 }, candidates: 2 }
   const lone = await mount('en')
-  if (lone.hostEl.querySelector('.pa-root > .pa-top .pa-clear-title')?.textContent !== 'All caught up') {
+  if (lone.hostEl.querySelector('.pa-cols > .pa-allclear h2')?.textContent !== 'All caught up') {
     fail('candidates: 0 cards + 2 candidates does not read "All caught up"')
   }
-  if (!(head(lone.hostEl)?.textContent || '').includes('Candidates · 2') || head(lone.hostEl)?.getAttribute('aria-expanded') !== 'false') {
-    fail('candidates: 0 cards + 2 candidates does not show the collapsed section')
+  const see = lone.hostEl.querySelector('.pa-allclear .pa-see-parked')
+  if (!see || see.getAttribute('aria-expanded') !== 'false' || park(lone.hostEl)) {
+    fail('candidates: 0 cards + 2 candidates does not offer a collapsed "See parked"')
   }
-  if (lone.hostEl.querySelector('[role="tab"] [data-slot="badge"]')) fail('candidates: the badge shows for candidates only')
+  if (see) await click(see, 40)
+  if (see?.getAttribute('aria-expanded') !== 'true' || candCards(lone.hostEl).length !== 2
+      || park(lone.hostEl)?.querySelector('h3')?.textContent !== 'Parked · 2') {
+    fail('candidates: "See parked" does not open the 2 parked cards')
+  }
+  if (badges(lone.hostEl)) fail('candidates: a station badge shows for candidates only')
   lone.hostEl.remove()
   lone.chipEl.remove()
 
   REST.pending = { ...PENDING_CAND, candidates: [] }
   REST.count = null
   const none = await mount('en')
-  if (head(none.hostEl)) fail('candidates: 0 candidates still draws the section')
+  if (park(none.hostEl) || none.hostEl.querySelector('.pa-see-parked')) fail('candidates: 0 candidates still draws the branch')
   none.hostEl.remove()
   none.chipEl.remove()
 
@@ -5731,7 +5705,7 @@ REST.scan = 'ok'
   REST.pending = older
   const before = problems.length
   const old = await mount('en')
-  if (head(old.hostEl) || !old.hostEl.querySelector('.pa-row[data-key="skills:aaa11111"]')) {
+  if (park(old.hostEl) || !rowOf(old.hostEl, 'skills:aaa11111')) {
     fail('candidates: a /pending without `candidates` does not render its cards')
   }
   if (problems.length !== before) fail('candidates: a /pending without `candidates` raised an error')
@@ -5743,9 +5717,9 @@ REST.scan = 'ok'
   REST.history = HISTORY_EXPIRED
   const hist = await mount('en', 'page')
   await click(tab(hist.hostEl, /Activity/), 60)
-  const actHead = hist.hostEl.querySelector('.pa-written .pa-list-head')?.textContent || ''
+  const actHead = hist.hostEl.querySelector('.pa-written .pa-day')?.textContent || ''
   if (!actHead.startsWith('Today') || /saved/.test(actHead)) {
-    fail(`expired: the Activity day tally counts an expired row: ${actHead}`)
+    fail(`expired: the Written day tally counts an expired row: ${actHead}`)
   }
   const exp = await actFind(hist.hostEl, 'Expired')
   if (!exp) fail('expired: no Activity row reads "Expired"')
