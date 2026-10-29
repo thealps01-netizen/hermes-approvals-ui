@@ -1187,31 +1187,78 @@ def test_card_shows_size_and_tasks_and_runs_on_click():
     assert env.pa.test_start({"id": "97400001"}) == {"ok": True}
     done = _test_done(env, "97400001")
     assert done["verdict"] == "better" and [r["winner"] for r in done["results"]] == ["new"] * 3, done
-    assert len(env.calls) - calls == 9, f"a test made {len(env.calls) - calls} model calls, not 6 answers + 3 grades"
-    assert sum("NEW-RULE" in s for s in env.seen) == 3, "the new skill text did not reach exactly three answers"
+    assert [r["rounds"] for r in done["results"]] == [["new"] * 3] * 3, done
+    assert len(env.calls) - calls == 36, \
+        f"a test made {len(env.calls) - calls} model calls, not 3 tasks x 3 rounds x (2 answers + 2 grades)"
+    assert sum("NEW-RULE" in s for s in env.seen) == 9, "the new skill text did not reach exactly nine answers"
     env.stage("skills", "97400001", {"action": "patch", "name": "own-skill", "old_string": "alpha",
                                        "new_string": "alpha\nNEW-RULE: always do the other thing."})
     again = env.item("skills", "97400001")["test"]
     assert again["status"] == "none" and again.get("stale") and "verdict" not in again, again
 
 
+def _scripted(picks: dict) -> "Env":
+    """A grader that answers from a per-task script of picks, one pick per grading in call order.
+
+    A pick is new / old / tie (the side it means, whatever position that side holds), or A / B (a position,
+    whatever side sits there - a grader with a position habit)."""
+    left = {task: iter(seq) for task, seq in picks.items()}
+
+    def grade(material):
+        pick = next(left[next(t for t in left if f"task {t[1:]}" in material)])
+        if pick in ("A", "B", "tie"):
+            return {"winner": pick, "reason": f"r-{pick}"}
+        new_first = material.index("NEW-ANSWER") < material.index("OLD-ANSWER")
+        return {"winner": "A" if (pick == "new") == new_first else "B", "reason": f"r-{pick}"}
+
+    return _tested_env(grade)
+
+
+def _run3(env: "Env") -> dict:
+    return env.pa._test_run({"name": "own-skill", "before": "alpha", "after": "alpha NEW-RULE"}, _TASKS, 0.0)
+
+
 @case
 def test_verdict_needs_a_win_and_no_loss():
-    run = None
+    always = {"new": ["new"] * 6, "old": ["old"] * 6, "tie": ["tie"] * 6}
     for table, want in ((["new", "tie", "tie"], "better"), (["new", "old", "tie"], "not_better"),
                         (["tie", "tie", "tie"], "not_better")):
-        order = iter(table)
-
-        def grade(material, order=order):
-            pick = next(order)
-            if pick == "tie":
-                return {"winner": "tie", "reason": "r"}
-            new_first = material.index("NEW-ANSWER") < material.index("OLD-ANSWER")
-            return {"winner": "A" if (pick == "new") == new_first else "B", "reason": "r"}
-
-        env = _tested_env(grade)
-        run = env.pa._test_run({"name": "own-skill", "before": "alpha", "after": "alpha NEW-RULE"}, _TASKS, 0.0)
+        run = _run3(_scripted({f"t{n}": always[pick] for n, pick in enumerate(table, 1)}))
         assert run["verdict"] == want and [r["winner"] for r in run["results"]] == table, (table, run)
+
+
+@case
+def test_a_task_wins_only_when_every_round_and_both_orders_agree():
+    # Measured on the owner's four skills with the same text on both sides: one grading per task named a
+    # winner for 9 of 12 tasks, and a test came out "better" for an unchanged skill. A win now needs the
+    # same side in both orders of every round.
+    env = _scripted({"t1": ["new", "new", "new", "tie"],            # round 2 splits: tie, stops
+                     "t2": ["A", "A"],                             # position habit: orders disagree
+                     "t3": ["new", "new", "old", "old"]})          # rounds disagree: tie, stops
+    calls = len(env.calls)
+    run = _run3(env)
+    assert [r["winner"] for r in run["results"]] == ["tie"] * 3 and run["verdict"] == "not_better", run
+    assert [r["rounds"] for r in run["results"]] == [["new", "tie"], ["tie"], ["new", "old"]], run
+    assert len(env.calls) - calls == 4 * 2 + 4 * 1 + 4 * 2, \
+        f"{len(env.calls) - calls} model calls: a task kept running after its rounds disagreed"
+    assert all(r["reason"] for r in run["results"]), "a tie from split rounds carries no reason"
+
+
+@case
+def test_a_result_from_the_one_round_method_shows_as_not_run():
+    env = _tested_env()
+    env.skill("own-skill", "alpha\n")
+    _evals(env, "own-skill", _TASKS)
+    _grow(env, "97400003")
+    env.settle("skills", "97400003")
+    record, members = env.pa._test_unit("97400003")
+    folder = env.home / "state" / "pending-approvals" / "tests"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "97400003.json").write_text(json.dumps({
+        "status": "done", "verdict": "better", "key": env.pa._test_key(members),
+        "results": [{"id": "t1", "winner": "new", "reason": "r"}]}), encoding="utf-8")
+    view = env.item("skills", "97400003")["test"]
+    assert view["status"] == "none" and view.get("stale") and "verdict" not in view, view
 
 
 @case

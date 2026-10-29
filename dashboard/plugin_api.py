@@ -756,6 +756,7 @@ _TEXT = {
     'test_no_reviewer': 'No model is assigned to the approvals review (Settings → Models); it grades the test.',
     'test_busy': 'Another side-by-side test is running. Start this one when it has finished.',
     'test_same_session': 'Skipped: this task comes from the session that wrote the change.',
+    'test_split': 'The gradings did not all pick the same side, so this counts as a tie.',
     'test_empty': 'the model gave an empty answer',
     'test_bad_grade': 'the grading model did not answer with the expected JSON: {text}',
     'review_bad_answer': 'the review model did not answer with the expected JSON: {text}',
@@ -3676,6 +3677,7 @@ def _review_gate(subsystem: str, record: dict, only: list, skip_review: bool,
 
 _TEST_TASK = "approvals_test"
 _TEST_TASKS = 3
+_TEST_ROUNDS = 3
 _TEST_TIMEOUT = 300
 _TEST_NEAR = 3600
 _TEST_WEEK_TTL = 120
@@ -3804,7 +3806,7 @@ def _test_view(unit: str, record: dict, members: list[dict], week: bool = True) 
     if unit in _TEST_RUNNING:
         view["status"] = "running"
     elif saved := _test_read(unit):
-        if saved.get("key") == _test_key(members):
+        if saved.get("key") == _test_key(members) and saved.get("rounds") == _TEST_ROUNDS:
             view.update({k: saved[k] for k in ("status", "verdict", "results", "usage", "model", "error",
                                                "finished") if k in saved})
         else:
@@ -3871,10 +3873,17 @@ def _test_near(task: dict, created: float) -> bool:
     return start <= created <= end + _TEST_NEAR
 
 
-def _test_run(subject: dict, tasks: list[dict], created: float, rng=None) -> dict:
-    import random
+def _test_round(subject: dict, task: dict, usage: dict, route: dict) -> tuple[str, str]:
+    old = _test_answer(subject["before"], str(task["prompt"]), usage, route)
+    new = _test_answer(subject["after"], str(task["prompt"]), usage, route)
+    first = _test_grade(task, old, new, usage)
+    second = _test_grade(task, new, old, usage)
+    a = {"A": "old", "B": "new"}.get(first["winner"], "tie")
+    b = {"A": "new", "B": "old"}.get(second["winner"], "tie")
+    return (a, second["reason"] or first["reason"]) if a == b else ("tie", "")
 
-    rng = rng or random.Random()
+
+def _test_run(subject: dict, tasks: list[dict], created: float) -> dict:
     route: dict = {}
     usage: dict = {"input": 0, "output": 0}
     results = []
@@ -3883,18 +3892,25 @@ def _test_run(subject: dict, tasks: list[dict], created: float, rng=None) -> dic
         if _test_near(task, created):
             results.append({"id": tid, "winner": "skipped", "reason": _tx("test_same_session")})
             continue
-        old = _test_answer(subject["before"], str(task["prompt"]), usage, route)
-        new = _test_answer(subject["after"], str(task["prompt"]), usage, route)
-        flip = rng.random() < 0.5
-        said = _test_grade(task, new if flip else old, old if flip else new, usage)
-        winner = {"A": "new" if flip else "old", "B": "old" if flip else "new"}.get(said["winner"], "tie")
-        results.append({"id": tid, "winner": winner, "reason": said["reason"]})
+        rounds: list[str] = []
+        reason = ""
+        while len(rounds) < _TEST_ROUNDS:
+            side, reason = _test_round(subject, task, usage, route)
+            rounds.append(side)
+            if side == "tie" or side != rounds[0]:
+                break
+        if len(rounds) == _TEST_ROUNDS and rounds[0] != "tie":
+            results.append({"id": tid, "winner": rounds[0], "reason": reason, "rounds": rounds})
+        else:
+            why = reason if len(rounds) == 1 and reason else _tx("test_split")
+            results.append({"id": tid, "winner": "tie", "reason": why, "rounds": rounds})
     judged = [r["winner"] for r in results if r["winner"] != "skipped"]
     if not judged:
         verdict = "none"
     else:
         verdict = "better" if "new" in judged and "old" not in judged else "not_better"
-    return {"status": "done", "verdict": verdict, "results": results, "usage": usage, "model": route.get("model") or ""}
+    return {"status": "done", "verdict": verdict, "results": results, "usage": usage,
+            "model": route.get("model") or "", "rounds": _TEST_ROUNDS}
 
 
 def _test_job(unit: str, key: str, subject: dict, tasks: list[dict], created: float) -> None:

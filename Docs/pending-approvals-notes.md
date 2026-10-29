@@ -1892,6 +1892,25 @@ write the backend refuses for size. A record whose `fit.after` exceeds `fit.limi
 - **Verdict rule.** Better = at least one win and no loss (wiki: shrink-not-delete measurement, 15 Oct).
 - **Who picks the model.** Answers: the "Approvals side-by-side test" auxiliary task (auto = main
   model, the model the skill really runs with). Grading: the "Approvals review" task.
+- **Why three rounds, both orders, all agree (1.19.0).** Measured 2026-10-29 on the four skills with
+  tasks, 3 rounds per task, each round graded in both orders (72 rounds, about 1.28M tokens):
+  - *Control* (same SKILL.md on both sides; the right answer is a tie): one grading per task named a
+    winner for 9 of 12 tasks, and 1 of 4 tests read "better". Per round in one order: 13 new, 13 old,
+    10 tie.
+  - *Positive* (no skill against the skill): 35 of 36 rounds picked the skill.
+  - Rules on the same data (tests "better" in control / in positive; bootstrap over rounds in brackets):
+    one grading 1/4 (16%) / 4/4; both orders, one round 2/4 (19%) / 4/4; 3 rounds, one order, all
+    agree 0/4 (12%) / 4/4; **3 rounds, both orders, all agree 0/4 (6%) / 4/4**; majority of 3 rounds
+    0/4 (17%) / 4/4. The chosen rule is the only one well under the single grading.
+  - Limit: the positive case is a large difference (no skill at all). A small real edit can also come
+    out as a tie; "not better" means "no difference was shown", not "worse".
+  - A task stops at its first round that does not agree; the outcome is the same as running all 3,
+    with fewer calls. Full cost: 18 answers + 18 gradings, about 17.8k tokens per round at the measured
+    size, so about 160k per test.
+  - A round's reason is kept only when both gradings agree; a split round's two reasons argue for
+    opposite sides, so a tie from a split shows "The gradings did not all pick the same side".
+  - Saved results carry `rounds: 3`; a result without it is from the one-grading method and shows as
+    not run.
 
 
 ## Related skills that cannot load (1.18.0)

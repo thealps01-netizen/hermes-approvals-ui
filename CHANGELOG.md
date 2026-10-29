@@ -5,6 +5,22 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.19.0
+
+### Fixed
+
+* **The side-by-side test no longer calls an unchanged skill better.** Measured on the four skills that
+  have test tasks, with the same SKILL.md on both sides: one grading per task named a winner for 9 of 12
+  tasks, and one of the four tests came out "The new form is better" although nothing had changed. A
+  task now runs up to 3 rounds; each round answers it afresh with both forms and grades the pair twice
+  with the positions swapped. The task counts as won only when every grading of all 3 rounds picks the
+  same side; otherwise it is a tie. On the same measurement this gave 0 of 4 false "better" results (a
+  resampling estimate puts the remaining rate near 6%, against 16% before), while a skill compared with
+  no skill at all still came out better in 4 of 4. A task stops at its first round that does not agree,
+  so a test costs up to 18 answers and 18 gradings (about 160,000 tokens at the measured size), less
+  when rounds split early. The card states the rule under the Test button. A test result saved by the
+  earlier one-round method shows as "Not run on this version".
+
 ## 1.18.0
 
 ### Added

@@ -208,7 +208,8 @@ const BUNDLES = {
       test: {
         title: 'Side-by-side test',
         size: (skill, before, after) => `${skill} · ${before} → ${after} lines`,
-        cost: 'about 6 answers + 3 gradings',
+        cost: 'up to 18 answers + 18 gradings',
+        rule: 'Each task runs up to 3 rounds and is graded in both orders; it counts as won only when every grading picks the same side.',
         week: p => `this week ${Math.round(p)}% used`,
         notRun: 'Not run',
         stale: 'Not run on this version — the change moved on since the last test',
@@ -1947,6 +1948,7 @@ function TestPanel({ t, test, id, busy, run, onChanged }) {
           jsx('span', { role: 'status', children: testHead(t, test, status) }, 'state')]
       }, 'head'),
       jsx('div', { className: 'pa-test-meta', children: meta }, 'meta'),
+      jsx('div', { className: 'pa-test-meta', children: t('pa.test.rule') }, 'rule'),
       ...rows,
       jsxs('div', {
         className: 'pa-test-act',
