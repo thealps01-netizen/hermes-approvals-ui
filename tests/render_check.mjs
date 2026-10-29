@@ -1177,8 +1177,9 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 // THE SAME PANEL UNDER ANOTHER APP LOCALE: the bundle has only `en`, so the app falls back to it —
 // the frame must stay English instead of printing keys or a second language.
 const other = await mount('tr')
+const otherLine = liveText(other.hostEl)
 await toFront(other.hostEl, 'skills:aaa11111')
-const otherSwept = liveText(other.hostEl)
+const otherSwept = otherLine + ' ' + liveText(other.hostEl)
 must(otherSwept, ['Hermes proposes', 'Save skill', 'new-skill'], 'app locale tr')
 noRawKeys(otherSwept, 'app locale tr')
 
@@ -1291,6 +1292,7 @@ for (const mounted of [en, other]) {
   // The split shows one record's detail at a time; walk all 3 rows of the list through the detail column.
   const keys = ['memory:abc12345', 'skills:def67890', 'skills:aaa11111']
   const reachable = () => reachableKeys(en.hostEl)
+  await toLine(en.hostEl)
   if (reachable().size !== 3) fail(`expected 3 reachable pending records, found ${reachable().size}`)
   const html = en.hostEl.innerHTML
   if (!html.includes('.pa-leaving{opacity:0')) fail('the leaving animation class is not defined')
@@ -1312,8 +1314,8 @@ for (const mounted of [en, other]) {
     if ([...(card?.querySelectorAll('*') || [])].some(el => el.style.overflowY === 'auto')) {
       fail(`"${key}" holds its own inline scroll box — the detail body is the one scroll box`)
     }
-    const heads = card?.querySelectorAll('.pa-dh').length
-    if (heads !== 1 || card?.querySelectorAll('.pa-dh [role="heading"]').length !== 1) {
+    const heads = card?.querySelectorAll('.pa-dtitle').length
+    if (heads !== 1 || card?.querySelectorAll('.pa-dtitle [role="heading"]').length !== 1) {
       fail(`"${key}" has no single head line`)
     }
   }
@@ -1424,7 +1426,7 @@ for (const mounted of [en, other]) {
   }
   const newCell = en.hostEl.querySelector('.pa-cell[data-key="skills:aaa11111"]')
   if (name(primaryBtn(newCell)) !== 'Save skill') fail('a new skill does not say so on its primary action')
-  if (!(newCell?.querySelector('.pa-dh')?.textContent || '').includes('new-skill')) {
+  if (!(newCell?.querySelector('.pa-dtitle')?.textContent || '').includes('new-skill')) {
     fail('a new skill does not name itself in its head line')
   }
   if (buttons(newCell, /Save with the fix/).length) {
@@ -1498,13 +1500,14 @@ for (const mounted of [en, other]) {
     fail('the panel restyles the kit buttons (!important fills, --dt-*/--theme-* mixes or a brightness hover)')
   }
   if (/font-size:10\.5px/.test(sheet)) fail('10.5px text is back (FS.micro below 11px)')
+  await toLine(en.hostEl)
   const tags = [...en.hostEl.querySelectorAll('[data-slot="badge"]')]
   const odd = tags.filter(b => b.style.height || b.style.borderRadius !== '3px' || b.style.fontWeight)
   if (!tags.length || odd.length || /\.pa-pill\{|\.pa-deck-count\{/.test(sheet)) {
     fail(`a tag is restyled or hand-built instead of the kit Badge: ${JSON.stringify(odd.map(b => b.textContent))}`)
   }
-  if (!/\.pa-chips\{[^}]*flex-wrap:wrap/.test(sheet) || !/\.pa-chip\{[^}]*display:inline-flex/.test(sheet)) {
-    fail('the check chips of the verdict card do not wrap as one row of chips')
+  if (!/\.pa-chips\{display:flex;flex-direction:column/.test(sheet) || !/\.pa-chip\{[^}]*display:inline-flex/.test(sheet)) {
+    fail('the passed checks of the side column are not one list of check lines')
   }
   await toFront(en.hostEl, 'skills:def67890')
   const fixBtn = primaryBtn(en.hostEl.querySelector('.pa-cell[data-key="skills:def67890"]'))
@@ -1652,7 +1655,7 @@ must(en.hostEl.textContent, ['Changed outside Approvals · 2 files', 'Saved to m
   'Changed outside Approvals', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
 must(en.hostEl.textContent, [HIST_TAIL], 'the whole history summary, not its first 220 characters')
 const actRow = (hostEl, id) => hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`)
-const actDetail = hostEl => hostEl.querySelector('.pa-activity .pa-detail .pa-card[data-entry]')
+const actDetail = hostEl => hostEl.querySelector('.pa-written .pa-detail .pa-card[data-entry]')
 // The Activity detail of the first row whose detail mentions `text` (selecting rows one by one).
 const actFind = async (hostEl, text) => {
   for (const row of [...hostEl.querySelectorAll('.pa-act-row[data-entry]')]) {
@@ -1665,16 +1668,16 @@ const actFind = async (hostEl, text) => {
 {
   // The timeline (activity mockup): a day heading, then one pinned entry per record (repeats fold into a
   // deck), and only the chosen entry is drawn in the right column.
-  const tl = en.hostEl.querySelector('.pa-activity .pa-wsplit > .pa-tl-col > .pa-tl[role="list"]')
+  const tl = en.hostEl.querySelector('.pa-written .pa-wsplit > .pa-tl-col > .pa-tl[role="list"]')
   if (!tl) fail('Written is not one timeline beside the chosen entry')
   const ents = [...(tl?.querySelectorAll('.pa-ent[role="listitem"], .pa-deck') || [])]
   if (ents.length !== 4) fail(`expected one timeline entry per record (4), found ${ents.length}`)
   if (ents.some(e => !e.querySelector('.pa-pin svg'))) fail('a timeline entry has no pin on the line')
   if (!tl?.querySelector('.pa-day')) fail('the timeline has no day heading')
-  if (en.hostEl.querySelectorAll('.pa-activity .pa-detail .pa-card').length !== 1) {
+  if (en.hostEl.querySelectorAll('.pa-written .pa-detail .pa-card').length !== 1) {
     fail('Written draws more than the one chosen entry')
   }
-  if (en.hostEl.querySelector('.pa-activity .pa-ent[data-on="1"] .pa-act-row')?.getAttribute('aria-current') !== 'true') {
+  if (en.hostEl.querySelector('.pa-written .pa-ent[data-on="1"] .pa-act-row')?.getAttribute('aria-current') !== 'true') {
     fail('the chosen entry is not marked on the timeline (data-on, aria-current)')
   }
 }
@@ -1767,7 +1770,7 @@ const actFind = async (hostEl, text) => {
   // 1.13: the backend clears the whole history (counts.total), not just the 4 rows shown.
   if ((clear?.textContent || '') !== 'Clear all 87 records') fail(`the clear label does not state the real total: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
-  if (!clear?.closest('.pa-activity .pa-tl-col') || clear?.closest('.pa-tl')) {
+  if (!clear?.closest('.pa-written .pa-tl-col') || clear?.closest('.pa-tl')) {
     fail('the history clear control is not at the foot of the timeline')
   }
   await click(clear)
@@ -1798,7 +1801,7 @@ const actFind = async (hostEl, text) => {
   ], counts: { applied: 2, failed: 1, undoable: 2, total: 5 } }
   const act = await mount('en', 'page')
   await click(tab(act.hostEl, /Activity/), 60)
-  must(act.hostEl.querySelector('.pa-activity .pa-tl > .pa-day')?.textContent,
+  must(act.hostEl.querySelector('.pa-written .pa-tl > .pa-day')?.textContent,
     ['Today · 3 saved · 1 not saved · 1 failed'], 'activity header: today\u2019s counts in words, no count left out')
   if (act.hostEl.querySelector('.pa-hd, .pa-bar, .pa-bar-counts')) {
     fail('Written still draws the line header or a count bar beside its own Today heading (two sources, two wordings)')
@@ -3141,7 +3144,7 @@ REST.scan = 'ok'
   }
   const oldRow = await actFind(hist.hostEl, 'an old rejection')
   if (!oldRow || buttons(oldRow, /^Restore$/).length) fail('a pre-1.10.0 rejected row offers Restore')
-  const rowHeights = [...hist.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
+  const rowHeights = [...hist.hostEl.querySelectorAll('.pa-written .pa-list-rows > .pa-rowwrap')]
     .map(w => w.style.height)
   if (new Set(rowHeights).size !== 1) {
     fail(`a history row with Restore has another height: ${JSON.stringify(rowHeights)}`)
@@ -4871,7 +4874,7 @@ REST.scan = 'ok'
     fail(`alignment: the two Memory file rows size to their own text: ${JSON.stringify(memHeights)}`)
   }
   await click(tab(pg.hostEl, /Activity/), 60)
-  const foot = pg.hostEl.querySelector('.pa-activity .pa-list > .pa-list-foot')
+  const foot = pg.hostEl.querySelector('.pa-written .pa-list > .pa-list-foot')
   if (!foot || !buttons(foot, /^Clear all/).length || foot.style.height !== '57px') {
     fail(`alignment: "Clear all" is not in the Activity list footer row (${foot?.style.height})`)
   }
@@ -5132,7 +5135,7 @@ REST.scan = 'ok'
   // 43f) narrow: a row click opens the detail (data-open="1"), Back closes it and focuses the row, "1 of 3"
   {
     const h = await mount('en', 'page')
-    const split = () => h.hostEl.querySelector('.pa-split:not(.pa-activity):not(.pa-memory)')
+    const split = () => h.hostEl.querySelector('.pa-split:not(.pa-written):not(.pa-memory)')
     if (split()?.getAttribute('data-open') !== '0') fail('narrow: the list is not the first view')
     await click(rowOf(h.hostEl, 'memory:abc12345'), 30)
     if (split()?.getAttribute('data-open') !== '1') fail('narrow: a row click does not open the detail')
@@ -5282,16 +5285,16 @@ REST.scan = 'ok'
     fail('rework 2 item 14: at narrow widths the crumb time does not move under the title')
   }
   await click(tab(act.hostEl, /Activity/), 60)
-  const actSeps = [...act.hostEl.querySelectorAll('.pa-activity .pa-dh .pa-crumb-sep')].map(x => x.textContent)
+  const actSeps = [...act.hostEl.querySelectorAll('.pa-written .pa-dh .pa-crumb-sep')].map(x => x.textContent)
   if (actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
-  if (/#\w/.test(act.hostEl.querySelector('.pa-activity .pa-dh .pa-crumb')?.textContent || '')) {
+  if (/#\w/.test(act.hostEl.querySelector('.pa-written .pa-dh .pa-crumb')?.textContent || '')) {
     fail('the Activity crumb still shows a record id; it belongs under Details')
   }
-  const noFiles = [...act.hostEl.querySelectorAll('.pa-activity .pa-row[data-entry]')]
+  const noFiles = [...act.hostEl.querySelectorAll('.pa-written .pa-row[data-entry]')]
   let plain = null
   for (const row of noFiles) {
     await click(row, 20)
-    const none = [...act.hostEl.querySelectorAll('.pa-activity .pa-outcome .pa-chip')]
+    const none = [...act.hostEl.querySelectorAll('.pa-written .pa-outcome .pa-chip')]
       .find(c => c.textContent === 'Nothing was written')
     if (none) { plain = none; break }
   }
@@ -5395,7 +5398,7 @@ REST.scan = 'ok'
   counts: { applied: 1, failed: 0, undoable: 0 } }
   const quiet = await mount('en', 'page')
   await click(tab(quiet.hostEl, /Activity/), 60)
-  if (!(quiet.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent || '').includes('nothing yet')) {
+  if (!(quiet.hostEl.querySelector('.pa-written .pa-list-head')?.textContent || '').includes('nothing yet')) {
     fail('real data: the Activity head reads a bare "Today" when nothing was decided today')
   }
   quiet.root.unmount()
@@ -5533,9 +5536,9 @@ REST.scan = 'ok'
     fail('flat rows: the list rows are not the app\u2019s list rows (no frame, no lines between them, the app\u2019s'
       + ' row hover and row selection fills)')
   }
-  const wraps = () => [...d.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
+  const wraps = () => [...d.hostEl.querySelectorAll('.pa-written .pa-list-rows > .pa-rowwrap')]
   if (wraps().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${wraps().length} rows)`)
-  const deck = () => d.hostEl.querySelector('.pa-activity .pa-deck')
+  const deck = () => d.hostEl.querySelector('.pa-written .pa-deck')
   const head = () => deck()?.querySelector('.pa-deck-row')
   const ids = wraps().map(w => w.style.getPropertyValue('--pa-id'))
   if (ids.join() !== 'var(--ui-accent),var(--ui-accent),var(--ui-purple)') {
@@ -5764,7 +5767,7 @@ REST.scan = 'ok'
   REST.history = HISTORY_EXPIRED
   const hist = await mount('en', 'page')
   await click(tab(hist.hostEl, /Activity/), 60)
-  const actHead = hist.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent || ''
+  const actHead = hist.hostEl.querySelector('.pa-written .pa-list-head')?.textContent || ''
   if (!actHead.startsWith('Today') || /saved/.test(actHead)) {
     fail(`expired: the Activity day tally counts an expired row: ${actHead}`)
   }
