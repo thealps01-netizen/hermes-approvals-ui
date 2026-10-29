@@ -1197,6 +1197,7 @@ const STYLE = `
 .pa-clear-row{display:flex;gap:${G.xs}px;flex-wrap:wrap}
 .pa-wsplit>.pa-detail{min-width:0}
 .pa-dh{display:flex;flex-direction:column;gap:6px;padding:0;flex:none;min-width:0}
+.pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
   flex-wrap:wrap}
 .pa-crumb>span{min-width:0;overflow-wrap:anywhere}
@@ -1280,10 +1281,13 @@ const STYLE = `
   .pa-written,.pa-memory{padding:12px 14px 18px}
   .pa-wsplit{grid-template-columns:minmax(0,1fr)}
   .pa-note-row{grid-template-columns:22px minmax(0,1fr) 28px}
-  .pa-note-row>.pa-len{grid-column:2;grid-row:2}}
+  .pa-note-row>.pa-len{grid-column:2;grid-row:2}
+  .pa-body{scrollbar-gutter:stable}}
 @container (max-width:560px){
   .pa-tools{padding-left:0;border-left:0}
   .pa-mfiles{grid-template-columns:minmax(0,1fr)}
+  .pa-crumb>.pa-crumb-end[data-when]{display:none}
+  .pa-dh-when{display:block}
   .pa-btn-kbd{display:none}
   .pa-tp>span:not(.pa-node){display:none}
   .pa-meter-box{flex:1 1 100%;min-width:0}}

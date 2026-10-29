@@ -5132,12 +5132,12 @@ REST.scan = 'ok'
   // and the J/K/A/X/L keys neither fire nor throw.
   REST.pending = { counts: { memory: 0, skills: 0 }, memory: [], skills: [] }
   const clear = await mount('en', 'page')
-  if (!clear.hostEl.querySelector('.pa-clear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
-  if (clear.hostEl.querySelector('.pa-split .pa-list, .pa-split .pa-list-head, .pa-split .pa-legend')) {
-    fail('rework 2 item 2: an empty list column (header, legend) is drawn although nothing waits')
+  if (!clear.hostEl.querySelector('.pa-cols > .pa-allclear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
+  if (clear.hostEl.querySelector('.pa-cols .pa-lc, .pa-line > .pa-bulk, .pa-hd .pa-select')) {
+    fail('rework 2 item 2: a card, the bulk bar or Select is drawn although nothing waits')
   }
   const posted = stub.calls.posts.length
-  for (const k of ['j', 'k', 'a', 'x', 'l']) await keyDown(clear.hostEl.querySelector('.pa-clear') || clear.hostEl, k)
+  for (const k of ['j', 'k', 'a', 'x', 'l']) await keyDown(clear.hostEl.querySelector('.pa-allclear') || clear.hostEl, k)
   if (stub.calls.posts.length !== posted) fail('rework 2 item 2: a shortcut acted with 0 pending')
   clear.root.unmount()
   clear.hostEl.remove()
@@ -5147,21 +5147,22 @@ REST.scan = 'ok'
   // selected file's banner and notes directly below; no list→detail step and no back bar.
   const mem = await mount('en', 'page')
   const memCss = sheetOf(mem)
-  for (const rule of ['.pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}',
-    '.pa-split.pa-memory>.pa-list{display:flex;flex:none;', '.pa-split.pa-memory>.pa-detail{display:flex;flex:none}',
-    '.pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}']) {
-    const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
-    if (!narrow.includes(rule)) fail(`rework 2 item 3: the narrow Memory tab lacks ${rule}`)
-    const mid = memCss.slice(memCss.indexOf('@container (min-width:761px) and (max-width:1100px)'))
-    if (!memCss.includes('@container (min-width:761px) and (max-width:1100px)') || !mid.split('\n@')[0].includes(rule)) {
-      fail(`vitality: beside the rail (761-1100 px) the Memory tab is not one scroll: it lacks ${rule}`)
-    }
-  }
   {
-    const band = memCss.slice(memCss.indexOf('@container (min-width:761px) and (max-width:1100px)')).split('\n@')[0]
-    if (!/\.pa-verdict\{grid-template-columns:(?:auto )?minmax\(0,1fr\)[;}]/.test(band)
-        || !band.includes('.pa-vside{grid-column:1 / -1;')) {
-      fail('vitality: beside the rail the verdict strip keeps three columns and squeezes the finding to one word a line')
+    const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)')).split('}}')[0]
+    if (!narrow.includes('.pa-written,.pa-memory{padding:12px 14px 18px}')
+        || !/(^|\n)\.pa-body\{[^}]*overflow-y:auto/.test(memCss)) {
+      fail('rework 2 item 3: the narrow Memory page is not one scroll of the body')
+    }
+    await click(tab(mem.hostEl, /^Memory/), 60)
+    const page = mem.hostEl.querySelector('.pa-memory')
+    const files = page?.querySelector('.pa-mfiles')
+    const notesAt = page?.querySelector('.pa-notes-wrap')
+    if (!files || !notesAt || !(files.compareDocumentPosition(notesAt) & 4)
+        || page.querySelector('.pa-back, .pa-list, .pa-detail')) {
+      fail('rework 2 item 3: the Memory page is not the files, then the notes directly below, with no list→detail step')
+    }
+    if (!/(^|\n)\.pa-verdict\{display:flex;flex-direction:column/.test(memCss)) {
+      fail('vitality: the verdict strip is drawn in columns and squeezes the finding to one word a line')
     }
   }
 
@@ -5172,15 +5173,15 @@ REST.scan = 'ok'
   const narrow = memCss.slice(memCss.indexOf('@container (max-width:760px)'))
   const narrowBlock = narrow.split('\n@')[0]
   const rightGroup = /(^|\n)\.pa-dfoot-right\{[^}]*margin-left:auto;flex:none/.test(memCss)
-  const narrowNote = /\.pa-note-row>\.pa-note-len\{grid-column:2;grid-row:2/.test(narrowBlock)
-  const gutter = /\.pa-detail>\.pa-card\{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable\}/.test(narrowBlock)
+  const narrowNote = /\.pa-note-row>\.pa-len\{grid-column:2;grid-row:2/.test(narrowBlock)
+  const gutter = /\.pa-body\{scrollbar-gutter:stable\}/.test(narrowBlock)
   if (!rightGroup || !narrowNote || !gutter) {
     fail(`narrow footer and notes: ${[!rightGroup && 'Later splits from the buttons when the footer wraps',
       !narrowNote && 'a note length squeezes the note text', !gutter && 'the right edge moves when a record scrolls']
       .filter(Boolean).join('; ')}`)
   }
-  if (!narrowBlock.includes('.pa-dfoot>.pa-actions{flex-wrap:nowrap}')
-      || !/(^|\n)\.pa-dfoot-left\{[^}]*flex:1 1 160px\}/.test(memCss)
+  if (!/(^|\n)\.pa-actions\{[^}]*flex-wrap:nowrap;flex:none;justify-content:flex-end/.test(memCss)
+      || !/(^|\n)\.pa-dfoot-left\{[^}]*flex:1 1 200px\}/.test(memCss)
       || /pa-dfoot-left\{flex:1 1 100%\}/.test(memCss)
       || narrowBlock.includes('order:-1')
       || /\.pa-actions\{margin-left:0;justify-content:flex-start\}/.test(memCss)) {
@@ -5191,8 +5192,7 @@ REST.scan = 'ok'
   const scrolled = []
   const ownScroll = window.HTMLElement.prototype.scrollIntoView
   window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this) }
-  await click(tab(mem.hostEl, /^Memory/), 60)
-  const memDels = [...(mem.hostEl.querySelector('.pa-detail')?.querySelectorAll('.pa-note-del') || [])]
+  const memDels = [...(mem.hostEl.querySelector('.pa-notes-wrap')?.querySelectorAll('.pa-note-del') || [])]
   if (memDels.length) await click(memDels[memDels.length - 1], 60)
   if (!scrolled.some(el => el.classList?.contains('pa-note-ask'))) {
     fail(`rework 2 item 3: arming a note delete does not scroll its confirm row into view (${memDels.length} Delete buttons)`)
@@ -5227,8 +5227,9 @@ REST.scan = 'ok'
     fail(`rework 2 item 7: the failed check does not read as one sentence: ${chipText}`)
   }
   const verdict = c?.querySelector('.pa-verdict')
-  if (!buttons(verdict || c, /^Review again$/).length || buttons(c?.querySelector('.pa-dfoot') || c, /^Review again$/).length) {
-    fail('vitality: "Review again" is not inside the failed-check strip (or is still in the action bar)')
+  if (!buttons(c?.querySelector('.pa-side'), /^Review again$/).length
+      || buttons(c?.querySelector('.pa-dfoot') || c, /^Review again$/).length) {
+    fail('vitality: "Review again" is not in the side column with the failed check (or is still in the action bar)')
   }
   if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
     fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
@@ -5244,6 +5245,7 @@ REST.scan = 'ok'
   // items 10, 11, 12, 13, 14 on the Activity tab and a pending card.
   const act = await mount('en', 'page')
   const css = sheetOf(act)
+  await toFront(act.hostEl, 'skills:aaa11111')
   const full = buttons(act.hostEl.querySelector('.pa-detail'), /^Show the full review$/)[0]
   if (full) await click(full, 40)
   const kitLabel = act.hostEl.querySelector('[data-slot="panel-section-label"]')
@@ -5253,17 +5255,18 @@ REST.scan = 'ok'
   if (/text-decoration:underline/.test((css.match(/\.pa-root \.pa-chip-btn\{[^}]*\}/) || [''])[0])) {
     fail('rework 2 item 13: a failing check in a verdict chip is still underlined like a link')
   }
-  if (!/@container \(max-width:560px\)\{\s*\.pa-crumb>\.pa-crumb-end\[data-when\]\{display:none\}\s*\.pa-dh-when\{display:block\}/
-    .test(css) || !act.hostEl.querySelector('.pa-dh .pa-dh-when')) {
-    fail('rework 2 item 14: at narrow widths the crumb time does not move under the title')
-  }
   await click(tab(act.hostEl, /Activity/), 60)
+  const at560 = css.slice(css.indexOf('@container (max-width:560px){')).split('}}')[0]
+  if (!/\.pa-crumb>\.pa-crumb-end\[data-when\]\{display:none\}\s*\.pa-dh-when\{display:block\}/.test(at560)
+      || !/(^|\n)\.pa-dh-when\{display:none/.test(css) || !act.hostEl.querySelector('.pa-written .pa-dh .pa-dh-when')) {
+    fail('rework 2 item 14: the entry time is drawn twice, or at narrow widths it does not move under the title')
+  }
   const actSeps = [...act.hostEl.querySelectorAll('.pa-written .pa-dh .pa-crumb-sep')].map(x => x.textContent)
   if (actSeps.some(x => x !== '›')) fail(`rework 2 item 11: the Activity crumb separator is ${actSeps}`)
   if (/#\w/.test(act.hostEl.querySelector('.pa-written .pa-dh .pa-crumb')?.textContent || '')) {
     fail('the Activity crumb still shows a record id; it belongs under Details')
   }
-  const noFiles = [...act.hostEl.querySelectorAll('.pa-written .pa-row[data-entry]')]
+  const noFiles = [...act.hostEl.querySelectorAll('.pa-written .pa-act-row[data-entry]')]
   let plain = null
   for (const row of noFiles) {
     await click(row, 20)
