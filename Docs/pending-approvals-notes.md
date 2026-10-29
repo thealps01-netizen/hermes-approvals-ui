@@ -1957,3 +1957,28 @@ advice line had the same problem. The verdict card now shows an "N checks to rea
 glyph, a `pa-chip-btn` like the finding chips) that opens the full review; the verdict title and the
 other chips are unchanged. render_check's "Advice chip" block is red on the 1.17.0 `plugin.js` (4
 problems) and checks the one/two counts, the collapsed-then-expanded state and no chip without advice.
+
+## The line (unreleased)
+
+The owner found the panel complex and blind to what happens in the background. A full read of the
+backend showed it already returns the missing facts (where a change came from, review status and
+finish time, reviewer model and cost, each parked change's leave date) while the main screen read
+none of them, and showed 17 buttons and 76 separate texts on its default frame. Two rounds that only
+moved boxes were rejected ("the same design, only the boxes moved"); the owner then chose to draw the
+flow itself. The brief, the station rules, the source mapping and the action table are in
+`Docs/approvals-line-redesign-2026-10-30.md`; the approved mockups are in
+`Docs/approvals-line-mockups/`.
+
+- **Stations, not rows.** A record is drawn under the first station that holds it: rules (stale,
+  hard check, description fix, last error), then Reviewer (`unassigned`, `queued`, `running`,
+  `failed`), then You (`done`). The order matches the backend's own gates, so a card never sits
+  further down the line than the backend would let it go.
+- **Check all posts `/review` once per record.** The owner pressed it, so the review-on-click rule
+  (1.20.0) holds; the bulk `/reviews` route stays unused, as the audit requires.
+- **Only backend times.** `staged_at`, `review.finished`, `test.finished`, `recur.expires`, history
+  `ts`. The backend keeps a review's start (`started`) but does not return it, so no "reading for"
+  timer is drawn; inventing one would show a time nothing measured.
+- **Sources** come from `recur.path` (skills) or `item.origin`. The session kind (cron, kanban,
+  subagent) is not returned, so it is never guessed; unknown paths read "source not recorded".
+- **Narrow panes** stack the stations vertically through `@container` (never `@media`, which reads
+  the window, not the pane).
