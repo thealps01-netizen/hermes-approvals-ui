@@ -2785,9 +2785,7 @@ REST.scan = 'ok'
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
-  const pickDisabled = (host, key) => (cell(host, key)?.querySelector('.pa-pick')
-    || host.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-      ?.querySelector('.pa-pick'))?.disabled
+  const pickDisabled = (host, key) => host.querySelector(`.pa-lc[data-key="${key}"] .pa-pick`)?.disabled
   const openFull = async (host, key) => {
     await toFront(host, key)
     const btn = buttons(cell(host, key), /^Show the full review$/)[0]
@@ -2797,14 +2795,25 @@ REST.scan = 'ok'
   const gate = await mount('en')
   await selectMode(gate.hostEl)
   const approveIn = key => [primaryBtn(cell(gate.hostEl, key))].filter(Boolean)[0]
-  for (const key of ['memory:abc12345', 'skills:aaa11111']) {
-    await toFront(gate.hostEl, key)
-    if (pickDisabled(gate.hostEl, key)) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
+  for (const key of ['memory:abc12345', 'skills:aaa11111', 'skills:def67890']) {
+    if (pickDisabled(gate.hostEl, key) !== false) fail(`${key}: an unreviewed record cannot be ticked for bulk Reject`)
   }
+  await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Select all$/)[0])
+  const gateBar = gate.hostEl.querySelector('.pa-bulk')
+  if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
+  const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Save 3$/)[0]
+  if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
+  if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
+    fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
+  }
+  await click(buttons(gate.hostEl.querySelector('.pa-bulk'), /^Cancel/)[0])
+  if (gate.hostEl.querySelector('.pa-bulk')) fail('Cancel does not leave Select')
   await toFront(gate.hostEl, 'memory:abc12345')
   if (approveIn('memory:abc12345')?.getAttribute('aria-disabled') !== 'true') {
     fail('memory:abc12345: Approve is not locked while the review runs')
   }
+  if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
+    .includes('Saving unlocks when the reviewer has finished')) fail('a locked Approve does not say why in its Tip')
   // A record nobody can review yet (no model set) keeps its primary drawn and locked, and its Tip says
   // how to unlock it; there is no way around the review.
   await toFront(gate.hostEl, 'skills:aaa11111')
@@ -2818,25 +2827,12 @@ REST.scan = 'ok'
     fail('an unassigned review still offers to save without review')
   }
   await toFront(gate.hostEl, 'skills:def67890')
-  if (pickDisabled(gate.hostEl, 'skills:def67890')) fail('skills:def67890: an unreviewed record cannot be ticked for bulk Reject')
   if (name(approveIn('skills:def67890')) !== 'Use the short version') {
     fail('a description-fix record loses its short-version primary action while unreviewed')
   }
   if (approveIn('skills:def67890')?.getAttribute('aria-disabled') === 'true') {
     fail('the short-version primary action must not be locked by the pre-review')
   }
-  await toFront(gate.hostEl, 'memory:abc12345')
-  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Select all$/)[0])
-  const gateBar = gate.hostEl.querySelector('.pa-bulk')
-  if (!gateBar) fail('the bulk bar is gone while records are not pre-reviewed — they can still be rejected in bulk')
-  const gateApprove = buttons(gate.hostEl.querySelector('.pa-bulk') || gate.hostEl, /^Save 3$/)[0]
-  if (gateApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open over records that are not pre-reviewed')
-  if (!/^3 selected records need a decision of their own/.test(gateApprove?.closest('[data-tip]')?.getAttribute('data-tip') || '')) {
-    fail('the locked bulk Approve over unreviewed records does not count them in its Tip')
-  }
-  await click(buttons(gate.hostEl.querySelector('.pa-list-head'), /^Clear selection$/)[0])
-  if (!String(approveIn('memory:abc12345')?.closest('[data-tip]')?.getAttribute('data-tip'))
-    .includes('Saving unlocks when the reviewer has finished')) fail('a locked Approve does not say why in its Tip')
   await openFull(gate.hostEl, 'skills:def67890')
   must(cell(gate.hostEl, 'skills:def67890')?.textContent, ['Rule check failed', REVIEW_HARD], 'rule check')
   if (buttons(cell(gate.hostEl, 'skills:def67890'), /Save without review/).length) {
