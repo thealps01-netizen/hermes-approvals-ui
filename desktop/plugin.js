@@ -279,6 +279,7 @@ const BUNDLES = {
         tokens: (i, o) => `${grouped(i)} in / ${grouped(o)} out`,
         cost: (usd, status) => (status === 'included' ? 'included' : `$${usd.toFixed(4)} ${status}`),
         locked: 'Saving unlocks when the reviewer has finished and no rule check failed.',
+        lockedQueued: 'Saving unlocks after you press Review and the reviewer has finished.',
         skipWarn: 'This write was not checked against your rules. Save it anyway?',
         rejectWarn: 'The reviewer advises not saving this. Save it anyway?',
         title: 'Reviewer',
@@ -345,6 +346,7 @@ const BUNDLES = {
         fix: 'Shorten description',
         onlyCreate: 'Create only this',
         onlyApply: 'Save only this',
+        review: 'Review',
         reReview: 'Review again',
         approveFixed: 'Save with the fix',
         approveAsIs: 'Save as written',
@@ -457,9 +459,6 @@ const BUNDLES = {
           + 'The pending list is current; an outside change may be missing from “Activity” until a check succeeds.',
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
-        reviewsFailed: why => (why
-          ? `The reviews could not be started: ${why}. The next refresh tries again.`
-          : 'The reviews could not be started. The next refresh tries again.'),
       },
       memory: {
         warnBody: 'A new note fits only if an older one is shortened or merged. Hermes can propose which.',
@@ -550,7 +549,7 @@ const BUNDLES = {
         reasonRunning: 'the reviewer is still reading this',
         reasonUnassigned: 'no review model is set',
         failed: 'The check failed — “Review again” retries it.',
-        reasonQueued: 'the reviewer is waiting its turn',
+        reasonQueued: 'press Review to start it',
       },
     }
   }
@@ -606,7 +605,6 @@ function useAlertsMuted() {
 const api = {
   pending: () => ctxRef.rest('/pending'),
   count: () => ctxRef.rest('/count'),
-  startReviews: () => ctxRef.rest('/reviews', { method: 'POST', body: {} }),
   scan: () => ctxRef.rest('/scan', { method: 'POST', body: {} }),
   history: async () => {
     let d
@@ -682,7 +680,7 @@ const refocus = from => {
   for (const ms of [450, 900, 1500]) window.setTimeout(move, ms)
 }
 const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-const reviewWaits = item => ['running', 'queued'].includes((item.review || {}).status)
+const reviewWaits = item => (item.review || {}).status === 'running'
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || []),
   ...(d?.candidates || [])]
 const setAside = entry => entry?.kind === 'rejected' || entry?.kind === 'expired'
@@ -1373,16 +1371,7 @@ function usePending() {
     } catch (e) {
       issues.push(say('pa.empty.scanFailed', errText(e)))
     }
-    let d = await api.pending()
-    if (reviewUnits(d).some(i => (i.review || {}).status === 'queued')) {
-      try {
-        const res = await api.startReviews()
-        if (res?.ok === false) issues.push(say('pa.empty.reviewsFailed', res.error || ''))
-        else if (res?.started) d = await api.pending()
-      } catch (e) {
-        issues.push(say('pa.empty.reviewsFailed', errText(e)))
-      }
-    }
+    const d = await api.pending()
     if (!issues.length) return d
     return { ...d, issues: [...(d?.issues || []), ...issues] }
   }
@@ -1681,7 +1670,7 @@ const reviewFacts = review => {
   const hard = review.hard || []
   const major = findings.filter(f => weighty(f) && !f.unverified)
   return {
-    status: review.status === 'queued' ? 'running' : review.status || 'running',
+    status: review.status || 'running',
     hard,
     major,
     doubtful: findings.filter(f => weighty(f) && f.unverified),
@@ -2703,7 +2692,8 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const heldByRule = isGroup ? fixesInGroup.length > 0 : (Boolean(fixSingle) || refused.length > 0)
   const approveBlocked = heldByRule || reviewLocked || stale.length > 0
   const heldWhy = reviewLocked
-    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : t('pa.review.locked'))
+    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ')
+      : t(status === 'queued' ? 'pa.review.lockedQueued' : 'pa.review.locked'))
     : isGroup
       ? (stale.length ? t('pa.grp.staleHeld', changeList(stale)) : t('pa.grp.fixHeld', changeList(fixesInGroup)))
       : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
@@ -2811,11 +2801,11 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         }, f))
       }, 'steps')
     : null
-  const canAgain = status === 'done' || status === 'failed'
+  const canAgain = status === 'done' || status === 'failed' || status === 'queued'
   const againButton = jsx(Button, {
-    variant: 'outline', size: 'sm', className: 'pa-again',
+    variant: status === 'queued' ? 'default' : 'outline', size: 'sm', className: 'pa-again',
     disabled: Boolean(busy) && busy !== 'review', loading: busy === 'review',
-    onClick: () => void reviewAgain(), children: t('pa.btn.reReview')
+    onClick: () => void reviewAgain(), children: t(status === 'queued' ? 'pa.btn.review' : 'pa.btn.reReview')
   }, 'again')
   const fit = subsystem === 'memory' && plain.fit && typeof plain.fit.before === 'number'
     && typeof plain.fit.after === 'number' && plain.fit.limit ? plain.fit : null
@@ -4721,15 +4711,10 @@ function Chip() {
   }, [])
   const n = total(data?.counts)
   const seen = useRef(null)
-  const polled = useRef('0|0|0|0')
 
   useEffect(() => {
     if (data?.counts === undefined) return
     livePending = n
-    const mark = [data.counts.memory, data.counts.skills, data.records?.memory, data.records?.skills]
-      .map(v => Number(v) || 0).join('|')
-    if (mark !== polled.current) void api.startReviews().catch(() => null)
-    polled.current = mark
     const last = seen.current ?? Number(ctxRef.storage?.get?.('lastCount', '-1') ?? -1)
     if (last >= 0 && n > last && !alertsMuted()) {
       host.notify({ kind: 'info', message: t('pa.notify.awaiting', n) })

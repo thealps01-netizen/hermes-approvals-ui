@@ -828,9 +828,8 @@ def check_skill_groups_panel() -> None:
             or "ids: items.filter(item => !item.parts).map(item => item.id)," not in src:
         _report("plugin.js: api.decide does not send groups under `groups` — a group decision would reach "
                 "the backend as member ids")
-    if "data.records?.memory, data.records?.skills" not in chip:
-        _report("plugin.js: the chip ignores `records` — a record joining a group would never start the "
-                "group's new review")
+    if "'/reviews'" in src:
+        _report("plugin.js: calls POST /reviews — a review would start without the owner pressing Review")
 
 
 def check_jsx_runtime_import() -> None:
@@ -1276,7 +1275,7 @@ def main() -> int:
           "number-first percentages, the two-step clear/delete/force-undo unchanged, a record that "
           "cannot be applied never bulk-approvable (bulk Approve locked, every card still tickable for "
           "bulk Reject), the status chip on /count, every /decide carrying its versions, one card and one "
-          "gated decision per skill group (`groups` on /decide, the chip watching `records`), no "
+          "gated decision per skill group (`groups` on /decide), no review started without the owner's click (no POST /reviews), no "
           "undefined name, the restatement glossary stays gone, one version across plugin.yaml, the "
           "Dashboard manifest and the changelog, the installed desktop copy byte-identical to "
           "desktop/plugin.js, and the backend keeps ONE English "

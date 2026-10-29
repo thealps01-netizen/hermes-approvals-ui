@@ -2972,10 +2972,10 @@ REST.scan = 'ok'
 }
 
 // --- 21) Review integrity (1.10.0): queued reviews, the chip on /count, restore, muted findings ------
-// A `queued` review is drawn exactly like a running one and the load that saw it starts the reviews
-// with ONE POST /reviews; a load without one starts nothing. The status chip reads only GET /count,
-// never /pending, and asks for POST /reviews once whenever its total changes (its first poll
-// included, when above 0). An unverified finding is muted and never offers its edit; the cut,
+// A `queued` review waits for the owner (1.20.0): no load and no chip poll starts it; the card says
+// "press Review to start it", keeps Approve locked, offers no save without review, and its Review
+// button posts /review for that record. The status chip reads only GET /count, never /pending, and
+// never posts /reviews. An unverified finding is muted and never offers its edit; the cut,
 // carried, siblings and outdated facts are one line each, Approve stays open and "Review again"
 // stays on the card. A rejected history row with `restorable` offers a one-click Restore that posts
 // /restore and re-reads both lists; a `restored` row reads "Restored" without a button.
@@ -2992,30 +2992,29 @@ REST.scan = 'ok'
 
   REST.mode = 'queued'
   const before = reviewsPosts()
-  const reads = GETS.filter(p => p === '/pending').length
-  const queuedLoad = await mount('en', 'page')
-  if (reviewsPosts() - before !== 1) fail(`a load with a queued review posted /reviews ${reviewsPosts() - before} times, not once`)
-  if (GETS.filter(p => p === '/pending').length - reads < 2) fail('the panel did not re-read the list after starting the reviews')
-  queuedLoad.root.unmount()
-  queuedLoad.hostEl.remove()
-  REST.mode = 'queuedstuck'
+  const reviewPosts = () => stub.calls.posts.filter(p => p.path === '/review').length
+  const singleBefore = reviewPosts()
   const queued = await mount('en', 'page')
+  await act(async () => { await new Promise(r => setTimeout(r, 120)) })
+  if (reviewsPosts() !== before || reviewPosts() !== singleBefore) {
+    fail('a load with an unreviewed card started a review on its own — the review waits for the owner')
+  }
   const qCard = cell(queued.hostEl, 'memory:abc12345')
-  {
-    const qOpen = buttons(qCard, /^Show the full review$/)[0]
-    if (qOpen) await click(qOpen, 60)
+  must(qCard?.textContent, ['press Review to start it'], 'an unreviewed card says how to start the review')
+  if (/Reading this write against your rules/.test(qCard?.textContent || '')) fail('an unreviewed card is drawn as running')
+  if ([primaryBtn(qCard)].filter(Boolean)[0]?.getAttribute('aria-disabled') !== 'true') fail('an unreviewed card leaves Approve open')
+  if (buttons(qCard, /^Save without review$/).length) fail('an unreviewed card offers to save without review')
+  const startBtn = buttons(qCard, /^Review$/)[0]
+  if (!startBtn) fail('an unreviewed card has no Review button')
+  else {
+    await click(startBtn, 60)
+    const sent = stub.calls.posts.filter(p => p.path === '/review').pop()
+    if (reviewPosts() - singleBefore !== 1 || sent?.body?.id !== 'abc12345' || sent?.body?.subsystem !== 'memory') {
+      fail(`Review on an unreviewed card sent ${JSON.stringify(sent)}`)
+    }
   }
-  must(qCard?.textContent, ['Reading this write against your rules'], 'a queued review is drawn like a running one')
-  const qBadge = qCard?.querySelector('.pa-verdict')
-  REST.mode = 'reviewing'
-  const running = await mount('en', 'page')
-  const rBadge = cell(running.hostEl, 'memory:abc12345')?.querySelector('.pa-verdict')
-  const vt = v => v?.querySelector('.pa-vtitle')?.textContent
-  if (!qBadge || vt(qBadge) !== vt(rBadge) || qBadge.getAttribute('data-k') !== rBadge?.getAttribute('data-k')) {
-    fail(`a queued card wears another verdict than a running one: ${vt(qBadge)} vs ${vt(rBadge)}`)
-  }
-  if ([primaryBtn(qCard)].filter(Boolean)[0]?.getAttribute('aria-disabled') !== 'true') fail('a queued review leaves Approve open')
-  for (const h of [queued, running]) { h.root.unmount(); h.hostEl.remove() }
+  queued.root.unmount()
+  queued.hostEl.remove()
   REST.mode = 'normal'
 
   const getsFrom = GETS.length
@@ -3024,7 +3023,7 @@ REST.scan = 'ok'
   const chipGets = GETS.slice(getsFrom)
   if (!chipGets.length || chipGets.some(p => p !== '/count')) fail(`the status chip read ${JSON.stringify(chipGets)} — only /count is allowed`)
   if (!/3 awaiting approval/.test(chip.chipText)) fail(`the chip does not count from /count: ${JSON.stringify(chip.chipText)}`)
-  if (reviewsPosts() - chipPosts !== 1) fail(`the chip's first poll with 3 pending posted /reviews ${reviewsPosts() - chipPosts} times, not once`)
+  if (reviewsPosts() !== chipPosts) fail('the chip started reviews on its own — the review waits for the owner')
   chip.chipRoot.unmount()
   REST.mode = 'chipzero'
   const zeroPosts = reviewsPosts()
@@ -3328,17 +3327,20 @@ REST.scan = 'ok'
 
   await stopLeftMounts()
   REST.mode = 'groupsqueued'
-  const qPosts = postsTo('/reviews').length
+  const qPosts = postsTo('/reviews').length + postsTo('/review').length
   const q = await mount('en', 'page')
-  for (let w = 0; w < 100 && postsTo('/reviews').length === qPosts; w++) {
-    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
-  }
-  await act(async () => { await new Promise(r => setTimeout(r, 60)) })
-  const qGot = postsTo('/reviews').length - qPosts
-  if (qGot !== 1) fail(`a queued group review posted /reviews ${qGot} times, not once`)
+  await act(async () => { await new Promise(r => setTimeout(r, 120)) })
+  if (postsTo('/reviews').length + postsTo('/review').length !== qPosts) fail('an unreviewed group started its review on its own')
   await toFront(q.hostEl, ck(CLEAN_GROUP))
-  if (buttons(cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl, /^Save 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
-    fail('a group whose review runs leaves Approve open')
+  const qGroup = cell(q.hostEl, ck(CLEAN_GROUP)) || q.hostEl
+  if (buttons(qGroup, /^Save 2 changes$/)[0]?.getAttribute('aria-disabled') !== 'true') {
+    fail('an unreviewed group leaves Approve open')
+  }
+  const gStart = buttons(qGroup, /^Review$/)[0]
+  if (!gStart) fail('an unreviewed group has no Review button')
+  else {
+    await click(gStart, 60)
+    if (postsTo('/review').at(-1)?.body?.id !== CLEAN_GROUP) fail(`Review on a group sent ${JSON.stringify(postsTo('/review').at(-1))}`)
   }
   q.root.unmount()
   q.hostEl.remove()
@@ -3386,14 +3388,10 @@ REST.scan = 'ok'
   const polls = ticks.filter(x => x.ms === 15000).length
   if (polls > 1) fail(`${polls} pollers scheduled while only the chip was mounted — an earlier mount still polls`)
   const chipSent = () => postsTo('/reviews').length - c0
-  if (chipSent() !== 1) fail(`the chip's first poll with records posted /reviews ${chipSent()} times, not once`)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (chipSent() !== 1) fail(`after an unchanged /count the chip has posted /reviews ${chipSent()} times, not once`)
   REST.count = CHIP_RECORDS(3)
   if (poll) await act(async () => { poll.fn(); await new Promise(r => setTimeout(r, 40)) })
-  if (chipSent() !== 2) {
-    fail(`after only \`records\` changed the chip has posted /reviews ${chipSent()} times, not twice`)
-  }
+  if (chipSent() !== 0) fail(`the chip posted /reviews ${chipSent()} times — reviews start only from a card's Review button`)
   if (!/3 awaiting approval/.test(chip.chipEl.textContent)) fail(`the chip total is not the counts total: ${chip.chipEl.textContent}`)
   chip.chipRoot.unmount()
   chip.chipEl.remove()

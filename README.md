@@ -199,9 +199,10 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
   * **One review per version of a write.** Because writes waiting for the same file are reviewed
     together, approving one of them does not void the others' reviews: when the file changed only
     through approvals of writes the review already saw, the review stands and the card names them.
-    Any other change to the write or its target queues a new review. Reviews are started by a POST
-    (the chip when it sees new records, the panel when it finds one missing) — reading the list never
-    spends anything — and one record never has two reviews running. A review made by another model,
+    Any other change to the write or its target queues a new review. A review starts only when you
+    press **Review** on the card (1.20.0); until then the card reads "Not reviewed" and Approve stays
+    locked. Reading the list or opening the panel never spends anything, and one record never has two
+    reviews running. A review made by another model,
     with an older prompt or before `USER.md` changed is marked on the card; it is never re-run
     without your click.
   * **The reviewer's input is data.** The material reaches the model in blocks bounded by a random
@@ -218,7 +219,7 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
     every change in order and puts every file and record back if one of them fails; while it runs, a
     chat command cannot decide one of its changes. A single change
     of a set is never approved alone (the backend refuses it); it can be rejected alone.
-  * Approve stays locked while the review is queued or running. When no model is set or the review
+  * Approve stays locked until you have pressed Review and the review has finished. When no model is set or the review
     failed, a two-step **Approve without review** applies it anyway and marks the history entry
     "approved without pre-review".
   * The reviewer has no write access; the panel logs its tokens and cost, never the text.
