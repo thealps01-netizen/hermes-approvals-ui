@@ -1209,13 +1209,13 @@ def _recurrence_selftest(_tmp: Path) -> None:
     def age_record(rid: str, age: float) -> None:
         path = home / "pending" / "skills" / f"{rid}.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        data["created_at"] = now - age
+        data["created_at"] = time.time() - age
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         book = home / "state" / "pending-approvals" / "recurrence.json"
         if book.exists():
             rows = json.loads(book.read_text(encoding="utf-8"))
             if rid in rows["rows"]:
-                rows["rows"][rid]["at"] = now - age
+                rows["rows"][rid]["at"] = time.time() - age
                 _atomic_write(book, json.dumps(rows))
 
     def ledger() -> dict:
