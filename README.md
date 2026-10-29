@@ -170,8 +170,9 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
 * **One write path.** Approve/reject delegates to the same handler `/memory approve` uses; the panel
   never writes a memory or a skill file itself.
 * **Undo is real.** The before-copy of each touched file is stored with the record; undo restores it.
-  A file that changed *after* the record was written asks for **Force undo** and says what else would
-  be discarded.
+  A file that changed *after* the record was written asks for **Force undo** and lists what else would
+  be discarded: each later save to that file, a change made outside Approvals, an edit not recorded
+  yet. After a forced undo those later saves read "Undone", so the history matches the files.
 * **Destructive actions are two-step.** Deleting a memory note, clearing the history, force-undo and
   every bulk approve/reject require the confirming click; nothing is sent before it.
 * **A chat draft is not an approval.** The merge draft only writes text into the chat box; sending it

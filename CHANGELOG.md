@@ -5,6 +5,23 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.21.1
+
+### Fixed
+
+* **A forced undo says what it throws away, and the history matches the files afterwards.** Force undo
+  puts the whole file back as it was before the record (unchanged). Until now the warning only said
+  "the later change" is thrown away, and after the forced undo the later saves to the same file still
+  read "Saved" with an Undo button, although their text was gone; undoing one of them could bring the
+  first record's text back. Now, before you press Force undo, the card lists each later save it will
+  throw away (with its time), any change made outside Approvals, and an edit Approvals has not
+  recorded yet. After the forced undo, a later save whose every file was put back is marked
+  "Undone â€” a forced undo of an earlier record put these files back"; a save that changed other files
+  too keeps its Undo for those files only and says which file it lost. The backend's `/undo` answer
+  gains `later`, `unrecorded` and `thrown_away`; history rows gain `undone_by`, `lost` and `lost_by`.
+  Found by undoing saves in mixed order on a scratch copy; three regression cases
+  (`force_undo_*`) and the render check cover it.
+
 ## 1.21.0
 
 ### Changed

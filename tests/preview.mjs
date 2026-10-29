@@ -378,7 +378,9 @@ async function frame(actions, start = PENDING, history = HISTORY, memory = MEMOR
     rest: async (path, opts) => {
       if (opts?.method === 'POST') {
         if (path === '/undo' && !opts.body.force) {
-          return { ok: false, conflicts: ['memories/MEMORY.md'], error: 'The file changed after this record; send force to undo anyway.' }
+          return { ok: false, conflicts: ['memories/MEMORY.md'], unrecorded: ['memories/MEMORY.md'],
+                   later: [{ id: 'later01', kind: 'apply', summary: 'add in memory: Prefer short replies in chat', ts: Date.now() / 1000 - 300, paths: ['memories/MEMORY.md'] }],
+                   error: 'The file changed after this record; send force to undo anyway.' }
         }
         if (path === '/decide') {
           const ids = [...(opts.body.ids || []), ...(opts.body.groups || [])]
@@ -544,6 +546,7 @@ add('f10', 'Activity — Undo answered with a conflict: the alert and Force undo
   await showDetail(hostEl)
   await click(byText(hostEl.querySelector('.pa-detail'), /^Undo$/), 'Undo (reports a conflict)')
   need(byText(hostEl, /^Force undo$/), 'f10: a reported conflict did not turn Undo into Force undo')
+  need(hostEl.querySelector('.pa-detail .pa-loses li'), 'f10: the forced undo does not list what it throws away')
 }))
 
 add('f11', 'Activity — a restorable rejected entry selected, Clear all armed', await frame(async hostEl => {
@@ -656,6 +659,47 @@ add('f31', 'Activity — row cards and decks: two game-dev records and five soft
     await click(deck?.querySelectorAll('.pa-act-sub')[2], 'a saved record in the deck')
     need(hostEl.querySelector('.pa-detail .pa-change'), 'f31: the saved record does not draw what it changed')
   }, PENDING, HISTORY_DECK, MEMORY))
+
+// A forced undo of an older save (fa000003) threw away the later save fa000002 whole and one of the two
+// skills fa000001 changed: the history says so on both.
+const HISTORY_FORCED = { entries: [
+  { id: 'fa000001', ts: NOW - 300, kind: 'apply', subsystem: 'skills', record_id: 'r2000001',
+    summary: 'batch(2 ops: patch, patch) on mixed, other',
+    files: [{ path: 'skills/mixed/SKILL.md' }, { path: 'skills/other/SKILL.md' }], undoable: true,
+    lost: ['skills/mixed/SKILL.md'], lost_by: 'fa000003' },
+  { id: 'fa000002', ts: NOW - 600, kind: 'apply', subsystem: 'memory', record_id: 'r2000002',
+    summary: 'add in memory: Prefer short replies in chat', files: [{ path: 'memories/MEMORY.md' }],
+    undoable: false, undone: true, undone_by: 'fa000003' },
+  { id: 'fa000003', ts: NOW - 900, kind: 'apply', subsystem: 'memory', record_id: 'r2000003',
+    summary: 'add in memory: Calendar reminders run hourly', files: [{ path: 'memories/MEMORY.md' }],
+    undoable: false, undone: true }
+], counts: { applied: 3, undoable: 1 } }
+Object.assign(CHANGES, {
+  fa000001: { ok: true, files: [
+    { path: 'skills/mixed/SKILL.md', state: 'ok', lines_total: 2, added: 1, removed: 1, lines: [['-', 'beta'], ['+', 'gamma']] },
+    { path: 'skills/other/SKILL.md', state: 'ok', lines_total: 2, added: 1, removed: 1, lines: [['-', 'one'], ['+', 'two']] }] },
+  fa000002: { ok: true, files: [{ path: 'memories/MEMORY.md', state: 'ok', lines_total: 1, added: 1, removed: 0,
+    lines: [['+', 'Prefer short replies in chat']] }] }
+})
+const pickEntry = async (hostEl, id) => {
+  await click(findTab(hostEl, /^Activity/), 'the Activity tab')
+  await click(hostEl.querySelector(`.pa-act-row[data-entry="${id}"]`), `the Activity row ${id}`)
+}
+add('f48', 'Activity — a save thrown away by a forced undo of an older record: marked Undone, no Undo button',
+  await frame(async hostEl => {
+    await pickEntry(hostEl, 'fa000002')
+    need(/Undone — a forced undo of an earlier record/.test(hostEl.querySelector('.pa-detail')?.textContent || ''),
+      'f48: the thrown-away save does not say a forced undo put its files back')
+  }, PENDING, HISTORY_FORCED))
+add('f49', 'Activity — a save that lost one of its files to a forced undo: the note, Undo for the rest',
+  await frame(async hostEl => {
+    await pickEntry(hostEl, 'fa000001')
+    need(/was put back by a forced undo of an earlier record/.test(hostEl.querySelector('.pa-detail')?.textContent || ''),
+      'f49: the partly thrown-away save does not name the file it lost')
+    need(byText(hostEl.querySelector('.pa-detail'), /^Undo$/), 'f49: the rest of the save lost its Undo')
+    need(/the one a forced undo already put back stays/.test(hostEl.querySelector('.pa-detail')?.textContent || ''),
+      'f49: next to Undo the hint still promises every file back')
+  }, PENDING, HISTORY_FORCED))
 
 add('f28', 'Memory — MEMORY.md over its limit (the stop tone), Details open on the file', await frame(async hostEl => {
   await click(findTab(hostEl, /^Memory/), 'the Memory tab')
