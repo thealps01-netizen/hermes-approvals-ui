@@ -2738,6 +2738,7 @@ function Stations({ t, lit, counts, model, bodies, dim, extra }) {
     className: 'pa-cols',
     role: 'list',
     'aria-label': t('pa.line.label'),
+    'aria-keyshortcuts': 'J K',
     'data-dim': dim ? '1' : undefined,
     'data-clear': extra ? '1' : undefined,
     children: [...STATIONS.map(([id, glyph, key, subKey], i) => jsxs('section', {

@@ -4854,71 +4854,65 @@ REST.scan = 'ok'
 // --- 43) R12.2 split-layout checks: rows, keyboard, in-row done, fix toggle, checking, word marks, narrow --
 {
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
-  const cur = h => h.hostEl.querySelector('.pa-row[aria-current="true"]')?.getAttribute('data-key')
-  const order = h => [...h.hostEl.querySelectorAll('.pa-list-rows .pa-row')].map(r => r.getAttribute('data-key'))
+  const order = h => [...h.hostEl.querySelectorAll('.pa-cols .pa-lc')].map(r => r.getAttribute('data-key'))
   const det = (h, key) => h.hostEl.querySelector(`.pa-detail[data-key="${key}"] > .pa-card`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
 
-  // 43a) rows: tile, title, preview, 4 dots, status word, short time, one fixed height
+  // 43a) cards: each record is a card under its station, its kind in its name, a title and a second line; the
+  // station's own words say where it stopped; a running review sits under "Reading now"
   {
     const h = await mount('en', 'page')
-    const rows = [...h.hostEl.querySelectorAll('.pa-split .pa-list-rows > .pa-rowwrap')]
-    const keys = rows.map(w => w.querySelector('.pa-row')?.getAttribute('data-key'))
-    if (keys.join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') fail(`rows: list order ${keys}`)
-    const icons = rows.map(w => w.querySelector('.pa-row .pa-tile svg')?.getAttribute('data-icon')).join()
-    if (icons !== 'brain,book,book') fail(`rows: the tiles are not Brain / Book / Book: ${icons}`)
-    if (rows.some(w => !w.querySelector('.pa-row-title')?.textContent)) fail('rows: a row has no title')
-    const previews = rows.map(w => w.querySelector('.pa-row-preview')?.textContent)
-    if (previews[0] !== 'MEMORY.md: updates 1 note' || previews[1] !== LONG || previews[2] !== 'New skill: new-skill') {
-      fail(`rows: the previews are not headline / what[0] / headline: ${JSON.stringify(previews)}`)
+    const cards = [...h.hostEl.querySelectorAll('.pa-cols .pa-lc')]
+    const keys = cards.map(c => c.getAttribute('data-key'))
+    if (keys.join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') fail(`rows: line order ${keys}`)
+    const kinds = cards.map(c => (c.querySelector('.pa-lc-main')?.getAttribute('aria-label') || '').split(':')[0]).join()
+    if (kinds !== 'Memory,Skill,Skill') fail(`rows: the cards do not name their kind Memory / Skill / Skill: ${kinds}`)
+    if (cards.some(c => !c.querySelector('.pa-lc-t')?.textContent || !c.querySelector('.pa-lc-s')?.textContent)) {
+      fail('rows: a card has no title or no second line')
     }
-    const dots = rows.map(w => [...w.querySelectorAll('.pa-dots .pa-dot')].map(d => d.getAttribute('data-k')).join())
-    if (dots.some(d => d !== 'ok,ok,ok,ok')) {
-      fail(`rows: a clean review does not show four ok dots: ${JSON.stringify(dots)}`)
+    const kick = key => h.hostEl.querySelector(`.pa-lc[data-key="${key}"] .pa-lc-kick`)?.textContent
+    if (stationOf(h.hostEl, 'skills:def67890') !== 'rules' || kick('skills:def67890') !== 'Stopped here'
+        || stationOf(h.hostEl, 'skills:aaa11111') !== 'you' || kick('skills:aaa11111') !== 'Rules + reviewer: fine') {
+      fail(`rows: status words [${kick('skills:def67890')}, ${kick('skills:aaa11111')}]`)
     }
-    const words = rows.map(w => w.querySelector('.pa-row-word')?.textContent)
-    if (words[1] !== 'Needs one edit' || words[2] !== 'Safe to save') {
-      fail(`rows: status words ${JSON.stringify(words)}`)
+    if (cards.some(c => c.getAttribute('role') !== 'listitem' || !c.parentElement?.closest('[role="list"]'))) {
+      fail('rows: the cards are not listitems of a list')
     }
-    const times = rows.map(w => w.querySelector('.pa-row-time')?.textContent)
-    const mins = times.slice(1).map(x => (/^(\d+)m$/.exec(x || '') || [])[1]).map(Number)
-    if (times[0] !== '2h' || mins.some(m => !(m >= 2)) || mins[0] - mins[1] !== 3) {
-      fail(`rows: the times are not the short form of 2 h, 5 min and 2 min before the run: ${times}`)
-    }
-    const heights = rows.map(w => w.style.height)
-    if (new Set(heights).size !== 1 || !heights[0]) fail(`rows: the rows are not one fixed height: ${heights}`)
-    if (rows.some(w => w.getAttribute('role') !== 'listitem')
-        || !rows[0]?.parentElement?.matches('[role="list"]')) fail('rows: the rows are not listitems of a list')
     h.root.unmount()
     h.hostEl.remove()
-    REST.mode = 'reviewing'
+    REST.pending = withReview({ aaa11111: { status: 'running', model: 'gpt-5.5', hard: [] } })
     const r = await mount('en', 'page')
-    const waits = [...(rowOf(r.hostEl, 'skills:aaa11111')?.querySelectorAll('.pa-dots .pa-dot') || [])]
-      .map(d => d.getAttribute('data-k'))
-    if (waits.length !== 4) fail(`rows: a running review shows ${waits.length} dots, not 4`)
-    if (!waits.length || waits.some(k => k !== 'wait')) fail(`rows: a running review shows decided dots: ${waits}`)
+    const at = r.hostEl.querySelector('.pa-lc[data-key="skills:aaa11111"]')
+    let head = at?.previousElementSibling
+    while (head && !head.classList.contains('pa-grp')) head = head.previousElementSibling
+    if (stationOf(r.hostEl, 'skills:aaa11111') !== 'reviewer' || !/^Reading now/.test(head?.textContent || '')
+        || !head?.querySelector('[data-slot="loader"]')) {
+      fail(`rows: a running review is not under "Reading now" at the Reviewer: ${head?.textContent}`)
+    }
+    if (at?.querySelector('.pa-lc-kick')?.textContent === 'Rules + reviewer: fine') {
+      fail('rows: a running review shows a decided verdict')
+    }
     r.root.unmount()
     r.hostEl.remove()
-    REST.mode = 'normal'
+    REST.pending = null
   }
 
-  // 43b) keyboard: J/K move, A approves with the version, X rejects, L posts nothing, held A warns once,
-  // typing and Ctrl+A send nothing
+  // 43b) keyboard: J/K move between cards, A approves with the version, X rejects, L posts nothing, held A warns
+  // once, typing and Ctrl+A send nothing
   {
     const h = await mount('en', 'page')
-    const split = h.hostEl.querySelector('.pa-split')
-    if (h.hostEl.querySelector('.pa-list-rows')?.getAttribute('aria-keyshortcuts') !== 'J K') {
-      fail('keyboard: the list does not announce J K')
+    const lineEl = h.hostEl.querySelector('.pa-cols')
+    if (lineEl?.getAttribute('aria-keyshortcuts') !== 'J K') {
+      fail('keyboard: the line does not announce J K')
     }
+    const focused = () => document.activeElement?.getAttribute?.('data-key')
+    rowOf(h.hostEl, 'memory:abc12345')?.focus()
     await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'j')
-    if (cur(h) !== 'skills:def67890') fail(`keyboard: J does not select the next row (${cur(h)})`)
-    if (document.activeElement !== rowOf(h.hostEl, 'skills:def67890')) {
-      fail('keyboard: J from the list does not focus the row')
-    }
+    if (focused() !== 'skills:def67890') fail(`keyboard: J does not move to the next card (${focused()})`)
     await keyDown(rowOf(h.hostEl, 'skills:def67890'), 'K')
-    if (cur(h) !== 'memory:abc12345') fail(`keyboard: K does not select the previous row (${cur(h)})`)
+    if (focused() !== 'memory:abc12345') fail(`keyboard: K does not move to the previous card (${focused()})`)
     await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'k')
-    if (cur(h) !== 'memory:abc12345') fail('keyboard: K wraps past the first row')
+    if (focused() !== 'memory:abc12345') fail('keyboard: K wraps past the first card')
     await toFront(h.hostEl, 'skills:aaa11111')
     const card = det(h, 'skills:aaa11111')
     const primary = card?.querySelector('[aria-keyshortcuts="A"]')
@@ -4934,14 +4928,14 @@ REST.scan = 'ok'
     await keyDown(card, 'a', { ctrlKey: true })
     if (stub.calls.posts.length !== from) fail('keyboard: a key typed in a text input, or Ctrl+A, sent a request')
     text.remove()
-    await toFront(h.hostEl, 'skills:def67890')
+    await toFront(h.hostEl, 'memory:abc12345')
     from = stub.calls.posts.length
-    const ordered = order(h)
-    const ev = await keyDown(det(h, 'skills:def67890'), 'l')
+    const ev = await keyDown(det(h, 'memory:abc12345'), 'l')
     if (stub.calls.posts.length !== from) fail('keyboard: L posted a request')
     if (!ev?.defaultPrevented) fail('keyboard: a handled key does not call preventDefault')
-    if (order(h).at(-1) !== 'skills:def67890' || ordered.at(-1) === 'skills:def67890') {
-      fail(`keyboard: L does not move the record last: ${order(h)}`)
+    await toLine(h.hostEl)
+    if (order(h).join() !== 'skills:def67890,memory:abc12345,skills:aaa11111') {
+      fail(`keyboard: L does not move the record to the end of its station: ${order(h)}`)
     }
     await toFront(h.hostEl, 'skills:aaa11111')
     from = decides().length
@@ -4979,24 +4973,28 @@ REST.scan = 'ok'
     held.root.unmount()
     held.hostEl.remove()
     REST.mode = 'normal'
-    if (!split) fail('keyboard: no split root to carry the keys')
   }
 
-  // 43c) in-row done: approve → "Saved “…”" row → Undo posts /undo with the history id; reject → Restore
+  // 43c) Undo next to a fresh decision: approve → a "Saved" row in the Written station → Undo posts /undo with the
+  // history id; reject → a "Not saved" row → Restore posts /restore
   {
     REST.gone = new Set()
-    REST.history = { entries: [
+    const after = { entries: [
       { id: 'hd000001', ts: Date.now() / 1000 - 5, kind: 'apply', subsystem: 'skills', record_id: 'aaa11111',
         summary: 'saved', files: [], undoable: true },
       { id: 'hd000002', ts: Date.now() / 1000 - 9, kind: 'rejected', subsystem: 'skills', record_id: 'def67890',
         summary: 'not saved', files: [], undoable: false, restorable: true }
     ], counts: { applied: 1, failed: 0, undoable: 1 } }
+    REST.history = after
     const h = await mount('en', 'page')
+    const doneRow = k => h.hostEl.querySelector(`.pa-st[data-st="written"] .pa-done-list > .pa-done[data-k="${k}"]`)
+    if (doneRow('approve') || doneRow('reject')) fail('in-row done: a Written row is drawn before any decision')
     await toFront(h.hostEl, 'skills:aaa11111')
     await click(primaryBtn(det(h, 'skills:aaa11111')), 600)
-    const saved = h.hostEl.querySelector('.pa-list-rows > .pa-done[data-k="approve"]')
-    if (!/^Saved “.+”/.test(saved?.querySelector('.pa-done-text')?.textContent || '')) {
-      fail(`in-row done: an approve leaves no "Saved “…”" row: ${saved?.textContent}`)
+    await toLine(h.hostEl)
+    const saved = doneRow('approve')
+    if (!/^Saved/.test(saved?.querySelector('.pa-done-text')?.textContent || '')) {
+      fail(`in-row done: an approve leaves no "Saved" row in Written: ${saved?.textContent}`)
     }
     const undo = buttons(saved, /^Undo$/)[0]
     if (!undo) fail('in-row done: the Saved row offers no Undo')
@@ -5006,8 +5004,9 @@ REST.scan = 'ok'
     }
     await toFront(h.hostEl, 'skills:def67890')
     await click(declineBtn(det(h, 'skills:def67890')), 600)
-    const notSaved = h.hostEl.querySelector('.pa-list-rows > .pa-done[data-k="reject"]')
-    if (!/^Not saved “.+”/.test(notSaved?.textContent || '')) fail('in-row done: a reject leaves no "Not saved" row')
+    await toLine(h.hostEl)
+    const notSaved = doneRow('reject')
+    if (!/^Not saved/.test(notSaved?.textContent || '')) fail('in-row done: a reject leaves no "Not saved" row')
     const restore = buttons(notSaved, /^Restore$/)[0]
     if (restore) await click(restore, 60)
     if (stub.calls.posts.filter(p => p.path === '/restore').at(-1)?.body?.id !== 'hd000002') {
@@ -5101,19 +5100,24 @@ REST.scan = 'ok'
     REST.mode = 'normal'
   }
 
-  // 43f) narrow: a row click opens the detail (data-open="1"), Back closes it and focuses the row, "1 of 3"
+  // 43f) the record view: a card click puts the record in place of the line (data-open="1"), "← The line" with
+  // "<kind> · 1 of 3 on the line", Back returns to the line and focuses the card
   {
     const h = await mount('en', 'page')
-    const split = () => h.hostEl.querySelector('.pa-split:not(.pa-written):not(.pa-memory)')
-    if (split()?.getAttribute('data-open') !== '0') fail('narrow: the list is not the first view')
+    const line = () => h.hostEl.querySelector('.pa-line')
+    if (line()?.getAttribute('data-open') === '1' || !rowOf(h.hostEl, 'memory:abc12345')) fail('narrow: the line is not the first view')
     await click(rowOf(h.hostEl, 'memory:abc12345'), 30)
-    if (split()?.getAttribute('data-open') !== '1') fail('narrow: a row click does not open the detail')
+    if (line()?.getAttribute('data-open') !== '1' || rowOf(h.hostEl, 'memory:abc12345')) {
+      fail('narrow: a card click does not open the record in place of the line')
+    }
     const back = h.hostEl.querySelector('.pa-detail .pa-back')
-    if (back?.querySelector('.pa-back-pos')?.textContent !== '1 of 3') fail(`narrow: the position is not "1 of 3"`)
-    if (name(back?.querySelector('button')) !== '3 waiting') fail('narrow: Back does not name the list')
-    await click(back?.querySelector('button'), 30)
-    if (split()?.getAttribute('data-open') !== '0') fail('narrow: Back does not return to the list')
-    if (document.activeElement !== rowOf(h.hostEl, 'memory:abc12345')) fail('narrow: Back does not focus the row')
+    if (back?.querySelector('.pa-back-pos')?.textContent !== 'Memory · 1 of 3 on the line') {
+      fail(`narrow: the position is not "Memory · 1 of 3 on the line": ${back?.querySelector('.pa-back-pos')?.textContent}`)
+    }
+    if (name(back?.querySelector('.pa-back-btn')) !== 'The line') fail('narrow: Back does not name the line')
+    await click(back?.querySelector('.pa-back-btn'), 30)
+    if (line()?.getAttribute('data-open') === '1' || !rowOf(h.hostEl, 'memory:abc12345')) fail('narrow: Back does not return to the line')
+    if (document.activeElement !== rowOf(h.hostEl, 'memory:abc12345')) fail('narrow: Back does not focus the card')
     h.root.unmount()
     h.hostEl.remove()
   }
