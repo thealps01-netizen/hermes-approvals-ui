@@ -5,6 +5,16 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.21.0
+
+### Changed
+
+* **Nothing is saved without a review.** The two-step "Save without review" button, shown when no
+  review model was set or the review failed, is gone. Such a card now keeps Approve locked and its
+  tip says what to do: pick a review model, or press **Review again**. This covers single cards,
+  groups of changes to one skill and the automatic rule fix. The backend refuses such an approve too,
+  so an older copy of the panel cannot get around it.
+
 ## 1.20.0
 
 ### Changed

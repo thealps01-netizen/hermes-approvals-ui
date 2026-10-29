@@ -19,18 +19,12 @@ import sys
 from pathlib import Path
 
 
-_PANEL_SKIPS_REVIEW = [False]
-
-
 def _as_panel(body: dict) -> dict:
     """Call /decide the way the panel does: an approve carries the version /pending showed for each id.
 
-    The main selftest runs with the review gate ON and no review model assigned, so like the owner it
-    approves through the explicit "without pre-review" path (`_PANEL_SKIPS_REVIEW`); the review
-    selftest sets every flag itself.
+    The main selftest runs with the review gate OFF (no review model is assigned, and nothing is saved
+    without a review); the review selftests turn it on and set every flag themselves.
     """
-    if body.get("decision") == "approve" and _PANEL_SKIPS_REVIEW[0]:
-        body = {"skip_review": True, **body}
     if body.get("decision") == "approve" and "versions" not in body:
         listed = pending()
         shown = {i["id"]: i.get("version", "") for s in ("memory", "skills") for i in listed.get(s, [])}
@@ -45,7 +39,6 @@ def _review_selftest(tmp: Path) -> None:
 
     global _REVIEW_GATE
     _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = False
     author = "Selftest Owner"
     settings = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}}}
     saved_config, saved_call = _config, _review_call
@@ -97,9 +90,9 @@ def _review_selftest(tmp: Path) -> None:
     assert not refused["ok"] and refused["blocked"] and "No reviewer model" in refused["error"], refused
     assert (pend / "skills" / "5e1f0001.json").exists(), "a refused approve must leave the record queued"
     waved = approve("skills", "5e1f0001", skip_review=True)
-    assert waved["ok"], waved
-    last = history(limit=1)["entries"][0]
-    assert "saved without review" in last["summary"], last
+    assert not waved["ok"] and waved["blocked"] and "No reviewer model" in waved["error"], \
+        f"skip_review saved a write nobody reviewed: {waved}"
+    assert (pend / "skills" / "5e1f0001.json").exists(), "a refused skip must leave the record queued"
 
     bad = "---\nname: new-bad\ndescription: Use when testing.\n---\n\nbody\n"
     stage("skills", "5e1f0002", {"action": "create", "name": "new-bad", "category": "cat", "content": bad})
@@ -112,19 +105,17 @@ def _review_selftest(tmp: Path) -> None:
     not_yet = approve("skills", "5e1f0002", with_edits=True)
     assert not not_yet["ok"] and "No reviewer model" in not_yet["error"], not_yet
     assert json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))["payload"]["content"] == bad
-    fixed = approve("skills", "5e1f0002", with_edits=True, skip_review=True)
-    assert fixed["ok"], fixed
-    written = (_skill_dir("new-bad") / "SKILL.md").read_text(encoding="utf-8")
-    assert f"author: {author}" in written, written
-    last = history(limit=1)["entries"][0]
-    assert "1 suggested edit" in last["summary"], last
+    unreviewed_fix = approve("skills", "5e1f0002", with_edits=True, skip_review=True)
+    assert not unreviewed_fix["ok"] and "No reviewer model" in unreviewed_fix["error"], \
+        f"skip_review applied a rule fix nobody reviewed: {unreviewed_fix}"
+    assert json.loads((pend / "skills" / "5e1f0002.json").read_text(encoding="utf-8"))["payload"]["content"] == bad
 
     stage("skills", "5e1f0003", {"action": "patch", "name": "cat\\other-skill", "old_string": "body",
                                  "new_string": "body plus a lesson"})
     owner = item("skills", "5e1f0003")["review"]["hard"]
     assert any("Someone Else" in h["text"] for h in owner), owner
     nothing = approve("skills", "5e1f0003", with_edits=True, skip_review=True)
-    assert not nothing["ok"] and "no suggested edit" in nothing["error"], nothing
+    assert not nothing["ok"] and nothing["blocked"], nothing
 
     stage("skills", "5e1f0004", {"action": "patch", "name": "own-skill", "old_string": "description: Use when testing.",
                                  "new_string": "description: Use when testing.\n" + known_line.lstrip("- ")})
@@ -429,7 +420,7 @@ def _review_selftest(tmp: Path) -> None:
     except ValueError as exc:
         assert "expected JSON" in str(exc), exc
 
-    for rid in ("5e1f0003", "5e1f0004", "5e1f0005", "5e1f0007", "5e1f0008"):
+    for rid in ("5e1f0001", "5e1f0002", "5e1f0003", "5e1f0004", "5e1f0005", "5e1f0007", "5e1f0008"):
         _as_panel({"subsystem": "skills", "ids": [rid], "decision": "reject"})
     _as_panel({"subsystem": "memory", "ids": ["5e1f0006"], "decision": "reject"})
     for _ in range(200):
@@ -455,7 +446,6 @@ def _integrity_selftest(tmp: Path) -> None:
 
     global _REVIEW_GATE
     _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = False
     author = "Selftest Owner"
     model = {"provider": "selftest", "model": "judge-1"}
     settings = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}},
@@ -686,7 +676,6 @@ def _groups_selftest(tmp: Path) -> None:
 
     global _REVIEW_GATE
     _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = False
     author = "Selftest Owner"
     model = {"provider": "selftest", "model": "judge-1"}
     settings = {"plugins": {"entries": {"pending-approvals": {"skill_author": author}}},
@@ -961,8 +950,7 @@ def _outside_home_selftest(tmp: Path) -> None:
     from tools import write_approval as wa
 
     global _REVIEW_GATE
-    _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = True
+    _REVIEW_GATE = False
     pend = tmp / "pending" / "skills"
     pend.mkdir(parents=True, exist_ok=True)
     ext = Path(tempfile.mkdtemp(prefix="pending-approvals-ext-")).resolve()
@@ -1100,7 +1088,6 @@ def _outside_home_selftest(tmp: Path) -> None:
     else:
         config.write_bytes(saved_config)
     _REVIEW_GATE = False
-    _PANEL_SKIPS_REVIEW[0] = False
 
 
 def _recurrence_selftest(_tmp: Path) -> None:
@@ -1121,7 +1108,6 @@ def _recurrence_selftest(_tmp: Path) -> None:
 
     global _REVIEW_GATE
     _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = False
     base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "Temp" \
         if os.name == "nt" else Path("/tmp")
     base.mkdir(parents=True, exist_ok=True)
@@ -1445,8 +1431,8 @@ def _recurrence_selftest(_tmp: Path) -> None:
         settings.pop("auxiliary")
         out = approve(k1, skip_review=True)
         settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
-        assert out["results"][0]["ok"], out
-        assert out["results"][0].get("error") != _tx("err_member_approve"), out
+        assert not out["results"][0]["ok"] and out["results"][0].get("error") == _tx("gate_unassigned"), \
+            f"a candidate with no review model must wait for a review, not be saved or refused as a member: {out}"
         reset()
 
         ok1 = stage("okone", "app-a", "approve after review words", sid=session("s-ok1", "kanban"))
@@ -1460,7 +1446,8 @@ def _recurrence_selftest(_tmp: Path) -> None:
         settings.pop("auxiliary")
         ok2 = stage("oktwo", "app-b", "skip review words", sid=session("s-ok2", "kanban"))
         out = approve(ok2, skip_review=True)
-        assert out["results"][0]["ok"], out
+        assert not out["results"][0]["ok"] and out["results"][0].get("error") == _tx("gate_unassigned"), \
+            f"a candidate was saved with no review model: {out}"
         settings["auxiliary"] = {_REVIEW_TASK: {"provider": "selftest", "model": "judge-1"}}
         rj = stage("rj", "app-c", "reject me words", sid=session("s-rj", "kanban"))
         out = decide({"subsystem": "skills", "decision": "reject", "ids": [rj]})
@@ -1468,7 +1455,8 @@ def _recurrence_selftest(_tmp: Path) -> None:
         rejected = next(e for e in history(100)["entries"] if e.get("record_id") == rj)
         assert rejected["kind"] == "rejected" and rejected.get("restorable"), rejected
         st = stage("stale", "app-d", "stale version words", sid=session("s-st", "kanban"))
-        out = decide({"subsystem": "skills", "decision": "approve", "ids": [st], "skip_review": True,
+        assert settle(st)[st]["review"]["status"] == "done"
+        out = decide({"subsystem": "skills", "decision": "approve", "ids": [st],
                       "versions": {st: "not-the-version"}})
         assert not out["results"][0]["ok"], f"a stale version approved a candidate: {out}"
         reset()
@@ -1546,8 +1534,7 @@ def _selftest() -> int:
     import os
 
     global _REVIEW_GATE
-    _REVIEW_GATE = True
-    _PANEL_SKIPS_REVIEW[0] = True
+    _REVIEW_GATE = False
 
     tmp = Path(tempfile.mkdtemp(prefix="pending-approvals-"))
     (tmp / "memories").mkdir()

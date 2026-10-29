@@ -708,7 +708,13 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   as soon as they saw a queued record; 1.20.0 dropped that at the owner's request ("beni beklesin,
   review edilmeden approval yapılamasın" — wait for me, no approval without a review). The
   `POST /reviews` route (start every queued review) stays in the backend; the panel no longer calls
-  it. One
+  it.
+* **No save without a review (1.21.0).** The two-step "Save without review" / "Save unreviewed"
+  (for a failed review or no review model) is gone, single records, groups and the unreviewed rule
+  fix alike, at the owner's request in the same conversation. `/decide` ignores `skip_review`: an
+  approve whose review is not `done` is refused with the gate text (`gate_unassigned`, `gate_failed`,
+  `gate_queued`, `gate_running`), so an older panel cannot save around it. Older notes below that
+  describe the skip path are history. One
   job per record (`_REVIEW_RUNNING` holds `subsystem-id`); the job takes its input and its key from
   one snapshot taken under `_LOCK` after it gets a slot, returns without a call when the record is
   gone or a valid result exists, and saves only while the record is pending and no newer result is

@@ -2782,9 +2782,10 @@ for (const how of ['throw', 'refused']) {
 REST.scan = 'ok'
 
 // --- 19) The pre-review gates Approve -------------------------------------------------------------
-// Approve unlocks only after the review has finished and no rule check failed. A running review and
-// a failed rule check lock it; an unset or failed review offers a TWO-STEP "Save without review"
-// whose confirmed click is the only request that carries skip_review. A finished review is advice:
+// Approve unlocks only after the review has finished and no rule check failed. A running review, a
+// failed rule check, an unset reviewer model and a failed review all lock it (1.21.0: nothing is saved
+// without a review, so there is no "Save without review" and no request carries skip_review; the Tip
+// says what to do). A finished review is advice:
 // its findings are shown, Approve stays usable, and "Review again" asks the backend to rerun it.
 {
   const cell = (host, key) => host.querySelector('.pa-cell[data-key="' + key + '"]')
@@ -2808,13 +2809,18 @@ REST.scan = 'ok'
   if (approveIn('memory:abc12345')?.getAttribute('aria-disabled') !== 'true') {
     fail('memory:abc12345: Approve is not locked while the review runs')
   }
-  // Vitality: a record nobody will review (no model, or the check failed) shows no dead primary; its save is
-  // the two-step "Save without review", which then carries the A key.
+  // A record nobody can review yet (no model set) keeps its primary drawn and locked, and its Tip says
+  // how to unlock it; there is no way around the review.
   await toFront(gate.hostEl, 'skills:aaa11111')
-  if (approveIn('skills:aaa11111')) fail('skills:aaa11111: a locked primary is still drawn beside "Save without review"')
-  const skipKey = buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Save without review/)[0]
-  if (skipKey?.getAttribute('aria-keyshortcuts') !== 'A') fail('"Save without review" does not carry the A key')
-  if (skipKey && !skipKey.querySelector('.pa-kbd')) fail('"Save without review" carries A but shows no key hint')
+  if (approveIn('skills:aaa11111')?.getAttribute('aria-disabled') !== 'true') {
+    fail('skills:aaa11111: Approve is not drawn locked when no reviewer model is set')
+  }
+  if (!String(approveIn('skills:aaa11111')?.closest('[data-tip]')?.getAttribute('data-tip')).includes('No reviewer model is set')) {
+    fail('the locked Approve of an unassigned review does not say a reviewer model is needed')
+  }
+  if (buttons(cell(gate.hostEl, 'skills:aaa11111'), /without review|Save unreviewed/).length) {
+    fail('an unassigned review still offers to save without review')
+  }
   await toFront(gate.hostEl, 'skills:def67890')
   if (pickDisabled(gate.hostEl, 'skills:def67890')) fail('skills:def67890: an unreviewed record cannot be ticked for bulk Reject')
   if (name(approveIn('skills:def67890')) !== 'Use the short version') {
@@ -2845,18 +2851,9 @@ REST.scan = 'ok'
   must(open?.textContent, ['No reviewer model is set', 'Approvals review'], 'unassigned review')
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = decides().length
-  await click(buttons(open, /^Save without review/)[0])
-  if (decides().length !== before) fail('"Save without review" fired on the first click')
-  must(cell(gate.hostEl, 'skills:aaa11111')?.textContent, ['was not checked against your rules'], 'skip arming')
-  await click(buttons(cell(gate.hostEl, 'skills:aaa11111'), /^Save unreviewed$/)[0], 80)
-  const skip = decides().slice(before)
-  if (skip.length !== 1 || skip[0].body.skip_review !== true || skip[0].body.decision !== 'approve'
-      || skip[0].body.ids.join() !== 'aaa11111') {
-    fail(`the confirmed skip is not one approve with skip_review: ${JSON.stringify(skip.map(p => p.body))}`)
-  }
-  if (stub.calls.posts.filter(p => p.path === '/decide').some(p => p.body.skip_review && p !== skip[0])) {
-    fail('skip_review reached a request other than the confirmed skip')
-  }
+  if (approveIn('skills:aaa11111')) await click(approveIn('skills:aaa11111'), 60)
+  if (decides().length !== before) fail('the locked Approve of an unassigned review sent a decision')
+  if (decides().some(p => 'skip_review' in p.body)) fail('a /decide request still carries skip_review')
   gate.hostEl.remove()
 
   REST.mode = 'reviewed'
@@ -2946,7 +2943,7 @@ REST.scan = 'ok'
   if (stub.calls.composer.length !== drafts) fail('a pending card wrote into the chat box')
   fixHost.hostEl.remove()
 
-  const WAYS = /^(Save with the fix|Save as written|Use the short version|Save to memory|Save changes|Save skill|Delete skill|Shorten description|Save without review|Create only this|Save only this)$/
+  const WAYS = /^(Save with the fix|Save as written|Use the short version|Save to memory|Save changes|Save skill|Delete skill|Shorten description|Review again|Review|Create only this|Save only this)$/
   const gaps = []
   for (const mode of ['normal', 'reviewing', 'reviewed', 'refused', 'remedy']) {
     REST.mode = mode
@@ -3747,9 +3744,9 @@ REST.scan = 'ok'
 // "Save without review" was offered on a card held by "Shorten first" (the backend refuses it).
 // MEMORY.md read 99 % "Nearly full" in the KPI and "100% full" on the Memory tab (floor vs round).
 // Repeated stale lines or issues gave React duplicate keys. "Show the full review" did not say what it
-// opens or whether it is open. With no review model (or a failed review) an automatic rule fix that
-// clears every rule failure could only be rejected: it now gets the two-step "Save unreviewed" confirm
-// and sends with_edits + skip_review; it stays held while the fix leaves a rule failure behind.
+// opens or whether it is open. With no review model (or a failed review) an automatic rule fix stays
+// held like every other save (1.21.0: nothing is saved without a review), whether or not it clears
+// every rule failure.
 {
   const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
@@ -3835,50 +3832,26 @@ REST.scan = 'ok'
   const unreviewed = left => ({ ...PENDING, skills: PENDING.skills.map(s => (s.id === 'aaa11111'
     ? { ...s, review: { status: 'unassigned', edits: 1, fix_left: left,
         hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }] } } : s)) })
-  REST.pending = unreviewed([])
-  const fixable = await mount('en', 'page')
-  await toFront(fixable.hostEl, 'skills:aaa11111')
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
-  const before = sends().length
-  const withFix = () => buttons(cellOf(fixable, 'skills:aaa11111'), /^(Save with the fix|Save unreviewed)$/)[0]
-  if (!withFix() || withFix().classList.contains('pa-held') || withFix().getAttribute('aria-disabled') === 'true') {
-    fail('with no review model a rule fix that clears every failure still cannot be approved')
+  for (const left of [[], ['new-skill: still missing the author line.']]) {
+    REST.pending = unreviewed(left)
+    const h = await mount('en', 'page')
+    await toFront(h.hostEl, 'skills:aaa11111')
+    const from = sends().length
+    const withFix = buttons(cellOf(h, 'skills:aaa11111'), /^Save with the fix$/)[0]
+    if (!withFix?.classList.contains('pa-held')) fail(`with no review model a rule fix is not held (fix_left ${left.length})`)
+    if (withFix) await click(withFix, 60)
+    if (buttons(cellOf(h, 'skills:aaa11111'), /^Save unreviewed$/).length || sends().length !== from) {
+      fail(`with no review model a rule fix could still be sent (fix_left ${left.length})`)
+    }
+    h.root.unmount()
+    h.hostEl.remove()
   }
-  if (withFix()) await click(withFix(), 30)
-  if (sends().length !== before) fail('the unreviewed fix was sent on the first click (no confirm step)')
-  if (name(withFix()) !== 'Save unreviewed'
-      || !/not checked against your rules/.test(cellOf(fixable, 'skills:aaa11111')?.textContent || '')) {
-    fail('the unreviewed fix has no two-step "Save unreviewed" confirm')
-  }
-  if (withFix()) await click(withFix(), 80)
-  const body = sends().at(-1)?.body || {}
-  if (sends().length !== before + 1 || !body.with_edits || !body.skip_review) {
-    fail(`the unreviewed fix did not send with_edits + skip_review: ${JSON.stringify(body)}`)
-  }
-  fixable.root.unmount()
-  fixable.hostEl.remove()
-
-  REST.pending = unreviewed(['new-skill: still missing the author line.'])
-  const partial = await mount('en', 'page')
-  await selectMode(partial.hostEl)
-  await toFront(partial.hostEl, 'skills:aaa11111')
-  const held = buttons(cellOf(partial, 'skills:aaa11111'), /^Save with the fix$/)[0]
-  const from = sends().length
-  if (held) {
-    await click(held, 30)
-    await click(buttons(cellOf(partial, 'skills:aaa11111'), /^(Save with the fix|Save unreviewed)$/)[0], 60)
-  }
-  if (!held?.classList.contains('pa-held') || sends().length !== from) fail('a rule fix that leaves a failure behind was unlocked')
   REST.pending = null
-  partial.root.unmount()
-  partial.hostEl.remove()
 }
 
 // --- 28) 1.13.1: an armed confirm follows the data; late answers need a baseline; remount; lone pick ---
-// a) Once "Save with the fix" was armed into "Save unreviewed", a refresh that added a rule failure the
-//    fix leaves behind, marked the record stale, or started / finished the review left the red confirm live,
-//    and a click sent skip_review + with_edits. The armed state now holds only while its unlock conditions
-//    do: the button looks exactly like a fresh mount of the same data, and returning conditions never re-arm.
+// a) (removed in 1.21.0 with "Save unreviewed": nothing can be armed to save without a review.)
 // b) After a /decide timeout with no history read before the click, ANY history row of the record was taken
 //    as this click's answer (an old failed attempt became the result). c) An empty history counted as "never
 //    read", so every decision waited on an extra GET /history before POST /decide.
@@ -3890,73 +3863,6 @@ REST.scan = 'ok'
   const cellOf = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
-  const look = (h, key) => {
-    const b = buttons(cellOf(h, key), /^(Save with the fix|Save unreviewed)$/)[0]
-    return { b, state: { text: name(b), variant: b?.getAttribute('data-variant'),
-      held: Boolean(b?.classList.contains('pa-held')), aria: b?.getAttribute('aria-disabled') || null,
-      warn: /not checked against your rules/.test(cellOf(h, key)?.textContent || '') } }
-  }
-  const armedCase = async (label, key, first, next, back) => {
-    REST.pending = first
-    const h = await mount('en', 'page')
-    await toFront(h.hostEl, key)
-    if (look(h, key).b) await click(look(h, key).b, 30)
-    if (look(h, key).state.text !== 'Save unreviewed') fail(`[${label}] setup: the unreviewed fix did not arm`)
-    REST.pending = next
-    await click(h.hostEl.querySelector('.pa-refresh'), 120)
-    const after = look(h, key)
-    const from = sends().length
-    if (after.b) await click(after.b, 80)
-    const sent = sends().slice(from).map(p => p.body)
-    if (back) {
-      REST.pending = first
-      await click(h.hostEl.querySelector('.pa-refresh'), 120)
-      const again = look(h, key)
-      if (again.state.text !== 'Save with the fix' || again.state.warn) {
-        fail(`[${label}] the confirm came back armed when the conditions returned: ${JSON.stringify(again.state)}`)
-      }
-      const before = sends().length
-      if (again.b) await click(again.b, 30)
-      if (sends().length !== before) fail(`[${label}] after the conditions returned one click sent the fix unconfirmed`)
-    }
-    h.root.unmount()
-    h.hostEl.remove()
-    REST.pending = next
-    const c = await mount('en', 'page')
-    await toFront(c.hostEl, key)
-    const fresh = look(c, key).state
-    c.root.unmount()
-    c.hostEl.remove()
-    if (JSON.stringify(after.state) !== JSON.stringify(fresh)) {
-      fail(`[${label}] the armed confirm survived the refresh: ${JSON.stringify(after.state)} vs a fresh mount ${JSON.stringify(fresh)}`)
-    }
-    const want = fresh.held ? 0 : 1
-    if (sent.length !== want || sent.some(b => b.skip_review)) {
-      fail(`[${label}] a click after the refresh sent ${JSON.stringify(sent.map(b => ({ skip_review: b.skip_review, with_edits: b.with_edits })))}`)
-    }
-  }
-  const unreviewed = (left, extra = {}) => ({ ...PENDING, skills: PENDING.skills.map(s => (s.id === 'aaa11111'
-    ? { ...s, plain: { ...s.plain, ...(extra.plain || {}) },
-        review: { status: 'unassigned', edits: 1, fix_left: left,
-          hard: [{ name: 'new-skill', text: REVIEW_HARD, edit: RULE_EDIT }], ...(extra.review || {}) } } : s)) })
-  const LEFT = 'new-skill: still missing the author line.'
-  await armedCase('card: fix_left appears', 'skills:aaa11111', unreviewed([]), unreviewed([LEFT]), true)
-  await armedCase('card: stale appears', 'skills:aaa11111', unreviewed([]),
-    unreviewed([], { plain: { stale: ['The skill changed on disk after this card was drawn.'] } }))
-  await armedCase('card: review starts', 'skills:aaa11111', unreviewed([]), unreviewed([], { review: { status: 'running' } }))
-  await armedCase('card: review done', 'skills:aaa11111', unreviewed([]),
-    unreviewed([], { review: { status: 'done', verdict: 'fix', summary: 'Checked.' } }))
-  const G_UNREV = { status: 'unassigned', edits: 1, fix_left: [], siblings: 0,
-    hard: [{ change: 1, name: 'alpha-skill', text: REVIEW_HARD, edit: RULE_EDIT }] }
-  const groupStale = d => ({ ...d, groups: { ...d.groups, skills: d.groups.skills.map(g => (g.id === CLEAN_GROUP
-    ? { ...g, stale: [{ change: 2, text: 'GROUP-STALE-LINE' }] } : g)) } })
-  const gKey = `skills:${CLEAN_GROUP}`
-  await armedCase('group: fix_left appears', gKey, groupsWith(G_UNREV, STALE_REVIEW),
-    groupsWith({ ...G_UNREV, fix_left: ['alpha-skill: still missing the author line.'] }, STALE_REVIEW), true)
-  await armedCase('group: stale appears', gKey, groupsWith(G_UNREV, STALE_REVIEW),
-    groupStale(groupsWith(G_UNREV, STALE_REVIEW)))
-  await armedCase('group: review starts', gKey, groupsWith(G_UNREV, STALE_REVIEW),
-    groupsWith({ ...G_UNREV, status: 'running' }, STALE_REVIEW))
   REST.pending = null
 
   const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.'
@@ -4533,8 +4439,8 @@ REST.scan = 'ok'
     fail(`an unreviewed record shows ${okRows} ok chips and ${waitRows.length} wait chips, not 0/1`)
   }
   must(waitRows[0]?.textContent, ['Not checked yet'], 'the single not-run chip')
-  if (primaryBtn(c) || !buttons(c, /^Save without review/).length) {
-    fail('an unreviewed record does not gate its save behind "Save without review" as block 19 requires')
+  if (primaryBtn(c)?.getAttribute('aria-disabled') !== 'true' || buttons(c, /without review|Save unreviewed/).length) {
+    fail('an unreviewed record does not keep its save locked as block 19 requires')
   }
   nr.hostEl.remove()
   REST.mode = 'normal'
@@ -5063,9 +4969,8 @@ REST.scan = 'ok'
     from = decides().length
     await keyDown(det(held, 'skills:aaa11111'), 'a')
     if (decides().length !== from) fail('keyboard: A on an unreviewed record sent a decision')
-    if (!/was not checked against your rules/.test(det(held, 'skills:aaa11111')?.querySelector('[role="alert"]')
-      ?.textContent || '')) {
-      fail('keyboard: A on an unreviewed record does not arm "Save without review" (first of two steps)')
+    if (det(held, 'skills:aaa11111')?.querySelector('[role="alert"]')) {
+      fail('keyboard: A on an unreviewed record armed a confirm — there is no save without review')
     }
     held.root.unmount()
     held.hostEl.remove()
@@ -5302,9 +5207,8 @@ REST.scan = 'ok'
   g.hostEl.remove()
   REST.mode = 'normal'
 
-  // item 7: a failed review says so in one sentence, its seal is the warning tone, and the armed "Apply
-  // unreviewed" is one confirm row in the footer (warning text + Cancel + Save unreviewed outline), no Later
-  // beside it and no line floating above the footer.
+  // item 7: a failed review says so in one sentence, its seal is the warning tone, and (1.21.0) the
+  // footer offers no save without review.
   REST.pending = withReview({ aaa11111: { status: 'failed', error: 'timeout', hard: [] } })
   const nr = await mount('en', 'page')
   await toFront(nr.hostEl, 'skills:aaa11111')
@@ -5321,17 +5225,7 @@ REST.scan = 'ok'
   if (verdict?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)') {
     fail(`rework 2 item 7: the not-reviewed seal is not the warning tone: ${verdict?.style.getPropertyValue('--pa-tone')}`)
   }
-  const skip = buttons(c, /^Save without review$/)[0]
-  if (skip) await click(skip, 40)
-  const foot = c?.querySelector('.pa-dfoot')
-  const warn = foot?.querySelector('.pa-warnline[role="alert"]')
-  const footButtons = [...(foot?.querySelectorAll('button') || [])].map(b => name(b))
-  const confirm = buttons(foot, /^Save unreviewed$/)[0]
-  if (!warn || c?.querySelector('.pa-card > .pa-warnline') || footButtons.join('|') !== 'Cancel|Save unreviewed'
-      || confirm?.getAttribute('data-variant') !== 'outline') {
-    fail(`rework 2 item 7: the armed footer is not one confirm row: ${footButtons.join('|')} · ${
-      confirm?.getAttribute('data-variant')} · warning in footer ${Boolean(warn)}`)
-  }
+  if (buttons(c, /without review|Save unreviewed/).length) fail('rework 2 item 7: a failed review still offers a save without review')
   if (/background:var\(--ui-red\)/.test((sheetOf(nr).match(/\.pa-warnline::before\{[^}]*\}/) || [''])[0])) {
     fail('rework 2 item 7: the confirm warning still carries a red dot')
   }
@@ -5934,7 +5828,7 @@ if (problems.length) {
 console.log('render check OK — kit cards, the agent\'s suggestion, kit buttons, fixed text boxes, status chip')
 console.log('  registration: page /approvals · sidebar label resolved to "Approvals" (no raw key) · chip · no `panes`')
 console.log('  merge draft: warning → active chat box (block, unsent, no /decide) · no chat box → warning toast')
-console.log('  pre-review: running review and failed rule check lock Approve · two-step skip_review · findings shown · Review again')
+console.log('  pre-review: running review and failed rule check lock Approve · no save without review · findings shown · Review again')
 console.log('  remedies: suggested edit and rule edit shown, then one /decide with_edits · a fix that leaves a problem is held · no chat draft · no flagged card is a dead end')
 console.log('  bulk: every card tickable · Reject N acts on all · Approve N locked (aria-disabled + Tip, sends nothing) unless all approvable · arm → Confirm → one /decide per subsystem with versions · Cancel sends nothing')
 console.log('  integrity: versions on single and bulk /decide · stale → warning + re-read · /fix without approve · queued drawn as running + one POST /reviews · chip reads only /count and starts reviews on a changed total · Restore → /restore + both lists re-read · unverified finding muted without edit · cut/carried/siblings/outdated lines')

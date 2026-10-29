@@ -745,10 +745,9 @@ _TEXT = {
                           'or the copy was cleaned up with the history).',
     'err_restore_failed': 'The record could not be put back in the queue; nothing changed.',
     'what_rewrite': 'rewrites {where} in full',
-    'gate_failed': 'The review failed. Run it again, or use "Save without review".',
+    'gate_failed': 'The review failed. Press "Review again"; saving unlocks when a review has finished.',
     'gate_unassigned': 'No reviewer model is set (Settings → Models → Approvals review). '
-                       'Pick one, or use "Save without review".',
-    'summary_unreviewed': '{summary} — saved without review',
+                       'Pick one and press Review; nothing is saved without a review.',
     'summary_untested': '{summary} — saved untested',
     'group_untested': ' — saved untested',
     'test_not_owner': 'Only a change to one of your own skills can be tested side by side.',
@@ -776,7 +775,6 @@ _TEXT = {
     'group_summary': '{names} · {n} changes',
     'group_applied': '{n} changes applied together.',
     'group_failed': 'Change #{n} could not be applied, so every change of the group was taken back: {error}',
-    'group_unreviewed': ' — saved without review',
     'gate_group_stale': 'Change {changes} cannot be applied after the changes before it, so nothing was written. '
                         'Leave that change out with “Don’t save” first.',
     'gate_group_fix': 'Change #{n} needs its description shortened first.',
@@ -1517,24 +1515,19 @@ def _group_card(gid: str, members: list[dict], steps: list) -> dict:
     return {"group": group, "plains": facts["plains"], "state": state}
 
 
-def _group_gate(card: dict, skip_review: bool) -> tuple[str, bool]:
+def _group_gate(card: dict) -> str:
     group = card["group"]
     if group["stale"]:
-        return _tx("gate_group_stale", changes=", ".join(sorted({f"#{s['change']}" for s in group["stale"]}))), False
+        return _tx("gate_group_stale", changes=", ".join(sorted({f"#{s['change']}" for s in group["stale"]})))
     if fixes := [n for n, p in enumerate(card["plains"], 1) if p.get("fix")]:
-        return " ".join(_tx("gate_group_fix", n=n) for n in fixes), False
+        return " ".join(_tx("gate_group_fix", n=n) for n in fixes)
     if not _REVIEW_GATE:
-        return "", False
+        return ""
     state = card["state"]
     if state["hard"]:
-        return _tx("gate_hard", reasons=" ".join(f"#{h['change']} · {h['text']}" for h in state["hard"])), False
+        return _tx("gate_hard", reasons=" ".join(f"#{h['change']} · {h['text']}" for h in state["hard"]))
     status = state["status"]
-    if status == "done":
-        return "", False
-    if status in ("failed", "unassigned") and skip_review:
-        _log(f"skill group {group['id']} approved without a pre-review ({status})")
-        return "", True
-    return _gate_wait(status), False
+    return "" if status == "done" else _gate_wait(status)
 
 
 def _group_start(gid: str) -> bool:
@@ -1818,7 +1811,6 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
     from tools import write_approval as wa
 
     card = _group_card(gid, members, _approved_steps())
-    skip = bool(body.get("skip_review"))
     queued: dict = {}
 
     def refuse(error: str, **extra) -> tuple:
@@ -1828,7 +1820,7 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
         return refuse(_tx("gate_stale"), stale=True)
     if body.get("with_edits"):
         status = card["state"]["status"]
-        if status != "done" and not (skip and status in ("failed", "unassigned")):
+        if status != "done":
             return refuse(_gate_wait(status), blocked=True)
         edits = [(e["edit"], e.get("change")) for e in _review_edits(card["state"]) if e["edit"].get("ok")]
         fixed, applied, changed = _group_with_edits(members, edits)
@@ -1839,9 +1831,8 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
         if left := _group_left(fixed):
             return refuse(_tx("fix_left", reasons=" ".join(left)), blocked=True)
         why = list(dict.fromkeys(w for i in sorted(changed) for w in _fix_why(card["state"], members[i])))
-        suffix = _fixed_summary("", applied, effect) + (_tx("group_unreviewed") if status != "done"
-                                                        else _tx("group_untested") if _untested(
-                                                            gid, _combined(gid, fixed), fixed) else "")
+        suffix = _fixed_summary("", applied, effect) + (
+            _tx("group_untested") if _untested(gid, _combined(gid, fixed), fixed) else "")
         for i in sorted(changed):
             fixed[i]["amended_from"] = members[i].get("payload")
             fixed[i]["amended_effect"], fixed[i]["amended_why"] = effect, why
@@ -1850,11 +1841,8 @@ def _group_checked(gid: str, members: list[dict], body: dict, versions: dict) ->
             queued[path] = path.read_bytes()
             _atomic_write(path, json.dumps(fixed[i], ensure_ascii=False))
         return None, fixed, suffix, queued
-    reason, unreviewed = _group_gate(card, skip)
-    if reason:
+    if reason := _group_gate(card):
         return refuse(reason, blocked=True)
-    if unreviewed:
-        return None, members, _tx("group_unreviewed"), queued
     return None, members, _tx("group_untested") if _untested(gid, _combined(gid, members), members) else "", queued
 
 
@@ -3658,21 +3646,15 @@ def _gate_wait(status: str) -> str:
             "unassigned": _tx("gate_unassigned")}.get(status, _tx("gate_running"))
 
 
-def _review_gate(subsystem: str, record: dict, only: list, skip_review: bool,
-                 state: dict | None = None) -> tuple[str, bool]:
+def _review_gate(subsystem: str, record: dict, only: list, state: dict | None = None) -> str:
     if not _REVIEW_GATE:
-        return "", False
+        return ""
     state = state or _review_state(subsystem, record)
     hard = [h for h in state["hard"] if not only or _in_only(h.get("name"), only) or not h.get("name")]
     if hard:
-        return _tx("gate_hard", reasons=" ".join(h["text"] for h in hard)), False
+        return _tx("gate_hard", reasons=" ".join(h["text"] for h in hard))
     status = state["status"]
-    if status == "done":
-        return "", False
-    if status in ("failed", "unassigned") and skip_review:
-        _log(f"{subsystem} record {record.get('id')} approved without a pre-review ({status})")
-        return "", True
-    return _gate_wait(status), False
+    return "" if status == "done" else _gate_wait(status)
 
 
 _TEST_TASK = "approvals_test"
@@ -4234,13 +4216,13 @@ def _mark_edits(review: dict, record: dict, subsystem: str) -> None:
             review["fix_effect"] = effect
 
 
-def _stage_fixed(subsystem: str, record: dict, only: list, skip_review: bool,
+def _stage_fixed(subsystem: str, record: dict, only: list,
                  state: dict | None = None) -> tuple[dict | None, bytes, str]:
     from tools import write_approval as wa
 
     state = state or _review_state(subsystem, record)
     status = state["status"]
-    if status != "done" and not (skip_review and status in ("failed", "unassigned")):
+    if status != "done":
         return None, b"", _gate_wait(status)
     edits = [e["edit"] for e in _review_edits(state) if _edit_open(record, e["edit"])]
     fixed, applied = _with_edits(record, edits)
@@ -4502,7 +4484,7 @@ def _decide_locked(body: dict) -> dict:
             continue
 
         with _memo():
-            unreviewed, original, state = False, b"", None
+            original, state = b"", None
             if decision == "approve":
                 card = _card(subsystem, record, _approved_steps())
                 if str(versions.get(pending_id) or "") != card["version"]:
@@ -4510,14 +4492,13 @@ def _decide_locked(body: dict) -> dict:
                     continue
                 state = card["state"]
             if decision == "approve" and body.get("with_edits"):
-                fixed, original, reason = _stage_fixed(subsystem, record, only, bool(body.get("skip_review")), state)
+                fixed, original, reason = _stage_fixed(subsystem, record, only, state)
                 if reason:
                     results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                     continue
                 record = fixed
-                unreviewed = bool(body.get("skip_review")) and str((state or {}).get("status")) != "done"
             elif decision == "approve":
-                reason, unreviewed = _review_gate(subsystem, record, only, bool(body.get("skip_review")), state)
+                reason = _review_gate(subsystem, record, only, state)
                 if reason:
                     results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                     continue
@@ -4530,9 +4511,7 @@ def _decide_locked(body: dict) -> dict:
                     results.append({"id": pending_id, "ok": False, "blocked": True, "error": reason})
                     continue
 
-        if unreviewed:
-            record["summary"] = _tx("summary_unreviewed", summary=record.get("summary", ""))
-        elif decision == "approve" and subsystem == wa.SKILLS and _untested(pending_id, record, [record]):
+        if decision == "approve" and subsystem == wa.SKILLS and _untested(pending_id, record, [record]):
             record["summary"] = _tx("summary_untested", summary=record.get("summary", ""))
 
         if decision == "approve" and only and subsystem == wa.SKILLS:

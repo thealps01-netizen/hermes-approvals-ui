@@ -280,7 +280,8 @@ const BUNDLES = {
         cost: (usd, status) => (status === 'included' ? 'included' : `$${usd.toFixed(4)} ${status}`),
         locked: 'Saving unlocks when the reviewer has finished and no rule check failed.',
         lockedQueued: 'Saving unlocks after you press Review and the reviewer has finished.',
-        skipWarn: 'This write was not checked against your rules. Save it anyway?',
+        lockedFailed: 'The review failed. Press “Review again”; saving unlocks when a review has finished.',
+        lockedUnassigned: 'No reviewer model is set (Settings → Models → Approvals review). Pick one, then press Review.',
         rejectWarn: 'The reviewer advises not saving this. Save it anyway?',
         title: 'Reviewer',
         rule: 'Rule check',
@@ -350,8 +351,6 @@ const BUNDLES = {
         reReview: 'Review again',
         approveFixed: 'Save with the fix',
         approveAsIs: 'Save as written',
-        skipReview: 'Save without review',
-        skipConfirm: 'Save unreviewed',
         skipCancel: 'Cancel',
         saveAnyway: 'Save anyway',
         restore: 'Restore',
@@ -624,7 +623,7 @@ const api = {
     ctxRef.rest('/history/clear', { method: 'POST', body: { keep_undoable: Boolean(keepUndoable) } }),
   restore: id => ctxRef.rest('/restore', { method: 'POST', body: { id } }),
   fix: id => ctxRef.rest('/fix', { method: 'POST', body: { subsystem: 'skills', id } }),
-  decide: (subsystem, items, decision, only, skipReview, withEdits) =>
+  decide: (subsystem, items, decision, only, withEdits) =>
     ctxRef.rest('/decide', {
       method: 'POST',
       body: {
@@ -634,7 +633,6 @@ const api = {
         versions: Object.fromEntries(items.map(item => [item.id, item.version])),
         decision,
         only: only || [],
-        skip_review: Boolean(skipReview),
         with_edits: Boolean(withEdits)
       }
     }),
@@ -681,6 +679,8 @@ const refocus = from => {
 }
 const grouped = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 const reviewWaits = item => (item.review || {}).status === 'running'
+const lockedWhy = (t, status) => t({ queued: 'pa.review.lockedQueued', failed: 'pa.review.lockedFailed',
+  unassigned: 'pa.review.lockedUnassigned' }[status] || 'pa.review.locked')
 const reviewUnits = d => [...(d?.memory || []), ...(d?.skills || []), ...((d?.groups || {}).skills || []),
   ...(d?.candidates || [])]
 const setAside = entry => entry?.kind === 'rejected' || entry?.kind === 'expired'
@@ -1729,19 +1729,19 @@ const settled = async (t, items, known, decision) => {
   })
 }
 const timedOut = e => /timed? ?out|timeout/i.test(String(e?.message || e || ''))
-const decideAll = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
+const decideAll = async (t, subsystem, items, decision, only, withEdits) => {
   if (!historyRead) await api.history().catch(() => null)
   const known = historyRead ? new Set(seenHistory) : null
   try {
-    return await api.decide(subsystem, items, decision, only, skipReview, withEdits)
+    return await api.decide(subsystem, items, decision, only, withEdits)
   } catch (e) {
     if (timedOut(e)) return { ok: true, results: await settled(t, items, known, decision) }
     const error = errText(e) || t('pa.notify.failed')
     return { ok: false, error, results: items.map(item => ({ id: item.id, ok: false, error })) }
   }
 }
-const decideOne = async (t, subsystem, items, decision, only, skipReview, withEdits) => {
-  const res = await decideAll(t, subsystem, items, decision, only, skipReview, withEdits)
+const decideOne = async (t, subsystem, items, decision, only, withEdits) => {
+  const res = await decideAll(t, subsystem, items, decision, only, withEdits)
   const one = (res?.results || [])[0] || { ok: false, error: res?.error }
   host.notify(told(t, decision, one))
   return one
@@ -2657,8 +2657,6 @@ const VERDICT = {
 function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
-  const [skipArmed, setSkipArmed] = useState(false)
-  const [fixArmed, setFixArmed] = useState(false)
   const [shownLines, setShownLines] = useState(() => new Set())
   const [expandedChecks, setExpandedChecks] = useState(() => new Set())
   const [picked, setView] = useState('')
@@ -2692,34 +2690,28 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const heldByRule = isGroup ? fixesInGroup.length > 0 : (Boolean(fixSingle) || refused.length > 0)
   const approveBlocked = heldByRule || reviewLocked || stale.length > 0
   const heldWhy = reviewLocked
-    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ')
-      : t(status === 'queued' ? 'pa.review.lockedQueued' : 'pa.review.locked'))
+    ? (hard.length ? hard.map(h => `${tagOf(h)}${h.text}`).join(' ') : lockedWhy(t, status))
     : isGroup
       ? (stale.length ? t('pa.grp.staleHeld', changeList(stale)) : t('pa.grp.fixHeld', changeList(fixesInGroup)))
       : (plain.recommendation || {}).reason || t('pa.status.staleWhy')
-  const unchecked = status === 'failed' || status === 'unassigned'
-  const canSkip = !hard.length && !stale.length && !(isGroup ? fixesInGroup.length : fixSingle) && unchecked
   const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? fixesInGroup.length : fixSingle)
-  const fixUnreviewed = fixBlocked && unchecked && edits > 0 && !fixLeft.length
-    && !(isGroup ? fixesInGroup.length : fixSingle) && !stale.length
-  if (fixArmed && !fixUnreviewed) setFixArmed(false)
-  const fixWhy = status !== 'done' ? t('pa.review.locked')
+  const fixWhy = status !== 'done' ? lockedWhy(t, status)
     : fixLeft.length ? t('pa.review.fixLeft', fixLeft.join(' ')) : heldWhy
   const [stateKey, stateVariant] = cardState(hard.length > 0, stale.length > 0,
     Boolean(isGroup ? fixesInGroup.length : fixSingle), failedBefore, status, review.verdict)
   const okEdits = [...hard, ...major].filter(x => x.edit?.ok && !x.unverified)
   const hasToggle = Boolean(fixSingle) || (edits > 0 && okEdits.length > 0)
-  const asFirst = !fixSingle && (fixHeavy(effect) || (fixBlocked && !fixUnreviewed && !approveBlocked))
+  const asFirst = !fixSingle && (fixHeavy(effect) || (fixBlocked && !approveBlocked))
   const view = picked || (asFirst ? 'as' : 'fix')
   const showFix = hasToggle && view === 'fix'
   const title = rowTitle(t, subsystem, item)
   const ids = [item.id, ...(parts || []).map(p => p.id)]
 
   const applyFix = id => run(isGroup ? `fix:${id}` : 'fix', () => fixRecord(t, id, onChanged))
-  const decide = (decision, only, skipReview, withEdits) => {
-    const dkey = withEdits ? 'fixed' : skipReview ? 'skip' : (only && only.length) ? `only:${only[0]}` : decision
+  const decide = (decision, only, withEdits) => {
+    const dkey = withEdits ? 'fixed' : (only && only.length) ? `only:${only[0]}` : decision
     return run(dkey, async () => {
-      const r = await decideOne(t, groupSubsystem, [item], decision, only || [], skipReview, withEdits)
+      const r = await decideOne(t, groupSubsystem, [item], decision, only || [], withEdits)
       if (r?.ok) {
         addDone({ key, ids, title, decision, at: Date.now() })
         refocus(cardAt.current)
@@ -3036,36 +3028,30 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   }, 'open')
   const advised = verdict === 'reject'
   if (rejectArmed && !advised) setRejectArmed('')
-  const armed = (canSkip && skipArmed) || fixArmed || Boolean(rejectArmed)
+  const armed = Boolean(rejectArmed)
   const guard = (gate, go) => (advised ? () => setRejectArmed(gate) : go)
-  const fixedGo = fixUnreviewed ? () => setFixArmed(true) : () => decide('approve', [], false, true)
+  const fixedGo = () => decide('approve', [], true)
   const primaryButtons = () => {
     const a = advised ? '' : t('pa.key.a')
     const tone = base => (advised ? 'outline' : base)
     const asIs = (variant, hotKey) => heldButton(busy, t, 'approve', isGroup ? labelPrimary : t('pa.btn.approveAsIs'), tone(variant),
       isFix || approveBlocked, heldWhy, guard('approve', () => decide('approve')), hotKey)
     const fixed = (variant, hotKey) => heldButton(busy, t, 'fixed', t('pa.btn.approveFixed'), tone(variant),
-      fixBlocked && !fixUnreviewed, fixWhy, guard('fixed', fixedGo), hotKey)
+      fixBlocked, fixWhy, guard('fixed', fixedGo), hotKey)
     if (isFix) {
       return [pickAs ? asIs('default', a)
         : heldButton(busy, t, 'fix', labelPrimary, 'default', false, '', onPrimary, a)]
     }
-    const asIsHeld = isFix || approveBlocked
-    const fixedHeld = fixBlocked && !fixUnreviewed
-    if (twoWays && !(canSkip && (pickAs ? asIsHeld : fixedHeld))) {
-      return [pickAs ? asIs('default', a) : fixed('default', a)]
-    }
+    if (twoWays) return [pickAs ? asIs('default', a) : fixed('default', a)]
     if (edits > 0) {
-      const pair = [[asIsHeld, k => asIs(asIsVariant, k)], [fixedHeld, k => fixed(fixedVariant, k)]]
-      const live = (hot === 'fixed' ? pair : pair.reverse()).filter(([held]) => !(canSkip && held))
-      return live.map(([, draw], i) => draw(i === live.length - 1 ? a : ''))
+      const pair = [k => asIs(asIsVariant, k), k => fixed(fixedVariant, k)]
+      const live = hot === 'fixed' ? pair : pair.reverse()
+      return live.map((draw, i) => draw(i === live.length - 1 ? a : ''))
     }
-    if (canSkip && approveBlocked) return []
     return [heldButton(busy, t, 'approve', labelPrimary, tone('default'), approveBlocked, heldWhy,
       guard('approve', () => decide('approve')), a)]
   }
   const primaries = primaryButtons()
-  const skipHot = canSkip && !advised && !primaries.length
   const typeWord = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
   const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
   const crumbFile = subsystem === 'memory' && isProfile(kindTarget) ? [t('pa.kpi.profileLabel')] : []
@@ -3144,31 +3130,22 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
         style: { minHeight: H.detailFoot },
         children: armed ? [
           jsx('div', {
-            className: 'pa-warnline', role: 'alert', children: t(rejectArmed ? 'pa.review.rejectWarn' : 'pa.review.skipWarn')
-          }, 'skipWarn'),
+            className: 'pa-warnline', role: 'alert', children: t('pa.review.rejectWarn')
+          }, 'rejectWarn'),
           jsxs('div', {
             className: 'pa-actions',
             children: [
               jsx(Button, {
                 variant: 'text', size: 'sm', disabled: leaving,
-                onClick: () => { setSkipArmed(false); setFixArmed(false); setRejectArmed('') },
+                onClick: () => setRejectArmed(''),
                 children: t('pa.btn.skipCancel')
               }, 'cancel'),
-              rejectArmed
-                ? jsx(Button, {
-                    variant: 'outline', size: 'sm',
-                    disabled: Boolean(busy) && busy !== rejectArmed, loading: busy === rejectArmed,
-                    onClick: () => void decide('approve', [], false, rejectArmed === 'fixed'),
-                    children: t('pa.btn.saveAnyway')
-                  }, 'anyway')
-                : skipArmed && canSkip
-                  ? jsx(Button, {
-                      variant: 'outline', size: 'sm',
-                      disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
-                      onClick: () => void decide('approve', [], true), children: t('pa.btn.skipConfirm')
-                    }, 'skip')
-                  : heldButton(busy, t, 'fixed', t('pa.btn.skipConfirm'), 'outline', false, '',
-                      () => decide('approve', [], true, true))
+              jsx(Button, {
+                variant: 'outline', size: 'sm',
+                disabled: Boolean(busy) && busy !== rejectArmed, loading: busy === rejectArmed,
+                onClick: () => void decide('approve', [], rejectArmed === 'fixed'),
+                children: t('pa.btn.saveAnyway')
+              }, 'anyway')
             ]
           }, 'actions')
         ] : [
@@ -3186,17 +3163,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
               jsxs('div', {
                 className: 'pa-actions',
                 children: [
-                  canSkip
-                    ? jsx(Button, {
-                        variant: 'outline', size: 'sm',
-                        disabled: Boolean(busy) && busy !== 'skip', loading: busy === 'skip',
-                        'aria-keyshortcuts': skipHot ? 'A' : undefined,
-                        onClick: () => setSkipArmed(true),
-                        children: skipHot
-                          ? [t('pa.btn.skipReview'), kbd(t('pa.key.a'), 'pa-btn-kbd')]
-                          : t('pa.btn.skipReview')
-                      }, 'skip')
-                    : null,
                   jsxs(Button, {
                     variant: declineIsDelete ? 'destructive' : 'outline',
                     size: 'sm',
