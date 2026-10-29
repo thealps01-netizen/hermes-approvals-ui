@@ -509,6 +509,13 @@ add('f05', 'Needs you — checking: a group whose review runs, a deleted file bo
       'f05: no deleted file box')
   }, CHECKING))
 
+add('f05q', 'Needs you — not reviewed yet: a group waiting for the owner to press Review, the primary locked',
+  await frame(async hostEl => {
+    const card = await pick(hostEl, `skills:${GROUP_ID}`)
+    need(byText(card, /^Review$/), 'f05q: the unreviewed group has no Review button')
+    need(!card?.querySelector('.pa-verdict[data-k="running"]'), 'f05q: the unreviewed group is drawn as running')
+  }, pendingOf([MEMORY_REC], [...MEMBERS], [groupOf({ status: 'queued', hard: [] }, [])])))
+
 add('f06', 'Needs you — all caught up: 0 pending, the day pips, the Last line with Undo', await frame(async hostEl => {
   need(hostEl.querySelector('.pa-clear'), 'f06: All caught up is not drawn')
   need(byText(hostEl.querySelector('.pa-clear-last'), /^Undo$/), 'f06: the Last line has no Undo')

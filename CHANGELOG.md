@@ -5,6 +5,18 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## 1.20.0
+
+### Changed
+
+* **A review starts only when you press Review.** Until now the panel and the status-bar chip started
+  the AI review of every new card on their own, as soon as they saw it. Now a new card reads
+  "Not reviewed â€” press Review to start it" and has a **Review** button; nothing calls the model
+  until you press it. Approve stays locked until you have pressed Review and the review has finished,
+  so a write is still never approved without a review. Opening the panel or reading the list spends
+  nothing. Groups of changes to one skill and candidates work the same way. When no review model is
+  set or the review failed, the existing two-step "Approve without review" is unchanged.
+
 ## 1.19.0
 
 ### Fixed

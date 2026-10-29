@@ -702,9 +702,13 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   "copy the approval across a trivial rebase", and GitHub's "dismiss stale approvals" for the rest.
   Results written before 1.10.0 stay valid while their old key still matches (`_legacy_review_key`)
   and show `outdated: prompt`.
-* **Who starts a review.** Only `POST /reviews` (and "Review again"). `GET /pending` reports the
-  state `queued`; the panel posts `/reviews` when a load has a queued item, the chip when the total
-  count changes, so reviews are ready when the panel opens and a read never spends anything. One
+* **Who starts a review.** Only the owner, with the card's **Review** button (`POST /review`; the
+  same route as "Review again"). `GET /pending` reports the state `queued`, drawn as "Not reviewed"
+  with Approve locked. Until 1.19.0 the panel and the status-bar chip posted `/reviews` on their own
+  as soon as they saw a queued record; 1.20.0 dropped that at the owner's request ("beni beklesin,
+  review edilmeden approval yapılamasın" — wait for me, no approval without a review). The
+  `POST /reviews` route (start every queued review) stays in the backend; the panel no longer calls
+  it. One
   job per record (`_REVIEW_RUNNING` holds `subsystem-id`); the job takes its input and its key from
   one snapshot taken under `_LOCK` after it gets a slot, returns without a call when the record is
   gone or a valid result exists, and saves only while the record is pending and no newer result is
