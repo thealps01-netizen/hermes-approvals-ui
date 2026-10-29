@@ -110,3 +110,27 @@ own drawing in theme colours only. No new backend field is needed.
 
 The left rail and tab bar, the top card and week chart, day progress pips, bar meters, row dots, the
 per-row "Saved"/"Not saved" rows in the list (they live in Written now).
+
+## Every action and where it lives (none may be dropped)
+
+Mockups `detail-group` (a group with members, shortener, Save only, more lines, finished test) and
+`activity-force` (undo conflict) cover the actions the first set did not draw.
+
+| Today's action (`plugin.js`) | New place |
+|---|---|
+| Save / Save with the fix / Save as written / Use the short version | Record footer (A); ready cards on the line carry Save for records without a fix choice |
+| Save anyway (reviewer advised not saving) | Record footer, two-step as today |
+| Shorten description (`/fix`) | Record: on the member row (group) or as the lead button (single) |
+| Save only this (`only`) | Record, under the changes ("you can apply just one") |
+| Don't save / Don't save all N / Don't save #n | Record footer (X); group member rows |
+| Later | Record footer (L); moves the card to the end of its station |
+| Review / Review again | Reviewer station cards ("Check", "Check all"); Record side column |
+| Side-by-side test / Test again, its states and result rows | Record side column, dashed block with a flask icon |
+| Select, Save N, Don't save N | Line (Select), bottom bar |
+| Candidates | Parked branch; a parked card opens the same Record |
+| Show N more lines / Show less / Show lines / Hide lines | Diffs in Record and Written |
+| Full review: findings, quotes, minor notes, unverified, cut/carried/siblings/outdated asides | Record side column (no extra fold for findings; minor notes under one fold) |
+| Undo, Force undo, Restore, Clear all | Written station rows (Undo/Restore) and the Written page |
+| Delete note, Ask Hermes to combine notes | Memory page |
+| Alerts, Refresh, Retry, palette entries, status-bar chip, OS alert | Header; unchanged |
+| Keys J/K/A/X/L/Space/Esc | J/K move between cards (station order), Enter opens, A/X/L in Record, Space/Esc in Select, Esc back |

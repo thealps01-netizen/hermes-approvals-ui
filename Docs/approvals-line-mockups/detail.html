@@ -112,15 +112,20 @@ h2{font-size:16px;line-height:1.3;font-weight:600}
 .seg{display:inline-flex;border:1px solid var(--ui-stroke-secondary);border-radius:6px;padding:2px;gap:2px;margin-bottom:10px}
 .seg span{padding:3px 10px;font-size:12px;border-radius:4px;color:var(--ui-text-secondary)}
 .seg .on{background:var(--ui-row-active-background);color:var(--ui-text-primary)}
-.diff .l.fixl span:last-child{flex:1}.diff .l .fx{flex:none;font-size:12px;padding:0 7px;border-radius:999px;border:1px solid var(--ui-stroke-secondary);color:var(--ui-text-secondary)}
+.diff .l.fixl span:nth-child(2){flex:1}.diff .l .fx{flex:none;font-size:12px;padding:0 7px;border-radius:999px;border:1px solid var(--ui-stroke-secondary);color:var(--ui-text-secondary)}
 .rv h3{font-size:13px;display:flex;gap:7px;align-items:center}
 .rv .find{margin-top:10px;padding:10px;border-radius:8px;border:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-elevated)}
 .rv .find p{font-size:12px;color:var(--ui-text-secondary);margin-top:4px}
 .rv .find q{color:var(--ui-text-primary)}
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:1px 7px;border-radius:999px;border:1px solid var(--ui-stroke-secondary)}
-.passed{margin-top:12px;display:grid;gap:4px;font-size:12px;color:var(--ui-text-secondary)}
+.passed{margin-top:10px;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ui-text-secondary)}
+.test{margin-top:12px;padding:10px;border-radius:8px;border:1.5px dashed var(--ui-stroke-secondary)}
+.test h3{font-size:13px;display:flex;gap:7px;align-items:center}
+.test h3 .st{margin-left:auto;font-size:12px;font-weight:400;color:var(--ui-text-secondary)}
+.test p{font-size:12px;color:var(--ui-text-secondary);margin-top:4px}
+.test .acts{display:flex;align-items:center;gap:10px;margin-top:8px}
 .passed span{display:flex;gap:6px;align-items:center}
-.facts{margin-top:12px;padding-top:10px;border-top:1px solid var(--ui-stroke-quaternary);display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px;color:var(--ui-text-secondary)}
+.facts{margin-top:10px;padding-top:8px;border-top:1px solid var(--ui-stroke-quaternary);display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px;color:var(--ui-text-secondary)}
 .facts b{font-weight:500;color:var(--ui-text-primary)}
 .foot2{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;padding:12px 26px;border-top:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-chrome)}
 .foot2 .eff{flex:1;font-size:12px;color:var(--ui-text-secondary);display:flex;gap:6px;align-items:center}
@@ -155,6 +160,7 @@ kbd{font:11.5px/1 ui-monospace,Consolas,monospace;padding:2px 4px;border-radius:
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
 <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
 <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></symbol>
+<symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.5 3.5h5M10 3.5v6L4.8 18.3A1.5 1.5 0 0 0 6.1 20.5h11.8a1.5 1.5 0 0 0 1.3-2.2L14 9.5v-6"/><path d="M7.5 14.5h9"/></symbol>
 </svg>
 <div class="bar2"><button class="btn text"><svg class="ico"><use href="#i-left"/></svg>The line</button>
   <span class="crumb">Skill · 2 of 5 on the line</span></div>
@@ -193,6 +199,9 @@ kbd{font:11.5px/1 ui-monospace,Consolas,monospace;padding:2px 4px;border-radius:
       <span><svg class="ico tick"><use href="#i-check"/></svg>Not tied to one session</span>
       <span><svg class="ico tick"><use href="#i-check"/></svg>No drift</span>
     </div>
+    <div class="test"><h3><svg class="ico"><use href="#i-flask"/></svg>Side-by-side test<span class="st">Not run</span></h3>
+      <p>Your skill · 3 tasks run with the old and the new text, graded both ways. Up to 18 answers + 18 gradings · this week 34% used.</p>
+      <div class="acts"><button class="btn outline">Test</button><span class="small muted">Optional. Saving untested marks it “untested”.</span></div></div>
     <div class="facts"><span>Reviewer</span><b>Haiku 4.5</b><span>Read</span><b>4,210 in · 380 out</b><span>Cost</span><b>$0.006</b>
       </div>
     <button class="btn outline" style="margin-top:10px"><svg class="ico"><use href="#i-refresh"/></svg>Review again</button>
