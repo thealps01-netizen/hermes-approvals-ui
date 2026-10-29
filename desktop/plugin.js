@@ -700,12 +700,15 @@ const refocus = from => {
   const root = from?.closest('.pa-root')
   if (!root) return
   const own = from.closest('.pa-cell') || from
+  const gone = own.getAttribute('data-key')
   const at = [...root.querySelectorAll('.pa-cell')].findIndex(c => c === own)
   const move = () => {
     if (!lost()) return
-    const left = [...root.querySelectorAll('.pa-cell')].filter(c => !c.querySelector('.pa-leaving'))
+    const left = [...root.querySelectorAll('.pa-cell')]
+      .filter(c => !c.querySelector('.pa-leaving') && (!gone || c.getAttribute('data-key') !== gone))
     const next = left[Math.min(Math.max(at, 0), left.length - 1)]
-    const target = next?.querySelector('.pa-card') || root.querySelector('.pa-lc-main') || root.querySelector('.pa-refresh')
+    const target = next?.querySelector('.pa-card') || root.querySelector('.pa-lc-main')
+      || [...root.querySelectorAll('.pa-back-btn, .pa-refresh')].find(b => !own.contains(b))
     target?.focus()
   }
   for (const ms of [450, 900, 1500]) window.setTimeout(move, ms)
@@ -2683,13 +2686,13 @@ function BulkBar({ items, picked, setPicked, onDone, onCancel }) {
           jsx(Button, {
             className: 'pa-bulk-cancel', variant: 'text', size: 'sm', disabled: busy,
             onClick: () => setArming(''), children: t('pa.bulk.cancel')
-          }, 'cancel'),
+          }, 'back'),
           jsx(Button, {
             className: 'pa-bulk-go', variant: arming === 'reject' ? 'outline' : 'default', size: 'sm', loading: busy,
             onClick: () => void run(arming), children: t('pa.bulk.confirm')
           }, 'go')
         ]
-      }, 'actions')
+      }, 'armed')
     ] : [
       jsx('span', { className: 'pa-bulk-n', children: t('pa.bulk.picked', n, n - held) }, 'n'),
       jsx(Button, {
@@ -3167,6 +3170,9 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const { busy, run } = useRun(t, key)
   const { leaving, leave } = useLeave(key)
   const cardAt = useInert(leaving)
+  useEffect(() => {
+    if (lost()) cardAt.current?.focus()
+  }, [])
   const parts = item.parts || null
   const plain = item.plain || {}
   const groups = plain.groups || []
