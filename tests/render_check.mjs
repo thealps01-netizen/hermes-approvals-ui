@@ -2139,26 +2139,27 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
 {
   const bulk = await mount('en')
   await selectMode(bulk.hostEl)
-  const barOf = h => h.hostEl.querySelector('.pa-split')
-  const cardOf = h => h.hostEl.querySelector('.pa-detail .pa-bulk')
+  const barOf = h => h.hostEl.querySelector('.pa-line > .pa-bulk')
+  const cardOf = barOf
   const bar = barOf(bulk)
-  if (bulk.hostEl.querySelector('.pa-list .pa-bulk')) fail('the bulk actions are still drawn inside the list')
+  if (!bar || bulk.hostEl.querySelector('.pa-st .pa-bulk')) fail('the bulk actions are not one bar below the line')
   const picks = [...bulk.hostEl.querySelectorAll('.pa-pick')]
   if (picks.length !== 3) fail(`every card should carry a checkbox, got ${picks.length}`)
   if (picks.some(p => p.disabled)) fail('a card checkbox is disabled — a flagged record cannot be ticked for bulk Reject')
-  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('.pa-pick')
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-lc[data-key="${key}"] .pa-pick`)
   if (picks.some(p => !/^Select this record: .+ #[0-9a-f]{8}$/.test(p.getAttribute('aria-label') || ''))) {
     fail('a selection checkbox has no accessible name')
   }
-  must(bulk.hostEl.querySelector('.pa-list-head')?.textContent, ['0 selected', 'Select all', 'Cancel'], 'bulk bar idle')
+  must(bar?.textContent, ['0 picked.', 'Select all', 'Cancel'], 'bulk bar idle')
   if (/cannot be applied as staged/.test(bar?.textContent || '')) fail('the old "left out of the selection" note is back')
   if (buttons(cardOf(bulk), /^(Approve|Reject) \d+$/).length) fail('bulk actions are offered with nothing selected')
   const posts = () => stub.calls.posts.filter(p => p.path === '/decide')
   const before = posts().length
   await click(buttons(bar, /^Select all$/)[0])
-  must(barOf(bulk)?.textContent, ['3 selected', 'Clear selection', '3 records selected'], 'bulk all')
-  if (!cardOf(bulk)) fail('no selection summary in the detail pane over three ticked records')
+  must(barOf(bulk)?.textContent, ['3 picked. Only 2 the reviewer has read can be saved', 'Clear selection'], 'bulk all')
+  if (cardOf(bulk)?.getAttribute('aria-label') !== '3 records selected') {
+    fail('the bulk bar does not name the selection over three ticked records')
+  }
   const lockedApprove = buttons(barOf(bulk), /^Save 3$/)[0]
   if (lockedApprove?.getAttribute('aria-disabled') !== 'true') fail('bulk Approve is open with a flagged record selected')
   if (lockedApprove?.disabled) fail('the locked bulk Approve is a disabled button: its Tip can never be reached')
@@ -2170,7 +2171,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (/Save 3 records now\?/.test(barOf(bulk)?.textContent || '')) fail('the locked bulk Approve still armed')
   if (posts().length !== before) fail('the locked bulk Approve sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['2 selected'], 'bulk flagged unticked')
+  must(barOf(bulk)?.textContent, ['2 picked.'], 'bulk flagged unticked')
   const openApprove = buttons(barOf(bulk), /^Save 2$/)[0]
   if (!openApprove || openApprove.getAttribute('aria-disabled') === 'true') fail('bulk Approve stays locked once every selected record is approvable')
   if (openApprove?.closest('[data-tip]')) fail('an open bulk Approve still carries the "needs a decision" Tip')
@@ -2180,7 +2181,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   await click(bulk.hostEl.querySelector('.pa-bulk-cancel'))
   if (posts().length !== before) fail('Cancel still sent a decision')
   await click(pickOf(bulk, 'skills:def67890'))
-  must(barOf(bulk)?.textContent, ['3 selected'], 'bulk flagged ticked again')
+  must(barOf(bulk)?.textContent, ['3 picked.'], 'bulk flagged ticked again')
   await click(buttons(barOf(bulk), /^Don’t save 3$/)[0])
   const arm = bulk.hostEl.querySelector('.pa-bulk [role="alert"]')
   if (!arm || !/Don’t save 3 records\?/.test(arm.textContent) || !/restored/.test(arm.textContent)) {
@@ -2291,7 +2292,6 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
 
   REST.post = 'stale'
   const stale = await mount('en')
-  await selectMode(stale.hostEl)
   await toFront(stale.hostEl, 'skills:aaa11111')
   const reads = GETS.filter(p => p === '/pending').length
   await click([primaryBtn(cellOf(stale, 'skills:aaa11111'))].filter(Boolean)[0], 120)
@@ -2307,7 +2307,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   // The app stops waiting for /decide after 30 s; the backend may still finish it. The panel reads the
   // history (which waits for the backend) and reports what happened, not "Could not apply".
   for (const [mode, kind, text, lateKind] of [
-    ['late', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
+    ['late', 'success', 'Applied — it took longer than the panel waits. It is in “Written”.'],
     ['latebusy', 'warning', 'Still being applied — the panel stopped waiting. The list updates when it is done.'],
     ['latenone', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.'],
     ['late', 'error', 'It was turned down somewhere else (for example from chat) while the panel waited — nothing was saved.',
@@ -2336,7 +2336,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     fail(`a single Reject did not send one reject: ${JSON.stringify(rejected.map(p => p.body))}`)
   }
   const toast = lastSaid()
-  if (toast?.kind !== 'success' || !/restore it from the “Activity” tab/.test(toast?.message || '')) {
+  if (toast?.kind !== 'success' || !/restore it from “Written”/.test(toast?.message || '')) {
     fail(`a successful single Reject does not say it can be restored: ${JSON.stringify(toast)}`)
   }
   rej.hostEl.remove()
@@ -3634,7 +3634,7 @@ REST.scan = 'ok'
     h.hostEl.remove()
   }
   for (const [mode, kind, text] of [
-    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in the “Activity” tab.'],
+    ['lateskew', 'success', 'Applied — it took longer than the panel waits. It is in “Written”.'],
     ['lateold', 'error', 'The panel stopped waiting and no change was recorded. The list is read again.']]) {
     REST.post = mode
     const h = await mount('en', 'page')
@@ -3852,7 +3852,7 @@ REST.scan = 'ok'
   const sends = () => stub.calls.posts.filter(p => p.path === '/decide')
   REST.pending = null
 
-  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.'
+  const UNKNOWN = 'The panel stopped waiting and could not tell whether the change was applied — check “Written”. The list is read again.'
   for (const [row, button] of [[null, 'Save skill'], ['apply', 'Save skill'], ['rejected', 'Save skill'],
     ['apply', 'Don’t save']]) {
     const applied = row === 'apply' && button === 'Save skill'
@@ -3948,8 +3948,7 @@ REST.scan = 'ok'
 {
   const cellAt = (h, key) => h.hostEl.querySelector(`.pa-cell[data-key="${key}"]`)
   const barOf = h => h.hostEl.querySelector('.pa-bulk')
-  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-row[data-key="${key}"]`)?.closest('.pa-rowwrap')
-    ?.querySelector('.pa-pick')
+  const pickOf = (h, key) => h.hostEl.querySelector(`.pa-lc[data-key="${key}"] .pa-pick`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
   const doc = dom.window.document
   const pid = stub.calls.registered.at(-1).id
