@@ -4599,87 +4599,75 @@ REST.scan = 'ok'
   del.hostEl.remove()
 }
 
-// --- 38) select-mode (rework 2, item 1; mockup select-mode.html): after "Select" each row's icon tile turns into
-// its checkbox (same 28 px place, accent fill + check when ticked, the row tinted), the list header reads
-// "N selected · Select all · Cancel", the legend reads Space select · Esc done, the detail is an "N records
-// selected" summary (one bordered row per record: tile, title, type · file · +N −M, verdict chip) and the
-// footer holds "Reject N" (outline, not red) and "Approve N" (primary). Esc or Cancel leaves; nothing stays.
+// --- 38) select-mode (the line's Select): after "Select" every card carries its kit checkbox, a picked card is
+// ringed, one bar below the line reads "N picked. · Select all · Cancel" with "Don't save N" (outline, not red)
+// and "Save N" (primary); Space ticks the focused card; Esc or Cancel leaves and nothing stays picked.
 {
   const sm = await mount('en', 'page')
+  const doc = dom.window.document
   const picksOf = () => [...sm.hostEl.querySelectorAll('.pa-pick')]
-  const barNow = () => sm.hostEl.querySelector('.pa-bulk')
-  const head = () => sm.hostEl.querySelector('.pa-split .pa-list-head')
+  const barNow = () => sm.hostEl.querySelector('.pa-line > .pa-bulk')
+  const on = () => sm.hostEl.querySelector('.pa-hd .pa-tools .pa-select')
   if (picksOf().length || barNow()) fail('select-mode: checkboxes or the bulk bar show before "Select" is pressed')
-  const on = head()?.querySelector('.pa-select')
-  if (name(on) !== 'Select') fail(`select-mode: "Select" is not in the list header: ${name(on)}`)
-  if (on) await click(on, 40)
-  const tileBoxes = [...sm.hostEl.querySelectorAll('.pa-list-rows > .pa-rowwrap[data-picking="1"] > .pa-cb > .pa-pick')]
-  if (picksOf().length !== 3 || tileBoxes.length !== 3) {
-    fail(`select-mode: each row's tile must turn into its checkbox, got ${tileBoxes.length} of ${picksOf().length}`)
+  if (name(on()) !== 'Select' || on()?.getAttribute('aria-pressed') !== 'false') {
+    fail(`select-mode: "Select" is not in the line header: ${name(on())}`)
   }
-  const sheet = sm.hostEl.querySelector('style')?.textContent || ''
-  if (!sheet.includes('.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}')
-      || !/\.pa-cb\{position:absolute;left:12px;top:10px;width:28px;height:28px/.test(sheet)
-      || tileBoxes.some(b => b.getAttribute('data-slot') !== 'checkbox')
-      || !/\.pa-root \.pa-row\{[^}]*padding:10px 12px;/.test(sheet)) {
-    fail('select-mode: the checkbox is not drawn in the place of the 28 px icon tile')
+  await click(on(), 40)
+  const boxes = [...sm.hostEl.querySelectorAll('.pa-cols .pa-lc > .pa-lc-k > .pa-pick')]
+  if (picksOf().length !== 3 || boxes.length !== 3 || boxes.some(b => b.getAttribute('data-slot') !== 'checkbox')) {
+    fail(`select-mode: each card must carry its kit checkbox, got ${boxes.length} of ${picksOf().length}`)
   }
-  must(head()?.textContent, ['0 selected', 'Select all', 'Cancel'], 'select-mode: the list header after Select')
-  const legend = sm.hostEl.querySelector('.pa-split .pa-legend')?.textContent || ''
-  if (legend !== 'SpaceselectEscdone') fail(`select-mode: the legend does not read Space select · Esc done: ${legend}`)
-  if (barNow()) fail('select-mode: a summary is drawn with nothing ticked')
-  const picks = picksOf()
-  for (const box of picks.slice(0, 2)) await click(box, 20)
-  const ticked = [...sm.hostEl.querySelectorAll('.pa-cb[data-on="1"]')]
-  if (ticked.length !== 2 || ticked.some(cb => !cb.querySelector('[data-slot="checkbox"][data-state="checked"]'))
-      || sm.hostEl.querySelectorAll('.pa-rowwrap[data-picked="1"]').length !== 2) {
-    fail('select-mode: a ticked tile is not filled with its check, or its row is not tinted')
+  if (on()?.getAttribute('aria-pressed') !== 'true') fail('select-mode: the Select toggle does not read as pressed')
+  must(barNow()?.textContent, ['0 picked.', 'Select all', 'Cancel'], 'select-mode: the bar after Select')
+  if (!barNow()?.querySelector('[data-slot="kbd"]')?.textContent?.includes('Esc')) {
+    fail('select-mode: Cancel does not show its Esc key')
   }
-  must(head()?.textContent, ['2 selected'], 'select-mode: two picked')
-  const card = sm.hostEl.querySelector('.pa-detail .pa-bulk')
-  if (!card || sm.hostEl.querySelector('.pa-list .pa-bulk')) fail('select-mode: the selection is not summarised in the detail pane')
-  must(card?.textContent, ['2 records selected', 'Each record is decided on its own'], 'select-mode: the summary')
-  const sums = [...(card?.querySelectorAll('.pa-sum-row') || [])]
-  if (sums.length !== 2 || sums.some(r => !r.querySelector('.pa-tile') || !r.querySelector('.pa-sum-chip')
-      || !/ · \+\d+ −\d+$/.test(r.querySelector('.pa-sum-meta')?.textContent || ''))) {
-    fail(`select-mode: a summary row lacks its tile, its "type · file · +N −M" line or its verdict chip: ${
-      sums.map(r => r.textContent).join(' | ')}`)
+  for (const box of picksOf().slice(0, 2)) await click(box, 20)
+  const ticked = [...sm.hostEl.querySelectorAll('.pa-lc[data-picked="1"]')]
+  if (ticked.length !== 2 || ticked.some(c => !c.querySelector('[data-slot="checkbox"][data-state="checked"]'))) {
+    fail('select-mode: a ticked card is not checked, or its card is not ringed')
   }
-  const foot = card?.querySelector('.pa-dfoot')
-  const rej = buttons(foot, /^Don’t save 2$/)[0]
-  const app = buttons(foot, /^Save 2$/)[0]
+  if (!/\.pa-lc\[data-picked="1"\]\{border:1\.5px solid var\(--ui-accent\)/.test(sm.hostEl.querySelector('style')?.textContent || '')
+      && !/\.pa-lc\[data-ready="1"\],\.pa-lc\[data-picked="1"\]\{border:1\.5px solid var\(--ui-accent\)/
+        .test(sm.hostEl.querySelector('style')?.textContent || '')) {
+    fail('select-mode: a picked card is not ringed in the accent')
+  }
+  must(`${barNow()?.getAttribute('aria-label')} ${barNow()?.textContent}`, ['2 records selected', '2 picked.'],
+    'select-mode: two picked')
+  const rej = buttons(barNow(), /^Don’t save 2$/)[0]
+  const app = buttons(barNow(), /^Save 2$/)[0]
   if (rej?.getAttribute('data-variant') !== 'outline' || app?.getAttribute('data-variant') !== 'default') {
-    fail(`select-mode: the footer is not "Reject 2" outline + "Approve 2" primary: ${rej?.getAttribute('data-variant')} / ${
+    fail(`select-mode: the bar is not "Don’t save 2" outline + "Save 2" primary: ${rej?.getAttribute('data-variant')} / ${
       app?.getAttribute('data-variant')}`)
   }
-  const keys = picks.slice(0, 2).map(p => p.closest('.pa-rowwrap')?.querySelector('.pa-row')?.getAttribute('data-key'))
-  if (keys.every(k => k?.startsWith('skills:')) && card?.querySelector('.pa-meter-box')) {
+  const keys = ticked.map(c => c.getAttribute('data-key'))
+  if (keys.every(k => k?.startsWith('skills:')) && barNow()?.querySelector('.pa-meter-box')) {
     fail('select-mode: a "Memory after approving" meter is drawn for a selection without memory numbers')
   }
-  await keyDown(sm.hostEl.querySelectorAll('.pa-list-rows .pa-row')[2], ' ')
-  must(head()?.textContent, ['3 selected'], 'select-mode: Space on a focused row does not tick it')
-  await keyDown(sm.hostEl.querySelector('.pa-row'), 'Escape')
-  if (picksOf().length || barNow()) fail('select-mode: Esc leaves checkboxes or the summary behind')
-  if (name(dom.window.document.activeElement) !== 'Select') fail('select-mode: after Esc focus is not back on "Select"')
-  await click(buttons(head(), /^Select$/)[0], 40)
+  const third = sm.hostEl.querySelectorAll('.pa-cols .pa-lc-main')[2]
+  third?.focus()
+  await keyDown(third, ' ')
+  must(barNow()?.textContent, ['3 picked.'], 'select-mode: Space on a focused card does not tick it')
+  await keyDown(third, 'Escape')
+  if (picksOf().length || barNow()) fail('select-mode: Esc leaves checkboxes or the bar behind')
+  const now = doc.activeElement
+  if (!now || now === doc.body || !sm.hostEl.contains(now)) fail('select-mode: after Esc keyboard focus is lost')
+  await click(on(), 40)
   for (const box of picksOf().slice(0, 1)) await click(box, 20)
-  await click(buttons(head(), /^Cancel$/)[0], 40)
-  if (picksOf().length || barNow()) fail('select-mode: "Cancel" leaves checkboxes or the summary behind')
-  await click(buttons(head(), /^Select$/)[0], 40)
-  must(head()?.textContent, ['0 selected'], 'select-mode: a second Select starts with nothing picked')
+  await click(buttons(barNow(), /^Cancel/)[0], 40)
+  if (picksOf().length || barNow()) fail('select-mode: "Cancel" leaves checkboxes or the bar behind')
+  await click(on(), 40)
+  must(barNow()?.textContent, ['0 picked.'], 'select-mode: a second Select starts with nothing picked')
   sm.root.unmount()
   sm.hostEl.remove()
 }
 
-// --- 39) mockup-match: "Today" instead of a date, Later left of a ruled action bar, rows of one list, a
-// plain detail surface (the Just done rows are checked in 43d, in-row done) ----------------------------
+// --- 39) mockup-match: Later left of a ruled action bar, the record on the plain surface --------------------
 {
   const mm = await mount('en', 'page')
-  if (mm.hostEl.querySelector('.pa-date')) fail('mockup-match: the dated headline is back (R2 K20)')
-  if (mm.hostEl.querySelector('.pa-bar .pa-progress > span')?.textContent !== 'Today') {
-    fail('mockup-match: the day progress does not lead with "Today"')
-  }
+  if (mm.hostEl.querySelector('.pa-date, .pa-progress, .pa-pips')) fail('mockup-match: the dated headline or day progress is back')
   if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
+  await toFront(mm.hostEl, 'skills:aaa11111')
   const foot = mm.hostEl.querySelector('.pa-cell .pa-dfoot')
   const later = foot?.querySelector('.pa-later')
   if (name(later) !== 'Later' || later?.closest('.pa-actions') || !(later.compareDocumentPosition(foot.querySelector('.pa-actions')) & 4)) {
@@ -4734,6 +4722,10 @@ REST.scan = 'ok'
     fit: { file: 'MEMORY.md', before: 2149, after: 2097, limit: 2200, over: 0 } } }
   REST.pending = { memory: [shrink], skills: [], counts: { memory: 1, skills: 0 } }
   const fr = await mount('en', 'page')
+  if (fr.hostEl.querySelector('.pa-done, .pa-clear-last')) {
+    fail('review: a done row or Last line is drawn with no history')
+  }
+  await toFront(fr.hostEl, 'memory:abc12345')
   const effect = fr.hostEl.querySelector('.pa-meter-value')?.textContent || ''
   if (effect !== '98% → 95%' && effect !== '97% → 95%') fail(`review: a shrinking note reads "${effect}"`)
   const freed = fr.hostEl.querySelector('.pa-meter-add')
@@ -4741,24 +4733,21 @@ REST.scan = 'ok'
   if (!near(freed?.style.left, 2097) || !near(freed?.style.width, 2149 - 2097)) {
     fail('review: the freed part of a shrinking note is not the striped part of the meter')
   }
-  if (fr.hostEl.querySelector('.pa-done, .pa-clear-last')) {
-    fail('review: a done row or Last line is drawn with no history')
-  }
   fr.root.unmount()
   fr.hostEl.remove()
   // R2 A16: an empty history draws the kit empty state across the split, no list column and no row; it says
   // what the tab is for and offers the way back to Needs you.
   const none = await mount('en', 'page')
   await click(tab(none.hostEl, /Activity/), 80)
-  const blank = none.hostEl.querySelector('.pa-state')
+  const blank = none.hostEl.querySelector('.pa-written .pa-state')
   if (!blank || !/No activity yet/.test(blank.textContent || '')) fail('activity: an empty history draws no empty state')
   if (!/you can undo from here/.test(blank?.textContent || '')) fail('activity: the empty history does not say what it is for')
   await click(buttons(blank, /^Go to Needs you$/)[0], 60)
-  if (!/^Needs you/.test(none.hostEl.querySelector('.pa-tab[aria-selected="true"]')?.textContent || '')) {
-    fail('activity: the empty history offers no way to Needs you')
+  if (viewOf(none.hostEl) !== 'line' || none.hostEl.querySelector('.pa-written')) {
+    fail('activity: the empty history offers no way back to the line')
   }
   await click(tab(none.hostEl, /Activity/), 80)
-  if (none.hostEl.querySelector('.pa-act-row, .pa-list')) fail('activity: an empty history still draws a list column')
+  if (none.hostEl.querySelector('.pa-act-row, .pa-tl, .pa-list')) fail('activity: an empty history still draws a list column')
   none.root.unmount()
   none.hostEl.remove()
 }
@@ -4767,13 +4756,13 @@ REST.scan = 'ok'
   REST.memory = { ...MEMORY, memory: blankFile(MEMORY.memory), user: blankFile(MEMORY.user) }
   const none = await mount('en', 'page')
   await click(tab(none.hostEl, /Memory/), 80)
-  const body = none.hostEl.querySelector('.pa-memory .pa-detail')?.textContent || ''
+  const body = none.hostEl.querySelector('.pa-memory .pa-notes-wrap')?.textContent || ''
   if (!body.includes('No notes in Memory yet') || !body.includes('Memory holds what Hermes knows about your work')) {
     fail(`memory: an empty file does not say what it holds and how notes get in: ${body.slice(0, 160)}`)
   }
   if (/% full/.test(body)) fail('memory: an empty file still repeats “0% full”')
-  await click(none.hostEl.querySelector('.pa-memrow[data-file="user"], #pa-mem-user'), 60)
-  if (!(none.hostEl.querySelector('.pa-memory .pa-detail')?.textContent || '').includes('Profile holds what Hermes knows about you')) {
+  await click(none.hostEl.querySelector('.pa-mfile[data-k="user"]'), 60)
+  if (!(none.hostEl.querySelector('.pa-memory .pa-notes-wrap')?.textContent || '').includes('Profile holds what Hermes knows about you')) {
     fail('memory: an empty Profile does not say what it holds')
   }
   REST.memory = null
@@ -4783,7 +4772,7 @@ REST.scan = 'ok'
   REST.history = null
 }
 
-// --- 41) ui-polish: neutral surfaces, a bounded list column, the Memory tab's file rows -----------------
+// --- 41) ui-polish: neutral surfaces, a bounded side column, the Memory page's file switch -----------------
 {
   const pg = await mount('en', 'page')
   const sheet = pg.hostEl.querySelector('style')?.textContent || ''
@@ -4791,32 +4780,31 @@ REST.scan = 'ok'
   if (/--hx-card:var\(--ui-bg-(secondary|tertiary|primary)\)/.test(root)) {
     fail('ui-polish: cards are painted with an accent-tinted fill (--ui-bg-secondary is 11% accent)')
   }
-  if (!/\.pa-split\{[^}]*grid-template-columns:300px minmax\(0,1fr\)/.test(sheet)) {
-    fail('ui-polish: the list column is not a fixed 300 px beside a flexible detail')
-  }
-  if (!/@container \(max-width:760px\)\{[^@]*\.pa-split\{grid-template-columns:minmax\(0,1fr\)\}/.test(sheet)) {
-    fail('ui-polish: the list stays beside the detail down to a width where neither fits')
+  if (!/(^|\n)\.pa-rec\{[^}]*grid-template-columns:minmax\(0,1fr\) 300px/.test(sheet)
+      || !/(^|\n)\.pa-cols\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/.test(sheet)) {
+    fail('ui-polish: the record side column is not a fixed 300 px beside a flexible change, or the line is not five columns')
   }
   if (/\.pa-alerts-word\{[^}]*display:none/.test(sheet)) {
     fail('ui-polish: the Alerts switch loses its word at some pane width (labels are never dropped)')
   }
-  if (!pg.hostEl.querySelector('.pa-bar .pa-refresh')) fail('ui-polish: refresh is not on the top bar')
-  if (!/\.pa-root \.pa-row\{[^}]*border:0;background:transparent/.test(sheet)) {
-    fail('ui-polish: the list row button keeps the browser\u2019s own button look')
+  if (!pg.hostEl.querySelector('.pa-hd .pa-tools .pa-refresh')) fail('ui-polish: refresh is not in the header')
+  if (!/\.pa-root \.pa-lc-main\{[^}]*border:0;background:transparent/.test(sheet)) {
+    fail('ui-polish: the card button keeps the browser\u2019s own button look')
   }
   await click(tab(pg.hostEl, /Memory/), 60)
-  if (pg.hostEl.querySelector('.pa-gauges')) fail('ui-polish: the Memory tab shows the fill rings twice')
-  const cards = [...pg.hostEl.querySelectorAll('.pa-memrows [role="tab"]')]
-  if (cards.length !== 2 || !cards.every(c => c.classList.contains('pa-memrow'))) {
-    fail(`ui-polish: the file rows are not the file switch (${cards.length} tabs)`)
+  if (pg.hostEl.querySelector('.pa-gauges, .pa-hd .pa-mring')) fail('ui-polish: the Memory page shows the fill rings twice')
+  const cards = [...pg.hostEl.querySelectorAll('.pa-mfiles[role="group"] > .pa-mfile[aria-pressed]')]
+  if (cards.length !== 2 || cards.filter(c => c.getAttribute('aria-pressed') === 'true').length !== 1) {
+    fail(`ui-polish: the file rings are not the file switch (${cards.length} switches)`)
   }
   const full = [...pg.hostEl.querySelectorAll('.pa-alert, .pa-banner')].filter(a => /nearly full/.test(a.textContent))
   if (full.length > 1) {
     fail('ui-polish: "Memory is nearly full" is written twice')
   }
-  const arm = (pg.hostEl.querySelector('[role="tabpanel"]#pa-mem-panel') || pg.hostEl).querySelector('.pa-note-del')
+  const arm = pg.hostEl.querySelector('.pa-notes-wrap .pa-note-del')
+  if (!arm) fail('ui-polish: a note has no delete button')
   if (arm) await click(arm, 30)
-  const grid = [...pg.hostEl.querySelectorAll('#pa-mem-panel *')].some(el => el.style.gridTemplateColumns === '1fr 1fr')
+  const grid = [...pg.hostEl.querySelectorAll('.pa-notes-wrap *')].some(el => el.style.gridTemplateColumns === '1fr 1fr')
   if (grid) fail('ui-polish: the delete confirmation splits the row into two half-width buttons')
   const narrowCmp = sheet.indexOf('@container (max-width:520px){.pa-cmp{')
   if (narrowCmp < sheet.indexOf('.pa-cmp{display:grid')) {
@@ -4832,31 +4820,32 @@ REST.scan = 'ok'
   pg.hostEl.remove()
 }
 
-// --- 42) alignment: equal rows, headings off the lines, the list footer, a tab-switch transition -------
+// --- 42) alignment: equal stations, day headings, Clear all at the foot of Written, a view transition -------
 {
   const pg = await mount('en', 'page')
   const sheet = pg.hostEl.querySelector('style')?.textContent || ''
-  const rule = sel => sheet.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{[^}]*\\}'))?.[0] || ''
-  const rowHeights = [...pg.hostEl.querySelectorAll('.pa-split .pa-list-rows > .pa-rowwrap')].map(r => r.style.height)
-  if (rowHeights.length !== 3 || new Set(rowHeights).size !== 1 || rowHeights[0] !== '96px') {
-    fail(`alignment: the Needs you rows are not one fixed 96 px height: ${JSON.stringify(rowHeights)}`)
+  const sts = [...pg.hostEl.querySelectorAll('.pa-cols > .pa-st')]
+  if (sts.length !== 5 || !/(^|\n)\.pa-cols\{[^}]*align-items:start/.test(sheet)) {
+    fail(`alignment: the line is not five stations on one top edge: ${sts.length}`)
   }
-  if (!/padding:0 14px/.test(rule('.pa-day'))) {
-    fail('alignment: the day heading inside the Activity list has no padding and touches the list border')
+  if (!/@keyframes pa-in\{/.test(sheet) || !/\.pa-view\{animation:/.test(sheet)) {
+    fail('alignment: switching views swaps the content with no transition')
   }
-  if (!/@keyframes pa-in\{/.test(sheet) || !/\.pa-view\{animation:pa-in \d+ms/.test(sheet)) {
-    fail('alignment: switching tabs swaps the content with no transition')
-  }
-  if (!pg.hostEl.querySelector('.pa-view')) fail('alignment: the tab content is not wrapped in the transition class')
+  if (!pg.hostEl.querySelector('.pa-view')) fail('alignment: the view content is not wrapped in the transition class')
   await click(tab(pg.hostEl, /Memory/), 60)
-  const memHeights = [...pg.hostEl.querySelectorAll('.pa-memrow')].map(r => r.style.height)
-  if (memHeights.length !== 2 || new Set(memHeights).size !== 1) {
-    fail(`alignment: the two Memory file rows size to their own text: ${JSON.stringify(memHeights)}`)
+  const memFiles = [...pg.hostEl.querySelectorAll('.pa-mfile')]
+  if (memFiles.length !== 2 || memFiles.some(f => f.querySelectorAll('svg.pa-ring').length !== 1)) {
+    fail(`alignment: the two Memory files are not drawn alike: ${memFiles.length}`)
   }
   await click(tab(pg.hostEl, /Activity/), 60)
-  const foot = pg.hostEl.querySelector('.pa-written .pa-list > .pa-list-foot')
-  if (!foot || !buttons(foot, /^Clear all/).length || foot.style.height !== '57px') {
-    fail(`alignment: "Clear all" is not in the Activity list footer row (${foot?.style.height})`)
+  const days = [...pg.hostEl.querySelectorAll('.pa-written .pa-tl > .pa-day')]
+  if (!days.length || days[0].getAttribute('role') !== 'presentation') {
+    fail('alignment: Written has no day heading over its pins')
+  }
+  const col = pg.hostEl.querySelector('.pa-written .pa-tl-col')
+  const clear = col && buttons(col, /^Clear all/)[0]
+  if (!clear || !(col.querySelector('.pa-tl').compareDocumentPosition(clear) & 4)) {
+    fail('alignment: "Clear all" is not at the foot of the Written timeline')
   }
   pg.root.unmount()
   pg.hostEl.remove()
