@@ -2378,7 +2378,7 @@ const GLYPH = {
   x: ['M7 7l10 10M17 7L7 17']
 }
 const Glyph = ({ of, size = 14, tone }) => jsx('svg', {
-  className: 'pa-ico', viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': true, focusable: 'false',
+  className: 'pa-ico', viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': true, focusable: 'false', 'data-g': of,
   'data-tone': tone || undefined,
   children: (GLYPH[of] || []).map((d, i) => jsx('path', { d }, `p${i}`))
 })
@@ -4173,6 +4173,13 @@ function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
   const todayKey = dayKey(Date.now() / 1000)
   const groups = groupByDay(entries)
   const selected = entries.find(e => e.id === sel) || entries[0] || null
+  const today = entries.filter(e => dayKey(e.ts) === todayKey)
+  const headLine = [t('pa.hist.dayToday'),
+    ...[[['apply', 'external'], 'pa.hist.headSaved'], [['rejected'], 'pa.hist.headNotSaved'],
+      [['failed'], 'pa.hist.headFailed']].map(([kinds, key]) => {
+      const n = today.filter(e => kinds.includes(e.kind)).length
+      return n ? t(key, n) : null
+    })].filter(Boolean).join(' · ')
 
   const clear = async () => {
     setBusy(true)
@@ -4222,7 +4229,7 @@ function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
   const rows = groups.flatMap(g => [
     jsx('div', {
       className: 'pa-day', role: 'presentation',
-      children: g.key === todayKey ? t('pa.hist.dayToday') : dayHeading(t, g.ts)
+      children: g.key === todayKey ? headLine : dayHeading(t, g.ts)
     }, `day-${g.key}`),
     ...decksOf(t, g.entries).map(d => (d.entries.length > 1
       ? jsx(ActDeck, {

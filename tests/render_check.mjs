@@ -1084,6 +1084,10 @@ async function mount(appLocale, parts = 'both') {
 
 const click = async (el, wait = 40) => {
   if (!el) return
+  if (el.go) {
+    await el.go(wait)
+    return
+  }
   await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
   await act(async () => { await new Promise(r => setTimeout(r, wait)) })
 }
@@ -1100,20 +1104,47 @@ const primaryBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot
 const declineBtn = scope => [...(scope?.querySelectorAll('.pa-actions [data-slot="button"]') || [])]
   .find(b => b.classList.contains('pa-decline'))
 const byText = (hostEl, text) => [...hostEl.querySelectorAll('div')].find(d => d.textContent === text)
-const tab = (hostEl, re) => [...hostEl.querySelectorAll('.pa-tab')].find(b => re.test(b.textContent || ''))
-const slot = (el, name) => el.querySelector(`[data-slot="${name}"]`)
-// The split layout: every waiting record is a `.pa-row[data-key]` button in the list; the selected one
-// is drawn in the detail column (`.pa-detail.pa-cell[data-key]`). Selecting = clicking its row.
-const rowOf = (hostEl, key) => hostEl.querySelector(`.pa-row[data-key="${key}"]`)
+const slot = (el, name) => el?.querySelector(`[data-slot="${name}"]`)
+// The line: every waiting record is a card (`.pa-lc-main[data-key]` button) under the station where it
+// sits; opening one draws the record view (`.pa-detail.pa-cell[data-key]`) in place of the line, with
+// "The line" as its back button. Written (All activity) and Memory (the header rings) are pages of
+// their own, left the same way. `tab()` keeps the old call sites: it names a view and `click()` walks
+// there through the panel's own buttons.
+const backBtn = hostEl => hostEl?.querySelector('.pa-back-btn')
+const toLine = async (hostEl, wait = 40) => {
+  for (let i = 0; i < 3 && backBtn(hostEl); i += 1) await click(backBtn(hostEl), wait)
+}
+const VIEWS = [
+  ['line', 'Needs you', async (h, w) => toLine(h, w)],
+  ['written', 'Activity', async (h, w) => {
+    if (h.querySelector('.pa-written')) return
+    await toLine(h, w)
+    await click(h.querySelector('.pa-all-activity'), w)
+  }],
+  ['memory', 'Memory', async (h, w) => {
+    if (h.querySelector('.pa-memory')) return
+    await toLine(h, w)
+    await click(h.querySelector('.pa-mring[data-k="memory"]'), w)
+  }]
+]
+const tab = (hostEl, re) => {
+  const view = VIEWS.find(([id, label]) => re.test(label) || re.test(id))
+  return view ? { go: wait => view[2](hostEl, wait), view: view[0] } : undefined
+}
+const viewOf = hostEl => hostEl?.querySelector('.pa-root')?.getAttribute('data-view')
+const rowOf = (hostEl, key) => hostEl.querySelector(`.pa-lc-main[data-key="${key}"]`)
 const toFront = async (hostEl, key) => {
   if (hostEl.querySelector(`.pa-detail[data-key="${key}"] .pa-card`)) return
+  if (viewOf(hostEl) !== 'line' || hostEl.querySelector('.pa-line[data-open="1"]')) await toLine(hostEl)
   const row = rowOf(hostEl, key)
-  if (!row) fail(`"${key}" is not a row of the Needs you list`)
+  if (!row) fail(`"${key}" is not a card on the line`)
   await click(row)
 }
 const frontCell = hostEl => hostEl.querySelector('.pa-detail')
-const reachableKeys = hostEl => new Set([...hostEl.querySelectorAll('.pa-row[data-key]')]
+const reachableKeys = hostEl => new Set([...hostEl.querySelectorAll('.pa-lc-main[data-key]')]
   .map(c => c.getAttribute('data-key')))
+const stationOf = (hostEl, key) => hostEl.querySelector(`.pa-lc[data-key="${key}"]`)?.closest('.pa-st')
+  ?.getAttribute('data-st') || (hostEl.querySelector(`.pa-park .pa-lc[data-key="${key}"]`) ? 'parked' : null)
 const keyDown = async (el, key, extra = {}) => {
   if (!el) return null
   const ev = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra })
@@ -1130,13 +1161,13 @@ const liveText = hostEl => hostEl.innerHTML
 // --- 1) The panel under the app's own English locale -------------------------------------------
 const en = await mount('en')
 let sweepText = liveText(en.hostEl)
-for (const key of ['skills:def67890', 'skills:aaa11111']) {
+for (const key of ['skills:def67890', 'skills:aaa11111', 'memory:abc12345']) {
   await toFront(en.hostEl, key)
   sweepText += ' ' + liveText(en.hostEl)
 }
 await toFront(en.hostEl, 'memory:abc12345')
-must(sweepText, ['Needs you', 'Activity', 'Memory', 'Don’t save', 'Use the short version', 'Save failed',
-  'Needs one edit', 'Safe to save', 'new-skill', 'Save skill', 'Show the full review', 'MEMORY.md', 'Waiting · 3',
+must(sweepText, ['Hermes proposes', 'All activity', 'Memory', 'Your rules', 'Reviewer', 'Don’t save', 'Use the short version', 'Save failed',
+  'Needs one edit', 'Safe to save', 'new-skill', 'Save skill', 'Show the full review', 'MEMORY.md', 'The line',
   'move', 'Later'], 'en')
 noRawKeys(sweepText, 'en')
 if (!stub.calls.registered.length) fail('no bundle was registered at all')
@@ -1148,7 +1179,7 @@ if (locales.join() !== 'en') fail(`exactly one 'en' bundle must be registered, g
 const other = await mount('tr')
 await toFront(other.hostEl, 'skills:aaa11111')
 const otherSwept = liveText(other.hostEl)
-must(otherSwept, ['Needs you', 'Save skill', 'new-skill'], 'app locale tr')
+must(otherSwept, ['Hermes proposes', 'Save skill', 'new-skill'], 'app locale tr')
 noRawKeys(otherSwept, 'app locale tr')
 
 // --- 2) No language picker anywhere in the DOM --------------------------------------------------
@@ -1160,59 +1191,67 @@ for (const mounted of [en, other]) {
   }
 }
 
-// --- 2b) Tabs are a real tablist: roles, aria-selected, roving tabIndex, arrow keys, overflow ----
+// --- 2b) The line: five stations in order, the owner's station lit, counts, the dashed You -> Written ----
 {
-  const lists = [...en.hostEl.querySelectorAll('[role="tablist"]')]
-  if (!lists.length) fail('the view tabs are plain buttons (no role=tablist)')
-  const top = lists[0]
-  const tabs = [...(top?.querySelectorAll('[role="tab"]') || [])]
-  if (tabs.length !== 3) fail(`the view tablist does not hold 3 role=tab controls (${tabs.length})`)
-  const selected = tabs.filter(b => b.getAttribute('aria-selected') === 'true')
-  if (selected.length !== 1 || selected[0]?.tabIndex !== 0 || tabs.filter(b => b.tabIndex === -1).length !== 2) {
-    fail('the tabs carry no single aria-selected tab with a roving tabIndex')
+  await toLine(en.hostEl)
+  const cols = en.hostEl.querySelector('.pa-cols[role="list"]')
+  if (!cols) fail('the line is not drawn as one list of stations')
+  const sts = [...(cols?.querySelectorAll(':scope > .pa-st[role="listitem"]') || [])]
+  const ids = sts.map(st => st.getAttribute('data-st'))
+  if (ids.join() !== 'proposes,rules,reviewer,you,written') fail(`the line's stations are not the five in order: ${ids}`)
+  const names = sts.map(st => st.querySelector('.pa-st-name')?.textContent)
+  if (names.join('|') !== 'Hermes proposes|Your rules|Reviewer|You|Written') {
+    fail(`the stations are not named as the brief names them: ${JSON.stringify(names)}`)
   }
-  if (top && top.style.overflowX !== 'auto') fail('the tab strip has no overflow handling')
-  if (selected[0]) {
-    await act(async () => {
-      selected[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-    })
-    const now = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!now || !/Activity/.test(now.textContent || '')) fail('ArrowRight does not move the selected tab')
-    if (now && dom.window.document.activeElement !== now) fail('ArrowRight does not move focus with the selection')
-    await act(async () => {
-      now.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    })
-    const down = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!/Memory/.test(down?.textContent || '')) fail('vitality: ArrowDown does not move along the (vertical) rail tabs')
-    await act(async () => {
-      down?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
-    })
-    const up = [...top.querySelectorAll('[role="tab"]')].find(b => b.getAttribute('aria-selected') === 'true')
-    if (!/Activity/.test(up?.textContent || '')) fail('vitality: ArrowUp does not move back along the rail tabs')
-    if (!['horizontal', 'vertical'].includes(top.getAttribute('aria-orientation'))) {
-      fail('vitality: the view tablist does not say which way it runs (aria-orientation)')
-    }
-    const panel = en.hostEl.querySelector('[role="tabpanel"]')
-    if (!panel || panel.getAttribute('aria-labelledby') !== up?.id) fail('the tab panel is not labelled by its tab')
-    await act(async () => {
-      up?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
-    })
-    await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+  if (sts.some(st => !st.querySelector('.pa-node .pa-ico'))) fail('a station lost its round node with its icon')
+  if (sts.slice(0, 4).some(st => !st.querySelector('.pa-arrow svg'))) fail('an arrow between two stations is missing')
+  if (sts[4]?.querySelector('.pa-arrow')) fail('Written draws an arrow to nothing')
+  if (sts[3]?.getAttribute('data-out') !== 'dash' && sts[3]?.getAttribute('data-out') !== 'lit') {
+    fail('the You -> Written wire is not the dashed one')
   }
+  const lit = sts.filter(st => st.getAttribute('data-lit') === '1')
+  if (lit.length !== 1) fail(`one station holds the owner's next move; ${lit.length} are lit`)
+  const sheet = en.hostEl.querySelector('style')?.textContent || ''
+  if (!/\.pa-st\[data-lit="1"\]>\.pa-node\{border:3px solid var\(--ui-accent\)/.test(sheet)) {
+    fail('the lit station has no 3px accent ring')
+  }
+  if (!/\.pa-st\[data-out="dash"\]::after\{border-top-style:dashed\}/.test(sheet)) fail('the You -> Written wire is not dashed')
+  const count = st => slot(st.querySelector('.pa-cnt'), 'badge')?.textContent || ''
+  if (count(sts[0]) !== '3') fail(`Hermes proposes does not count the 3 records on the line: ${count(sts[0])}`)
+  if (sts[4] && count(sts[4])) fail('Written carries a count badge')
   const glyph = [...en.hostEl.querySelectorAll('button')].filter(b => /[✓✕]/.test(b.textContent || ''))
   if (glyph.length) fail(`a glyph is part of a button name: ${glyph.map(b => b.textContent).join(', ')}`)
 }
 
-// --- 2c) tabs-renamed: "Needs you" (badge 3), "Activity", "Memory" ------------------------------
+// --- 2c) The header: title, one sentence, the two rings, Alerts, Refresh; no tabs, no rail, no KPI strip ---
 {
-  const tabs = [...en.hostEl.querySelectorAll('[role="tab"]')]
-  const texts = tabs.map(b => (b.textContent || '').trim())
-  if (texts.length !== 3 || !/^Needs you3$/.test(texts[0]) || texts[1] !== 'Activity' || texts[2] !== 'Memory') {
-    fail(`tab labels are not renamed: ${JSON.stringify(texts)}`)
+  const hd = en.hostEl.querySelector('.pa-hd')
+  if (!hd) fail('the line has no header')
+  const h1 = hd?.querySelector('.pa-h1[role="heading"][aria-level="1"]')
+  if (h1?.textContent !== 'Approvals') fail(`the header title is not "Approvals": ${h1?.textContent}`)
+  const line = hd?.querySelector('.pa-hd-line')?.textContent || ''
+  if (!/^3 changes are on the line\. None is written until you save it at the fourth stop\.$/.test(line)) {
+    fail(`the header sentence does not count the line: ${JSON.stringify(line)}`)
   }
-  const badge = slot(tabs[0], 'badge')
-  if (!badge || badge.textContent !== '3') fail('the "Needs you" tab carries no kit Badge with the waiting count')
-  if (en.hostEl.querySelector('.pa-kpis')) fail('the four KPI boxes are still in the DOM')
+  const rings = [...(hd?.querySelectorAll('.pa-mring') || [])]
+  if (rings.map(r => r.getAttribute('data-k')).join() !== 'memory,user') fail('the header has no Memory and Profile rings')
+  if (!/^99%Memory$/.test(rings[0]?.textContent || '') || !/^84%Profile$/.test(rings[1]?.textContent || '')) {
+    fail(`the rings do not read their fill: ${rings.map(r => r.textContent)}`)
+  }
+  if (!hd?.querySelector('.pa-tools [role="switch"]') || !hd?.querySelector('.pa-tools .pa-refresh')) {
+    fail('the header tools lost the Alerts switch or Refresh')
+  }
+  for (const gone of ['[role="tablist"]', '[role="tab"]', '.pa-rail', '.pa-kpis', '.pa-top', '.pa-week', '.pa-pips',
+    '.pa-row', '.pa-list']) {
+    if (en.hostEl.querySelector(gone)) fail(`the removed ${gone} is back on the line`)
+  }
+  await click(rings[1], 40)
+  if (viewOf(en.hostEl) !== 'memory' || !en.hostEl.querySelector('.pa-mfile[data-k="user"][data-on="1"]')) {
+    fail('the Profile ring does not open the Memory page on USER.md')
+  }
+  if (en.hostEl.querySelector('.pa-hd')) fail('the Memory page keeps the line header (the mockup draws only its back bar)')
+  await toLine(en.hostEl)
+  if (viewOf(en.hostEl) !== 'line') fail('"The line" does not lead back from the Memory page')
 }
 
 // --- 3) No native `title=`, and every control keeps an accessible name --------------------------
@@ -1226,6 +1265,7 @@ for (const mounted of [en, other]) {
 
 // --- 4) The HOST UI KIT is the card's skeleton ---------------------------------------------------
 {
+  await toFront(en.hostEl, 'memory:abc12345')
   const cell = en.hostEl.querySelector('.pa-cell[data-key="memory:abc12345"]')
   if (!cell) fail('the memory record card is missing')
   const verdict = cell?.querySelector('.pa-verdict[data-k] .pa-vtitle[role="status"]')
@@ -1479,60 +1519,63 @@ for (const mounted of [en, other]) {
 
 // --- 10) The two-step note delete ---------------------------------------------------------------
 const memoryTab = tab(en.hostEl, /Memory/)
-if (!memoryTab) fail('the Memory tab is missing')
+if (!memoryTab) fail('the Memory page is missing')
 await click(memoryTab, 60)
-must(en.hostEl.textContent, ['Files', 'Memory · 2 notes', '2 notes · 2,189 / 2,200', 'Profile',
-  'Nothing is written to your memory without you.'], 'memory tab')
+must(en.hostEl.textContent, ['Memory', '99% · nearly full', '2 notes · 2,189 / 2,200 characters', 'Profile',
+  'Notes in Memory · longest first', 'Nothing is written to your memory without you.'], 'memory page')
 {
   const labels = [...en.hostEl.querySelectorAll('.pa-note-del')].map(b => b.getAttribute('aria-label'))
-  if (labels[0] !== 'Delete: Note 1 · 6 characters' || !/^Delete: Note 2/.test(labels[1] || '')) {
+  if (labels.length !== 2 || !labels.every(l => /^Delete: Note [12] · \d+ characters?$/.test(l || ''))) {
     fail(`the note delete controls do not name their note: ${JSON.stringify(labels)}`)
   }
   const trash = [...en.hostEl.querySelectorAll('.pa-note-del')]
-  if (!trash.length || trash.some(b => !b.querySelector('svg[data-icon="trash"]') || b.textContent.trim()
+  if (!trash.length || trash.some(b => !b.querySelector('svg') || b.textContent.trim()
       || !b.closest('[data-tip]')?.getAttribute('data-tip')?.startsWith('Delete note '))) {
     fail('the note delete is not a trash icon with its name in a Tip and in aria-label')
   }
 }
-if (en.hostEl.querySelectorAll('[role="tablist"]').length !== 2) fail('the memory file tabs are not a tablist')
 {
   const rows = [...en.hostEl.querySelectorAll('.pa-note-row')]
   const lens = rows.map(r => r.querySelector('.pa-note-text')?.textContent.length || 0)
+  if (lens.some((n, i) => i && n > lens[i - 1])) fail(`the notes are not drawn longest first: ${lens}`)
   const top = Math.max(...lens)
-  if (!rows.length || rows.some(r => r.style.getPropertyValue('--pa-w'))) {
-    fail('note length: a note row still carries a length shade (--pa-w)')
-  }
   const marked = rows.filter(r => r.getAttribute('data-longest') === '1').length
   const alone = lens.length > 1 && lens.filter(n => n === top).length === 1
   if (marked !== (alone ? 1 : 0)) {
     fail(`note length: ${marked} notes marked as the longest (a tie or a single note marks none, else one)`)
   }
-  const said = rows.map(r => r.querySelector('.pa-note-len')?.textContent)
+  const said = rows.map(r => r.querySelector('.pa-len')?.getAttribute('aria-label'))
   if (said.join('|') !== lens.map(n => `${n} character${n === 1 ? '' : 's'}`).join('|')) {
     fail(`note length: a row does not say how long its note is: ${said}`)
   }
+  const bars = rows.map(r => r.querySelector('.pa-len > i')?.style.width)
+  if (bars[0] !== '100%') fail(`note length: the longest note's bar is not full: ${bars}`)
+  if (rows.map(r => r.querySelector('.pa-note-n')?.textContent).join() !== rows.map((_, i) => i + 1).join()) {
+    fail('the notes are not numbered in the order they are drawn')
+  }
 }
-if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory tab')
+if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is back on the memory page')
 {
   const del = en.hostEl.querySelector('.pa-note-del')
   if (!del) fail('the note delete control is missing')
+  const target = del?.closest('.pa-note-row')?.querySelector('.pa-note-text')?.textContent
   await click(del)
   const armed = en.hostEl.querySelectorAll(DESTRUCTIVE).length
-  if (armed !== 1) fail(`arming one of two identical notes armed ${armed} confirmations`)
+  if (armed !== 1) fail(`arming one of two notes armed ${armed} confirmations`)
   if (en.hostEl.querySelectorAll('.pa-note-row[data-armed="1"]').length !== 1) {
     fail('the armed note row is not marked (data-armed) — the mockup washes it')
   }
   const confirm = en.hostEl.querySelector(DESTRUCTIVE)
   if (!confirm) fail('the delete confirmation (two-step) did not appear')
   if (stub.calls.posts.some(p => p.path === '/memory/delete')) fail('the delete fired before confirmation')
-  must(en.hostEl.textContent, ['About to delete — you can undo this from the “Activity” tab'], 'delete confirmation copy')
+  must(en.hostEl.textContent, ['About to delete — you can undo this from “Written”'], 'delete confirmation copy')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/memory/delete')
-  if (!post || post.body.target !== 'memory' || post.body.text !== 'A note') {
+  if (!post || post.body.target !== 'memory' || post.body.text !== target) {
     fail(`the delete request is wrong: ${JSON.stringify(post)}`)
   }
   const notified = stub.calls.notify.map(n => n.message || '').join(' | ')
-  if (!notified.includes('Deleted: A note')) fail(`no delete notification: ${notified}`)
+  if (!notified.includes(`Deleted: ${target}`)) fail(`no delete notification: ${notified}`)
 }
 
 // --- 10b) The merge draft -----------------------------------------------------------------------
@@ -1563,59 +1606,47 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   stub.state.composerLive = true
 }
 
-// --- 10c) Memory list + detail (R2 M1-M6, replaces the memory rings): one file row per file with its
-// meter in the fill() tone; selecting Profile shows its own notes and no banner -----------------------
+// --- 10c) Memory page: two files as large rings, the chosen file's notes; Profile shows its own --------
 {
-  const rows = [...en.hostEl.querySelectorAll('.pa-memrows [role="tab"].pa-memrow')]
-  if (rows.length !== 2) fail(`expected 2 file rows (Memory, Profile), found ${rows.length}`)
-  const [mem, prof] = rows
+  const files = [...en.hostEl.querySelectorAll('.pa-memory .pa-mfiles .pa-mfile')]
+  if (files.length !== 2) fail(`expected 2 file cards (Memory, Profile), found ${files.length}`)
+  const [mem, prof] = files
   const memText = mem?.textContent || ''
-  if (!/^Memory99%/.test(memText) || !memText.includes('2 notes · 2,189 / 2,200') || memText.includes('.md')) {
-    fail(`the Memory file row does not read name, percent, notes · chars / limit: ${mem?.textContent}`)
+  if (!/^Memory99% · nearly full2 notes · 2,189 \/ 2,200 characters$/.test(memText)) {
+    fail(`the Memory file card does not read name, percent, notes · chars / limit: ${memText}`)
   }
   if (!/^Profile84%1 note · 1,158 \/ 1,375 characters$/.test(prof?.textContent || '')) {
-    fail(`the Profile file row does not read likewise: ${prof?.textContent}`)
+    fail(`the Profile file card does not read likewise: ${prof?.textContent}`)
   }
-  const meter = r => r?.querySelector('.pa-meter.pa-meter-thin')
-  if (meter(mem)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-yellow)'
-      || meter(mem)?.querySelector('.pa-meter-fill')?.style.width !== '99%') {
-    fail('the Memory row meter is not 99% wide in the warn tone')
+  const ring = f => f?.querySelector('svg.pa-ring')
+  if (ring(mem)?.getAttribute('data-warm') !== '1' || ring(mem)?.getAttribute('viewBox') !== '0 0 80 80') {
+    fail('the Memory ring is not the large warm ring of a nearly full file')
   }
-  if (meter(prof)?.style.getPropertyValue('--pa-tone') !== 'var(--ui-green)'
-      || meter(prof)?.querySelector('.pa-meter-fill')?.style.width !== '84%') {
-    fail('the Profile row meter is not 84% wide in the ok tone')
+  if (ring(prof)?.getAttribute('data-warm') !== '0') fail('the 84% Profile ring is drawn warm')
+  if (mem?.getAttribute('aria-pressed') !== 'true' || mem?.getAttribute('data-on') !== '1') {
+    fail('the Memory file is not the chosen one by default')
   }
-  if (mem?.getAttribute('aria-selected') !== 'true' || mem?.getAttribute('data-on') !== '1') {
-    fail('the Memory file row is not the selected one by default')
-  }
-  if (!en.hostEl.querySelector('.pa-memory .pa-detail [role="tabpanel"][aria-labelledby="pa-mem-memory"]')) {
-    fail('the memory detail is not the tab panel of its file row')
+  if (!en.hostEl.querySelector('.pa-memory .pa-notes-wrap[role="region"][aria-label="Memory · 2 notes"]')) {
+    fail('the notes are not one region named by their file')
   }
   await click(prof, 60)
-  const panel = en.hostEl.querySelector('.pa-memory .pa-detail [role="tabpanel"]')
-  if (panel?.getAttribute('aria-labelledby') !== 'pa-mem-user') fail('selecting Profile does not show its panel')
+  const panel = en.hostEl.querySelector('.pa-memory .pa-notes-wrap')
+  if (panel?.getAttribute('aria-label') !== 'Profile · 1 note') fail('choosing Profile does not show its notes')
   if (!(panel?.textContent || '').includes('A profile note') || (panel?.textContent || '').includes('A note to add')) {
-    fail('selecting Profile does not show the Profile notes')
-  }
-  if ((panel?.querySelector('.pa-dh [role="heading"]')?.textContent || '') !== 'Profile · 1 note'
-      || panel?.querySelector('.pa-dh .pa-crumb')
-      || !panel?.querySelector('.pa-dh .pa-dtitle > .pa-crumb-icon svg')
-      || (panel?.querySelector('.pa-dh')?.textContent || '').includes('USER.md')) {
-    fail('the Profile detail is not headed once by its icon, name and note count (no crumb repeating the name), '
-      + 'without the file name')
+    fail('choosing Profile does not show the Profile notes')
   }
   await click(panel?.querySelector('.pa-tech-fold'), 30)
-  if (!(en.hostEl.querySelector('.pa-memory .pa-detail .pa-tech')?.textContent || '').includes('USER.md')) {
+  if (!(en.hostEl.querySelector('.pa-memory .pa-tech')?.textContent || '').includes('USER.md')) {
     fail('the Profile file name is not under Details')
   }
-  if (panel?.querySelector('.pa-banner')) fail('an 84% full Profile still shows the nearly-full banner')
-  if (en.hostEl.querySelector('.pa-mem-rings, .pa-gauge-ring-lg')) fail('the memory rings are back')
+  if (en.hostEl.querySelector('.pa-memory .pa-banner')) fail('an 84% full Profile still shows the nearly-full banner')
+  if (en.hostEl.querySelector('.pa-memrows, .pa-gauge-ring-lg')) fail('the old file rows are back')
   await click(mem, 60)
 }
 
-// --- 11) The Activity tab: list + detail, two-step clearing, two-step forced undo -------------------
+// --- 11) Written (All activity): timeline + chosen entry, two-step clearing, two-step forced undo -----
 const appliedTab = tab(en.hostEl, /Activity/)
-if (!appliedTab) fail('the Activity tab is missing')
+if (!appliedTab) fail('the Written page is missing')
 await click(appliedTab, 60)
 must(en.hostEl.textContent, ['Changed outside Approvals · 2 files', 'Saved to memory', 'Not saved',
   'Changed outside Approvals', 'Couldn’t save', 'approving was attempted, Hermes refused'], 'applied tab')
@@ -1632,14 +1663,19 @@ const actFind = async (hostEl, text) => {
   return null
 }
 {
-  // The equal card layers of the old grid are absorbed by the list rows (R2 A3-A6): every row has the one
-  // fixed row height, and only the selected entry's detail is drawn.
-  const wraps = [...en.hostEl.querySelectorAll('.pa-activity .pa-list-rows > .pa-rowwrap')]
-  if (wraps.length !== 4) fail(`expected one Activity row per entry (4), found ${wraps.length}`)
-  const heights = [...new Set(wraps.map(w => w.style.height))]
-  if (heights.length !== 1 || heights[0] !== '74px') fail(`the Activity rows are not one fixed height: ${heights}`)
+  // The timeline (activity mockup): a day heading, then one pinned entry per record (repeats fold into a
+  // deck), and only the chosen entry is drawn in the right column.
+  const tl = en.hostEl.querySelector('.pa-activity .pa-wsplit > .pa-tl-col > .pa-tl[role="list"]')
+  if (!tl) fail('Written is not one timeline beside the chosen entry')
+  const ents = [...(tl?.querySelectorAll('.pa-ent[role="listitem"], .pa-deck') || [])]
+  if (ents.length !== 4) fail(`expected one timeline entry per record (4), found ${ents.length}`)
+  if (ents.some(e => !e.querySelector('.pa-pin svg'))) fail('a timeline entry has no pin on the line')
+  if (!tl?.querySelector('.pa-day')) fail('the timeline has no day heading')
   if (en.hostEl.querySelectorAll('.pa-activity .pa-detail .pa-card').length !== 1) {
-    fail('the Activity tab draws more than the one selected detail')
+    fail('Written draws more than the one chosen entry')
+  }
+  if (en.hostEl.querySelector('.pa-activity .pa-ent[data-on="1"] .pa-act-row')?.getAttribute('aria-current') !== 'true') {
+    fail('the chosen entry is not marked on the timeline (data-on, aria-current)')
   }
 }
 {
@@ -1731,21 +1767,21 @@ const actFind = async (hostEl, text) => {
   // 1.13: the backend clears the whole history (counts.total), not just the 4 rows shown.
   if ((clear?.textContent || '') !== 'Clear all 87 records') fail(`the clear label does not state the real total: ${clear?.textContent}`)
   if (!clear) fail('the history clear control is missing')
-  if (!clear?.closest('.pa-activity .pa-list-foot')) {
-    fail('the history clear control is not in the Activity list footer')
+  if (!clear?.closest('.pa-activity .pa-tl-col') || clear?.closest('.pa-tl')) {
+    fail('the history clear control is not at the foot of the timeline')
   }
   await click(clear)
   must(en.hostEl.textContent, ['Deletes all 87 records', 'including ones not shown', 'no longer be undone or restored'],
     'clear confirmation copy')
   if (stub.calls.posts.some(p => p.path === '/history/clear')) fail('the clear fired before confirmation')
-  const confirm = en.hostEl.querySelector('.pa-list-foot ' + DESTRUCTIVE)
+  const confirm = en.hostEl.querySelector('.pa-tl-col .pa-clear-arm[role="alert"] ' + DESTRUCTIVE)
   if (!confirm) fail('the clear confirmation (two-step) did not appear')
   await click(confirm, 60)
   const post = stub.calls.posts.find(p => p.path === '/history/clear')
   if (!post || post.body.keep_undoable !== false) fail(`the clear request is wrong: ${JSON.stringify(post)}`)
 }
 
-// --- 11b) activity-head: "Today · N saved · N not saved · N failed", zero parts left out ---------
+// --- 11b) activity-head: the Today heading of Written counts today in words, zero parts left out ------
 {
   const ACT_NOW = Date.now() / 1000
   REST.history = { entries: [
@@ -1762,40 +1798,25 @@ const actFind = async (hostEl, text) => {
   ], counts: { applied: 2, failed: 1, undoable: 2, total: 5 } }
   const act = await mount('en', 'page')
   await click(tab(act.hostEl, /Activity/), 60)
-  must(act.hostEl.querySelector('.pa-activity .pa-list-head')?.textContent,
+  must(act.hostEl.querySelector('.pa-activity .pa-tl > .pa-day')?.textContent,
     ['Today · 3 saved · 1 not saved · 1 failed'], 'activity header: today\u2019s counts in words, no count left out')
-  // Rework 2 item 8: the bar's "2 saved · 1 failed" disagreed with the list header; the header is the one
-  // count on screen and the bar carries the memory meters instead (decision 2).
-  const barText = act.hostEl.querySelector('.pa-bar')?.textContent || ''
-  if (act.hostEl.querySelector('.pa-bar .pa-bar-counts') || /\d+ saved/.test(barText)) {
-    fail('the Activity bar still counts saved records beside the list header (two sources, two wordings)')
+  if (act.hostEl.querySelector('.pa-hd, .pa-bar, .pa-bar-counts')) {
+    fail('Written still draws the line header or a count bar beside its own Today heading (two sources, two wordings)')
   }
-  // Decision 2: every tab's bar shows "Memory ▬ 99%" and "Profile ▬ 84%" (label, 44 px bar, bold percent), the
-  // tone following the file's fill exactly as the Memory tab does (>= 90 % warning tone).
-  for (const view of [/Activity/, /Needs you/, /^Memory/]) {
-    await click(tab(act.hostEl, view), 40)
-    const gms = [...act.hostEl.querySelectorAll('.pa-bar .pa-gms > .pa-gm')]
-    const read = gms.map(g => `${g.querySelector('.pa-gm-word')?.textContent}|${g.querySelector('b')?.textContent}|${
-      g.style.getPropertyValue('--pa-tone')}|${g.querySelector('.pa-gm-bar > i')?.style.width}`)
-    if (read.join(' ') !== 'Memory|99%|var(--ui-yellow)|99% Profile|84%|var(--ui-green)|84%') {
-      fail(`the bar's memory meters do not read Memory 99 % (warning) · Profile 84 % in ${view}: ${read.join(' ')}`)
-    }
-    if (gms.some(g => !/^(Memory|Profile) \d+% full$/.test(g.getAttribute('aria-label') || ''))) {
-      fail('a bar meter has no spoken name')
-    }
+  const back = backBtn(act.hostEl)
+  if (back?.textContent !== 'The line') fail(`Written has no "The line" back button: ${back?.textContent}`)
+  await click(back, 40)
+  const rings = [...act.hostEl.querySelectorAll('.pa-hd .pa-mring')]
+  const read = rings.map(r => `${r.getAttribute('aria-label')}|${r.querySelector('svg.pa-ring')?.getAttribute('data-warm')}`)
+  if (read.join(' ') !== 'Memory 99% full|1 Profile 84% full|0') {
+    fail(`the header rings do not read Memory 99 % (warm) · Profile 84 %: ${read.join(' ')}`)
   }
-  const narrowCss = act.hostEl.querySelector('style')?.textContent || ''
-  if (!narrowCss.includes('@container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}')
-      || !narrowCss.includes('@container (max-width:480px){.pa-bar .pa-progress{display:none}}')) {
-    fail('at 480 px and below the bar does not make room for the named meters (day progress and meter bars off)')
-  }
-  if (act.hostEl.querySelector('.pa-bar .pa-progress')) fail('the Activity bar still shows the day progress')
   act.root.unmount()
   act.hostEl.remove()
   REST.history = null
 }
 
-// --- 11c) activity-words: each row says what happened, in words ----------------------------------
+// --- 11c) activity-words: each timeline entry says what happened, in words ---------------------------
 {
   const ACT_NOW = Date.now() / 1000
   REST.history = { entries: [
@@ -1818,46 +1839,47 @@ const actFind = async (hostEl, text) => {
   ], 'activity row words: Saved to Profile / Saved to memory / Saved skill / Not saved / Couldn\u2019t save, '
     + 'reason kept on its own line')
   const failedRow = actRow(act.hostEl, 'act10005')
-  const failedWord = failedRow?.querySelector('.pa-row-title')?.textContent || ''
+  const failedWord = failedRow?.querySelector('.pa-ent-t')?.textContent || ''
   if (failedWord !== 'Couldn\u2019t save') {
-    fail(`activity-words: the failed row title must carry only the short family word, got ${
+    fail(`activity-words: the failed entry title must carry only the short family word, got ${
       JSON.stringify(failedWord)}`)
   }
   const list = act.hostEl.querySelector('.pa-activity-list')
-  if (!list) fail('activity-rows: Activity is a grid of big cards again, not one list of short rows (the mockup)')
+  if (!list) fail('activity-rows: Written is a grid of big cards again, not one timeline of short entries')
   const rows = [...act.hostEl.querySelectorAll('.pa-act-row[data-entry]')]
-  const odd = rows.filter(r => r.tagName !== 'BUTTON' || !r.querySelector('.pa-tile svg')
-    || !r.querySelector('.pa-row-title')
-    || !r.querySelector('.pa-row-preview') || !r.querySelector('.pa-row-time')?.textContent
+  const odd = rows.filter(r => r.tagName !== 'BUTTON' || !r.closest('.pa-ent')?.querySelector(':scope > .pa-pin svg')
+    || !r.querySelector('.pa-ent-t') || !r.querySelector('.pa-ent-s') || !r.querySelector('.pa-ent-time')?.textContent
     || r.querySelector('[data-slot="badge"]'))
   if (rows.length !== 5 || odd.length) {
-    fail(`activity-rows: not tile, word on top, summary under it and a time: ${odd.map(r => r.dataset.entry)}`)
+    fail(`activity-rows: not pin, word on top, summary under it and a time: ${odd.map(r => r.dataset.entry)}`)
   }
-  const icons = rows.map(r => r.querySelector('.pa-tile svg')?.getAttribute('data-icon')).join()
-  if (icons !== 'brain,users,book,book,book') {
-    fail(`activity-rows: the row tiles are not Brain / Users / Book: ${icons}`)
+  const pins = rows.map(r => r.closest('.pa-ent')?.querySelector('.pa-pin svg')?.getAttribute('data-g')).join()
+  if (pins !== 'check,check,check,undo,alert') {
+    fail(`activity-rows: the pins are not check (saved) / undo (not saved) / alert (failed): ${pins}`)
   }
-  if (!/^\d\d:\d\d/.test(rows[0]?.querySelector('.pa-row-time')?.textContent || '')) {
-    fail('activity-rows: a row of today does not show its clock time')
+  const tones = rows.map(r => r.closest('.pa-ent')?.querySelector('.pa-pin')?.getAttribute('data-k') || '').join()
+  if (tones !== 'ok,ok,ok,,bad') fail(`activity-rows: a pin's tone does not follow its outcome: ${tones}`)
+  if (!/^\d\d:\d\d/.test(rows[0]?.querySelector('.pa-ent-time')?.textContent || '')) {
+    fail('activity-rows: an entry of today does not show its clock time')
   }
   if (act.hostEl.textContent.includes('Affected files')) fail('activity-rows: the big "Affected files" box is back')
   await click(rows[2], 40)
   const detail = actDetail(act.hostEl)
-  if (detail?.getAttribute('data-entry') !== 'act10003') fail('activity: selecting a row does not show its detail')
-  if (rows[2]?.getAttribute('aria-current') !== 'true') fail('activity: the selected row is not aria-current')
+  if (detail?.getAttribute('data-entry') !== 'act10003') fail('activity: choosing an entry does not show it')
+  if (actRow(act.hostEl, 'act10003')?.getAttribute('aria-current') !== 'true') {
+    fail('activity: the chosen entry is not aria-current')
+  }
   if ((detail?.querySelector('.pa-act-places')?.textContent || '') !== 'Skill “new-skill”') {
     fail(`activity-rows: the changed place is not named plainly: ${detail?.querySelector('.pa-act-places')?.textContent}`)
   }
   if (detail?.querySelector('.pa-dh')?.textContent.includes('#act10003')) fail('activity: the record id is still in the head')
   await click(detail?.querySelector('.pa-tech-fold'), 30)
   if (!/skills\/new-skill\/SKILL\.md/.test(actDetail(act.hostEl)?.querySelector('.pa-tech .pa-act-files')?.textContent || '')) {
-    fail('activity-rows: a row lost its file (under Details)')
+    fail('activity-rows: an entry lost its file (under Details)')
   }
   must(actDetail(act.hostEl)?.textContent, ['Skill “new-skill”', '#act10003', 'Your choice', 'Saved skill', 'Can be undone',
     'Undo puts the files back exactly as they were before.'], 'activity detail (A8-A10, A15)')
   {
-    // The detail speaks the Needs you language: the head names the change itself, the outcome sits in the same
-    // verdict card (seal, title, chips) as a review, and the old section labels are gone.
     const card = actDetail(act.hostEl)
     const outcome = card?.querySelector('.pa-dh + .pa-verdict.pa-outcome')
     if (!outcome?.querySelector('.pa-seal svg[data-icon="check"]')
