@@ -963,6 +963,13 @@ Look only; no data, i18n meaning or behaviour changed. Blind judge before this p
   miss a skill created in the same block.
 * **Undo of a created file.** `/undo` lists deleted files under `removed`, not `restored`; the notice
   shows both.
+* **Forced undo and later saves (1.21.1).** A forced undo writes the record's whole before-copy back,
+  so every later save to the same file loses its change. A refused `/undo` answers `later` (the newer
+  saved or outside-change rows still owning one of the files, newest first, with their paths) and
+  `unrecorded` (conflicting paths whose bytes match no recorded save). After the forced write, each
+  later row whose files were all put back gets `undone: true, undone_by: <id>` and is listed in
+  `thrown_away`; a row that still owns other files gets `lost: [paths], lost_by: <id>`, keeps its Undo,
+  and its own undo skips the lost paths, so it can never write the force-undone text back.
 * **Bulk Approve advice.** The confirmation counts selected records whose finished review says reject.
   It does not lock Approve: a reject verdict is advice, while rule checks and stale records already lock.
 

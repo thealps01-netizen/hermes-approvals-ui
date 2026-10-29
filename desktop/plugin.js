@@ -140,6 +140,7 @@ const BUNDLES = {
         byYou: 'Your choice',
         hintUndo: 'Undo puts the files back exactly as they were before.',
         hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
+        hintUndoRest: 'Undo puts the other files back as they were before this record; the one a forced undo already put back stays.',
         hintRestore: 'Restore puts it back under Needs you.',
         needsForce: 'Undo needs force',
         placeSkill: name => `Skill “${name}”`,
@@ -390,6 +391,12 @@ const BUNDLES = {
         failed: 'Save failed',
         undone: 'Undone — the files are back to the state before this record',
         conflict: (files) => `${files} changed after this record. Forcing undo also discards that change.`,
+        forceLoses: (files) => `${files} changed after this record. Force undo puts it back as it was before this record and throws away:`,
+        lostSaved: (gist, when) => `“${gist}”, saved ${when}`,
+        lostOutside: when => `a change made outside Approvals, ${when}`,
+        lostUnrecorded: files => `an edit to ${files} that Approvals has not recorded yet`,
+        undoneBy: 'Undone — a forced undo of an earlier record put these files back',
+        lostPart: files => `${files} was put back by a forced undo of an earlier record; Undo here restores only the other files.`,
         noFiles: 'Nothing was written',
         notUndoable: 'This record cannot be undone',
         restored: 'Restored',
@@ -520,6 +527,7 @@ const BUNDLES = {
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
+        undoThrown: n => `Also marked undone: ${plural(n, 'later save', 'later saves')} it threw away.`,
         deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
         rejected: 'Not saved — you can restore it from the “Activity” tab',
@@ -1171,6 +1179,8 @@ const STYLE = `
 .pa-stale{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px}
 .pa-stale>span{flex:1 1 220px;min-width:0}
 .pa-alert-danger{--pa-ct:var(--ui-red)}
+.pa-loses{margin:4px 0 0;padding-left:18px;list-style:disc}
+.pa-loses>li{overflow-wrap:anywhere}
 @keyframes pa-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .pa-view{animation:${rise('enter')}}
 .pa-root .pa-row:hover,.pa-root .pa-tab:hover,.pa-root .pa-memrow:hover,.pa-root .pa-act-sub:hover{transition:none}
@@ -3933,6 +3943,25 @@ function ActRow({ entry, on, t, onSelect }) {
   }, entry.id)
 }
 
+function ForceLoses({ t, conflict }) {
+  const files = placeNames(t, conflict.paths).join(', ')
+  const stamp = ts => `${dayHeading(t, ts)} ${clock(ts * 1000)}`
+  const items = [
+    ...conflict.later.map(r => (r.kind === 'external' ? t('pa.hist.lostOutside', stamp(r.ts))
+      : t('pa.hist.lostSaved', plainGist(t, r.summary).slice(0, 80), stamp(r.ts)))),
+    ...(conflict.unrecorded.length ? [t('pa.hist.lostUnrecorded', placeNames(t, conflict.unrecorded).join(', '))] : [])
+  ]
+  if (!items.length) return jsx('div', { className: 'pa-alert', role: 'alert', children: t('pa.hist.conflict', files) })
+  return jsxs('div', {
+    className: 'pa-alert',
+    role: 'alert',
+    children: [
+      jsx('div', { children: t('pa.hist.forceLoses', files) }, 'lead'),
+      jsx('ul', { className: 'pa-loses', children: items.map((text, i) => jsx('li', { children: text }, `i${i}`)) }, 'list')
+    ]
+  })
+}
+
 function HistoryDetail({ entry, onChanged, back, onBack }) {
   const t = usePluginI18n(ID)
   const [conflict, setConflict] = useState(null)
@@ -3974,12 +4003,17 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
     try {
       const res = await api.undo(entry.id, force)
       if (!res?.ok) {
-        setConflict(Array.isArray(res?.conflicts) && res.conflicts.length ? res.conflicts : null)
+        setConflict(Array.isArray(res?.conflicts) && res.conflicts.length
+          ? { paths: res.conflicts, later: Array.isArray(res.later) ? res.later : [],
+              unrecorded: Array.isArray(res.unrecorded) ? res.unrecorded : [] }
+          : null)
         host.notify({ kind: 'warning', message: res?.error || t('pa.notify.undoFailed') })
       } else {
         setConflict(null)
         const gone = [...(res.restored || []), ...(res.removed || []).map(f => t('pa.notify.deletedFile', f))]
-        host.notify({ kind: 'success', message: t('pa.notify.undoOk', gone.join(', ') || t('pa.notify.noFiles')) })
+        const thrown = Array.isArray(res.thrown_away) ? res.thrown_away.length : 0
+        const said = t('pa.notify.undoOk', gone.join(', ') || t('pa.notify.noFiles'))
+        host.notify({ kind: 'success', message: thrown ? `${said} ${t('pa.notify.undoThrown', thrown)}` : said })
       }
     } catch (e) {
       host.notifyError?.(e, t('pa.notify.undoError'))
@@ -4020,12 +4054,14 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
         }, 'restore')
       : jsx('div', {
           className: 'pa-act-note',
-          children: entry.undone ? t('pa.hist.undone')
+          children: entry.undone ? t(entry.undone_by ? 'pa.hist.undoneBy' : 'pa.hist.undone')
             : entry.restored ? t('pa.hist.restored') : t('pa.hist.notUndoable')
         }, 'note')
   const [chipKey, chipTone] = conflict ? ['pa.act.needsForce', WARN] : histChip(entry)
   const actor = entry.kind === 'apply' || entry.kind === 'rejected' ? t('pa.act.byYou') : ''
-  const hint = entry.undoable ? t(conflict ? 'pa.act.hintForce' : 'pa.act.hintUndo') : restorable ? t('pa.act.hintRestore') : ''
+  const partial = Array.isArray(entry.lost) && entry.lost.length > 0
+  const hint = entry.undoable ? t(conflict ? 'pa.act.hintForce' : partial ? 'pa.act.hintUndoRest' : 'pa.act.hintUndo')
+    : restorable ? t('pa.act.hintRestore') : ''
   const places = files.length ? placeNames(t, files.map(f => f.path))
     : [t(entry.subsystem === 'skills' ? 'pa.stage.typeSkill' : 'pa.stage.typeMemory')]
   const when = `${dayHeading(t, entry.ts)} ${clock(entry.ts * 1000)}`
@@ -4105,10 +4141,9 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
       jsxs('div', {
         className: 'pa-dbody',
         children: [
-          conflict
-            ? jsx('div', {
-                className: 'pa-alert', role: 'alert', children: t('pa.hist.conflict', placeNames(t, conflict).join(', '))
-              }, 'conflict')
+          conflict ? jsx(ForceLoses, { t, conflict }, 'conflict') : null,
+          entry.undoable && partial
+            ? jsx('div', { className: 'pa-aside', children: t('pa.hist.lostPart', placeNames(t, entry.lost).join(', ')) }, 'lost')
             : null,
           long ? jsx(Summary, { text: gist, raw: said }, 'summary') : null,
           diff === 'failed' ? jsx('div', { className: 'pa-aside', children: t('pa.hist.diffFailed') }, 'nodiff') : null,

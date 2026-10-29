@@ -4851,9 +4851,11 @@ def _undo_locked(body: dict) -> dict:
     if entry.get("kind") not in UNDOABLE:
         return {"ok": False, "error": _tx("err_not_undoable")}
 
-    targets = []
+    targets, lost = [], set(entry.get("lost") or [])
     for f in entry.get("files", []):
         rel = str(f.get("path") or "")
+        if rel in lost:
+            continue
         path = _abs(rel)
         if path is None:
             return {"ok": False, "error": _tx("err_unsafe_spec")}
@@ -4867,12 +4869,16 @@ def _undo_locked(body: dict) -> dict:
             return {"ok": False, "error": _tx("err_unsafe_spec")}
         targets.append((f, rel, path, snap))
 
+    later = _later_saves(entry_id, {rel for _f, rel, _p, _s in targets})
     conflicts = []
     for f, rel, path, _snap in targets:
         if path.exists() and not force and _sha(path) != f.get("sha_after"):
             conflicts.append(rel)
     if conflicts:
         return {"ok": False, "conflicts": conflicts,
+                "later": [{"id": r["id"], "kind": r.get("kind"), "summary": r.get("summary", ""), "ts": r.get("ts"),
+                           "paths": paths} for r, paths in later],
+                "unrecorded": _unrecorded(targets, later, conflicts),
                 "error": _tx("err_conflict")}
 
     restored, removed, emptied, created = [], [], [], []
@@ -4896,8 +4902,54 @@ def _undo_locked(body: dict) -> dict:
         return {"ok": False, "restored": [], "removed": [],
                 "error": _tx("err_no_copies")}
     _write_undone(entry_id)
+    thrown_away = _mark_thrown_away(entry_id, later, set(restored) | set(removed))
     _refresh_index(_watched())
-    return {"ok": True, "restored": restored, "removed": removed}
+    return {"ok": True, "restored": restored, "removed": removed, "thrown_away": thrown_away}
+
+
+def _later_saves(entry_id: str, rels: set) -> list:
+    out = []
+    for row in _entries(MAX_ENTRIES):
+        if row.get("id") == entry_id:
+            return out
+        if not _undoable(row):
+            continue
+        lost = set(row.get("lost") or [])
+        paths = sorted({str(f.get("path") or "") for f in row.get("files") or []} & rels - lost)
+        if paths:
+            out.append((row, paths))
+    return []
+
+
+def _unrecorded(targets: list, later: list, conflicts: list) -> list:
+    out = []
+    for f, rel, path, _snap in targets:
+        if rel not in conflicts:
+            continue
+        newest = next((g for row, paths in later if rel in paths
+                       for g in row.get("files") or [] if g.get("path") == rel), f)
+        expected = newest.get("sha_after")
+        now = _sha(path) if path.exists() else None
+        if now != expected:
+            out.append(rel)
+    return out
+
+
+def _mark_thrown_away(entry_id: str, later: list, written: set) -> list:
+    gone_ids = []
+    for row, paths in later:
+        hit = set(paths) & written
+        if not hit:
+            continue
+        lost = set(row.get("lost") or []) | hit
+        rest = [f for f in row.get("files") or []
+                if str(f.get("path") or "") not in lost and (f.get("created") or f.get("snap"))]
+        if rest:
+            _update_row_locked(row["id"], {"lost": sorted(lost), "lost_by": entry_id})
+        else:
+            _update_row_locked(row["id"], {"undone": True, "undone_by": entry_id})
+            gone_ids.append(row["id"])
+    return gone_ids
 
 
 def _write_undone(entry_id: str) -> None:

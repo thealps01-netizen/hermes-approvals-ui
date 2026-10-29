@@ -1812,6 +1812,91 @@ def related_skills_that_cannot_load_are_advice():
         "a related_skills finding advises; it never locks Approve"
 
 
+# ---------------------------------------------------------------------------------------------------
+# Force undo: a forced undo puts the whole earlier file back, so the later records it throws away are
+# named before the click and marked undone after it (found 2026-10-29 by mixing undo orders).
+# ---------------------------------------------------------------------------------------------------
+
+def _saved_note(env: Env, rid: str, text: str) -> dict:
+    env.stage_memory(rid, {"action": "add", "target": "memory", "content": text})
+    assert env.approve("memory", rid)["ok"]
+    return next(e for e in env.entries() if e.get("record_id") == rid)
+
+
+@case
+def force_undo_names_and_marks_later_records():
+    """Undo A after B was saved: the refusal names B, and the forced undo marks B undone so it cannot return A."""
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    mem = env.home / "memories" / "MEMORY.md"
+    env.memory("Base note")
+    a = _saved_note(env, "98000001", "Entry A")
+    b = _saved_note(env, "98000002", "Entry B")
+    refused = env.pa.undo({"id": a["id"]})
+    assert not refused["ok"] and refused["conflicts"] == ["memories/MEMORY.md"], refused
+    assert [x["id"] for x in refused.get("later") or []] == [b["id"]], f"the later save is not named: {refused}"
+    assert not refused.get("unrecorded"), f"a recorded save was reported as an outside change: {refused}"
+    forced = env.pa.undo({"id": a["id"], "force": True})
+    assert forced["ok"] and forced.get("thrown_away") == [b["id"]], forced
+    assert mem.read_text(encoding="utf-8").strip() == "Base note", mem.read_text(encoding="utf-8")
+    rows = {e["id"]: e for e in env.entries()}
+    assert rows[b["id"]]["undone"] and rows[b["id"]].get("undone_by") == a["id"], \
+        f"the thrown-away save still reads as saved: {rows[b['id']]}"
+    assert not rows[b["id"]]["undoable"], "a thrown-away save still offers Undo"
+    again = env.pa.undo({"id": b["id"], "force": True})
+    assert not again["ok"], f"undoing the thrown-away save ran again: {again}"
+    assert "Entry A" not in mem.read_text(encoding="utf-8"), "the undone note came back"
+
+
+@case
+def force_undo_names_an_outside_change():
+    """A hand edit after the save is named before the forced undo, recorded or not."""
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    mem = env.home / "memories" / "MEMORY.md"
+    env.memory("Base note")
+    a = _saved_note(env, "98000011", "Entry A")
+    mem.write_text("Base note\n§\nHand-written note", encoding="utf-8")
+    unseen = env.pa.undo({"id": a["id"]})
+    assert not unseen["ok"] and unseen.get("unrecorded") == ["memories/MEMORY.md"], \
+        f"an edit the panel has not recorded yet is not named: {unseen}"
+    env.pa.scan_now()
+    seen = env.pa.undo({"id": a["id"]})
+    outside = [x for x in seen.get("later") or [] if x["kind"] == "external"]
+    assert not seen["ok"] and len(outside) == 1, f"the recorded outside change is not named: {seen}"
+    assert not seen.get("unrecorded"), seen
+
+
+@case
+def force_undo_keeps_the_rest_of_a_later_record():
+    """B changed two skills; forcing A (one of them) back loses only that part of B, and B still undoes the rest."""
+    env = Env()
+    env.pa._REVIEW_GATE = False
+    skill = env.skill("mixed", "alpha\n") / "SKILL.md"
+    other = env.skill("other", "one\n") / "SKILL.md"
+    original, other_before = skill.read_bytes(), other.read_bytes()
+    env.stage("skills", "98000021", {"action": "patch", "name": "mixed", "old_string": "alpha",
+                                     "new_string": "beta"})
+    assert env.approve("skills", "98000021")["ok"]
+    env.stage("skills", "98000022", {"action": "batch", "operations": [
+        {"action": "patch", "name": "mixed", "old_string": "beta", "new_string": "gamma"},
+        {"action": "patch", "name": "other", "old_string": "one", "new_string": "two"}]})
+    assert env.approve("skills", "98000022")["ok"]
+    rows = {e.get("record_id"): e for e in env.entries()}
+    a, b = rows["98000021"], rows["98000022"]
+    assert {f["path"] for f in b["files"]} == {"skills/cat/mixed/SKILL.md", "skills/cat/other/SKILL.md"}, b
+    forced = env.pa.undo({"id": a["id"], "force": True})
+    assert forced["ok"] and skill.read_bytes() == original and forced.get("thrown_away") == [], forced
+    b = next(e for e in env.entries() if e["id"] == b["id"])
+    assert not b["undone"] and b["undoable"], f"a partly thrown-away save lost its Undo: {b}"
+    assert b.get("lost") == ["skills/cat/mixed/SKILL.md"], f"the lost part is not recorded: {b}"
+    rest = env.pa.undo({"id": b["id"]})
+    assert rest["ok"] and rest["restored"] == ["skills/cat/other/SKILL.md"], \
+        f"Undo of the rest refused or touched the lost file: {rest}"
+    assert other.read_bytes() == other_before
+    assert skill.read_bytes() == original, "undoing the rest brought the force-undone change back"
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--case"]:
         return _run_one(argv[1])

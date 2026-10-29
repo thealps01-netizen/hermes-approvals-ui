@@ -906,8 +906,10 @@ async function mount(appLocale, parts = 'both') {
             return { ok: false, error: 'This record has no undo copy (it may have been rejected ' +
               'or the copy cleaned up) — no file was touched.' }
           }
-          if (opts.body.force) return { ok: true, restored: ['memories/MEMORY.md'] }
-          return { ok: false, conflicts: ['memories/MEMORY.md'],
+          if (opts.body.force) return { ok: true, restored: ['memories/MEMORY.md'], thrown_away: ['later01'] }
+          return { ok: false, conflicts: ['memories/MEMORY.md'], unrecorded: ['memories/MEMORY.md'],
+                   later: [{ id: 'later01', kind: 'apply', summary: 'add in memory: Entry B', ts: Date.now() / 1000 - 60, paths: ['memories/MEMORY.md'] },
+                           { id: 'later02', kind: 'external', summary: 'changed outside the pane', ts: Date.now() / 1000 - 30, paths: ['memories/MEMORY.md'] }],
                    error: 'The file changed after this record; send force to undo anyway.' }
         }
         if (path === '/reviews') {
@@ -1664,6 +1666,11 @@ const actFind = async (hostEl, text) => {
     fail(`the conflict that arms “Force undo” is not stated in plain words as an alert on the card: ${line?.textContent}`)
   }
   if (line?.classList.contains('pa-alert-danger')) fail('the undo conflict (a warning) is drawn red')
+  const loses = [...(line?.querySelectorAll('.pa-loses > li') || [])].map(li => li.textContent)
+  if (loses.length !== 3 || !/^“.*Entry B”, saved /.test(loses[0]) || !/^a change made outside Approvals, /.test(loses[1]) ||
+      !/^an edit to Memory that Approvals has not recorded yet$/.test(loses[2])) {
+    fail(`before “Force undo” the card does not name each change it throws away: ${JSON.stringify(loses)}`)
+  }
   if (forcedCard?.querySelector('.pa-outcome .pa-chip-dot')?.closest('.pa-chip')?.textContent !== 'Undo needs force') {
     fail('next to the conflict the chip still says the record can be undone')
   }
@@ -1680,6 +1687,9 @@ const actFind = async (hostEl, text) => {
   if (after.length !== 2 || after[1].body.force !== true) fail(`the forced undo request is wrong: ${JSON.stringify(after)}`)
   const restoredSaid = lastSaid()?.message || ''
   if (!restoredSaid.includes('memories/MEMORY.md')) fail(`the undo notice does not name the restored file: ${restoredSaid}`)
+  if (!restoredSaid.includes('Also marked undone: 1 later save it threw away.')) {
+    fail(`the forced-undo notice does not say which later save it marked undone: ${restoredSaid}`)
+  }
 }
 {
   // An undo of a write that created a file deletes it: the backend lists it under `removed`, not `restored`.
