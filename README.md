@@ -219,9 +219,10 @@ Chromium session) plus its compiled stylesheet. Run it before releasing — it s
     every change in order and puts every file and record back if one of them fails; while it runs, a
     chat command cannot decide one of its changes. A single change
     of a set is never approved alone (the backend refuses it); it can be rejected alone.
-  * Approve stays locked until you have pressed Review and the review has finished. When no model is set or the review
-    failed, a two-step **Approve without review** applies it anyway and marks the history entry
-    "approved without pre-review".
+  * Approve stays locked until you have pressed Review and the review has finished. There is no way
+    around it (1.21.0): with no review model set, pick one first; when the review failed, press
+    **Review again**. The backend refuses an approve without a finished review even when asked by an
+    old client.
   * The reviewer has no write access; the panel logs its tokens and cost, never the text.
 * **Reject can be taken back.** The rejected record and its review are kept with the history row;
   **Restore** puts it back in the queue (under a new id) until the history is cleared.

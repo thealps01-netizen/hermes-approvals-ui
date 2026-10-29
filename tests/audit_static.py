@@ -731,11 +731,6 @@ def check_two_step_actions() -> None:
                         ("return !(plain.stale || []).length && !plain.fix",
                          "a record that cannot be applied as staged is bulk-approvable"),
                         ("if (!reviewed(item)) return false", "a record that is not pre-reviewed is bulk-approvable"),
-                        ("const [skipArmed, setSkipArmed] = useState(false)",
-                         "approving without a pre-review has no confirmation state"),
-                        ("onClick: () => setSkipArmed(true),",
-                         "the first \"Approve without review\" click does not arm"),
-                        ("skip_review: Boolean(skipReview)", "the review skip does not reach the backend"),
                         ("const approveBlocked = heldByRule || reviewLocked || stale.length > 0",
                          "a record that can no longer be applied keeps Approve open"),
                         ("const fixBlocked = status !== 'done' || fixLeft.length > 0 || Boolean(isGroup ? "
@@ -830,6 +825,8 @@ def check_skill_groups_panel() -> None:
                 "the backend as member ids")
     if "'/reviews'" in src:
         _report("plugin.js: calls POST /reviews — a review would start without the owner pressing Review")
+    if "skip_review" in src:
+        _report("plugin.js: sends skip_review — a write could be saved without a finished review")
 
 
 def check_jsx_runtime_import() -> None:

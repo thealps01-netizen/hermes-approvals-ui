@@ -710,16 +710,15 @@ add('f16', 'Needs you — reject advised, the full review open: no primary save,
     'f16: a reject-advised card still has a primary save button')
 }))
 
-add('f17', 'Needs you — not checked (the review failed): “Save without review” armed with its warning',
+add('f17', 'Needs you — not checked (the review failed): saving stays locked, “Review again” retries',
   await frame(async hostEl => {
     const card = await pick(hostEl, 'memory:abc12345')
     if (hostEl.querySelector('.pa-split')?.getAttribute('data-open') === '0') {
       await click(rowOf(hostEl, 'memory:abc12345'), 'the list row memory:abc12345 (narrow: open the detail)')
     }
-    await click(byText(detailOf(hostEl, 'memory:abc12345') || card, /^Save without review/), 'Save without review')
-    need(hostEl.querySelector('.pa-warnline'), 'f17: arming “Save without review” drew no warning line')
-    need(/The file now says/.test(detailOf(hostEl, 'memory:abc12345')?.textContent || ''),
-      'f17: the op’s note about the current file is not drawn')
+    const detail = detailOf(hostEl, 'memory:abc12345') || card
+    need(!byText(detail, /without review|Save unreviewed/), 'f17: a failed review still offers a save without review')
+    need(/The file now says/.test(detail?.textContent || ''), 'f17: the op’s note about the current file is not drawn')
   }, UNCHECKED))
 
 add('f32', 'Needs you — Don’t save pressed: the in-row “Not saved” row with Restore', await frame(async hostEl => {

@@ -444,14 +444,24 @@ def review_again_without_model_keeps_review():
 
 
 @case
-def fix_without_review_is_marked():
+def nothing_is_saved_without_a_review():
+    # The owner's rule (1.21.0): no approval without a finished review, so a missing review model or a
+    # failed review keeps the write in the queue; the old skip_review flag is ignored.
     env = Env()
     bad = "---\nname: new-bad\ndescription: Use when testing. Does.\n---\n\nbody\n"
+    good = f"---\nname: new-good\ndescription: Use when testing. Does.\nauthor: {AUTHOR}\n---\n\nbody\n"
     env.stage("skills", "96000001", {"action": "create", "name": "new-bad", "category": "cat", "content": bad})
-    out = env.approve("skills", "96000001", with_edits=True, skip_review=True)
-    assert out["ok"], out
-    row = next(e for e in env.entries() if e.get("record_id") == "96000001")
-    assert "saved without review" in row["summary"], row["summary"]
+    env.stage("skills", "96000002", {"action": "create", "name": "new-good", "category": "cat", "content": good})
+    for rid, extra in (("96000001", {"with_edits": True}), ("96000002", {})):
+        out = env.approve("skills", rid, skip_review=True, **extra)
+        assert not out["ok"] and out.get("blocked"), f"{rid} was saved with no review model: {out}"
+        assert env.item("skills", rid), f"{rid} left the queue"
+    assert not any(e.get("record_id") in ("96000001", "96000002") for e in env.entries()), "a history row was written"
+    env.assign()
+    env.reply = lambda kw: (_ for _ in ()).throw(RuntimeError("model down"))
+    assert env.settle("skills", "96000002")["status"] == "failed"
+    out = env.approve("skills", "96000002", skip_review=True)
+    assert not out["ok"] and out.get("blocked"), f"a write whose review failed was saved: {out}"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -633,7 +643,7 @@ def version_binds_the_target_file():
     (folder / "SKILL.md").write_text((folder / "SKILL.md").read_text(encoding="utf-8") + "- my hand-written rule\n",
                                      encoding="utf-8")
     out = env.pa.decide({"subsystem": "skills", "decision": "approve", "ids": ["9700000d"],
-                         "versions": {"9700000d": version}, "skip_review": True})["results"][0]
+                         "versions": {"9700000d": version}})["results"][0]
     assert not out["ok"] and out.get("stale"), f"an approve of an out-of-date diff went through: {out}"
     assert "hand-written" in (folder / "SKILL.md").read_text(encoding="utf-8")
 
