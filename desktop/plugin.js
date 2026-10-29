@@ -200,6 +200,7 @@ const BUNDLES = {
         memoryLabel: 'Memory',
         profileLabel: 'Profile',
         meter: (word, pct) => `${word} ${pct}% full`,
+        reading: word => `${word}: reading…`,
       },
       field: {
         failedBefore: 'Saving was attempted',
@@ -2516,7 +2517,8 @@ function TodayRow({ entry, t, onChanged }) {
   const [busy, setBusy] = useState(false)
   const canUndo = Boolean(entry.undoable) && !entry.undone
   const canRestore = !canUndo && setAside(entry) && entry.restorable === true && !entry.restored
-  const { name, words } = actLine(t, entry)
+  const { name, words, said } = actLine(t, entry)
+  const what = name !== words ? name : said
   const [glyph, tone] = PIN[entry.kind] || PIN.apply
   const go = async () => {
     setBusy(true)
@@ -2533,7 +2535,7 @@ function TodayRow({ entry, t, onChanged }) {
       jsx(Glyph, { of: glyph, tone }, 'mark'),
       jsxs('span', {
         className: 'pa-done-text',
-        children: [jsx('b', { children: words }, 'w'), name !== words ? ` ${short(name || entry.summary || '', 60)}` : '']
+        children: [jsx('b', { children: words }, 'w'), what && what !== words ? ` ${short(what, 60)}` : '']
       }, 'text'),
       canUndo || canRestore
         ? jsx(Button, {
@@ -4502,11 +4504,13 @@ function MiniRing({ id, store, t, onOpen }) {
     type: 'button',
     className: 'pa-mring',
     'data-k': id,
-    'aria-label': t('pa.kpi.meter', word, pct),
+    'data-reading': store ? undefined : '1',
+    disabled: !store,
+    'aria-label': store ? t('pa.kpi.meter', word, pct) : t('pa.kpi.reading', word),
     onClick: () => onOpen('memory', id),
     children: [
-      jsx(Ring, { pct, box: 36, r: 15, warm: pct >= 90 }, 'ring'),
-      jsxs('span', { children: [jsx('b', { children: `${pct}%` }, 'pct'), word] }, 'text')
+      jsx(Ring, { pct: store ? pct : 0, box: 36, r: 15, warm: pct >= 90 }, 'ring'),
+      jsxs('span', { children: [jsx('b', { children: store ? `${pct}%` : '—' }, 'pct'), word] }, 'text')
     ]
   }, id)
 }
@@ -4595,11 +4599,11 @@ function Pane() {
           jsxs('div', {
             className: 'pa-hd-side',
             children: [
-              mem.data ? jsxs('div', {
+              jsx('div', {
                 className: 'pa-rings',
-                children: ['memory', 'user'].map(id => (mem.data[id]
-                  ? jsx(MiniRing, { id, store: mem.data[id], t, onOpen: open }, id) : null))
-              }, 'rings') : null,
+                children: ['memory', 'user'].map(id => (!mem.data || mem.data[id]
+                  ? jsx(MiniRing, { id, store: mem.data?.[id], t, onOpen: open }, id) : null))
+              }, 'rings'),
               jsxs('div', {
                 className: 'pa-tools',
                 children: [

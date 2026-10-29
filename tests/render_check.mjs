@@ -2416,59 +2416,76 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   busy.hostEl.remove()
 }
 
-// --- 13c) queue-order: Later moves the record to the end and selects the next; picking a row selects it
-// without reordering; new records append; the selection holds across refresh ----------------------
+// --- 13c) queue-order: Later moves the record to the end of its station and opens the next; opening a card
+// does not reorder; new records append at the end of their station; the open record holds across a refresh ---
+// A record view has no Refresh button (the header belongs to the line), so the panel's own poll does the
+// re-read here: `fastPolls()` shortens the long poll waits for one mount and gives the real setTimeout back.
+const fastPolls = () => {
+  const real = globalThis.setTimeout
+  globalThis.setTimeout = (fn, ms, ...rest) => real(fn, ms >= 4000 ? 150 : ms, ...rest)
+  return () => { globalThis.setTimeout = real }
+}
+const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
 {
+  const restore = fastPolls()
   const h = await mount('en', 'page')
-  const listKeys = () => [...h.hostEl.querySelectorAll('.pa-split .pa-row[data-key]')]
-    .map(c => c.getAttribute('data-key'))
-  const sel = () => frontCell(h.hostEl)?.getAttribute('data-key')
+  const listKeys = () => [...h.hostEl.querySelectorAll('.pa-cols .pa-lc-main[data-key]')].map(c => c.getAttribute('data-key'))
+  const sel = () => h.hostEl.querySelector('.pa-line[data-open="1"] > .pa-detail')?.getAttribute('data-key')
+  if (listKeys().join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') {
+    fail(`queue-order: the line does not start A, B (Your rules) then C (You): ${listKeys()}`)
+  }
+  await toFront(h.hostEl, 'memory:abc12345')
   if (sel() !== 'memory:abc12345') fail(`queue-order: selection did not start on A: ${sel()}`)
   await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
   if (sel() !== 'skills:def67890') fail(`queue-order: later(A) did not select B: ${sel()}`)
-  if (JSON.stringify(listKeys()) !== JSON.stringify(['skills:def67890', 'skills:aaa11111', 'memory:abc12345'])) {
-    fail(`queue-order: later(A) did not give B,C,A: ${JSON.stringify(listKeys())}`)
+  await toLine(h.hostEl)
+  if (listKeys().join() !== 'skills:def67890,memory:abc12345,skills:aaa11111') {
+    fail(`queue-order: later(A) did not move A to the end of its station (B, A, C): ${listKeys()}`)
   }
   await toFront(h.hostEl, 'skills:aaa11111')
   if (sel() !== 'skills:aaa11111') fail(`queue-order: pick(C) did not select C: ${sel()}`)
-  if (JSON.stringify(listKeys()) !== JSON.stringify(['skills:def67890', 'skills:aaa11111', 'memory:abc12345'])) {
-    fail(`queue-order: pick(C) reordered the list: ${JSON.stringify(listKeys())}`)
-  }
   REST.mode = 'twomem'
-  await click(h.hostEl.querySelector('.pa-refresh'), 80)
+  await settle(500)
   if (sel() !== 'skills:aaa11111') {
     fail(`queue-order: the selection changed on refresh even though it is still there: ${sel()}`)
   }
-  const want = ['skills:def67890', 'skills:aaa11111', 'memory:abc12345', 'memory:abc99999']
-  if (JSON.stringify(listKeys()) !== JSON.stringify(want)) {
-    fail(`queue-order: a new record (D) did not append at the end: ${JSON.stringify(listKeys())}`)
+  await toLine(h.hostEl)
+  const want = ['skills:def67890', 'memory:abc12345', 'memory:abc99999', 'skills:aaa11111']
+  if (listKeys().join() !== want.join()) {
+    fail(`queue-order: pick(C) reordered the line or a new record (D) did not append at the end of its station: ${listKeys()}`)
   }
   REST.mode = 'normal'
   h.root.unmount()
   h.hostEl.remove()
+  restore()
 }
 
-// --- 13d) later-button: Later moves the front record to the end and posts nothing -----------------
+// --- 13d) later-button: Later moves the open record on and posts nothing -----------------------------------
 {
   const h = await mount('en', 'page')
   const postsBefore = stub.calls.posts.length
+  await click(h.hostEl.querySelector('.pa-cols .pa-lc-main[data-key]'))
   const from = frontCell(h.hostEl)?.getAttribute('data-key')
   await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
   const to = frontCell(h.hostEl)?.getAttribute('data-key')
-  if (from === to) fail('later-button: Later did not move the record out of front')
+  if (!from || from === to) fail('later-button: Later did not move the record out of front')
+  await toLine(h.hostEl)
   if (!reachableKeys(h.hostEl).has(from)) fail('later-button: the record Later moved is no longer reachable')
   if (stub.calls.posts.length !== postsBefore) fail('later-button: Later posted something, it must decide nothing')
   h.root.unmount()
   h.hostEl.remove()
 }
 
-// --- 13e) front-gone: the front record leaves the queue while the user was elsewhere ----------------
+// --- 13e) front-gone: the open record leaves the queue while the user was elsewhere ----------------------
 {
+  const restore = fastPolls()
   const h = await mount('en', 'page')
-  const outside = h.hostEl.querySelector('.pa-refresh')
+  await toFront(h.hostEl, 'memory:abc12345')
+  const outside = document.createElement('button')
+  document.body.appendChild(outside)
   outside.focus()
   REST.gone = new Set(['abc12345'])
-  await click(outside, 80)
+  await settle(500)
   const said = lastSaid()
   const wantMsg = 'It left the queue while you were away from it — it may have been decided elsewhere. ' +
     'The next record is now in front.'
@@ -2480,12 +2497,14 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     fail('front-gone: focus moved into the card although the user had put it outside')
   }
   REST.gone = null
+  outside.remove()
   h.root.unmount()
   h.hostEl.remove()
+  restore()
 }
 
-// --- 13f) last-decided (replaces just-done, R2 K24 → E5): All caught up names the newest decision on
-// a "Last:" line; Undo only where undoable && !undone, and it POSTs /undo with the entry id -----------
+// --- 13f) last-decided: the Written station lists today's decisions, newest first; Undo only where
+// undoable && !undone, and it POSTs /undo with the entry id ------------------------------------------------
 {
   const NOW = Date.now() / 1000
   const JUST_DONE_HISTORY = { entries: [
@@ -2502,10 +2521,11 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     const h = await mount('en', 'page')
     return h
   }
+  const rowsOf = h => [...h.hostEl.querySelectorAll('.pa-st[data-st="written"] .pa-done-list > .pa-done')]
   const h = await lastOf(JUST_DONE_HISTORY.entries)
-  const last = h.hostEl.querySelector('.pa-top .pa-clear-last')
-  if (!/^Last: “JUST-DONE-UNDOABLE” · Saved to memory · /.test(last?.textContent || '')) {
-    fail(`last-decided: the newest decision is not named on the Last line: ${JSON.stringify(last?.textContent)}`)
+  const last = rowsOf(h)[0]
+  if (rowsOf(h).length !== 3 || !/^Saved.*JUST-DONE-UNDOABLE/.test(last?.textContent || '')) {
+    fail(`last-decided: the newest decision is not named first in Written: ${JSON.stringify(last?.textContent)}`)
   }
   const undo = buttons(last, /^Undo$/)[0]
   if (!undo) fail('last-decided: an undoable newest decision offers no Undo')
@@ -2518,8 +2538,8 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   h.hostEl.remove()
   for (const [i, why] of [[1, 'not undoable'], [2, 'already undone']]) {
     const g = await lastOf([JUST_DONE_HISTORY.entries[i]])
-    const line = g.hostEl.querySelector('.pa-clear-last')
-    if (!line) fail(`last-decided: the Last line is missing (${why})`)
+    const line = rowsOf(g)[0]
+    if (!line) fail(`last-decided: the Written row is missing (${why})`)
     if (buttons(line, /^Undo$/).length) fail(`last-decided: Undo shown on a decision that is ${why}`)
     g.root.unmount()
     g.hostEl.remove()
@@ -2528,10 +2548,9 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   REST.history = null
 }
 
-// --- 13e9) the medium band gives the words the width: a flat check, small tiles, chips under the text --------
+// --- 13e9) the medium band gives the words the width: a flat check, a narrower side column, one column below 761 px --
 {
   const css = en.hostEl.querySelector('style')?.textContent || ''
-  const band = css.split('@container (min-width:761px) and (max-width:1100px){')[1]?.split('\n}')[0] || ''
   const flat = [
     [/(^|\n)\.pa-verdict\{[^}]*border-bottom:1px solid var\(--ui-stroke-tertiary\)/, 'the check is not one line over a hairline'],
     [/(^|\n)\.pa-verdict>\.pa-seal\{display:none\}/, 'the 34 px seal keeps its own column'],
@@ -2539,13 +2558,14 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   ].filter(([re]) => !re.test(css)).map(([, why]) => why)
   if (/(^|\n)\.pa-verdict\{[^}]*(border:|border-radius|linear-gradient)/.test(css)) flat.push('the check is a framed card again')
   if (flat.length) fail(`flat check at every width: ${flat.join('; ')}`)
+  const band = css.split('@container (max-width:1100px){')[1]?.split('}}')[0] || ''
+  const narrow = css.split('@container (max-width:760px){')[1]?.split('}}')[0] || ''
   const miss = [
-    [/\.pa-verdict\{grid-template-columns:minmax\(0,1fr\);/, 'the check keeps its side column'],
-    [/\.pa-dbody\{padding:12px 14px\}/, 'the record keeps its 20 px side padding'],
-    [/\.pa-root \.pa-row\{grid-template-columns:22px /, 'the list rows keep the 28 px tile column'],
-    [/\.pa-cb\{left:10px;top:8px;width:22px;height:22px\}/, 'the select box stays 28 px and covers the title'],
-    [/\.pa-sum-row>\.pa-sum-chip\{grid-column:2\}/, 'the selection summary keeps its status chip beside the title'],
-  ].filter(([re]) => !re.test(band)).map(([, why]) => why)
+    [band, /\.pa-rec\{grid-template-columns:minmax\(0,1fr\) 260px/, 'the record keeps its 300 px side column'],
+    [band, /\.pa-wsplit\{grid-template-columns:minmax\(0,1fr\) 320px/, 'Written keeps its 380 px entry column'],
+    [narrow, /\.pa-rec\{grid-template-columns:minmax\(0,1fr\)/, 'a narrow record keeps a side column'],
+    [narrow, /\.pa-cols\{grid-template-columns:minmax\(0,1fr\)/, 'a narrow line keeps five columns'],
+  ].filter(([text, re]) => !re.test(text)).map(([, , why]) => why)
   if (miss.length) fail(`medium band: the words are squeezed: ${miss.join('; ')}`)
 }
 
@@ -2554,10 +2574,10 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   const css = en.hostEl.querySelector('style')?.textContent || ''
   const own = sel => [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
     .filter(m => m[1].split(',').some(x => x.trim() === sel)).map(m => m[2]).join(';')
-  const boxes = ['.pa-verdict', '.pa-file-head', '.pa-review', '.pa-done', '.pa-done[data-k="reject"]', '.pa-bar-side']
+  const boxes = ['.pa-verdict', '.pa-file-head', '.pa-review', '.pa-done', '.pa-done[data-k="reject"]']
   const filled = boxes.filter(b => /background(?:-color|-image)?:(?!transparent|none)/.test(own(b)))
   if (filled.length) fail(`one fill: inner boxes paint their own fill instead of the card’s: ${filled.join(' ')}`)
-  const ringed = ['.pa-verdict', '.pa-review', '.pa-bar-side']
+  const ringed = ['.pa-verdict', '.pa-review']
     .filter(b => !/border(?:-top|-bottom)?:|box-shadow:inset/.test(own(b)))
   if (ringed.length) fail(`one fill: inner boxes lost the hairline that sets them apart: ${ringed.join(' ')}`)
 }
@@ -2582,80 +2602,73 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (/\.pa-note-row\{[^}]*(?:background|--pa-shade)/.test(css) || /--pa-w\b/.test(css)) {
     fail('memory: a note row draws a length shade or meter (it read as a broken divider); the count says it')
   }
-  if (!/\.pa-row>\.pa-row-text\{display:contents\}/.test(css)
-      || !/\.pa-row-text>\.pa-row-title,\.pa-row-text>\.pa-deck-title\{grid-column:2 \/ -1;grid-row:1\}/.test(css)
-      || !/\.pa-row>\.pa-row-time\{grid-column:4;grid-row:2;/.test(css)) {
-    fail('list rows: the time shares the title line, so names cut to a few letters (“software…”)')
+  if (!/\.pa-root \.pa-lc-main\{display:flex;flex-direction:column/.test(css)
+      || !/\.pa-root \.pa-ent-card\{display:grid;grid-template-columns:minmax\(0,1fr\) auto/.test(css)) {
+    fail('cards: the time or the source shares the title line, so names cut to a few letters (“software…”)')
   }
 }
 
-// --- 13f2) the top card while records wait: it names the count, never "All caught up", on every tab ----------
+// --- 13f2) while records wait the line names the count and never says "All caught up", on every page ----------
 {
   REST.history = HISTORY
   const w = await mount('en', 'page')
-  const n = w.hostEl.querySelectorAll('.pa-list .pa-row').length
+  const n = w.hostEl.querySelectorAll('.pa-cols .pa-lc').length
+  const said = w.hostEl.querySelector('.pa-hd .pa-hd-line')?.textContent || ''
+  if (!n || !said.startsWith(`${n} changes are on the line.`) || w.hostEl.querySelector('.pa-allclear')) {
+    fail(`top card: with records waiting the line reads ${JSON.stringify(said)}`)
+  }
   for (const name of [/^Needs you/, /^Activity/, /^Memory/]) {
     await click(tab(w.hostEl, name), 60)
-    const top = w.hostEl.querySelector('.pa-root > .pa-top')
-    const title = top?.querySelector('.pa-clear-title')?.textContent
-    if (!n || top?.getAttribute('data-waiting') !== '1' || !/^\d+ waiting for you$/.test(title || '')) {
-      fail(`top card: with records waiting the ${name.source.slice(1)} tab reads ${JSON.stringify(title)}`)
+    if (/All caught up/.test(w.hostEl.textContent)) {
+      fail(`top card: the ${name.source.slice(1)} view says All caught up while records wait`)
     }
-    if (/All caught up/.test(top?.textContent || '')) fail('top card: says All caught up while records wait')
-    if (top?.querySelector('.pa-clear-seal svg')) fail('top card: the check mark is drawn while records wait')
   }
   w.root.unmount()
   w.hostEl.remove()
   REST.history = null
 }
 
-// --- 13g) all-clear: 0 pending draws All caught up (seal, title, today's count, pips, Last line) and no
-// record card ------------------------------------------------------------------------------------
+// --- 13g) all-clear: 0 pending keeps the stations ("Nothing here"), draws All caught up (check, title, today's
+// count) across the first four, Written still lists today; no record card ---------------------------------------
 {
   REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
   REST.history = HISTORY
   const h = await mount('en', 'page')
-  if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-split .pa-row')) {
+  if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-cols .pa-lc')) {
     fail('all-clear: a record is drawn with 0 pending')
   }
-  const empty = h.hostEl.querySelector('.pa-root > .pa-top')
-  if (empty?.querySelector('.pa-clear-title')?.textContent !== 'All caught up') fail('all-clear: the title is missing')
-  if (!empty?.querySelector('.pa-clear-seal svg[data-icon="check"]')) {
-    fail('all-clear: the check mark is not the kit\u2019s Check icon (a text glyph depends on the font)')
+  const sts = [...h.hostEl.querySelectorAll('.pa-cols > .pa-st')]
+  if (sts.length !== 5 || sts.slice(0, 4).some(st => st.querySelector('.pa-st-body')?.textContent !== 'Nothing here')) {
+    fail('all-clear: the stations are not kept, each saying "Nothing here"')
+  }
+  const empty = h.hostEl.querySelector('.pa-cols > .pa-allclear')
+  if (empty?.querySelector('h2')?.textContent !== 'All caught up') fail('all-clear: the title is missing')
+  if (!empty?.querySelector('.pa-node-ok svg')) {
+    fail('all-clear: the check mark is not a drawn icon (a text glyph depends on the font)')
   }
   const n = decidedToday(HISTORY.entries).length
-  const body = empty?.querySelector('.pa-clear-body')?.textContent
-  const wantBody = n ? `${n} decided today · nothing written without you`
-    : 'Nothing decided today · nothing written without you'
-  if (body !== wantBody) {
+  const body = empty?.querySelector('p')?.textContent
+  if (body !== `${n} decided today · nothing waits for you.`) {
     fail(`all-clear: the spec sentence is missing: ${JSON.stringify(body)}`)
   }
-  if (empty?.querySelector('.pa-pips')) fail('top card: it repeats the day pips the rail already shows')
-  if (h.hostEl.querySelector('.pa-detail .pa-clear')) fail('top card: an empty Needs you still draws its own all-clear')
-  for (const name of [/^Activity/, /^Memory/]) {
-    await click(tab(h.hostEl, name), 60)
-    const top = h.hostEl.querySelector('.pa-root > .pa-top')
-    if (top?.querySelector('.pa-clear-title')?.textContent !== 'All caught up' || top.getAttribute('data-slim') !== '1'
-        || top.querySelector('.pa-week-bars')) {
-      fail(`top card: the ${name.source.slice(1)} tab does not carry the slim top card (words, no unlabeled bars)`)
-    }
+  if (h.hostEl.querySelector('.pa-pips, .pa-top')) fail('top card: the removed pips or top card are back')
+  if (!h.hostEl.querySelector('.pa-st[data-st="written"] .pa-done')) {
+    fail('all-clear: Written no longer lists today although history has entries')
   }
-  if (!empty?.querySelector('.pa-clear-last')) fail('all-clear: the Last line is gone although history has entries')
   REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
   const none = await mount('en', 'page')
-  const noneBody = none.hostEl.querySelector('.pa-clear-body')?.textContent
-  if (noneBody !== 'When Hermes wants to change its memory or a skill, the change waits here until you decide. '
-    + 'Nothing is written without you.') {
+  const noneBody = none.hostEl.querySelector('.pa-hd-line')?.textContent
+  if (noneBody !== 'Nothing is on the line. When Hermes wants to change its memory or a skill, it stops here for you.') {
     fail(`all-clear on a first day does not say what this place is for: ${JSON.stringify(noneBody)}`)
   }
-  if (none.hostEl.querySelector('.pa-clear-title')?.textContent !== 'Nothing waiting') {
-    fail('all-clear on a first day still reads “All caught up”')
+  const fullRing = none.hostEl.querySelector('.pa-hd .pa-mring[data-k="memory"]')
+  if (fullRing?.getAttribute('aria-label') !== 'Memory 99% full' || fullRing.querySelector('svg')?.getAttribute('data-warm') !== '1') {
+    fail('all-clear: a nearly full memory file is not shown warm in the header')
   }
-  const fullLine = none.hostEl.querySelector('.pa-clear-warn')
-  if (!/^Memory is 99% full/.test(fullLine?.textContent || '')) fail('all-clear: a nearly full memory file is not mentioned')
-  await click(buttons(fullLine, /^Open Memory$/)[0], 60)
-  if (!none.hostEl.querySelector('.pa-memory')) fail('all-clear: “Open Memory” does not open the Memory tab')
-  if (none.hostEl.querySelector('.pa-clear-last')) fail('all-clear: a Last line is drawn with no history')
+  await click(fullRing, 60)
+  if (!none.hostEl.querySelector('.pa-memory')) fail('all-clear: the Memory ring does not open the Memory page')
+  await toLine(none.hostEl)
+  if (none.hostEl.querySelector('.pa-st[data-st="written"] .pa-done')) fail('all-clear: a Written row is drawn with no history')
   none.root.unmount()
   none.hostEl.remove()
   REST.pending = null
@@ -2695,29 +2708,29 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   fail('the panel never asked for a scan: the poll must POST /scan and then read the side-effect-free GET')
 }
 
-// --- 16) No data yet: the kit Loader, never an empty state or a 0% KPI -------------------------
+// --- 16) No data yet: the stations drawn dimmed with one reading block (kit Loader), never an empty state or a 0 count
 {
   REST.mode = 'hold'
   const held = await mount('en')
-  const kpis = [...(held.hostEl.querySelector('.pa-strip')?.children || [])].map(c => c.textContent || '')
-  if (held.hostEl.textContent.includes('Nothing awaits approval')) fail('loading reads as “Nothing awaits approval”')
-  if (!held.hostEl.querySelector('[data-slot="loader"]')) fail('no kit Loader while the pending list loads')
-  if (held.hostEl.querySelector('.pa-state .pa-state-label')?.textContent !== 'Reading what is waiting…') {
+  if (held.hostEl.textContent.includes('Nothing awaits approval') || held.hostEl.querySelector('.pa-allclear')) {
+    fail('loading reads as “Nothing awaits approval”')
+  }
+  if (!held.hostEl.querySelector('.pa-line[data-state="loading"] .pa-msg[role="status"] [data-slot="loader"]')) {
+    fail('no kit Loader while the pending list loads')
+  }
+  if (held.hostEl.querySelector('.pa-line .pa-msg h2')?.textContent !== 'Reading what is on the line…') {
     fail('the loading state names nothing on screen; its label lives only in aria-label')
   }
-  const reading = held.hostEl.querySelectorAll('.pa-bar .pa-gm[data-reading="1"]')
+  if (held.hostEl.querySelector('.pa-cols')?.getAttribute('data-dim') !== '1'
+      || held.hostEl.querySelectorAll('.pa-cols > .pa-st').length !== 5) {
+    fail('while reading, the five stations are not drawn dimmed, so the line jumps when the list arrives')
+  }
+  const reading = held.hostEl.querySelectorAll('.pa-hd .pa-mring[data-reading="1"]')
   if (reading.length !== 2 || [...reading].some(m => m.querySelector('b')?.textContent !== '—')) {
-    fail(`the bar drops its Memory and Profile meters while reading (${reading.length} placeholders), so it jumps`)
+    fail(`the header drops its Memory and Profile rings while reading (${reading.length} placeholders), so it jumps`)
   }
-  if (kpis.some(k => /\b0%|Has room|No failures|All clear/.test(k))) {
-    fail(`a KPI states a figure before any data arrived: ${JSON.stringify(kpis)}`)
-  }
-  await click(tab(held.hostEl, /Activity/))
-  if (held.hostEl.textContent.includes('No records yet')) fail('loading reads as “No records yet” in the history')
-  if (held.hostEl.querySelector('.pa-top')) fail('top card: drawn before the history arrived (it would say Nothing waiting)')
-  if (!held.hostEl.querySelector('.pa-root > .pa-body [data-slot="loader"]')) {
-    fail('no kit Loader while the history loads')
-  }
+  if (held.hostEl.querySelector('.pa-cnt')) fail('a station states a count before any data arrived')
+  if (/\b0%/.test(held.hostEl.querySelector('.pa-hd')?.textContent || '')) fail('a ring states 0% before any data arrived')
   held.hostEl.remove()
 }
 
@@ -2725,27 +2738,23 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
 {
   REST.mode = 'fail'
   const broken = await mount('en')
-  if (!broken.hostEl.querySelector('[data-slot="error-state"]')) fail('a failed read shows no kit ErrorState')
+  const msg = () => broken.hostEl.querySelector('.pa-line[data-state="error"] > .pa-msg[role="alert"]')
+  if (msg()?.querySelector('h2')?.textContent !== 'The line could not be read') fail('a failed read shows no error block on the line')
   if (/Restart the desktop app/.test(broken.hostEl.textContent)) fail('the error still asks for an app restart')
   if (broken.hostEl.textContent.includes('list exploded')) fail('the raw backend error is shown before Details')
-  await click(broken.hostEl.querySelector('[data-slot="error-state"] .pa-tech-fold'), 30)
+  await click(msg()?.querySelector('.pa-tech-fold'), 30)
   if (!broken.hostEl.textContent.includes('list exploded')) fail('the backend error message is not under Details')
-  if (!broken.hostEl.querySelector('.pa-state > [data-slot="error-state"]')) {
-    fail('the error state is not centred in its own .pa-state box')
+  if (broken.hostEl.querySelector('.pa-cols')?.getAttribute('data-dim') !== '1') {
+    fail('the error is not one message block over the dimmed stations')
   }
   if (!/unavailable/i.test(broken.chipText)) fail(`the status chip has no error state: ${JSON.stringify(broken.chipText)}`)
-  const retry = buttons(broken.hostEl, /^Retry$/)[0]
-  if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error state carries no kit Retry button')
-  const errCss = broken.hostEl.querySelector('style')?.textContent || ''
-  if (!retry?.closest('[data-slot="error-state"] .pa-state-actions')
-      || !/\.pa-state-actions\{display:grid;justify-items:center/.test(errCss)) {
-    fail('Retry is stretched across the error state (the app centres its error actions in a grid)')
-  }
+  const retry = buttons(msg(), /^Retry$/)[0]
+  if (!retry || retry.getAttribute('data-slot') !== 'button') fail('the error block carries no kit Retry button')
   REST.mode = 'issues'
   const before = REST.gets
   if (retry) await click(retry, 80)
   if (REST.gets <= before) fail('Retry did not reload the data')
-  if (broken.hostEl.querySelector('[data-slot="error-state"]')) fail('the error stays after a successful Retry')
+  if (broken.hostEl.querySelector('.pa-msg[role="alert"]')) fail('the error stays after a successful Retry')
   if (reachableKeys(broken.hostEl).size !== 3) fail('Retry did not bring the records back')
   if (!broken.hostEl.textContent.includes(ISSUE)) fail('an issue the backend reported is not shown')
   const issueBox = [...broken.hostEl.querySelectorAll('.pa-alert')].find(a => a.textContent.includes(ISSUE))
@@ -2761,7 +2770,7 @@ for (const how of ['throw', 'refused']) {
   REST.scan = how
   const scanned = await mount('en')
   const why = how === 'throw' ? 'scan exploded' : 'scan refused'
-  if (scanned.hostEl.querySelector('[data-slot="error-state"]')) fail(`a ${how} /scan replaced the pending list with an error state`)
+  if (scanned.hostEl.querySelector('.pa-line[data-state="error"]')) fail(`a ${how} /scan replaced the pending list with an error state`)
   if (reachableKeys(scanned.hostEl).size !== 3) fail(`a ${how} /scan hid the pending records`)
   if (!scanned.hostEl.textContent.includes(why)) fail(`a ${how} /scan is not reported: “${why}” is missing`)
   scanned.hostEl.remove()
