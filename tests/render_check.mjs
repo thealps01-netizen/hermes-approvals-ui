@@ -957,6 +957,7 @@ async function mount(appLocale, parts = 'both') {
       GETS.push(path)
       if (REST.mode === 'hold') return new Promise(() => {})
       if (REST.mode === 'fail') throw new Error('500: {"ok": false, "error": "Could not read: list exploded"}')
+      if ((REST.failPaths || []).includes(path)) throw new Error('500: {"ok": false, "error": "Could not read: part exploded"}')
       if (path === '/history?limit=50' && REST.post === 'latebusy') throw new Error('Request timed out after 30000ms')
       // The backend writes the late entry only once the decision reached it; `lateskew` stamps it with a
       // server clock an hour behind the panel's, `lateold` holds an older failed attempt read before the click.
@@ -2762,6 +2763,31 @@ if (!stub.calls.posts.some(p => p.path === '/scan')) {
   if (!issueBox || issueBox.classList.contains('pa-alert-danger')) fail('a backend issue (a warning) is drawn red')
   broken.hostEl.remove()
   REST.mode = 'normal'
+}
+
+// --- 17b) One unreadable list never locks the owner out of the others ---------------------------
+// The old tabs reached History and Memory whatever /pending or /memory did. On the line, Written is
+// reached through "All activity" and Memory through its rings, so both must stay open when the other
+// read fails: an Undo must not wait for /pending to recover, and a Memory error must be reachable.
+{
+  REST.failPaths = ['/pending']
+  const noList = await mount('en')
+  const all = buttons(noList.hostEl.querySelector('.pa-line[data-state="error"]'), /^All activity/)[0]
+  if (!all) fail('the line cannot be read and Written (Undo, Restore) is unreachable')
+  if (all) await click(all, 60)
+  if (all && noList.hostEl.querySelector('[data-view]')?.getAttribute('data-view') !== 'written') {
+    fail('All activity on an unreadable line does not open Written')
+  }
+  noList.hostEl.remove()
+  REST.failPaths = ['/memory']
+  const noMem = await mount('en')
+  const ring = noMem.hostEl.querySelector('.pa-hd .pa-mring[data-k="memory"]')
+  if (!ring || ring.disabled) fail('Memory cannot be read and its ring is locked, so the error is never shown')
+  if (/reading/.test(ring?.getAttribute('aria-label') || '')) fail('an unreadable Memory ring still says it is reading')
+  if (ring && !ring.disabled) await click(ring, 60)
+  if (ring && !ring.disabled && !buttons(noMem.hostEl, /^Retry$/).length) fail('the Memory page shows no Retry for its failed read')
+  noMem.hostEl.remove()
+  REST.failPaths = null
 }
 
 // --- 18) A failed /scan never hides the pending list ----------------------------------------------

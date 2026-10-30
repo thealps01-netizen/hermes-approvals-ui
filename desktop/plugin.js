@@ -201,6 +201,7 @@ const BUNDLES = {
         profileLabel: 'Profile',
         meter: (word, pct) => `${word} ${pct}% full`,
         reading: word => `${word}: reading…`,
+        unread: word => `${word} could not be read — open it to try again`,
       },
       field: {
         failedBefore: 'Saving was attempted',
@@ -2960,7 +2961,11 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
                     jsx('p', { children: t('pa.line.errorBody') }, 'p')]
                 }, 'text'),
                 jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech'),
-                jsx(Button, { variant: 'outline', size: 'sm', onClick: refresh, children: t('pa.empty.retry') }, 'retry')
+                jsx(Button, { variant: 'outline', size: 'sm', onClick: refresh, children: t('pa.empty.retry') }, 'retry'),
+                jsx(Button, {
+                  variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
+                  children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
+                }, 'all')
               ]
             }, 'msg')
           : jsxs('div', {
@@ -4510,16 +4515,16 @@ function MemoryPage({ data, error, refresh, onChanged, file }) {
   }, 'memory')
 }
 
-function MiniRing({ id, store, t, onOpen }) {
+function MiniRing({ id, store, error, t, onOpen }) {
   const { pct } = fill(store)
   const word = t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
   return jsxs('button', {
     type: 'button',
     className: 'pa-mring',
     'data-k': id,
-    'data-reading': store ? undefined : '1',
-    disabled: !store,
-    'aria-label': store ? t('pa.kpi.meter', word, pct) : t('pa.kpi.reading', word),
+    'data-reading': store || error ? undefined : '1',
+    disabled: !store && !error,
+    'aria-label': store ? t('pa.kpi.meter', word, pct) : t(error ? 'pa.kpi.unread' : 'pa.kpi.reading', word),
     onClick: () => onOpen('memory', id),
     children: [
       jsx(Ring, { pct: store ? pct : 0, box: 36, r: 15, warm: pct >= 90 }, 'ring'),
@@ -4615,7 +4620,7 @@ function Pane() {
               jsx('div', {
                 className: 'pa-rings',
                 children: ['memory', 'user'].map(id => (!mem.data || mem.data[id]
-                  ? jsx(MiniRing, { id, store: mem.data?.[id], t, onOpen: open }, id) : null))
+                  ? jsx(MiniRing, { id, store: mem.data?.[id], error: mem.error, t, onOpen: open }, id) : null))
               }, 'rings'),
               jsxs('div', {
                 className: 'pa-tools',
