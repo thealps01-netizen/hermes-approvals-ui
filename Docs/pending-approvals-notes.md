@@ -2013,3 +2013,28 @@ canary was re-pointed to the line, e.g. the list hairline to `.pa-tools`, the se
 (first 1151 px of the page). They were captured with headless Edge, because the Electron binary that
 `tests/shot.mjs` needs was not available on the machine that made the change; the next `shot.mjs` run
 replaces them with the measured capture.
+
+### One row per change, its own track (unreleased)
+
+The owner found the five-column line hard to read: a change's card sat under one station, its
+relation to the others was lost, and the cards looked thrown about. Of three drawn directions he
+chose one row per change, each row carrying its own five-stop track under a shared station head.
+
+- **The head and the tracks share one stop width** (`--pa-cell`, 80 px; 60 px under 900 px), so a
+  row's dot lines up under its station without measuring anything at run time.
+- **Sections follow the owner's next move**: Your turn, then Stopped by your rules, then At the
+  reviewer, then Today. A section with nothing in it is not drawn; the head keeps its counts.
+- **A track only draws what the backend says**: the stop a change stands at (`placeOf`), solid road
+  behind it, dashed road ahead. Written rows end where their history `kind` ended (saved and failed
+  at Written, not saved at You, expired before the line, made outside at Written on its own).
+- **Written opens the chosen entry under its own row** instead of a side column, so the long titles
+  that used to run under Undo now wrap in the row (two lines at most).
+- **Memory's large rings became thin meters**; the header rings stay the way into the page.
+- The record page's journey strip draws the same track under its five stations, with the backend
+  time or result under each stop.
+
+Render-check promises moved with this layout: the dashed You → Written wire is now the dashed road
+ahead on every track; the station pins of Written are the end mark of each row's track; "Nothing
+here" at each empty station became "no empty section is drawn"; the Memory rings became the meters
+(same warm rule at 90 %). The new checks fail on the five-column panel (`node tests/render_check.mjs
+<plugin.js of 066d221>` exits 1, e.g. "a change row does not carry its own five-stop track").
