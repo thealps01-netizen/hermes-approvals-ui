@@ -472,14 +472,14 @@ const pick = async (hostEl, key) => {
   if (!card) problems.push(`the record view of ${key} is not drawn after opening its card`)
   return card
 }
-const goWritten = async hostEl => click(byText(hostEl.querySelector('.pa-st[data-st="written"]'), /^All activity/),
+const goWritten = async hostEl => click(byText(hostEl.querySelector('.pa-sec[data-st="written"]'), /^All activity/),
   'All activity')
 const goMemory = async (hostEl, file = 'memory') => click(hostEl.querySelector(`.pa-mring[data-k="${file}"]`),
   `the ${file} ring`)
 const need = (cond, what) => {
   if (!cond) problems.push(what)
 }
-const placed = (hostEl, st, key) => Boolean(hostEl.querySelector(`.pa-st[data-st="${st}"] .pa-lc[data-key="${key}"]`))
+const placed = (hostEl, st, key) => Boolean(hostEl.querySelector(`.pa-sec[data-st="${st}"] .pa-lc[data-key="${key}"]`))
 
 const frames = []
 const add = (id, label, html, narrow = false) => frames.push({ id, label, html, narrow })
@@ -492,16 +492,18 @@ add('f01', 'The line — every station busy: sources, a stop at Your rules, Wait
   need(placed(hostEl, 'reviewer', 'memory:q0000001'), 'f01: the queued record does not wait at the Reviewer')
   need(placed(hostEl, 'reviewer', `skills:${GROUP_ID}`), 'f01: the running group is not read at the Reviewer')
   need(placed(hostEl, 'you', 'skills:ed170001'), 'f01: the reviewed record does not sit at You')
-  need(/Gave up at/.test(hostEl.querySelector('.pa-st[data-st="reviewer"]')?.textContent || ''),
+  need(/Gave up at/.test(hostEl.querySelector('.pa-sec[data-st="reviewer"]')?.textContent || ''),
     'f01: the failed review does not say when it gave up')
   need(hostEl.querySelectorAll('.pa-park .pa-lc').length === 2, 'f01: the parked branch does not draw two cards')
-  need(hostEl.querySelectorAll('.pa-src').length >= 3, 'f01: Hermes proposes counts fewer than three sources')
+  const rowText = [...hostEl.querySelectorAll('.pa-line .pa-lc .pa-lc-s')].map(x => x.textContent).join(' ')
+  need(['in your chat', 'while you ran /refine', 'after a chat ended', 'automatic job'].filter(w => rowText.includes(w))
+    .length >= 3, 'f01: the rows name fewer than three sources')
 }, LINE))
 
 add('f01s', 'The line — Save pressed on the first Ready card: Saved lands in Written with Undo', await frame(async hostEl => {
-  await click(primary(hostEl.querySelector('.pa-st[data-st="you"]')) || byText(hostEl.querySelector('.pa-st[data-st="you"]'),
+  await click(primary(hostEl.querySelector('.pa-sec[data-st="you"]')) || byText(hostEl.querySelector('.pa-sec[data-st="you"]'),
     /^Save$/), 'Save on the first ready card', 600)
-  need(hostEl.querySelector('.pa-st[data-st="written"] .pa-done[data-k="approve"]'), 'f01s: no Saved row in Written')
+  need(hostEl.querySelector('.pa-sec[data-st="written"] .pa-done[data-k="approve"]'), 'f01s: no Saved row in Written')
 }, MAIN))
 
 add('f02', 'Record — a skill needing one edit, “With the fix” shown', await frame(async hostEl => {
@@ -530,12 +532,12 @@ add('f05', 'Record — a skill group being read: members, deleted file badge', a
     'f05: the deleted file has no Deleted badge')
 }, CHECKING))
 
-add('f06', 'The line — empty: nothing here at each station, All caught up, See parked', await frame(async hostEl => {
+add('f06', 'The line — empty: the station head, All caught up, See parked', await frame(async hostEl => {
   need(hostEl.querySelector('.pa-allclear'), 'f06: All caught up is not drawn')
   need(byText(hostEl.querySelector('.pa-allclear'), /^See parked$/), 'f06: All caught up has no See parked')
 }, { ...EMPTY, candidate_days: 14, candidates: RECURRING.candidates.slice(0, 2) }))
 
-add('f07', 'The line — a narrow 420 px pane: stations stacked', await frame(async hostEl => {
+add('f07', 'The line — a narrow 420 px pane: tracks under the titles', await frame(async hostEl => {
   need(hostEl.querySelectorAll('.pa-st').length === 5, 'f07: the narrow line does not draw five stations')
 }, LINE), true)
 
@@ -544,12 +546,12 @@ add('f08', 'Record — a narrow 420 px pane with its back bar', await frame(asyn
   need(/The line/.test(hostEl.querySelector('.pa-back')?.textContent || ''), 'f08: the back bar does not read The line')
 }), true)
 
-add('f09', 'Written — the timeline, an apply entry chosen: the outcome, the asked-for → saved diff, Undo',
+add('f09', 'Written — one row per record, an apply entry opened under its row: the outcome, the asked-for → saved diff, Undo',
   await frame(async hostEl => {
     await goWritten(hostEl)
     need(hostEl.querySelector('.pa-written .pa-detail .pa-file'), 'f09: the asked-for → saved comparison is not drawn')
     need(hostEl.querySelectorAll('.pa-day').length >= 1, 'f09: the timeline has no day heading')
-    need(hostEl.querySelectorAll('.pa-pin').length >= 3, 'f09: the timeline draws no pins')
+    need(hostEl.querySelectorAll('.pa-written .pa-ent-card > .pa-trk').length >= 3, 'f09: the Written rows draw no tracks')
   }))
 
 add('f10', 'Written — Undo answered with a conflict: the alert and Force undo', await frame(async hostEl => {
@@ -569,7 +571,7 @@ add('f11', 'Written — a restorable rejected entry chosen, Clear all armed', aw
   need(hostEl.querySelector('.pa-clear-arm'), 'f11: Clear all did not arm')
 }))
 
-add('f12', 'Memory — two files as rings, MEMORY.md at 99 % with its banner, note 3 delete armed',
+add('f12', 'Memory — two files with their meters, MEMORY.md at 99 % with its banner, note 3 delete armed',
   await frame(async hostEl => {
     await goMemory(hostEl)
     need(hostEl.querySelectorAll('.pa-mfile').length === 2, 'f12: the Memory page does not draw both files')
@@ -599,7 +601,7 @@ add('f21', 'Error — Written could not be read', await frame(async hostEl => {
   await goWritten(hostEl)
 }, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'state.db is locked' }))
 
-add('f22', 'Loading — Memory still reading: the rings hold their place with no value', await frame(async hostEl => {
+add('f22', 'Loading — Memory still reading: the meters hold their place with no value', await frame(async hostEl => {
   const rings = [...hostEl.querySelectorAll('.pa-hd .pa-mring')]
   need(rings.length === 2 && rings.every(r => r.getAttribute('data-reading') === '1'
     && r.querySelector('b')?.textContent === '—'), 'f22: a ring states a value before Memory was read')
@@ -779,7 +781,7 @@ add('f32', 'Record — Don’t save pressed: back on the line, “Not saved” w
   const card = await pick(hostEl, 'memory:mem00004')
   await click(byText(card?.querySelector('.pa-dfoot'), /^Don’t save/), 'Don’t save on mem00004', 600)
   if (hostEl.querySelector('.pa-back-btn')) await click(hostEl.querySelector('.pa-back-btn'), 'The line')
-  const written = hostEl.querySelector('.pa-st[data-st="written"]')
+  const written = hostEl.querySelector('.pa-sec[data-st="written"]')
   need(written?.querySelector('.pa-done[data-k="reject"]'), 'f32: no Not saved row in Written')
   need(byText(written, /^Restore$/), 'f32: the Not saved row has no Restore')
 }, MAIN))
@@ -845,7 +847,7 @@ add('f43', 'Written — a skill with a very long file path, Details open', await
     'f43: the long path is not drawn')
 }))
 
-add('f44', 'Memory — the Profile file chosen from its ring', await frame(async hostEl => {
+add('f44', 'Memory — the Profile file chosen from its tile', await frame(async hostEl => {
   await goMemory(hostEl, 'user')
   need(hostEl.querySelectorAll('.pa-memory .pa-note-row').length === 1, 'f44: the Profile file does not show its one note')
 }))

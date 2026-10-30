@@ -225,14 +225,14 @@ def check_motion_table() -> None:
 
 def check_card_surface_from_table() -> None:
     """The app frame's surfaces are defined once, not twice. Since the line (2026-10-30) the frame is
-    the header, the five stations and the cards under them (Docs/approvals-line-redesign-2026-10-30.md).
+    the header, the station head and the change rows under it (Docs/approvals-line-redesign-2026-10-30.md).
     Each sheet rule reads its ground and stroke from the app's `--ui-*` tokens and the shared constants
     (`${HAIRLINE}`, `${R.*}px`): a literal `8px` or a hand-written stroke in the sheet is how the class
     and the constant drift apart. The pane root and the line paint no ground and no edge: the app's own
     pages are flat; only a card is a box."""
     js = JS.read_text(encoding="utf-8")
     for rule, needles in ((".pa-node{", (("background:var(--ui-bg-elevated)", "the station ground"),
-                                         ("border:2px solid var(--ui-stroke-primary)", "the station ring"))),
+                                         ("border:1.5px solid var(--ui-stroke-primary)", "the station ring"))),
                           (".pa-lc{", (("background:var(--ui-bg-elevated)", "the card ground"),
                                        ("border:1px solid var(--ui-stroke-tertiary)", "the card edge"))),
                           (".pa-tools{", (("border-left:${HAIRLINE}", "the hairline stroke"),)),
