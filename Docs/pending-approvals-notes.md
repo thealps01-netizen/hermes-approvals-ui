@@ -2000,3 +2000,11 @@ keeps (so a later reader knows the check was moved on purpose, not lost):
 The new structure checks fail on the 1.21.1 panel (`node tests/render_check.mjs <1.21.1 plugin.js>`
 exits 1; e.g. "the line is not drawn as one list of stations", "one station holds the owner's next
 move; 0 are lit").
+
+Audit rules retired with the old layout (the static audit and its canaries; every other rule and
+canary was re-pointed to the line, e.g. the list hairline to `.pa-tools`, the selected row's
+`aria-current` to the chosen Written entry and the journey's station, Activity's list to `.pa-tl`):
+
+- **Tab track ground and radius** (`.pa-tabs`): the tab bar is gone; the frame check reads the
+  station node (`.pa-node`) instead, and its canary breaks the station ground.
+- **Tab radius, active tab ground and ring** (`.pa-root .pa-tab`): no tabs are drawn any more.
