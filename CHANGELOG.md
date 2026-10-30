@@ -27,6 +27,12 @@ look has no version at all.
 * **Removed**: the left rail and tabs, the top card and week chart, the day progress dots and bar
   meters. Their information is now on the line or in Written.
 * Below 760 px the line turns vertical, so the panel still works in a narrow side pane.
+* **Each waiting change is one row with its own small line.** The five stops are named once at
+  the top; every row draws its own five dots under them, filled up to where the change is now. Rows
+  are grouped by what they need: your turn first, then changes your rules stopped, then the ones at
+  the reviewer, then what was decided today. Written uses the same rows, each ending where its
+  change ended, and the chosen one opens right under its row. Memory shows thin bars instead of
+  large rings. Long titles wrap to two lines instead of being cut off.
 
 ## 1.21.1
 

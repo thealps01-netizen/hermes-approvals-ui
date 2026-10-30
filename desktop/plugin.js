@@ -40,15 +40,20 @@ const BUNDLES = {
       },
       st: {
         proposes: 'Hermes proposes',
-        proposesSub: 'held, nothing written',
         rules: 'Your rules',
-        rulesSub: 'instant · free',
         reviewer: 'Reviewer',
         reviewerSub: model => (model ? `${model} · starts when you press` : 'starts when you press'),
         you: 'You',
-        youSub: 'save or don’t save',
         written: 'Written',
-        writtenSub: 'today · can be undone',
+      },
+      sec: {
+        you: n => `Your turn · ${n}`,
+        youSub: 'checked by your rules and the reviewer',
+        rules: n => `Stopped by your rules · ${n}`,
+        reviewer: n => `At the reviewer · ${n}`,
+        today: n => (n ? `Today · ${n}` : 'Today'),
+        todaySub: 'decided today; undo or restore where offered',
+        todayNone: 'nothing decided yet today',
       },
       src: {
         chat: 'in your chat',
@@ -64,15 +69,15 @@ const BUNDLES = {
         tail: 'None is written until you save it at the fourth stop.',
         emptyLead: 'Nothing is on the line.',
         emptyTail: 'When Hermes wants to change its memory or a skill, it stops here for you.',
-        nothing: 'Nothing here',
-        passed: n => `${n} passed, moved on`,
-        stopped: 'Stopped here',
+        colChange: 'Change',
+        colNext: 'Next step',
+        at: name => `On the line at: ${name}`,
+        passed: n => `${plural(n, 'other passed', 'others passed')} and moved on`,
         noModel: 'No reviewer model set',
-        waits: 'Waits for you',
         check: 'Check',
         checkBoth: 'Check both',
         checkAll: 'Check all',
-        notRead: 'not read yet',
+        notRead: 'Not read yet',
         gaveUp: at => `Gave up at ${at} · try again`,
         gaveUpNow: 'Gave up · try again',
         readingNow: 'Reading now',
@@ -92,7 +97,8 @@ const BUNDLES = {
       park: {
         title: n => `Parked · ${n}`,
         body: days => `Made by Hermes alone. A similar change sends it up the line; otherwise it leaves after ${days} days.`,
-        leaves: date => `leaves ${date}`,
+        leaves: date => `Leaves ${date}`,
+        where: 'Parked before the line',
       },
       rec: {
         back: 'The line',
@@ -101,19 +107,19 @@ const BUNDLES = {
       },
       trip: {
         label: 'Where this change is',
-        proposed: at => `Proposed ${at}`,
-        passed: 'passed',
-        stopped: 'stopped here',
-        reviewerAt: at => `Reviewer ${at}`,
+        passed: 'Passed',
+        stopped: 'Stopped here',
         waits: 'waits for you',
         reading: 'reading now',
         gaveUp: 'gave up',
         noModel: 'no model set',
-        now: 'now',
-        after: 'after you save',
+        now: 'Now',
+        decide: 'save or don’t save',
+        after: 'only after you save',
       },
       wr: {
         body: 'Every save, every “Don’t save”, and every change made outside Approvals. Newest first.',
+        colState: 'Status',
       },
       action: {
         refresh: 'Refresh',
@@ -1006,80 +1012,95 @@ const STYLE = `
 .pa-ico[data-tone="bad"]{color:var(--ui-red)}
 .pa-ico[data-tone="warn"]{color:${WARN}}
 .pa-ico[data-tone="run"]{color:var(--ui-accent)}
-.pa-line{display:flex;flex-direction:column;gap:18px;padding:${G.base}px 22px 22px;min-width:0;position:relative;
+.pa-line,.pa-written{--pa-cell:80px;--pa-act:236px}
+.pa-line{display:flex;flex-direction:column;padding:${G.base}px 22px 22px;min-width:0;position:relative;
   flex:1 0 auto;box-sizing:border-box}
-.pa-line[data-open="1"]{padding:0;gap:0}
-.pa-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:start;min-width:0}
-.pa-cols[data-dim="1"]{opacity:.55}
-.pa-st{display:flex;flex-direction:column;align-items:center;min-width:0;position:relative;text-align:center}
-.pa-st:not([data-st="written"])::after{content:'';position:absolute;top:29px;left:calc(50% + 34px);
-  width:calc(100% - 54px);height:0;border-top:2px solid var(--ui-stroke-primary)}
-.pa-st[data-out="lit"]::after{border-top-color:var(--ui-accent)}
-.pa-st[data-out="dash"]::after{border-top-style:dashed}
-.pa-arrow{position:absolute;top:25px;left:calc(150% - 29px);width:9px;height:10px;display:block;z-index:1}
-.pa-arrow>svg{display:block;width:9px;height:10px;fill:var(--ui-stroke-primary)}
-.pa-arrow[data-lit="1"]>svg{fill:var(--ui-accent)}
-.pa-node{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;flex:none;
-  box-sizing:border-box;background:var(--ui-bg-elevated);border:2px solid var(--ui-stroke-primary);
-  color:var(--ui-text-secondary);z-index:1}
-.pa-st[data-lit="1"]>.pa-node{border:3px solid var(--ui-accent);color:var(--ui-accent)}
+.pa-line[data-open="1"]{padding:0}
+.pa-th,.pa-lc,.pa-done,.pa-grp,.pa-skel,.pa-root .pa-ent-card{display:grid;grid-template-columns:minmax(0,1fr) calc(var(--pa-cell) * 5) var(--pa-act);column-gap:16px;align-items:center;
+  min-width:0;box-sizing:border-box}
+.pa-th{padding:0 12px 12px;border-bottom:${HAIRLINE};align-items:end}
+.pa-th-l{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-cols{display:grid;grid-template-columns:repeat(5,var(--pa-cell));min-width:0}
+.pa-st{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;font-size:${FS.meta}px;
+  color:var(--ui-text-secondary);white-space:nowrap}
+.pa-node{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;
+  box-sizing:border-box;background:var(--ui-bg-elevated);border:1.5px solid var(--ui-stroke-primary);
+  color:var(--ui-text-primary)}
+.pa-st[data-lit="1"]{color:var(--ui-text-primary);font-weight:600}
+.pa-st[data-lit="1"]>.pa-node{border:2.5px solid var(--ui-accent);color:var(--ui-accent)}
 .pa-node-sm{width:40px;height:40px}
-.pa-node-xs{width:36px;height:36px}
-.pa-node-md{width:44px;height:44px}
-.pa-node-ok{width:48px;height:48px;border-color:var(--ui-green);color:var(--ui-green)}
-.pa-cnt{position:absolute;top:-6px;right:-10px;display:flex}
-.pa-st-text{margin-top:8px;min-width:0;display:flex;flex-direction:column;gap:2px}
-.pa-st-name{margin:0;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-st-sub{font-size:${FS.meta}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
-.pa-st-body{display:flex;flex-direction:column;gap:8px;margin-top:12px;width:100%;min-width:0;text-align:left}
-.pa-st-body:empty{display:none}
-.pa-lc{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--ui-stroke-tertiary);
-  border-radius:8px;background:var(--ui-bg-elevated);box-sizing:border-box;min-width:0;
-  transition:${move('exit', 'opacity, transform')}}
-.pa-lc[data-ready="1"],.pa-lc[data-picked="1"]{border:1.5px solid var(--ui-accent);padding:7.5px 9.5px}
-.pa-lc[data-tone="stop"]{border-color:color-mix(in srgb,var(--ui-red) 55%,var(--ui-stroke-tertiary))}
-.pa-lc-k{display:flex;align-items:center;gap:6px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-lc-kick{display:inline-flex;align-items:center;gap:6px;min-width:0}
-.pa-root .pa-lc-main{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;border:0;background:transparent;
-  font:inherit;color:inherit;text-align:left;cursor:pointer;min-width:0;width:100%;border-radius:4px}
-.pa-lc-t{font-size:${FS.body}px;font-weight:500;color:var(--ui-text-primary);overflow-wrap:anywhere;line-height:1.35}
-.pa-lc-s{font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);overflow-wrap:anywhere}
-.pa-lc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
-.pa-srcs{display:flex;flex-direction:column;gap:6px;min-width:0}
-.pa-src{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:8px;padding:6px 8px;
-  border:1px dashed var(--ui-stroke-secondary);border-radius:8px;color:var(--ui-text-secondary);min-width:0}
-.pa-src>b{font-size:${FS.lead + 3}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
-.pa-src>span{font-size:${FS.meta}px;line-height:1.35}
-.pa-gate{display:flex;align-items:center;justify-content:center;gap:6px;font-size:${FS.meta}px;
-  color:var(--ui-text-secondary);text-align:center}
-.pa-grp{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px;font-size:${FS.meta}px;
+.pa-node-xs{width:34px;height:34px}
+.pa-node-md{width:40px;height:40px}
+.pa-node-ok{width:40px;height:40px;border-color:var(--ui-green);color:var(--ui-green)}
+.pa-cnt{position:absolute;top:-8px;left:22px;display:flex}
+.pa-st-name{font-size:${FS.meta}px}
+.pa-sec,.pa-park{display:flex;flex-direction:column;min-width:0}
+.pa-grp{margin:22px 0 8px;padding:0 12px;min-height:28px}
+.pa-grp-t{grid-column:1 / 3;grid-row:1;display:flex;align-items:center;gap:8px;min-width:0;font-size:${FS.meta}px;
   color:var(--ui-text-secondary)}
-.pa-grp b{font-weight:500;color:var(--ui-text-primary)}
-.pa-done-list{display:flex;flex-direction:column;gap:6px;min-width:0}
-.pa-done{display:flex;align-items:center;gap:8px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-done-text{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.pa-done-text>b{font-weight:500;color:var(--ui-text-primary)}
-.pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}
-.pa-st-body>.pa-all-activity{align-self:flex-start}
-.pa-park{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:14px;align-items:start;padding:12px 14px;
-  border:1.5px dashed var(--ui-stroke-secondary);border-radius:10px;min-width:0;position:relative}
-.pa-park::before{content:'';position:absolute;left:calc((100% - 56px) / 10 - 1px);top:-20px;height:18px;
-  border-left:1.5px dashed var(--ui-stroke-secondary)}
-.pa-park-head{display:flex;align-items:flex-start;gap:12px;min-width:0}
-.pa-park-head h3{margin:0 0 2px;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-park-head p{margin:0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary)}
-.pa-park-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.pa-grp-t>b,.pa-grp-t>h3{margin:0;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary);white-space:nowrap}
+.pa-grp-t>span,.pa-grp-t>p{margin:0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pa-sec[data-st="you"] .pa-grp-t>.pa-ico{color:var(--ui-accent)}
+.pa-grp-act{grid-column:3;grid-row:1;display:flex;align-items:center;min-width:0}
+.pa-rows{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pa-lc{min-height:58px;padding:8px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:8px;
+  background:var(--ui-bg-elevated);transition:${move('exit', 'opacity, transform')}}
+.pa-skel{min-height:58px;padding:8px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:8px}
+.pa-lc[data-ready="1"],.pa-lc[data-picked="1"]{border:1.5px solid var(--ui-accent);padding:7.5px 11.5px}
+.pa-lc[data-tone="stop"]{border-color:color-mix(in srgb,var(--ui-red) 55%,var(--ui-stroke-tertiary))}
+.pa-lc-who{display:flex;align-items:center;gap:10px;min-width:0}
+.pa-lc-kick{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;flex:none}
+.pa-root .pa-lc-main{display:flex;flex-direction:column;flex:1;gap:2px;margin:0;padding:0;border:0;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;min-width:0;border-radius:4px}
+.pa-lc-t{font-size:${FS.body}px;font-weight:500;color:var(--ui-text-primary);line-height:1.35;overflow:hidden;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.pa-lc-s{display:flex;align-items:center;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);
+  min-width:0;white-space:nowrap}
+.pa-lc-kick+.pa-lc-sub::before{content:'·';margin:0 5px}
+.pa-lc-sub,.pa-lc-kick>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pa-lc-sub{flex:0 1 auto}
+.pa-lc-act{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;font-size:${FS.meta}px;
+  color:var(--ui-text-secondary)}
+.pa-lc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.pa-trk{position:relative;display:grid;grid-template-columns:repeat(5,var(--pa-cell));height:22px;align-items:center}
+.pa-trk::before{content:'';position:absolute;left:calc(var(--pa-cell) / 2);right:calc(var(--pa-cell) / 2);top:10px;
+  border-top:1.5px dashed var(--ui-stroke-secondary)}
+.pa-trk[data-alone="1"]::before{display:none}
+.pa-run{position:absolute;left:calc(var(--pa-cell) / 2);top:9.5px;height:2.5px;border-radius:2px;
+  background:var(--ui-text-secondary);width:calc(var(--pa-cell) * var(--pa-to))}
+.pa-trk>i{position:relative;justify-self:center;display:grid;place-items:center;width:8px;height:8px;border-radius:50%;
+  box-sizing:border-box;background:var(--ui-bg-elevated);border:1.5px solid var(--ui-stroke-secondary);
+  color:var(--ui-text-secondary)}
+.pa-trk>i[data-k="p"]{width:10px;height:10px;background:var(--ui-text-secondary);border-color:var(--ui-text-secondary)}
+.pa-trk>i[data-k="off"]{visibility:hidden}
+.pa-trk>i[data-k="at"]{width:20px;height:20px;border:3px solid var(--ui-text-primary)}
+.pa-trk>i[data-m="me"]{border-color:var(--ui-accent)}
+.pa-trk>i[data-m="bad"]{border-color:var(--ui-red)}
+.pa-trk>i[data-m="live"]{border-color:var(--ui-stroke-secondary);border-top-color:var(--ui-accent);
+  border-right-color:var(--ui-accent)}
+.pa-trk>i[data-m="ok"]{width:16px;height:16px;border:0;background:var(--ui-green)}
+.pa-trk>i[data-m="mark"]{width:18px;height:18px;border:1.5px solid var(--ui-text-secondary)}
+.pa-trk>i[data-m="wait"]{border:2px dashed var(--ui-text-secondary)}
+.pa-done{min-height:46px;padding:6px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:8px}
+.pa-done-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pa-done-text{font-size:${FS.body}px;line-height:1.35;color:var(--ui-text-primary);min-width:0;overflow:hidden;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.pa-done-text>b{font-weight:500}
+.pa-skel-who,.pa-skel-act{display:flex;flex-direction:column;gap:7px;min-width:0}
+.pa-skel-who>i,.pa-skel-act>i{display:block;height:9px;width:60%;border-radius:5px;background:var(--ui-stroke-tertiary)}
+.pa-skel-who>i+i{width:36%;height:7px}
+.pa-skel-act>i{width:90px}
+.pa-skel .pa-trk::before{border-top-style:solid;border-color:var(--ui-stroke-tertiary)}
+.pa-skel .pa-trk>i{border-color:var(--ui-stroke-tertiary)}
 .pa-clock{display:inline-flex;align-items:center;gap:6px;min-width:0}
-.pa-cols>.pa-allclear{grid-column:1 / 5;grid-row:2;align-self:start;justify-content:center;padding:14px 18px}
-.pa-cols[data-clear="1"]>.pa-st[data-st="written"]{grid-row:1 / span 2}
-.pa-allclear>.pa-msg-text{flex:0 1 auto}
-.pa-allclear,.pa-msg{display:flex;align-items:center;flex-wrap:wrap;gap:14px;padding:18px;
-  border:1.5px dashed var(--ui-stroke-secondary);border-radius:12px;min-width:0}
-.pa-msg-text{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pa-allclear,.pa-msg{display:flex;align-items:flex-start;flex-wrap:wrap;gap:14px;margin:22px 12px 0;min-width:0}
+.pa-allclear{align-items:center}
+.pa-msg-text{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:3px}
 .pa-msg-text>h2{margin:0;font-size:${FS.empty}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-msg-text>p{margin:0;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-msg-text>p{margin:0;max-width:62ch;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-msg-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .pa-msg-err{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;box-sizing:border-box;
-  border:2px solid var(--ui-red);color:var(--ui-red)}
+  border:1.5px solid var(--ui-red);color:var(--ui-red)}
 .pa-bulk{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;
   margin:auto -22px -22px;padding:12px 22px;border-top:${HAIRLINE};background:var(--pa-surface)}
 .pa-bulk-n{flex:1 1 220px;min-width:0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-primary)}
@@ -1092,17 +1113,30 @@ const STYLE = `
 .pa-detail>.pa-card{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;overflow-wrap:anywhere;
   animation:${rise('enter')};transition:${move('exit', 'opacity, transform')}}
 .pa-line>.pa-detail{flex:1 0 auto}
-.pa-trip{list-style:none;margin:0;padding:14px 22px 12px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
-  position:relative;border-bottom:${HAIRLINE};flex:none}
-.pa-trip::before,.pa-trip::after{content:'';position:absolute;top:31px;left:calc(22px + (100% - 44px) / 10);height:0;
-  border-top:2px solid var(--ui-stroke-primary)}
-.pa-trip::before{right:calc(22px + (100% - 44px) / 10)}
-.pa-trip::after{width:calc(var(--pa-at) * (100% - 44px) / 5);border-top-color:var(--ui-accent)}
-.pa-tp{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0;padding:0 4px}
-.pa-tp>b{margin-top:6px;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-tp>span{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);overflow-wrap:anywhere}
-.pa-tp[data-k="past"]>.pa-node{border-color:var(--ui-accent)}
-.pa-tp[data-k="now"]>.pa-node{border:3px solid var(--ui-accent);color:var(--ui-accent)}
+.pa-trip{list-style:none;margin:16px 22px 0;padding:14px 0 12px;display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--ui-stroke-tertiary);border-radius:8px;
+  background:var(--ui-bg-elevated);flex:none}
+.pa-tp{display:flex;flex-direction:column;align-items:center;gap:1px;text-align:center;min-width:0;padding:0 6px}
+.pa-tp-name{margin-top:5px;font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
+.pa-tp[data-k="now"]>.pa-tp-name{color:var(--ui-text-primary);font-weight:600}
+.pa-tp[data-k="now"]>.pa-node{border:2.5px solid var(--ui-accent);color:var(--ui-accent)}
+.pa-tp-dot{position:relative;align-self:stretch;height:22px;margin:8px -6px 6px}
+.pa-tp-dot::before{content:'';position:absolute;left:50%;width:100%;top:10px;border-top:1.5px dashed var(--ui-stroke-secondary)}
+.pa-tp[data-k="past"]>.pa-tp-dot::before{top:9.5px;border-top:2.5px solid var(--ui-text-secondary)}
+.pa-tp:last-child>.pa-tp-dot::before{display:none}
+.pa-tp-dot::after{content:'';position:absolute;left:50%;top:11px;width:8px;height:8px;transform:translate(-50%,-50%);
+  border-radius:50%;box-sizing:border-box;background:var(--ui-bg-elevated);border:1.5px solid var(--ui-stroke-secondary)}
+.pa-tp[data-k="past"]>.pa-tp-dot::after{width:10px;height:10px;background:var(--ui-text-secondary);
+  border-color:var(--ui-text-secondary)}
+.pa-tp[data-k="now"]>.pa-tp-dot::after{width:20px;height:20px;border:3px solid var(--ui-text-primary)}
+.pa-tp[data-m="me"]>.pa-tp-dot::after{border-color:var(--ui-accent)}
+.pa-tp[data-m="bad"]>.pa-tp-dot::after{border-color:var(--ui-red)}
+.pa-tp[data-m="live"]>.pa-tp-dot::after{border-color:var(--ui-stroke-secondary);border-top-color:var(--ui-accent);
+  border-right-color:var(--ui-accent)}
+.pa-tp[data-m="wait"]>.pa-tp-dot::after{border:2px dashed var(--ui-text-secondary)}
+.pa-tp>b{min-height:1.4em;font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-primary)}
+.pa-tp[data-m="me"]>b{color:var(--ui-accent)}
+.pa-tp-s{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);overflow-wrap:anywhere}
 .pa-rec{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start;padding:18px 22px;
   flex:1 0 auto;min-width:0}
 .pa-dbody{display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -1156,47 +1190,40 @@ const STYLE = `
 .pa-ttl{display:flex;align-items:center;gap:12px;min-width:0}
 .pa-ttl .pa-h1{font-size:${FS.title}px}
 .pa-ttl p{margin:2px 0 0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary)}
-.pa-wsplit{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:26px;align-items:start;min-width:0}
+.pa-wsplit{display:flex;flex-direction:column;min-width:0}
 .pa-tl-col{display:flex;flex-direction:column;gap:${G.sm}px;min-width:0}
 .pa-tl-col>.pa-activity-clear{align-self:flex-start}
-.pa-tl{position:relative;display:flex;flex-direction:column;gap:8px;padding-left:44px;min-width:0}
-.pa-tl::before{content:'';position:absolute;left:15px;top:4px;bottom:4px;border-left:2px solid var(--ui-stroke-tertiary)}
-.pa-day{margin-top:6px;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
-.pa-ent{position:relative;display:flex;flex-direction:column;min-width:0}
-.pa-pin{position:absolute;left:-44px;top:6px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;
-  box-sizing:border-box;background:var(--ui-bg-elevated);border:2px solid var(--ui-stroke-primary);
-  color:var(--ui-text-secondary);z-index:1}
-.pa-pin[data-k="ok"]{border-color:var(--ui-green);color:var(--ui-green)}
-.pa-pin[data-k="bad"]{border-color:var(--ui-red);color:var(--ui-red)}
-.pa-root .pa-ent-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;margin:0;padding:8px 12px;
-  border:1px solid var(--ui-stroke-tertiary);border-radius:8px;background:var(--ui-bg-elevated);font:inherit;
-  color:inherit;text-align:left;cursor:pointer;width:100%;box-sizing:border-box;min-width:0;position:relative;z-index:1;
+.pa-tl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pa-day{margin:16px 0 2px}
+.pa-ent{display:flex;flex-direction:column;min-width:0}
+.pa-root .pa-ent-card{width:100%;min-height:52px;margin:0;padding:7px 12px;border:1px solid var(--ui-stroke-tertiary);
+  border-radius:8px;background:var(--ui-bg-elevated);font:inherit;color:inherit;text-align:left;cursor:pointer;
   transition:${move('hover', 'border-color')}}
 .pa-root .pa-ent-card:hover{border-color:var(--ui-stroke-secondary)}
-.pa-ent[data-on="1"]>.pa-ent-card{border-color:var(--ui-accent)}
-.pa-deck[data-open="0"]::after{content:'';position:absolute;left:6px;right:6px;bottom:-4px;height:8px;
-  border:1px solid var(--ui-stroke-tertiary);border-top:0;border-radius:0 0 8px 8px;background:var(--ui-bg-elevated)}
-.pa-deck[data-open="0"]{margin-bottom:4px}
+.pa-ent[data-on="1"]>.pa-ent-card{border:1.5px solid var(--ui-accent);padding:6.5px 11.5px}
+.pa-ent:has(>.pa-exp)>.pa-ent-card{border-radius:8px 8px 0 0}
+.pa-ent-who{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pa-ent-t{display:flex;align-items:center;gap:6px;min-width:0;font-size:${FS.body}px;font-weight:500;
   color:var(--ui-text-primary);overflow-wrap:anywhere}
-.pa-ent-time{font-size:${FS.meta}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;justify-self:end;
-  white-space:nowrap}
-.pa-ent-s{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);min-width:0;overflow-wrap:anywhere}
-.pa-ent-state{justify-self:end;white-space:nowrap}
+.pa-ent-s{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);min-width:0;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis}
+.pa-ent-end{display:flex;align-items:center;gap:10px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-ent-state{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pa-ent-time{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pa-deck-chev{color:var(--ui-text-secondary)}
 .pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px 0 0}
-.pa-root .pa-act-sub{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:10px;align-items:center;
-  height:${H.actSub}px;margin:0;padding:0 8px 0 12px;border:0;border-radius:7px;background:transparent;font:inherit;
-  font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
-  transition:${move('hover', 'background-color')}}
+.pa-root .pa-act-sub{display:grid;grid-template-columns:minmax(0,1fr) calc(var(--pa-cell) * 5) var(--pa-act);column-gap:16px;align-items:center;height:${H.actSub + 4}px;margin:0;padding:0 12px 0 24px;
+  border:0;border-radius:7px;background:transparent;font:inherit;font-size:${FS.preview}px;color:var(--ui-text-secondary);
+  text-align:left;cursor:pointer;box-sizing:border-box;transition:${move('hover', 'background-color')}}
 .pa-root .pa-act-sub:hover{background:var(--ui-row-hover-background)}
 .pa-root .pa-act-sub[aria-current="true"]{background:var(--ui-row-active-background);color:var(--ui-text-primary)}
 .pa-act-sub-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pa-act-sub-text>b{font-weight:600;color:var(--ui-text-primary)}
-.pa-act-sub-time{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pa-act-sub-time{justify-self:end;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pa-exp{padding:12px 14px 14px;border:1.5px solid var(--ui-accent);border-top:0;border-radius:0 0 8px 8px;min-width:0}
+.pa-deck>.pa-exp{margin-top:4px;border-top:1.5px solid var(--ui-accent);border-radius:8px}
 .pa-clear-arm{display:flex;flex-direction:column;gap:${G.xs}px}
 .pa-clear-row{display:flex;gap:${G.xs}px;flex-wrap:wrap}
-.pa-wsplit>.pa-detail{min-width:0}
 .pa-dh{display:flex;flex-direction:column;gap:6px;padding:0;flex:none;min-width:0}
 .pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
@@ -1204,36 +1231,40 @@ const STYLE = `
 .pa-crumb>span{min-width:0;overflow-wrap:anywhere}
 .pa-crumb-sep{color:var(--ui-text-secondary)}
 .pa-crumb-icon{display:inline-flex;color:var(--ui-text-secondary)}
-.pa-wsplit .pa-dbody{padding:10px 0}
-.pa-wsplit .pa-dfoot{padding:${G.xs}px 0;position:static}
-.pa-wsplit .pa-actions{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;min-width:0}
-.pa-wsplit .pa-act-note{min-width:0;white-space:normal;overflow-wrap:anywhere}
-.pa-wsplit .pa-dtitle{font-size:${FS.detail}px}
-.pa-mfiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0}
-.pa-root .pa-mfile{display:flex;align-items:center;gap:${G.base}px;margin:0;padding:14px 16px;
-  border:1px solid var(--ui-stroke-tertiary);border-radius:10px;background:var(--ui-bg-elevated);font:inherit;color:inherit;
-  text-align:left;cursor:pointer;min-width:0;transition:${move('hover', 'border-color')}}
+.pa-exp .pa-dbody{padding:10px 0}
+.pa-exp .pa-dfoot{padding:${G.xs}px 0;position:static;background:transparent}
+.pa-exp .pa-actions{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;min-width:0}
+.pa-exp .pa-act-note{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.pa-exp .pa-dtitle{font-size:${FS.detail}px}
+.pa-mfiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.pa-root .pa-mfile{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;margin:0;
+  padding:10px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:8px;background:var(--ui-bg-elevated);
+  font:inherit;color:inherit;text-align:left;cursor:pointer;min-width:0;transition:${move('hover', 'border-color')}}
 .pa-root .pa-mfile:hover{border-color:var(--ui-stroke-secondary)}
-.pa-root .pa-mfile[data-on="1"]{border-color:var(--ui-accent)}
-.pa-mfile>.pa-ring{width:76px;height:76px}
-.pa-mfile>.pa-ring>circle{stroke-width:7}
-.pa-mfile-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.pa-mfile-name{font-size:${FS.detail}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-mfile-pct{font-size:${FS.title + 2}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-root .pa-mfile[data-on="1"]{border:1.5px solid var(--ui-accent);padding:9.5px 11.5px}
+.pa-mfile-text{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;min-width:0}
+.pa-mfile-name{font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-mfile-pct{font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums;
+  white-space:nowrap}
 .pa-mfile-sub{font-size:${FS.meta}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-mfile-meter{grid-column:1 / -1;display:block;height:6px;border-radius:3px;overflow:hidden;
+  background:var(--ui-stroke-tertiary)}
+.pa-mfile-meter>i{display:block;height:100%;border-radius:3px;background:var(--ui-text-secondary)}
+.pa-mfile-meter[data-warm="1"]>i{background:var(--ui-orange)}
 .pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:10px 12px;
   --pa-ct:var(--ui-orange);${CALLOUT};font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-primary)}
 .pa-banner>span{flex:1 1 220px;min-width:0}
 .pa-notes-wrap{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
 .pa-notes-head{margin:0;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-notes{display:flex;flex-direction:column}
-.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) 90px 28px;gap:10px;align-items:center;
-  padding:8px 10px;border-bottom:${HAIRLINE};min-width:0}
+.pa-notes{display:flex;flex-direction:column;gap:6px}
+.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) 110px 28px;gap:12px;align-items:center;
+  min-height:44px;padding:6px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:8px;box-sizing:border-box;
+  min-width:0}
 .pa-note-row[data-armed="1"]{background:var(--hx-field);border-radius:${R.ctl}px}
 .pa-note-n{font-size:${FS.meta}px;color:var(--ui-text-secondary);text-align:right;font-variant-numeric:tabular-nums}
-.pa-note-text{font-size:${FS.body}px;line-height:1.5;color:var(--ui-text-primary);min-width:0;overflow:hidden;
-  white-space:nowrap;text-overflow:ellipsis}
-.pa-note-row[data-armed="1"]>.pa-note-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.pa-note-text{font-size:${FS.body}px;line-height:1.4;color:var(--ui-text-primary);min-width:0;overflow:hidden;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.pa-note-row[data-armed="1"]>.pa-note-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
 .pa-len{display:block;position:relative;height:4px;border-radius:2px;overflow:hidden;
   background:${tint('var(--ui-text-primary)', 12)}}
 .pa-len>i{display:block;height:100%;border-radius:2px;background:var(--ui-text-secondary)}
@@ -1245,8 +1276,10 @@ const STYLE = `
 @keyframes pa-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .pa-view{animation:${rise('enter')}}
 @container (max-width:1100px){
-  .pa-rec{grid-template-columns:minmax(0,1fr) 260px;gap:18px}
-  .pa-wsplit{grid-template-columns:minmax(0,1fr) 320px;gap:18px}}
+  .pa-rec{grid-template-columns:minmax(0,1fr) 260px;gap:18px}}
+@container (max-width:900px){
+  .pa-line,.pa-written{--pa-cell:60px;--pa-act:200px}
+  .pa-st-name,.pa-tp-name{white-space:normal;text-align:center}}
 @container (max-width:760px){
   .pa-hd{flex-wrap:wrap;padding:14px 14px 12px}
   .pa-hd-side{width:100%;justify-content:space-between}
@@ -1254,35 +1287,19 @@ const STYLE = `
   .pa-line{padding:12px 14px 18px}
   .pa-line[data-open="1"]{padding:0}
   .pa-bulk{margin:auto -14px -18px;padding:10px 14px}
-  .pa-cols{grid-template-columns:minmax(0,1fr);gap:0}
-  .pa-st{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:12px;align-items:start;text-align:left;
-    padding-bottom:18px}
-  .pa-st>.pa-node{width:44px;height:44px;grid-row:1 / span 2}
-  .pa-st>.pa-node>.pa-ico{width:22px;height:22px}
-  .pa-st-text{grid-column:2;margin-top:2px}
-  .pa-st-body{grid-column:2;margin-top:8px}
-  .pa-st:not([data-st="written"])::after{top:44px;left:21px;width:0;height:calc(100% - 44px);border-top:0;
-    border-left:2px solid var(--ui-stroke-primary)}
-  .pa-st[data-out="lit"]::after{border-left-color:var(--ui-accent)}
-  .pa-st[data-out="dash"]::after{border-left-style:dashed}
-  .pa-arrow{display:none}
-  .pa-cols>.pa-allclear{grid-column:1;grid-row:auto;margin-bottom:18px}
-  .pa-cols[data-clear="1"]>.pa-st[data-st="written"]{grid-row:auto}
-  .pa-park::before{display:none}
-  .pa-gate{justify-content:flex-start}
-  .pa-cnt{top:-4px;right:-8px}
-  .pa-srcs{flex-direction:row;flex-wrap:wrap}
-  .pa-src{padding:4px 8px}
-  .pa-park,.pa-park-cards{grid-template-columns:minmax(0,1fr)}
+  .pa-th,.pa-lc,.pa-done,.pa-grp,.pa-skel,.pa-root .pa-ent-card,.pa-root .pa-act-sub{
+    grid-template-columns:minmax(0,1fr) auto;row-gap:6px}
+  .pa-th>.pa-cols,.pa-lc>.pa-trk,.pa-done>.pa-trk,.pa-skel>.pa-trk,.pa-ent-card>.pa-trk,.pa-act-sub>.pa-trk{
+    grid-column:1 / -1;grid-row:2}
+  .pa-th>.pa-th-l:last-child{display:none}
+  .pa-grp-t{grid-column:1}
+  .pa-grp-act{grid-column:2}
+  .pa-root .pa-act-sub{height:auto;padding:6px 12px 6px 24px}
   .pa-back{padding:0 14px}
-  .pa-trip{padding:12px 14px 10px}
-  .pa-trip::before,.pa-trip::after{top:29px;left:calc(14px + (100% - 28px) / 10)}
-  .pa-trip::before{right:calc(14px + (100% - 28px) / 10)}
-  .pa-trip::after{width:calc(var(--pa-at) * (100% - 28px) / 5)}
+  .pa-trip{margin:12px 14px 0}
   .pa-rec{grid-template-columns:minmax(0,1fr);padding:14px}
   .pa-dfoot{padding:${G.xs}px 14px}
   .pa-written,.pa-memory{padding:12px 14px 18px}
-  .pa-wsplit{grid-template-columns:minmax(0,1fr)}
   .pa-note-row{grid-template-columns:22px minmax(0,1fr) 28px}
   .pa-note-row>.pa-len{grid-column:2;grid-row:2}
   .pa-body{scrollbar-gutter:stable}}
@@ -1292,7 +1309,7 @@ const STYLE = `
   .pa-crumb>.pa-crumb-end[data-when]{display:none}
   .pa-dh-when{display:block}
   .pa-btn-kbd{display:none}
-  .pa-tp>span:not(.pa-node){display:none}
+  .pa-tp-s{display:none}
   .pa-meter-box{flex:1 1 100%;min-width:0}}
 `
 
@@ -2201,19 +2218,27 @@ function DoneRow({ done, entries, t, onChanged }) {
     className: 'pa-done',
     'data-k': saved ? 'approve' : 'reject',
     role: 'listitem',
-    style: { height: H.doneRow },
     children: [
-      saved ? jsx('span', { className: 'pa-done-mark', 'aria-hidden': true, children: icon(CheckIcon, 14) }, 'mark') : null,
-      jsx('span', {
-        className: 'pa-done-text', children: t(saved ? 'pa.done.saved' : 'pa.done.notSaved', short(done.title, 80))
-      }, 'text'),
-      canUndo || canRestore
-        ? jsx(Button, {
-            variant: 'textStrong', size: 'inline', loading: busy, onClick: () => void go(),
-            className: canUndo ? 'pa-done-undo' : 'pa-restore',
-            children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
-          }, 'act')
-        : null
+      jsxs('div', {
+        className: 'pa-done-who',
+        children: [
+          jsx('span', {
+            className: 'pa-done-text', children: t(saved ? 'pa.done.saved' : 'pa.done.notSaved', short(done.title, 80))
+          }, 'text'),
+          jsx('span', { className: 'pa-lc-s', children: clock(done.at) }, 'when')
+        ]
+      }, 'who'),
+      jsx(Track, saved ? { at: 4, mark: 'ok' } : { at: 3, mark: 'mark', glyph: 'x' }, 'trk'),
+      jsx('div', {
+        className: 'pa-lc-act',
+        children: canUndo || canRestore
+          ? jsx(Button, {
+              variant: 'text', size: 'sm', loading: busy, onClick: () => void go(),
+              className: canUndo ? 'pa-done-undo' : 'pa-restore',
+              children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
+            })
+          : null
+      }, 'act')
     ]
   }, done.key)
 }
@@ -2406,9 +2431,8 @@ const Ring = ({ pct, box, r, warm }) => jsxs('svg', {
   ]
 })
 const STATIONS = [
-  ['proposes', 'spark', 'pa.st.proposes', 'pa.st.proposesSub'], ['rules', 'shield', 'pa.st.rules', 'pa.st.rulesSub'],
-  ['reviewer', 'eye', 'pa.st.reviewer', ''], ['you', 'person', 'pa.st.you', 'pa.st.youSub'],
-  ['written', 'book', 'pa.st.written', 'pa.st.writtenSub']
+  ['proposes', 'spark', 'pa.st.proposes'], ['rules', 'shield', 'pa.st.rules'], ['reviewer', 'eye', 'pa.st.reviewer'],
+  ['you', 'person', 'pa.st.you'], ['written', 'book', 'pa.st.written']
 ]
 const STATION_AT = { rules: 1, unassigned: 2, waits: 2, reading: 2, you: 3 }
 const SOURCES = [['chat', 'chat', 'pa.src.chat'], ['refine', 'agent', 'pa.src.refine'],
@@ -2457,10 +2481,67 @@ const hasFix = item => Boolean((item.plain || {}).fix || (item.parts || []).some
 const shortDate = s => new Date(Number(s) * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 const costOf = review => (typeof review?.usage?.cost_usd === 'number' && review.usage.cost_status !== 'included'
   ? `$${review.usage.cost_usd.toFixed(3)}` : '')
-const PIN = { apply: ['check', 'ok'], rejected: ['undo', ''], expired: ['hourglass', ''], failed: ['alert', 'bad'],
-  external: ['out', ''] }
-const lineOrder = list => ['rules', 'unassigned', 'waits', 'reading', 'you']
+const histTrack = entry => {
+  if (entry.kind === 'expired') return { at: 0, mark: 'mark', glyph: 'hourglass', alone: true }
+  if (entry.kind === 'external') return { at: 4, mark: 'mark', glyph: 'out', alone: true }
+  if (entry.kind === 'rejected') return { at: 3, mark: 'mark', glyph: 'x' }
+  if (entry.kind === 'failed') return { at: 4, mark: 'bad' }
+  return entry.undone ? { at: 4, mark: 'mark', glyph: 'undo' } : { at: 4, mark: 'ok' }
+}
+const lineOrder = list => ['you', 'rules', 'unassigned', 'waits', 'reading']
   .flatMap(place => list.filter(u => placeOf(u.item) === place))
+
+function Track({ at, mark, glyph, alone, label }) {
+  return jsxs('span', {
+    className: 'pa-trk',
+    'data-alone': alone ? '1' : undefined,
+    style: { '--pa-to': Math.max(0, at) },
+    role: label ? 'img' : undefined,
+    'aria-label': label || undefined,
+    'aria-hidden': label ? undefined : true,
+    children: [
+      alone || at < 1 ? null : jsx('span', { className: 'pa-run' }, 'run'),
+      ...STATIONS.map(([id], i) => jsx('i', {
+        'data-k': i === at ? 'at' : alone ? 'off' : i < at ? 'p' : undefined,
+        'data-m': i === at ? mark : undefined,
+        children: i === at && glyph ? jsx(Glyph, { of: glyph, size: 11 }) : null
+      }, id))
+    ]
+  })
+}
+
+function Head({ t, lit, counts, dim, next }) {
+  return jsxs('div', {
+    className: 'pa-th',
+    children: [
+      jsx('span', { className: 'pa-th-l', children: t('pa.line.colChange') }, 'l'),
+      jsx(Stations, { t, lit, counts, dim }, 'stations'),
+      jsx('span', { className: 'pa-th-l', children: t(next || 'pa.line.colNext') }, 'r')
+    ]
+  })
+}
+
+function Section({ id, glyph, title, sub, act, rows }) {
+  return jsxs('section', {
+    className: 'pa-sec',
+    'data-st': id,
+    'aria-label': title,
+    children: [
+      jsxs('div', {
+        className: 'pa-grp',
+        children: [
+          jsxs('div', {
+            className: 'pa-grp-t',
+            children: [jsx(Glyph, { of: glyph, size: 16 }, 'g'), jsx('b', { children: title }, 'b'),
+              sub ? jsx('span', { children: sub }, 's') : null]
+          }, 't'),
+          act ? jsx('div', { className: 'pa-grp-act', children: act }, 'act') : null
+        ]
+      }, 'head'),
+      rows.length ? jsx('div', { className: 'pa-rows', role: 'list', 'aria-label': title, children: rows }, 'list') : null
+    ]
+  }, id)
+}
 
 function ReadyActions({ unit, onOpen, onChanged }) {
   const t = usePluginI18n(ID)
@@ -2529,7 +2610,6 @@ function TodayRow({ entry, t, onChanged }) {
   const canRestore = !canUndo && setAside(entry) && entry.restorable === true && !entry.restored
   const { name, words, said } = actLine(t, entry)
   const what = name !== words ? name : said
-  const [glyph, tone] = PIN[entry.kind] || PIN.apply
   const go = async () => {
     setBusy(true)
     try {
@@ -2542,23 +2622,34 @@ function TodayRow({ entry, t, onChanged }) {
   return jsxs('div', {
     className: 'pa-done', 'data-k': entry.kind, role: 'listitem',
     children: [
-      jsx(Glyph, { of: glyph, tone }, 'mark'),
-      jsxs('span', {
-        className: 'pa-done-text',
-        children: [jsx('b', { children: words }, 'w'), what && what !== words ? ` ${short(what, 60)}` : '']
-      }, 'text'),
-      canUndo || canRestore
-        ? jsx(Button, {
-            variant: 'text', size: 'inline', loading: busy, onClick: () => void go(),
-            className: canUndo ? 'pa-done-undo' : 'pa-restore',
-            children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
-          }, 'act')
-        : null
+      jsxs('div', {
+        className: 'pa-done-who',
+        children: [
+          jsxs('span', {
+            className: 'pa-done-text',
+            children: [jsx('b', { children: words }, 'w'), what && what !== words ? ` ${short(what, 60)}` : '']
+          }, 'text'),
+          jsx('span', { className: 'pa-lc-s', children: clock(entry.ts * 1000) }, 'when')
+        ]
+      }, 'who'),
+      jsx(Track, histTrack(entry), 'trk'),
+      jsx('div', {
+        className: 'pa-lc-act',
+        children: canUndo || canRestore
+          ? jsx(Button, {
+              variant: 'text', size: 'sm', loading: busy, onClick: () => void go(),
+              className: canUndo ? 'pa-done-undo' : 'pa-restore',
+              children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
+            })
+          : null
+      }, 'act')
     ]
   }, entry.id)
 }
 
-function LineCard({ unit, t, kicker, sub, tone, ready, selecting, picked, onPick, onOpen, children }) {
+function LineCard({
+  unit, t, at, mark, label, kicker, sub, note, tone, ready, selecting, picked, onPick, onOpen, children
+}) {
   const { subsystem, item } = unit
   const key = queueKey(unit)
   const title = rowTitle(t, subsystem, item)
@@ -2567,37 +2658,41 @@ function LineCard({ unit, t, kicker, sub, tone, ready, selecting, picked, onPick
     className: leaving ? 'pa-lc pa-leaving' : 'pa-lc',
     role: 'listitem',
     'data-key': key,
+    'data-at': STATIONS[at]?.[0],
     'data-tone': tone || undefined,
     'data-ready': ready ? '1' : undefined,
     'data-picked': selecting && picked ? '1' : undefined,
     children: [
-      selecting || kicker
-        ? jsxs('div', {
-            className: 'pa-lc-k',
-            children: [
-              selecting
-                ? jsx(Checkbox, {
-                    className: 'pa-pick', checked: picked === true,
-                    'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
-                    onCheckedChange: () => onPick(key)
-                  }, 'pick')
-                : null,
-              kicker
-            ]
-          }, 'k')
-        : null,
-      jsxs('button', {
-        type: 'button',
-        className: 'pa-lc-main',
-        'data-key': key,
-        'aria-label': `${t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')}: ${title}`,
-        onClick: () => (selecting ? onPick(key) : onOpen(key)),
+      jsxs('div', {
+        className: 'pa-lc-who',
         children: [
-          jsx('span', { className: 'pa-lc-t', children: title }, 't'),
-          sub ? jsx('span', { className: 'pa-lc-s', children: sub }, 's') : null
+          selecting
+            ? jsx(Checkbox, {
+                className: 'pa-pick', checked: picked === true,
+                'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
+                onCheckedChange: () => onPick(key)
+              }, 'pick')
+            : null,
+          jsxs('button', {
+            type: 'button',
+            className: 'pa-lc-main',
+            'data-key': key,
+            'aria-label': `${t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')}: ${title}`,
+            onClick: () => (selecting ? onPick(key) : onOpen(key)),
+            children: [
+              jsx('span', { className: 'pa-lc-t', children: title }, 't'),
+              kicker || sub
+                ? jsxs('span', {
+                    className: 'pa-lc-s',
+                    children: [kicker || null, sub ? jsx('span', { className: 'pa-lc-sub', children: sub }, 'sub') : null]
+                  }, 's')
+                : null
+            ]
+          }, 'main')
         ]
-      }, 'main'),
-      selecting ? null : children
+      }, 'who'),
+      jsx(Track, { at, mark, alone: mark === 'wait', label: label || t('pa.line.at', t(STATIONS[at][2])) }, 'trk'),
+      jsx('div', { className: 'pa-lc-act', children: selecting ? null : children || note || null }, 'act')
     ]
   }, key)
 }
@@ -2740,52 +2835,32 @@ function BulkBar({ items, picked, setPicked, onDone, onCancel }) {
   })
 }
 
-function Stations({ t, lit, counts, model, bodies, dim, extra }) {
+function Stations({ t, lit, counts, dim }) {
   return jsx('div', {
     className: 'pa-cols',
     role: 'list',
     'aria-label': t('pa.line.label'),
-    'aria-keyshortcuts': 'J K',
+    'aria-keyshortcuts': counts ? 'J K' : undefined,
     'data-dim': dim ? '1' : undefined,
-    'data-clear': extra ? '1' : undefined,
-    children: [...STATIONS.map(([id, glyph, key, subKey], i) => jsxs('section', {
+    children: STATIONS.map(([id, glyph, key], i) => jsxs('div', {
       className: 'pa-st',
       role: 'listitem',
       'data-st': id,
       'data-lit': lit === i ? '1' : undefined,
-      'data-out': lit === i + 1 ? 'lit' : i === 3 ? 'dash' : undefined,
-      'aria-label': t(key),
       children: [
-        i < 4
-          ? jsx('span', {
-              className: 'pa-arrow', 'aria-hidden': true,
-              'data-lit': lit === i + 1 ? '1' : undefined, 'data-dash': i === 3 ? '1' : undefined,
-              children: jsx('svg', { viewBox: '0 0 9 10', children: jsx('path', { d: 'M0 0l9 5-9 5z' }) })
-            }, 'arrow')
-          : null,
         jsxs('span', {
           className: 'pa-node',
           children: [
-            jsx(Glyph, { of: glyph, size: 28 }, 'g'),
-            counts[i] ? jsx('span', {
+            jsx(Glyph, { of: glyph, size: 17 }, 'g'),
+            counts?.[i] ? jsx('span', {
               className: 'pa-cnt',
               children: jsx(Badge, { variant: lit === i ? 'solid' : 'muted', children: String(counts[i]) })
-            },
-              'n') : null
+            }, 'n') : null
           ]
         }, 'node'),
-        jsxs('div', {
-          className: 'pa-st-text',
-          children: [
-            jsx('h2', { className: 'pa-st-name', children: t(key) }, 'name'),
-            jsx('div', {
-              className: 'pa-st-sub', children: subKey ? t(subKey) : t('pa.st.reviewerSub', model)
-            }, 'sub')
-          ]
-        }, 'text'),
-        jsx('div', { className: 'pa-st-body', children: bodies[i] }, 'body')
+        jsx('span', { className: 'pa-st-name', children: t(key) }, 'name')
       ]
-    }, id)), extra || null]
+    }, id))
   }, 'cols')
 }
 
@@ -2926,30 +3001,27 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
   const today = entries.filter(e => dayKey(e.ts) === todayKey)
   const here = done.filter(d => !keys.includes(d.key))
   const mineIds = new Set(here.map(d => entryFor(entries, d.ids)?.id).filter(Boolean))
-  const nothing = jsx('div', { className: 'pa-gate pa-nothing', children: t('pa.line.nothing') }, 'nothing')
-  const writtenBody = [
-    jsx('div', {
-      className: 'pa-done-list', role: 'list', 'aria-label': t('pa.st.written'),
-      children: [
-        ...here.map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`)),
-        ...today.filter(e => !mineIds.has(e.id)).slice(0, Math.max(0, 4 - here.length))
-          .map(entry => jsx(TodayRow, { entry, t, onChanged }, entry.id))
-      ]
-    }, 'today'),
-    jsx(Button, {
-      variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
-      children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
-    }, 'all')
+  const todayRows = [
+    ...here.map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`)),
+    ...today.filter(e => !mineIds.has(e.id)).slice(0, Math.max(0, 4 - here.length))
+      .map(entry => jsx(TodayRow, { entry, t, onChanged }, entry.id))
   ]
+  const allActivity = jsx(Button, {
+    variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
+    children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
+  }, 'all')
+  const writtenSec = jsx(Section, {
+    id: 'written', glyph: 'book', title: t('pa.sec.today', todayRows.length),
+    sub: t(todayRows.length ? 'pa.sec.todaySub' : 'pa.sec.todayNone'), act: allActivity, rows: todayRows
+  }, 'written')
   const model = items.map(u => (u.item.review || {}).model).find(Boolean) || ''
   if (!data) {
-    const blank = [null, null, null, null, null]
     return jsxs('div', {
       ref: rootAt,
       className: 'pa-line',
       'data-state': error ? 'error' : 'loading',
       children: [
-        jsx(Stations, { t, lit: -1, counts: blank, model, bodies: blank, dim: true }, 'stations'),
+        jsx(Head, { t, lit: -1, counts: null, dim: true }, 'th'),
         error
           ? jsxs('div', {
               className: 'pa-msg', role: 'alert',
@@ -2958,14 +3030,19 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
                 jsxs('div', {
                   className: 'pa-msg-text',
                   children: [jsx('h2', { children: t('pa.line.errorTitle') }, 'h'),
-                    jsx('p', { children: t('pa.line.errorBody') }, 'p')]
-                }, 'text'),
-                jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech'),
-                jsx(Button, { variant: 'outline', size: 'sm', onClick: refresh, children: t('pa.empty.retry') }, 'retry'),
-                jsx(Button, {
-                  variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
-                  children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
-                }, 'all')
+                    jsx('p', { children: t('pa.line.errorBody') }, 'p'),
+                    jsxs('div', {
+                      className: 'pa-msg-acts',
+                      children: [
+                        jsx(Button, { variant: 'outline', size: 'sm', onClick: refresh, children: t('pa.empty.retry') }, 'retry'),
+                        jsx(Button, {
+                          variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
+                          children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
+                        }, 'all')
+                      ]
+                    }, 'acts'),
+                    jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech')]
+                }, 'text')
               ]
             }, 'msg')
           : jsxs('div', {
@@ -2978,7 +3055,12 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
                     jsx('p', { children: t('pa.line.readingBody') }, 'p')]
                 }, 'text')
               ]
-            }, 'msg')
+            }, 'msg'),
+        ...(error ? [] : [0, 1].map(i => jsxs('div', {
+          className: 'pa-skel', 'aria-hidden': true,
+          children: [jsxs('span', { className: 'pa-skel-who', children: [jsx('i', {}, 'a'), jsx('i', {}, 'b')] }, 'who'),
+            jsx(Track, { at: -1 }, 'trk'), jsx('span', { className: 'pa-skel-act', children: jsx('i', {}) }, 'act')]
+        }, `skel${i}`)))
       ]
     }, 'line')
   }
@@ -3021,102 +3103,80 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
   const kick = (glyph, text, tone) => jsxs('span', {
     className: 'pa-lc-kick', children: [jsx(Glyph, { of: glyph, tone }, 'g'), jsx('span', { children: text }, 't')]
   }, 'kick')
-  const sources = SOURCES.map(([id, glyph, key]) => [id, glyph, key, items.filter(u => sourceOf(u.item) === id).length])
-    .filter(([, , , n]) => n)
-  const groupHead = (label, n, extra) => jsxs('div', {
-    className: 'pa-grp',
-    children: [jsxs('span', { children: [jsx('b', { children: label }, 'b'), ` · ${n}`] }, 'l'), extra]
-  }, `grp-${label}`)
-  const bodies = [
-    sources.length
-      ? jsx('div', {
-          className: 'pa-srcs',
-          children: sources.map(([id, glyph, key, n]) => jsxs('div', {
-            className: 'pa-src', 'data-src': id,
-            children: [jsx(Glyph, { of: glyph, size: 18 }, 'g'), jsx('b', { children: String(n) }, 'n'),
-              jsx('span', { children: t(key) }, 't')]
-          }, id))
-        }, 'srcs')
-      : nothing,
-    !items.length ? nothing : [
-      items.length - stops.length
-        ? jsxs('div', {
-            className: 'pa-gate',
-            children: [jsx(Glyph, { of: 'check', tone: 'ok' }, 'g'), t('pa.line.passed', items.length - stops.length)]
-          }, 'passed')
-        : null,
-      ...stops.map(u => card(u, {
-        tone: 'stop', kicker: kick('lock', t('pa.line.stopped'), 'bad'), sub: stopWhy(t, u.item),
-        children: jsx('div', {
-          className: 'pa-lc-acts',
-          children: jsx(Button, {
-            variant: 'outline', size: 'sm', onClick: () => choose(queueKey(u)),
-            children: t(hasFix(u.item) ? 'pa.btn.seeFix' : 'pa.btn.see')
-          })
-        }, 'acts')
-      }))
-    ],
-    !reviewerN ? nothing : [
-      ...unassigned.map(u => card(u, {
-        kicker: kick('alert', t('pa.line.noModel'), 'warn'), sub: t('pa.review.unassigned')
-      })),
-      waits.length ? groupHead(t('pa.line.waits'), waits.length, jsx(CheckAll, { list: waits, onChanged }, 'check'))
-        : null,
-      ...waits.map(u => {
-        const review = u.item.review || {}
-        const failed = review.status === 'failed'
-        return card(u, {
-          kicker: failed ? kick('alert', review.finished ? t('pa.line.gaveUp', clock(review.finished * 1000))
-            : t('pa.line.gaveUpNow'), 'warn') : null,
-          sub: failed ? sourceText(t, u.item) : `${sourceText(t, u.item)} · ${t('pa.line.notRead')}`
-        })
-      }),
-      reading.length
-        ? groupHead(t('pa.line.readingNow'), reading.length,
-          jsx(Loader, { label: t('pa.line.readingNow'), style: { width: 14, height: 14 } }, 'spin'))
-        : null,
-      ...reading.map(u => card(u, { sub: sourceText(t, u.item) }))
-    ],
-    !ready.length ? nothing : ready.map((u, i) => {
+  const see = (u, key) => jsx(Button, {
+    variant: 'outline', size: 'sm', className: 'pa-lc-see', onClick: () => choose(queueKey(u)), children: t(key)
+  })
+  const youRows = ready.map((u, i) => {
+    const review = u.item.review || {}
+    const facts = reviewFacts(review)
+    const verdict = review.verdict === 'reject' ? 'reject' : (review.verdict === 'fix' || facts.edits) ? 'fix' : 'ok'
+    const sub = [sourceText(t, u.item), review.finished ? t('pa.line.checked', clock(review.finished * 1000)) : '',
+      costOf(review)].filter(Boolean).join(' · ')
+    return card(u, {
+      at: 3, mark: 'me', ready: i === 0, sub,
+      kicker: verdict === 'ok' ? kick('check', t('pa.line.fine'), 'ok')
+        : verdict === 'fix' ? kick('edit', t('pa.status.fix'), 'warn') : kick('alert', t('pa.line.advise'), 'bad'),
+      children: i === 0 ? jsx(ReadyActions, { unit: u, onOpen: choose, onChanged }, 'acts') : see(u, 'pa.btn.see')
+    })
+  })
+  const stopRows = stops.map(u => card(u, {
+    at: 1, mark: 'bad', tone: 'stop', kicker: kick('lock', stopWhy(t, u.item), 'bad'), sub: sourceText(t, u.item),
+    children: see(u, hasFix(u.item) ? 'pa.btn.seeFix' : 'pa.btn.see')
+  }))
+  const note = (text, glyph, tone) => (glyph ? kick(glyph, text, tone) : jsx('span', { children: text }))
+  const reviewRows = [
+    ...unassigned.map(u => card(u, {
+      at: 2, mark: 'at', sub: sourceText(t, u.item), note: note(t('pa.line.noModel'), 'alert', 'warn')
+    })),
+    ...waits.map(u => {
       const review = u.item.review || {}
-      const facts = reviewFacts(review)
-      const verdict = review.verdict === 'reject' ? 'reject' : (review.verdict === 'fix' || facts.edits) ? 'fix' : 'ok'
-      const sub = [sourceText(t, u.item), review.finished ? t('pa.line.checked', clock(review.finished * 1000)) : '',
-        costOf(review)].filter(Boolean).join(' · ')
       return card(u, {
-        ready: i === 0, sub,
-        kicker: verdict === 'ok' ? kick('check', t('pa.line.fine'), 'ok')
-          : verdict === 'fix' ? kick('edit', t('pa.status.fix'), 'warn') : kick('alert', t('pa.line.advise'), 'bad'),
-        children: i === 0 ? jsx(ReadyActions, { unit: u, onOpen: choose, onChanged }, 'acts') : null
+        at: 2, mark: 'at', sub: sourceText(t, u.item),
+        note: review.status === 'failed'
+          ? note(review.finished ? t('pa.line.gaveUp', clock(review.finished * 1000)) : t('pa.line.gaveUpNow'), 'alert', 'warn')
+          : note(t('pa.line.notRead'))
       })
     }),
-    writtenBody
+    ...reading.map(u => card(u, { at: 2, mark: 'live', sub: sourceText(t, u.item), note: note(t('pa.line.readingNow')) }))
   ]
+  const passed = items.length - stops.length
   const empty = !items.length
-  const parked = cands.length && (!empty || candOpen) ? jsxs('div', {
+  const sections = [
+    ready.length ? jsx(Section, {
+      id: 'you', glyph: 'person', title: t('pa.sec.you', ready.length), sub: t('pa.sec.youSub'), rows: youRows
+    }, 'you') : null,
+    stops.length ? jsx(Section, {
+      id: 'rules', glyph: 'shield', title: t('pa.sec.rules', stops.length), sub: passed ? t('pa.line.passed', passed) : '',
+      rows: stopRows
+    }, 'rules') : null,
+    reviewerN ? jsx(Section, {
+      id: 'reviewer', glyph: 'eye', title: t('pa.sec.reviewer', reviewerN),
+      sub: unassigned.length ? t('pa.review.unassigned') : t('pa.st.reviewerSub', model),
+      act: waits.length ? jsx(CheckAll, { list: waits, onChanged }, 'check') : null, rows: reviewRows
+    }, 'reviewer') : null
+  ]
+  const parked = cands.length && (!empty || candOpen) ? jsxs('section', {
     className: 'pa-park',
     'data-open': candOpen ? '1' : '0',
+    'aria-label': t('pa.park.title', cands.length),
     children: [
-      jsxs('div', {
-        className: 'pa-park-head',
-        children: [
-          jsx('span', { className: 'pa-node pa-node-sm', children: jsx(Glyph, { of: 'hourglass', size: 20 }) }, 'node'),
-          jsxs('div', {
-            children: [jsx('h3', { children: t('pa.park.title', cands.length) }, 'h'),
-              jsx('p', { children: t('pa.park.body', data.candidate_days || 14) }, 'p')]
-          }, 'text')
-        ]
+      jsx('div', {
+        className: 'pa-grp pa-park-head',
+        children: jsxs('div', {
+          className: 'pa-grp-t',
+          children: [jsx(Glyph, { of: 'hourglass', size: 16 }, 'g'), jsx('h3', { children: t('pa.park.title', cands.length) }, 'h'),
+            jsx('p', { children: t('pa.park.body', data.candidate_days || 14) }, 'p')]
+        })
       }, 'head'),
       jsx('div', {
-        className: 'pa-park-cards', role: 'list', 'aria-label': t('pa.park.title', cands.length),
+        className: 'pa-rows pa-park-cards', role: 'list', 'aria-label': t('pa.park.title', cands.length),
         children: cands.map(u => jsx(LineCard, {
-          unit: u, t, selecting: false, onOpen: choose,
+          unit: u, t, at: 0, mark: 'wait', label: t('pa.park.where'), selecting: false, onOpen: choose,
           sub: jsxs('span', {
             className: 'pa-clock',
-            children: [jsx(Glyph, { of: SOURCE[sourceOf(u.item)].glyph }, 'g'),
-              [sourceText(t, u.item), u.item.recur?.expires ? t('pa.park.leaves', shortDate(u.item.recur.expires)) : '']
-                .filter(Boolean).join(' · ')]
-          })
+            children: [jsx(Glyph, { of: SOURCE[sourceOf(u.item)].glyph }, 'g'), sourceText(t, u.item)]
+          }),
+          note: u.item.recur?.expires ? note(t('pa.park.leaves', shortDate(u.item.recur.expires))) : null
         }, queueKey(u)))
       }, 'cards')
     ]
@@ -3129,27 +3189,27 @@ function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setS
     'data-empty': empty ? '1' : undefined,
     onKeyDown,
     children: [
-      jsx(Stations, {
-        t, lit, counts, model, bodies,
-        extra: empty ? jsxs('div', {
-            className: 'pa-allclear', role: 'status',
-            children: [
-              jsx('span', { className: 'pa-node pa-node-ok', children: jsx(Glyph, { of: 'check', size: 24 }) }, 'node'),
-              jsxs('div', {
-                className: 'pa-msg-text',
-                children: [jsx('h2', { children: t('pa.stage.allClearTitle') }, 'h'),
-                  jsx('p', { children: t('pa.line.clearBody', decided, cands.length) }, 'p')]
-              }, 'text'),
-              cands.length
-                ? jsx(Button, {
-                    variant: 'text', size: 'sm', className: 'pa-see-parked', 'aria-expanded': candOpen,
-                    onClick: () => setCandOpen(v => !v),
-                    children: t('pa.line.seeParked')
-                  }, 'park')
-                : null
-            ]
-          }, 'clear') : null
-      }, 'stations'),
+      jsx(Head, { t, lit, counts }, 'th'),
+      empty ? jsxs('div', {
+        className: 'pa-allclear', role: 'status',
+        children: [
+          jsx('span', { className: 'pa-node pa-node-ok', children: jsx(Glyph, { of: 'check', size: 22 }) }, 'node'),
+          jsxs('div', {
+            className: 'pa-msg-text',
+            children: [jsx('h2', { children: t('pa.stage.allClearTitle') }, 'h'),
+              jsx('p', { children: t('pa.line.clearBody', decided, cands.length) }, 'p')]
+          }, 'text'),
+          cands.length
+            ? jsx(Button, {
+                variant: 'text', size: 'sm', className: 'pa-see-parked', 'aria-expanded': candOpen,
+                onClick: () => setCandOpen(v => !v),
+                children: t('pa.line.seeParked')
+              }, 'park')
+            : null
+        ]
+      }, 'clear') : null,
+      ...sections,
+      writtenSec,
       parked,
       selecting
         ? jsx(BulkBar, {
@@ -3566,24 +3626,28 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
     : t(status === 'running' ? 'pa.trip.reading' : status === 'failed' ? 'pa.trip.gaveUp'
       : status === 'unassigned' ? 'pa.trip.noModel' : 'pa.trip.waits')
   const trip = [
-    [item.staged_at ? t('pa.trip.proposed', clock(item.staged_at * 1000)) : t('pa.st.proposes'), sourceText(t, item)],
-    [t('pa.st.rules'), cand ? '' : t(place === 'rules' ? 'pa.trip.stopped' : 'pa.trip.passed')],
-    [finished ? t('pa.trip.reviewerAt', finished) : t('pa.st.reviewer'), cand ? '' : reviewerFact],
-    [t('pa.st.you'), now === 3 ? t('pa.trip.now') : ''],
-    [t('pa.st.written'), t('pa.trip.after')]
+    [item.staged_at ? clock(item.staged_at * 1000) : '', sourceText(t, item)],
+    [cand ? '' : t(place === 'rules' ? 'pa.trip.stopped' : 'pa.trip.passed'), ''],
+    [finished, cand ? '' : reviewerFact],
+    [now === 3 ? t('pa.trip.now') : '', now === 3 ? t('pa.trip.decide') : ''],
+    ['', t('pa.trip.after')]
   ]
+  const tripMark = cand ? 'wait' : place === 'rules' ? 'bad' : now === 3 ? 'me' : status === 'running' ? 'live' : 'at'
   const journey = jsx('ol', {
     className: 'pa-trip',
     'aria-label': t('pa.trip.label'),
     style: { '--pa-at': now },
-    children: STATIONS.map(([id, glyph], i) => jsxs('li', {
+    children: STATIONS.map(([id, glyph, key], i) => jsxs('li', {
       className: 'pa-tp',
       'data-k': i < now ? 'past' : i === now ? 'now' : undefined,
+      'data-m': i === now ? tripMark : undefined,
       'aria-current': i === now ? 'step' : undefined,
       children: [
         jsx('span', { className: 'pa-node pa-node-xs', children: jsx(Glyph, { of: glyph, size: 17 }) }, 'node'),
+        jsx('span', { className: 'pa-tp-name', children: t(key) }, 'name'),
+        jsx('i', { className: 'pa-tp-dot', 'aria-hidden': true }, 'dot'),
         jsx('b', { children: trip[i][0] }, 'b'),
-        trip[i][1] ? jsx('span', { children: trip[i][1] }, 's') : null
+        trip[i][1] ? jsx('span', { className: 'pa-tp-s', children: trip[i][1] }, 's') : null
       ]
     }, id))
   }, 'trip')
@@ -4094,19 +4158,17 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   })
 }
 
-function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
+function ActDeck({ deck, sel, open, t, onToggle, onSelect, children }) {
   const { entries, line } = deck
   const n = entries.length
   const tally = DECK_TALLY.map(([kind, key]) => [entries.filter(e => e.kind === kind).length, key])
     .filter(([c]) => c).map(([c, key]) => t(key, c)).join(' · ')
-  const [glyph, tone] = PIN[entries[0].kind] || PIN.apply
   return jsxs('div', {
     className: 'pa-ent pa-deck',
     role: 'listitem',
     'data-on': !open && entries.some(e => e.id === sel) ? '1' : '0',
     'data-open': open ? '1' : '0',
     children: [
-      jsx('span', { className: 'pa-pin', 'data-k': tone || undefined, children: jsx(Glyph, { of: glyph, size: 15 }) }, 'pin'),
       jsxs('button', {
         type: 'button',
         className: 'pa-ent-card pa-deck-row',
@@ -4115,15 +4177,24 @@ function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
         onClick: () => onToggle(deck),
         children: [
           jsxs('span', {
-            className: 'pa-ent-t',
+            className: 'pa-ent-who',
             children: [
-              jsx('span', { children: line.name }, 'name'),
-              jsx(Badge, { variant: 'muted', children: String(n) }, 'count'),
-              jsx(DisclosureCaret, { open, className: 'pa-deck-chev' }, 'chev')
+              jsxs('span', {
+                className: 'pa-ent-t',
+                children: [
+                  jsx('span', { children: line.name }, 'name'),
+                  jsx(Badge, { variant: 'muted', children: String(n) }, 'count'),
+                  jsx(DisclosureCaret, { open, className: 'pa-deck-chev' }, 'chev')
+                ]
+              }, 't'),
+              jsx('span', { className: 'pa-ent-s', children: tally }, 's')
             ]
-          }, 't'),
-          jsx('time', { className: 'pa-ent-time', children: clock(entries[0].ts * 1000) }, 'time'),
-          jsx('span', { className: 'pa-ent-s', children: tally }, 's')
+          }, 'who'),
+          jsx(Track, histTrack(entries[0]), 'trk'),
+          jsx('span', {
+            className: 'pa-ent-end',
+            children: jsx('time', { className: 'pa-ent-time', children: clock(entries[0].ts * 1000) })
+          }, 'end')
         ]
       }, 'head'),
       open ? jsx('div', {
@@ -4140,45 +4211,53 @@ function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
             'aria-label': `${own.name} · ${own.said} · ${clock(e.ts * 1000)}`,
             onClick: () => onSelect(e.id),
             children: [
-              jsx(Glyph, { of: (PIN[e.kind] || PIN.apply)[0], tone: (PIN[e.kind] || PIN.apply)[1] }, 'ko'),
               jsx('span', {
                 className: 'pa-act-sub-text',
                 children: e.kind === 'apply' ? own.change || own.words
                   : [jsx('b', { children: own.words }, 'w'), own.change ? ` · ${own.change}` : null]
               }, 'text'),
+              jsx(Track, histTrack(e), 'trk'),
               jsx('span', { className: 'pa-act-sub-time', children: clock(e.ts * 1000) }, 'time')
             ]
           }, e.id)
         })
-      }, 'subs') : null
+      }, 'subs') : null,
+      children
     ]
   }, `deck-${deck.id}`)
 }
 
-function ActRow({ entry, on, t, onSelect }) {
+function ActRow({ entry, on, t, onSelect, children }) {
   const { name, said } = actLine(t, entry)
-  const [glyph, tone] = PIN[entry.kind] || PIN.apply
   const [chip] = histChip(entry)
   return jsxs('div', {
     className: 'pa-ent',
     role: 'listitem',
     'data-on': on ? '1' : '0',
     children: [
-      jsx('span', { className: 'pa-pin', 'data-k': tone || undefined, children: jsx(Glyph, { of: glyph, size: 15 }) }, 'pin'),
       jsxs('button', {
         type: 'button',
         className: 'pa-ent-card pa-act-row',
         'data-entry': entry.id,
         'aria-current': on ? 'true' : undefined,
+        'aria-expanded': on ? 'true' : 'false',
         'aria-label': `${name} · ${said}`,
         onClick: () => onSelect(entry.id),
         children: [
-          jsx('span', { className: 'pa-ent-t', children: name }, 't'),
-          jsx('time', { className: 'pa-ent-time', children: clock(entry.ts * 1000) }, 'time'),
-          jsx('span', { className: 'pa-ent-s', children: said }, 's'),
-          jsx('span', { className: 'pa-ent-s pa-ent-state', children: t(chip) }, 'state')
+          jsxs('span', {
+            className: 'pa-ent-who',
+            children: [jsx('span', { className: 'pa-ent-t', children: name }, 't'),
+              jsx('span', { className: 'pa-ent-s', children: said }, 's')]
+          }, 'who'),
+          jsx(Track, histTrack(entry), 'trk'),
+          jsxs('span', {
+            className: 'pa-ent-end',
+            children: [jsx('span', { className: 'pa-ent-state', children: t(chip) }, 'state'),
+              jsx('time', { className: 'pa-ent-time', children: clock(entry.ts * 1000) }, 'time')]
+          }, 'end')
         ]
-      }, 'row')
+      }, 'row'),
+      children
     ]
   }, entry.id)
 }
@@ -4247,10 +4326,21 @@ function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
       ]
     }, 'written')
   }
+  const detail = jsx('div', {
+    className: 'pa-exp',
+    children: jsx('div', {
+      className: 'pa-detail pa-cell',
+      'data-key': selected ? selected.id : '',
+      children: selected ? jsx(HistoryDetail, { entry: selected, onChanged }, selected.id) : null
+    })
+  }, 'exp')
+  const holds = d => Boolean(selected) && d.entries.some(e => e.id === selected.id)
   const rows = groups.flatMap(g => [
     jsx('div', {
-      className: 'pa-day', role: 'presentation',
-      children: g.key === todayKey ? headLine : dayHeading(t, g.ts)
+      className: 'pa-grp pa-day', role: 'presentation',
+      children: jsx('div', {
+        className: 'pa-grp-t', children: jsx('b', { children: g.key === todayKey ? headLine : dayHeading(t, g.ts) })
+      })
     }, `day-${g.key}`),
     ...decksOf(t, g.entries).map(d => (d.entries.length > 1
       ? jsx(ActDeck, {
@@ -4258,16 +4348,19 @@ function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
           onToggle: () => {
             setDeckOpen(deckOpen === d.id ? null : d.id)
             if (deckOpen !== d.id) setSel(d.entries[0].id)
-          }
+          },
+          children: holds(d) ? detail : null
         }, `deck-${d.id}`)
-      : jsx(ActRow, { entry: d.entries[0], on: selected && d.entries[0].id === selected.id, t, onSelect: setSel },
-        d.entries[0].id)))
+      : jsx(ActRow, {
+          entry: d.entries[0], on: holds(d), t, onSelect: setSel, children: holds(d) ? detail : null
+        }, d.entries[0].id)))
   ])
   return jsxs('div', {
     className: 'pa-written',
     children: [
       head,
-      jsxs('div', {
+      jsx(Head, { t, lit: -1, counts: null, next: 'pa.wr.colState' }, 'th'),
+      jsx('div', {
         className: 'pa-wsplit',
         children: [
           jsxs('div', {
@@ -4301,12 +4394,7 @@ function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
                     onClick: () => setConfirming(true), children: t('pa.hist.clear', all)
                   }, 'arm')
             ]
-          }, 'tl'),
-          jsx('div', {
-            className: 'pa-detail pa-cell',
-            'data-key': selected ? selected.id : '',
-            children: selected ? jsx(HistoryDetail, { entry: selected, onChanged }, selected.id) : null
-          }, 'detail')
+          }, 'tl')
         ]
       }, 'split')
     ]
@@ -4397,22 +4485,25 @@ function MemoryPage({ data, error, refresh, onChanged, file }) {
               setConfirming(null)
             },
             children: [
-              jsx(Ring, { pct: f.pct, box: 80, r: 33, warm: f.pct >= 90 }, 'ring'),
               jsxs('span', {
                 className: 'pa-mfile-text',
                 children: [
                   jsx('span', { className: 'pa-mfile-name', children: labelOf(id) }, 'name'),
                   jsx('span', {
-                    className: 'pa-mfile-pct', 'data-full': f.tone === 'bad' ? 'bad' : f.pct >= 90 ? '1' : undefined,
-                    children: !own ? '—' : f.tone === 'bad' ? t('pa.memory.full', f.pct)
-                      : f.pct >= 90 ? t('pa.memory.nearlyFull', f.pct) : `${f.pct}%`
-                  }, 'pct'),
-                  jsx('span', {
                     className: 'pa-mfile-sub',
                     children: own ? t('pa.memory.rowSub', own.entries?.length || 0, own.chars ?? 0, own.limit ?? 0) : ''
                   }, 'sub')
                 ]
-              }, 'text')
+              }, 'text'),
+              jsx('span', {
+                className: 'pa-mfile-pct', 'data-full': f.tone === 'bad' ? 'bad' : f.pct >= 90 ? '1' : undefined,
+                children: !own ? '—' : f.tone === 'bad' ? t('pa.memory.full', f.pct)
+                  : f.pct >= 90 ? t('pa.memory.nearlyFull', f.pct) : `${f.pct}%`
+              }, 'pct'),
+              jsx('span', {
+                className: 'pa-mfile-meter', 'data-warm': f.pct >= 90 ? '1' : undefined, 'aria-hidden': true,
+                children: jsx('i', { style: { width: `${Math.min(100, f.pct)}%` } })
+              }, 'meter')
             ]
           }, id)
         })

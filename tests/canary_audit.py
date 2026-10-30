@@ -47,9 +47,9 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
     ("a MOTION job nobody uses", JS, "const MOTION = {",
      "const MOTION = {\n  deadjob: { ms: 120, ease: 'standard' },", 1, "is never used"),
     ("the app frame reads its constants", JS,
-     ".pa-node{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;flex:none;\n"
+     ".pa-node{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;\n"
      "  box-sizing:border-box;background:var(--ui-bg-elevated);",
-     ".pa-node{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;flex:none;\n"
+     ".pa-node{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;\n"
      "  box-sizing:border-box;background:var(--pa-surface);", 1, ".pa-node does not read the station ground"),
     ("the header tools read the hairline", JS, "padding-left:${G.base}px;border-left:${HAIRLINE}}",
      "padding-left:${G.base}px;border-left:1px solid var(--ui-stroke-tertiary)}", 1,
@@ -120,8 +120,8 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
      ".pa-promise{font-size:${FS.meta}px;color:var(--ui-text-secondary)}",
      ".pa-promise{font-size:${FS.meta}px;color:var(--muted-foreground)}", 1,
      "a chat-widget variable — panels read --ui-*"),
-    ("only theme variables", JS, ".pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}",
-     ".pa-done-mark{display:inline-flex;flex:none;color:var(--canary-green)}", 1, "is not a theme variable"),
+    ("only theme variables", JS, ".pa-trk>i[data-m=\"ok\"]{width:16px;height:16px;border:0;background:var(--ui-green)}",
+     ".pa-trk>i[data-m=\"ok\"]{width:16px;height:16px;border:0;background:var(--canary-green)}", 1, "is not a theme variable"),
     ("no @media", JS, "@container (max-width:1100px){",
      "@media (max-width:600px){}\n@container (max-width:1100px){", 1, "size by the pane: use @container"),
     ("the keys ignore typing", JS, "    if (typing(e.target)) return\n", "", 1,
@@ -179,8 +179,8 @@ CANARIES: list[tuple[str, Path, str, str, int, str]] = [
     ("every Badge keeps the kit's form", JS,
      "jsx(Badge, { variant, children: badge }, 'sev')",
      "jsx(Badge, { variant, style: { height: 20 }, children: badge }, 'sev')", 1, "a Badge restyled through style="),
-    ("Written is one timeline of entries", JS, ".pa-tl{position:relative;display:flex;flex-direction:column",
-     ".pa-tl{position:relative;display:grid;flex-direction:column", 1, "Written is a grid of big cards again"),
+    ("Written is one timeline of entries", JS, ".pa-tl{display:flex;flex-direction:column",
+     ".pa-tl{display:grid;flex-direction:column", 1, "Written is a grid of big cards again"),
     ("bulk decisions stay two-step", JS, "                  : () => setArming('approve'),",
      "                  : () => void run('approve'),", 1, "bulk approve does not arm first"),
     ("a record that cannot be applied is never bulk-approvable", JS,

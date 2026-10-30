@@ -1144,8 +1144,8 @@ const toFront = async (hostEl, key) => {
 const frontCell = hostEl => hostEl.querySelector('.pa-detail')
 const reachableKeys = hostEl => new Set([...hostEl.querySelectorAll('.pa-lc-main[data-key]')]
   .map(c => c.getAttribute('data-key')))
-const stationOf = (hostEl, key) => hostEl.querySelector(`.pa-lc[data-key="${key}"]`)?.closest('.pa-st')
-  ?.getAttribute('data-st') || (hostEl.querySelector(`.pa-park .pa-lc[data-key="${key}"]`) ? 'parked' : null)
+const stationOf = (hostEl, key) => (hostEl.querySelector(`.pa-park .pa-lc[data-key="${key}"]`) ? 'parked'
+  : hostEl.querySelector(`.pa-lc[data-key="${key}"]`)?.closest('.pa-sec')?.getAttribute('data-st') || null)
 const keyDown = async (el, key, extra = {}) => {
   if (!el) return null
   const ev = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra })
@@ -1193,7 +1193,8 @@ for (const mounted of [en, other]) {
   }
 }
 
-// --- 2b) The line: five stations in order, the owner's station lit, counts, the dashed You -> Written ----
+// --- 2b) The line: five stations in order, the owner's station lit, counts; every change row carries its own
+// five-stop track under the station head, marked where the change stands; the road still ahead is dashed ----
 {
   await toLine(en.hostEl)
   const cols = en.hostEl.querySelector('.pa-cols[role="list"]')
@@ -1206,18 +1207,28 @@ for (const mounted of [en, other]) {
     fail(`the stations are not named as the brief names them: ${JSON.stringify(names)}`)
   }
   if (sts.some(st => !st.querySelector('.pa-node .pa-ico'))) fail('a station lost its round node with its icon')
-  if (sts.slice(0, 4).some(st => !st.querySelector('.pa-arrow svg'))) fail('an arrow between two stations is missing')
-  if (sts[4]?.querySelector('.pa-arrow')) fail('Written draws an arrow to nothing')
-  if (sts[3]?.getAttribute('data-out') !== 'dash' && sts[3]?.getAttribute('data-out') !== 'lit') {
-    fail('the You -> Written wire is not the dashed one')
+  const rowsOn = [...en.hostEl.querySelectorAll('.pa-line .pa-lc')]
+  const tracks = rowsOn.map(r => r.querySelector(':scope > .pa-trk'))
+  if (!rowsOn.length || tracks.some(k => !k || k.querySelectorAll(':scope > i').length !== 5)) {
+    fail('a change row does not carry its own five-stop track')
   }
+  const atOf = r => [...r.querySelectorAll('.pa-trk > i')].findIndex(i => i.getAttribute('data-k') === 'at')
+  const wantAt = { rules: 1, reviewer: 2, you: 3 }
+  const offAt = rowsOn.filter(r => atOf(r) !== wantAt[r.getAttribute('data-at')])
+  if (offAt.length) fail(`a row's track is not marked at its own station: ${offAt.map(r => r.getAttribute('data-key'))}`)
+  if (rowsOn.some(r => r.querySelectorAll('.pa-trk > i[data-k="p"]').length !== atOf(r))) {
+    fail('a row\u2019s track does not fill the stops it has passed')
+  }
+  if (cols && en.hostEl.querySelector('.pa-th')?.contains(cols) !== true) fail('the stations are not the head of the rows')
   const lit = sts.filter(st => st.getAttribute('data-lit') === '1')
   if (lit.length !== 1) fail(`one station holds the owner's next move; ${lit.length} are lit`)
   const sheet = en.hostEl.querySelector('style')?.textContent || ''
-  if (!/\.pa-st\[data-lit="1"\]>\.pa-node\{border:3px solid var\(--ui-accent\)/.test(sheet)) {
-    fail('the lit station has no 3px accent ring')
+  if (!/\.pa-st\[data-lit="1"\]>\.pa-node\{border:2\.5px solid var\(--ui-accent\)/.test(sheet)) {
+    fail('the lit station has no accent ring')
   }
-  if (!/\.pa-st\[data-out="dash"\]::after\{border-top-style:dashed\}/.test(sheet)) fail('the You -> Written wire is not dashed')
+  if (!/\.pa-trk::before\{[^}]*border-top:1\.5px dashed/.test(sheet) || !/\.pa-run\{[^}]*background:/.test(sheet)) {
+    fail('a track does not draw the road ahead dashed and the road behind solid')
+  }
   const count = st => slot(st.querySelector('.pa-cnt'), 'badge')?.textContent || ''
   if (count(sts[0]) !== '3') fail(`Hermes proposes does not count the 3 records on the line: ${count(sts[0])}`)
   if (sts[4] && count(sts[4])) fail('Written carries a count badge')
@@ -1610,23 +1621,24 @@ if (en.hostEl.textContent.includes('Turkish')) fail('a “Turkish” label is ba
   stub.state.composerLive = true
 }
 
-// --- 10c) Memory page: two files as large rings, the chosen file's notes; Profile shows its own --------
+// --- 10c) Memory page: two files with a thin fill meter, the chosen file's notes; Profile shows its own --
 {
   const files = [...en.hostEl.querySelectorAll('.pa-memory .pa-mfiles .pa-mfile')]
   if (files.length !== 2) fail(`expected 2 file cards (Memory, Profile), found ${files.length}`)
   const [mem, prof] = files
   const memText = mem?.textContent || ''
-  if (!/^Memory99% · nearly full2 notes · 2,189 \/ 2,200 characters$/.test(memText)) {
+  if (!/^Memory2 notes · 2,189 \/ 2,200 characters99% · nearly full$/.test(memText)) {
     fail(`the Memory file card does not read name, percent, notes · chars / limit: ${memText}`)
   }
-  if (!/^Profile84%1 note · 1,158 \/ 1,375 characters$/.test(prof?.textContent || '')) {
+  if (!/^Profile1 note · 1,158 \/ 1,375 characters84%$/.test(prof?.textContent || '')) {
     fail(`the Profile file card does not read likewise: ${prof?.textContent}`)
   }
-  const ring = f => f?.querySelector('svg.pa-ring')
-  if (ring(mem)?.getAttribute('data-warm') !== '1' || ring(mem)?.getAttribute('viewBox') !== '0 0 80 80') {
-    fail('the Memory ring is not the large warm ring of a nearly full file')
+  const meter = f => f?.querySelector('.pa-mfile-meter')
+  if (meter(mem)?.getAttribute('data-warm') !== '1' || meter(mem)?.querySelector('i')?.style.width !== '99%') {
+    fail('the Memory meter is not the warm 99% meter of a nearly full file')
   }
-  if (ring(prof)?.getAttribute('data-warm') !== '0') fail('the 84% Profile ring is drawn warm')
+  if (!meter(prof) || meter(prof).hasAttribute('data-warm')) fail('the 84% Profile meter is missing or drawn warm')
+  if (en.hostEl.querySelector('.pa-memory .pa-mfile svg.pa-ring')) fail('the large file rings are back on the Memory page')
   if (mem?.getAttribute('aria-pressed') !== 'true' || mem?.getAttribute('data-on') !== '1') {
     fail('the Memory file is not the chosen one by default')
   }
@@ -1667,13 +1679,17 @@ const actFind = async (hostEl, text) => {
   return null
 }
 {
-  // The timeline (activity mockup): a day heading, then one pinned entry per record (repeats fold into a
-  // deck), and only the chosen entry is drawn in the right column.
+  // Written: a day heading, then one row per record with its own five-stop track (repeats fold into a
+  // deck); only the chosen entry is drawn, opened under its own row.
   const tl = en.hostEl.querySelector('.pa-written .pa-wsplit > .pa-tl-col > .pa-tl[role="list"]')
   if (!tl) fail('Written is not one timeline beside the chosen entry')
   const ents = [...(tl?.querySelectorAll('.pa-ent[role="listitem"], .pa-deck') || [])]
   if (ents.length !== 4) fail(`expected one timeline entry per record (4), found ${ents.length}`)
-  if (ents.some(e => !e.querySelector('.pa-pin svg'))) fail('a timeline entry has no pin on the line')
+  if (ents.some(e => !e.querySelector('.pa-ent-card > .pa-trk > i[data-k="at"]'))) {
+    fail('a Written row has no track marked where its record ended')
+  }
+  const chosen = en.hostEl.querySelector('.pa-written .pa-ent[data-on="1"]')
+  if (!chosen?.querySelector(':scope > .pa-exp > .pa-detail .pa-card')) fail('the chosen entry does not open under its row')
   if (!tl?.querySelector('.pa-day')) fail('the timeline has no day heading')
   if (en.hostEl.querySelectorAll('.pa-written .pa-detail .pa-card').length !== 1) {
     fail('Written draws more than the one chosen entry')
@@ -1851,18 +1867,21 @@ const actFind = async (hostEl, text) => {
   const list = act.hostEl.querySelector('.pa-activity-list')
   if (!list) fail('activity-rows: Written is a grid of big cards again, not one timeline of short entries')
   const rows = [...act.hostEl.querySelectorAll('.pa-act-row[data-entry]')]
-  const odd = rows.filter(r => r.tagName !== 'BUTTON' || !r.closest('.pa-ent')?.querySelector(':scope > .pa-pin svg')
+  const odd = rows.filter(r => r.tagName !== 'BUTTON' || !r.querySelector(':scope > .pa-trk')
     || !r.querySelector('.pa-ent-t') || !r.querySelector('.pa-ent-s') || !r.querySelector('.pa-ent-time')?.textContent
     || r.querySelector('[data-slot="badge"]'))
   if (rows.length !== 5 || odd.length) {
-    fail(`activity-rows: not pin, word on top, summary under it and a time: ${odd.map(r => r.dataset.entry)}`)
+    fail(`activity-rows: not track, word on top, summary under it and a time: ${odd.map(r => r.dataset.entry)}`)
   }
-  const pins = rows.map(r => r.closest('.pa-ent')?.querySelector('.pa-pin svg')?.getAttribute('data-g')).join()
-  if (pins !== 'check,check,check,undo,alert') {
-    fail(`activity-rows: the pins are not check (saved) / undo (not saved) / alert (failed): ${pins}`)
+  const ends = rows.map(r => {
+    const dots = [...r.querySelectorAll('.pa-trk > i')]
+    const at = dots.findIndex(i => i.getAttribute('data-k') === 'at')
+    const g = dots[at]?.querySelector('svg')?.getAttribute('data-g')
+    return `${at}${dots[at]?.getAttribute('data-m') || ''}${g ? `:${g}` : ''}`
+  }).join()
+  if (ends !== '4ok,4ok,4ok,3mark:x,4bad') {
+    fail(`activity-rows: a track does not end where its record did (saved at Written, not saved at You, failed red): ${ends}`)
   }
-  const tones = rows.map(r => r.closest('.pa-ent')?.querySelector('.pa-pin')?.getAttribute('data-k') || '').join()
-  if (tones !== 'ok,ok,ok,,bad') fail(`activity-rows: a pin's tone does not follow its outcome: ${tones}`)
   if (!/^\d\d:\d\d/.test(rows[0]?.querySelector('.pa-ent-time')?.textContent || '')) {
     fail('activity-rows: an entry of today does not show its clock time')
   }
@@ -1931,7 +1950,8 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   if (title?.textContent !== 'Approvals') fail(`shell: the header title is not "Approvals": ${title?.textContent}`)
   const litSt = en.hostEl.querySelector('.pa-st[data-lit="1"]')
   const badge = slot(litSt?.querySelector('.pa-cnt'), 'badge')
-  if (!badge || badge.textContent !== String(litSt.querySelectorAll('.pa-lc').length)) {
+  const standing = en.hostEl.querySelectorAll(`.pa-line .pa-lc[data-at="${litSt?.getAttribute('data-st')}"]`).length
+  if (!badge || badge.textContent !== String(standing)) {
     fail(`shell: the lit station does not count the cards waiting at it: ${badge?.textContent}`)
   }
   const alerts = bar?.querySelector('.pa-tools .pa-alerts-row')
@@ -2066,7 +2086,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
     { id: 'td000002', ts: Date.now() / 1000 - 3 * 86400, kind: 'apply', subsystem: 'memory', summary: 'old', files: [] }
   ], counts: { applied: 47, failed: 0, undoable: 0 } }
   const clear = await mount('en')
-  const allClear = clear.hostEl.querySelector('.pa-cols > .pa-allclear')
+  const allClear = clear.hostEl.querySelector('.pa-line > .pa-allclear')
   if (allClear?.querySelector('h2')?.textContent !== 'All caught up') {
     fail(`all-clear title wrong: ${JSON.stringify(allClear?.querySelector('h2')?.textContent)}`)
   }
@@ -2431,18 +2451,18 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
 {
   const restore = fastPolls()
   const h = await mount('en', 'page')
-  const listKeys = () => [...h.hostEl.querySelectorAll('.pa-cols .pa-lc-main[data-key]')].map(c => c.getAttribute('data-key'))
+  const listKeys = () => [...h.hostEl.querySelectorAll('.pa-line .pa-lc-main[data-key]')].map(c => c.getAttribute('data-key'))
   const sel = () => h.hostEl.querySelector('.pa-line[data-open="1"] > .pa-detail')?.getAttribute('data-key')
-  if (listKeys().join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') {
-    fail(`queue-order: the line does not start A, B (Your rules) then C (You): ${listKeys()}`)
+  if (listKeys().join() !== 'skills:aaa11111,memory:abc12345,skills:def67890') {
+    fail(`queue-order: the line does not start C (Your turn), then A, B (Your rules): ${listKeys()}`)
   }
   await toFront(h.hostEl, 'memory:abc12345')
   if (sel() !== 'memory:abc12345') fail(`queue-order: selection did not start on A: ${sel()}`)
   await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
   if (sel() !== 'skills:def67890') fail(`queue-order: later(A) did not select B: ${sel()}`)
   await toLine(h.hostEl)
-  if (listKeys().join() !== 'skills:def67890,memory:abc12345,skills:aaa11111') {
-    fail(`queue-order: later(A) did not move A to the end of its station (B, A, C): ${listKeys()}`)
+  if (listKeys().join() !== 'skills:aaa11111,skills:def67890,memory:abc12345') {
+    fail(`queue-order: later(A) did not move A to the end of its station (C, B, A): ${listKeys()}`)
   }
   await toFront(h.hostEl, 'skills:aaa11111')
   if (sel() !== 'skills:aaa11111') fail(`queue-order: pick(C) did not select C: ${sel()}`)
@@ -2452,7 +2472,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
     fail(`queue-order: the selection changed on refresh even though it is still there: ${sel()}`)
   }
   await toLine(h.hostEl)
-  const want = ['skills:def67890', 'memory:abc12345', 'memory:abc99999', 'skills:aaa11111']
+  const want = ['skills:aaa11111', 'skills:def67890', 'memory:abc12345', 'memory:abc99999']
   if (listKeys().join() !== want.join()) {
     fail(`queue-order: pick(C) reordered the line or a new record (D) did not append at the end of its station: ${listKeys()}`)
   }
@@ -2466,7 +2486,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
 {
   const h = await mount('en', 'page')
   const postsBefore = stub.calls.posts.length
-  await click(h.hostEl.querySelector('.pa-cols .pa-lc-main[data-key]'))
+  await click(h.hostEl.querySelector('.pa-line .pa-lc-main[data-key]'))
   const from = frontCell(h.hostEl)?.getAttribute('data-key')
   await click(buttons(frontCell(h.hostEl), /^Later$/)[0])
   const to = frontCell(h.hostEl)?.getAttribute('data-key')
@@ -2523,7 +2543,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
     const h = await mount('en', 'page')
     return h
   }
-  const rowsOf = h => [...h.hostEl.querySelectorAll('.pa-st[data-st="written"] .pa-done-list > .pa-done')]
+  const rowsOf = h => [...h.hostEl.querySelectorAll('.pa-sec[data-st="written"] .pa-rows > .pa-done')]
   const h = await lastOf(JUST_DONE_HISTORY.entries)
   const last = rowsOf(h)[0]
   if (rowsOf(h).length !== 3 || !/^Saved.*JUST-DONE-UNDOABLE/.test(last?.textContent || '')) {
@@ -2562,11 +2582,12 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
   if (flat.length) fail(`flat check at every width: ${flat.join('; ')}`)
   const band = css.split('@container (max-width:1100px){')[1]?.split('}}')[0] || ''
   const narrow = css.split('@container (max-width:760px){')[1]?.split('}}')[0] || ''
+  const mid = css.split('@container (max-width:900px){')[1]?.split('}}')[0] || ''
   const miss = [
     [band, /\.pa-rec\{grid-template-columns:minmax\(0,1fr\) 260px/, 'the record keeps its 300 px side column'],
-    [band, /\.pa-wsplit\{grid-template-columns:minmax\(0,1fr\) 320px/, 'Written keeps its 380 px entry column'],
+    [mid, /--pa-cell:60px/, 'the rows keep their 80 px stops below 900 px'],
     [narrow, /\.pa-rec\{grid-template-columns:minmax\(0,1fr\)/, 'a narrow record keeps a side column'],
-    [narrow, /\.pa-cols\{grid-template-columns:minmax\(0,1fr\)/, 'a narrow line keeps five columns'],
+    [narrow, /grid-template-columns:minmax\(0,1fr\) auto/, 'a narrow row keeps title, track and step on one line'],
   ].filter(([text, re]) => !re.test(text)).map(([, , why]) => why)
   if (miss.length) fail(`medium band: the words are squeezed: ${miss.join('; ')}`)
 }
@@ -2605,7 +2626,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
     fail('memory: a note row draws a length shade or meter (it read as a broken divider); the count says it')
   }
   if (!/\.pa-root \.pa-lc-main\{display:flex;flex-direction:column/.test(css)
-      || !/\.pa-root \.pa-ent-card\{display:grid;grid-template-columns:minmax\(0,1fr\) auto/.test(css)) {
+      || !/\.pa-ent-who\{display:flex;flex-direction:column/.test(css)) {
     fail('cards: the time or the source shares the title line, so names cut to a few letters (“software…”)')
   }
 }
@@ -2614,7 +2635,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
 {
   REST.history = HISTORY
   const w = await mount('en', 'page')
-  const n = w.hostEl.querySelectorAll('.pa-cols .pa-lc').length
+  const n = w.hostEl.querySelectorAll('.pa-line .pa-lc').length
   const said = w.hostEl.querySelector('.pa-hd .pa-hd-line')?.textContent || ''
   if (!n || !said.startsWith(`${n} changes are on the line.`) || w.hostEl.querySelector('.pa-allclear')) {
     fail(`top card: with records waiting the line reads ${JSON.stringify(said)}`)
@@ -2630,20 +2651,20 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
   REST.history = null
 }
 
-// --- 13g) all-clear: 0 pending keeps the stations ("Nothing here"), draws All caught up (check, title, today's
-// count) across the first four, Written still lists today; no record card ---------------------------------------
+// --- 13g) all-clear: 0 pending keeps the station head and draws no empty section, draws All caught up (check,
+// title, today's count) under it, Written still lists today; no record card ---------------------------------------
 {
   REST.pending = { memory: [], skills: [], counts: { memory: 0, skills: 0 } }
   REST.history = HISTORY
   const h = await mount('en', 'page')
-  if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-cols .pa-lc')) {
+  if (h.hostEl.querySelector('.pa-detail .pa-card, .pa-line .pa-lc')) {
     fail('all-clear: a record is drawn with 0 pending')
   }
   const sts = [...h.hostEl.querySelectorAll('.pa-cols > .pa-st')]
-  if (sts.length !== 5 || sts.slice(0, 4).some(st => st.querySelector('.pa-st-body')?.textContent !== 'Nothing here')) {
-    fail('all-clear: the stations are not kept, each saying "Nothing here"')
+  if (sts.length !== 5 || h.hostEl.querySelector('.pa-line > .pa-sec:not([data-st="written"])')) {
+    fail('all-clear: the station head is not kept, or an empty station section is drawn')
   }
-  const empty = h.hostEl.querySelector('.pa-cols > .pa-allclear')
+  const empty = h.hostEl.querySelector('.pa-line > .pa-allclear')
   if (empty?.querySelector('h2')?.textContent !== 'All caught up') fail('all-clear: the title is missing')
   if (!empty?.querySelector('.pa-node-ok svg')) {
     fail('all-clear: the check mark is not a drawn icon (a text glyph depends on the font)')
@@ -2654,7 +2675,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
     fail(`all-clear: the spec sentence is missing: ${JSON.stringify(body)}`)
   }
   if (h.hostEl.querySelector('.pa-pips, .pa-top')) fail('top card: the removed pips or top card are back')
-  if (!h.hostEl.querySelector('.pa-st[data-st="written"] .pa-done')) {
+  if (!h.hostEl.querySelector('.pa-sec[data-st="written"] .pa-done')) {
     fail('all-clear: Written no longer lists today although history has entries')
   }
   REST.history = { entries: [], counts: { applied: 0, failed: 0, undoable: 0 } }
@@ -2670,7 +2691,7 @@ const settle = ms => act(async () => { await new Promise(r => setTimeout(r, ms))
   await click(fullRing, 60)
   if (!none.hostEl.querySelector('.pa-memory')) fail('all-clear: the Memory ring does not open the Memory page')
   await toLine(none.hostEl)
-  if (none.hostEl.querySelector('.pa-st[data-st="written"] .pa-done')) fail('all-clear: a Written row is drawn with no history')
+  if (none.hostEl.querySelector('.pa-sec[data-st="written"] .pa-done')) fail('all-clear: a Written row is drawn with no history')
   none.root.unmount()
   none.hostEl.remove()
   REST.pending = null
@@ -3036,8 +3057,8 @@ REST.scan = 'ok'
   {
     REST.pending = withReview({ aaa11111: { status: 'queued', hard: [] } })
     const w = await mount('en', 'page')
-    const waitsAt = w.hostEl.querySelector('.pa-st[data-st="reviewer"] .pa-grp')
-    if (!(waitsAt?.textContent || '').startsWith('Waits for you · 1') || stationOf(w.hostEl, 'skills:aaa11111') !== 'reviewer') {
+    const waitsAt = w.hostEl.querySelector('.pa-sec[data-st="reviewer"] .pa-grp')
+    if (!(waitsAt?.textContent || '').startsWith('At the reviewer · 1') || stationOf(w.hostEl, 'skills:aaa11111') !== 'reviewer') {
       fail(`an unreviewed record does not wait at the Reviewer: ${waitsAt?.textContent}`)
     }
     const from = reviewPosts()
@@ -3858,8 +3879,7 @@ REST.scan = 'ok'
   const memRow = mem.hostEl.querySelector('.pa-mfile[data-k="memory"]')
   const kpi = memRow?.querySelector('.pa-mfile-pct')?.textContent || ''
   const kpiPct = (kpi.match(/(\d+)%/) || [])[1]
-  const arc = (memRow?.querySelector('.pa-ring-fg')?.getAttribute('stroke-dasharray') || '').split(' ').map(Number)
-  const tabPct = arc.length === 2 && arc[1] ? String(Math.round((arc[0] * 100) / arc[1])) : undefined
+  const tabPct = (memRow?.querySelector('.pa-mfile-meter > i')?.style.width.match(/^(\d+)%$/) || [])[1]
   if (!kpiPct || kpiPct !== tabPct) {
     fail(`MEMORY.md fill differs: row ${kpiPct}% vs meter ${tabPct}% (${kpi.slice(0, 40)})`)
   }
@@ -4014,9 +4034,9 @@ REST.scan = 'ok'
     fail(`the decided-records station is not named Written with an "All activity" way in: ${JSON.stringify(stNames)}`)
   }
   await toFront(ui.hostEl, 'memory:abc12345')
-  const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-trip li')?.textContent || ''
+  const old = cellAt(ui, 'memory:abc12345')?.querySelector('.pa-trip li > b')?.textContent || ''
   const at = new Date(PENDING.memory[0].staged_at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  if (!old.startsWith(`Proposed ${at}`)) fail(`a record does not say when it was proposed: ${JSON.stringify(old)}`)
+  if (old !== at) fail(`a record does not say when it was proposed: ${JSON.stringify(old)}`)
   await toFront(ui.hostEl, 'skills:aaa11111')
   const open = cellAt(ui, 'skills:aaa11111')
   const title = open?.querySelector('.pa-dtitle [role="heading"]')?.textContent || ''
@@ -4640,7 +4660,7 @@ REST.scan = 'ok'
     fail(`select-mode: "Select" is not in the line header: ${name(on())}`)
   }
   await click(on(), 40)
-  const boxes = [...sm.hostEl.querySelectorAll('.pa-cols .pa-lc > .pa-lc-k > .pa-pick')]
+  const boxes = [...sm.hostEl.querySelectorAll('.pa-line .pa-lc > .pa-lc-who > .pa-pick')]
   if (picksOf().length !== 3 || boxes.length !== 3 || boxes.some(b => b.getAttribute('data-slot') !== 'checkbox')) {
     fail(`select-mode: each card must carry its kit checkbox, got ${boxes.length} of ${picksOf().length}`)
   }
@@ -4671,7 +4691,7 @@ REST.scan = 'ok'
   if (keys.every(k => k?.startsWith('skills:')) && barNow()?.querySelector('.pa-meter-box')) {
     fail('select-mode: a "Memory after approving" meter is drawn for a selection without memory numbers')
   }
-  const third = sm.hostEl.querySelectorAll('.pa-cols .pa-lc-main')[2]
+  const third = sm.hostEl.querySelectorAll('.pa-line .pa-lc-main')[2]
   third?.focus()
   await keyDown(third, ' ')
   must(barNow()?.textContent, ['3 picked.'], 'select-mode: Space on a focused card does not tick it')
@@ -4809,8 +4829,8 @@ REST.scan = 'ok'
     fail('ui-polish: cards are painted with an accent-tinted fill (--ui-bg-secondary is 11% accent)')
   }
   if (!/(^|\n)\.pa-rec\{[^}]*grid-template-columns:minmax\(0,1fr\) 300px/.test(sheet)
-      || !/(^|\n)\.pa-cols\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/.test(sheet)) {
-    fail('ui-polish: the record side column is not a fixed 300 px beside a flexible change, or the line is not five columns')
+      || !/(^|\n)\.pa-cols\{[^}]*grid-template-columns:repeat\(5,var\(--pa-cell\)\)/.test(sheet)) {
+    fail('ui-polish: the record side column is not a fixed 300 px beside a flexible change, or the line is not five stops')
   }
   if (/\.pa-alerts-word\{[^}]*display:none/.test(sheet)) {
     fail('ui-polish: the Alerts switch loses its word at some pane width (labels are never dropped)')
@@ -4853,8 +4873,8 @@ REST.scan = 'ok'
   const pg = await mount('en', 'page')
   const sheet = pg.hostEl.querySelector('style')?.textContent || ''
   const sts = [...pg.hostEl.querySelectorAll('.pa-cols > .pa-st')]
-  if (sts.length !== 5 || !/(^|\n)\.pa-cols\{[^}]*align-items:start/.test(sheet)) {
-    fail(`alignment: the line is not five stations on one top edge: ${sts.length}`)
+  if (sts.length !== 5 || !/(^|\n)\.pa-trk\{[^}]*grid-template-columns:repeat\(5,var\(--pa-cell\)\)/.test(sheet)) {
+    fail(`alignment: the station head and the row tracks do not share one stop width: ${sts.length}`)
   }
   if (!/@keyframes pa-in\{/.test(sheet) || !/\.pa-view\{animation:/.test(sheet)) {
     fail('alignment: switching views swaps the content with no transition')
@@ -4862,7 +4882,7 @@ REST.scan = 'ok'
   if (!pg.hostEl.querySelector('.pa-view')) fail('alignment: the view content is not wrapped in the transition class')
   await click(tab(pg.hostEl, /Memory/), 60)
   const memFiles = [...pg.hostEl.querySelectorAll('.pa-mfile')]
-  if (memFiles.length !== 2 || memFiles.some(f => f.querySelectorAll('svg.pa-ring').length !== 1)) {
+  if (memFiles.length !== 2 || memFiles.some(f => f.querySelectorAll('.pa-mfile-meter').length !== 1)) {
     fail(`alignment: the two Memory files are not drawn alike: ${memFiles.length}`)
   }
   await click(tab(pg.hostEl, /Activity/), 60)
@@ -4882,26 +4902,27 @@ REST.scan = 'ok'
 // --- 43) R12.2 split-layout checks: rows, keyboard, in-row done, fix toggle, checking, word marks, narrow --
 {
   const decides = () => stub.calls.posts.filter(p => p.path === '/decide')
-  const order = h => [...h.hostEl.querySelectorAll('.pa-cols .pa-lc')].map(r => r.getAttribute('data-key'))
+  const order = h => [...h.hostEl.querySelectorAll('.pa-line .pa-lc')].map(r => r.getAttribute('data-key'))
   const det = (h, key) => h.hostEl.querySelector(`.pa-detail[data-key="${key}"] > .pa-card`)
   const wait = ms => act(async () => { await new Promise(r => setTimeout(r, ms)) })
 
-  // 43a) cards: each record is a card under its station, its kind in its name, a title and a second line; the
-  // station's own words say where it stopped; a running review sits under "Reading now"
+  // 43a) rows: each record is a row in its station's section, its kind in its name, a title and a second line;
+  // the section's own words say where it stopped; a running review is drawn turning at the Reviewer
   {
     const h = await mount('en', 'page')
-    const cards = [...h.hostEl.querySelectorAll('.pa-cols .pa-lc')]
+    const cards = [...h.hostEl.querySelectorAll('.pa-line .pa-lc')]
     const keys = cards.map(c => c.getAttribute('data-key'))
-    if (keys.join() !== 'memory:abc12345,skills:def67890,skills:aaa11111') fail(`rows: line order ${keys}`)
+    if (keys.join() !== 'skills:aaa11111,memory:abc12345,skills:def67890') fail(`rows: line order ${keys}`)
     const kinds = cards.map(c => (c.querySelector('.pa-lc-main')?.getAttribute('aria-label') || '').split(':')[0]).join()
-    if (kinds !== 'Memory,Skill,Skill') fail(`rows: the cards do not name their kind Memory / Skill / Skill: ${kinds}`)
+    if (kinds !== 'Skill,Memory,Skill') fail(`rows: the cards do not name their kind Skill / Memory / Skill: ${kinds}`)
     if (cards.some(c => !c.querySelector('.pa-lc-t')?.textContent || !c.querySelector('.pa-lc-s')?.textContent)) {
       fail('rows: a card has no title or no second line')
     }
     const kick = key => h.hostEl.querySelector(`.pa-lc[data-key="${key}"] .pa-lc-kick`)?.textContent
-    if (stationOf(h.hostEl, 'skills:def67890') !== 'rules' || kick('skills:def67890') !== 'Stopped here'
+    const stopHead = h.hostEl.querySelector('.pa-sec[data-st="rules"] .pa-grp')?.textContent || ''
+    if (stationOf(h.hostEl, 'skills:def67890') !== 'rules' || !stopHead.startsWith('Stopped by your rules · 2')
         || stationOf(h.hostEl, 'skills:aaa11111') !== 'you' || kick('skills:aaa11111') !== 'Rules + reviewer: fine') {
-      fail(`rows: status words [${kick('skills:def67890')}, ${kick('skills:aaa11111')}]`)
+      fail(`rows: status words [${stopHead}, ${kick('skills:aaa11111')}]`)
     }
     if (cards.some(c => c.getAttribute('role') !== 'listitem' || !c.parentElement?.closest('[role="list"]'))) {
       fail('rows: the cards are not listitems of a list')
@@ -4911,11 +4932,10 @@ REST.scan = 'ok'
     REST.pending = withReview({ aaa11111: { status: 'running', model: 'gpt-5.5', hard: [] } })
     const r = await mount('en', 'page')
     const at = r.hostEl.querySelector('.pa-lc[data-key="skills:aaa11111"]')
-    let head = at?.previousElementSibling
-    while (head && !head.classList.contains('pa-grp')) head = head.previousElementSibling
-    if (stationOf(r.hostEl, 'skills:aaa11111') !== 'reviewer' || !/^Reading now/.test(head?.textContent || '')
-        || !head?.querySelector('[data-slot="loader"]')) {
-      fail(`rows: a running review is not under "Reading now" at the Reviewer: ${head?.textContent}`)
+    const mark = at?.querySelector('.pa-trk > i[data-k="at"]')?.getAttribute('data-m')
+    const step = at?.querySelector('.pa-lc-act')?.textContent || ''
+    if (stationOf(r.hostEl, 'skills:aaa11111') !== 'reviewer' || mark !== 'live' || step !== 'Reading now') {
+      fail(`rows: a running review is not drawn turning at the Reviewer: ${mark} / ${step}`)
     }
     if (at?.querySelector('.pa-lc-kick')?.textContent === 'Rules + reviewer: fine') {
       fail('rows: a running review shows a decided verdict')
@@ -4934,13 +4954,13 @@ REST.scan = 'ok'
       fail('keyboard: the line does not announce J K')
     }
     const focused = () => document.activeElement?.getAttribute?.('data-key')
-    rowOf(h.hostEl, 'memory:abc12345')?.focus()
-    await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'j')
-    if (focused() !== 'skills:def67890') fail(`keyboard: J does not move to the next card (${focused()})`)
-    await keyDown(rowOf(h.hostEl, 'skills:def67890'), 'K')
-    if (focused() !== 'memory:abc12345') fail(`keyboard: K does not move to the previous card (${focused()})`)
-    await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'k')
-    if (focused() !== 'memory:abc12345') fail('keyboard: K wraps past the first card')
+    rowOf(h.hostEl, 'skills:aaa11111')?.focus()
+    await keyDown(rowOf(h.hostEl, 'skills:aaa11111'), 'j')
+    if (focused() !== 'memory:abc12345') fail(`keyboard: J does not move to the next card (${focused()})`)
+    await keyDown(rowOf(h.hostEl, 'memory:abc12345'), 'K')
+    if (focused() !== 'skills:aaa11111') fail(`keyboard: K does not move to the previous card (${focused()})`)
+    await keyDown(rowOf(h.hostEl, 'skills:aaa11111'), 'k')
+    if (focused() !== 'skills:aaa11111') fail('keyboard: K wraps past the first card')
     await toFront(h.hostEl, 'skills:aaa11111')
     const card = det(h, 'skills:aaa11111')
     const primary = card?.querySelector('[aria-keyshortcuts="A"]')
@@ -4962,7 +4982,7 @@ REST.scan = 'ok'
     if (stub.calls.posts.length !== from) fail('keyboard: L posted a request')
     if (!ev?.defaultPrevented) fail('keyboard: a handled key does not call preventDefault')
     await toLine(h.hostEl)
-    if (order(h).join() !== 'skills:def67890,memory:abc12345,skills:aaa11111') {
+    if (order(h).join() !== 'skills:aaa11111,skills:def67890,memory:abc12345') {
       fail(`keyboard: L does not move the record to the end of its station: ${order(h)}`)
     }
     await toFront(h.hostEl, 'skills:aaa11111')
@@ -5015,7 +5035,7 @@ REST.scan = 'ok'
     ], counts: { applied: 1, failed: 0, undoable: 1 } }
     REST.history = after
     const h = await mount('en', 'page')
-    const doneRow = k => h.hostEl.querySelector(`.pa-st[data-st="written"] .pa-done-list > .pa-done[data-k="${k}"]`)
+    const doneRow = k => h.hostEl.querySelector(`.pa-sec[data-st="written"] .pa-rows > .pa-done[data-k="${k}"]`)
     if (doneRow('approve') || doneRow('reject')) fail('in-row done: a Written row is drawn before any decision')
     await toFront(h.hostEl, 'skills:aaa11111')
     await click(primaryBtn(det(h, 'skills:aaa11111')), 600)
@@ -5139,8 +5159,8 @@ REST.scan = 'ok'
       fail('narrow: a card click does not open the record in place of the line')
     }
     const back = h.hostEl.querySelector('.pa-detail .pa-back')
-    if (back?.querySelector('.pa-back-pos')?.textContent !== 'Memory · 1 of 3 on the line') {
-      fail(`narrow: the position is not "Memory · 1 of 3 on the line": ${back?.querySelector('.pa-back-pos')?.textContent}`)
+    if (back?.querySelector('.pa-back-pos')?.textContent !== 'Memory · 2 of 3 on the line') {
+      fail(`narrow: the position is not "Memory · 2 of 3 on the line": ${back?.querySelector('.pa-back-pos')?.textContent}`)
     }
     if (name(back?.querySelector('.pa-back-btn')) !== 'The line') fail('narrow: Back does not name the line')
     await click(back?.querySelector('.pa-back-btn'), 30)
@@ -5160,8 +5180,8 @@ REST.scan = 'ok'
   // and the J/K/A/X/L keys neither fire nor throw.
   REST.pending = { counts: { memory: 0, skills: 0 }, memory: [], skills: [] }
   const clear = await mount('en', 'page')
-  if (!clear.hostEl.querySelector('.pa-cols > .pa-allclear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
-  if (clear.hostEl.querySelector('.pa-cols .pa-lc, .pa-line > .pa-bulk, .pa-hd .pa-select')) {
+  if (!clear.hostEl.querySelector('.pa-line > .pa-allclear')) fail('rework 2 item 2: the all-caught-up state is not drawn with 0 pending')
+  if (clear.hostEl.querySelector('.pa-line .pa-lc, .pa-line > .pa-bulk, .pa-hd .pa-select')) {
     fail('rework 2 item 2: a card, the bulk bar or Select is drawn although nothing waits')
   }
   const posted = stub.calls.posts.length
@@ -5273,8 +5293,8 @@ REST.scan = 'ok'
   // items 10, 11, 12, 13, 14 on the Activity tab and a pending card.
   const act = await mount('en', 'page')
   const css = sheetOf(act)
-  if (!/\.pa-wsplit \.pa-actions\{[^}]*flex-wrap:wrap/.test(css)
-      || !/\.pa-wsplit \.pa-act-note\{[^}]*white-space:normal/.test(css)) {
+  if (!/\.pa-exp \.pa-actions\{[^}]*flex-wrap:wrap/.test(css)
+      || !/\.pa-exp \.pa-act-note\{[^}]*white-space:normal/.test(css)) {
     fail('Written: the note beside the actions cannot wrap in the side column, so it runs past the edge')
   }
   await toFront(act.hostEl, 'skills:aaa11111')
@@ -5420,8 +5440,8 @@ REST.scan = 'ok'
     summary: 'MEMORY.md rejected', files: [], undoable: false, restorable: true }],
   counts: { applied: 0, failed: 0, undoable: 0 } }
   const clear = await mount('en', 'page')
-  if (!clear.hostEl.querySelector('.pa-cols > .pa-allclear')
-      || !buttons(clear.hostEl.querySelector('.pa-st[data-st="written"]'), /^Restore$/).length) {
+  if (!clear.hostEl.querySelector('.pa-line > .pa-allclear')
+      || !buttons(clear.hostEl.querySelector('.pa-sec[data-st="written"]'), /^Restore$/).length) {
     fail('real data: after "Don’t save" the all-caught-up state offers no way back')
   }
   clear.root.unmount()
@@ -5516,15 +5536,15 @@ REST.scan = 'ok'
   await click(tab(d.hostEl, /Activity/), 60)
   const sheet = d.hostEl.querySelector('style')?.textContent || ''
   if (!/\.pa-root \.pa-ent-card:hover\{border-color:var\(--ui-stroke-secondary\)\}/.test(sheet)
-      || !/\.pa-ent\[data-on="1"\]>\.pa-ent-card\{border-color:var\(--ui-accent\)\}/.test(sheet)) {
+      || !/\.pa-ent\[data-on="1"\]>\.pa-ent-card\{border:1\.5px solid var\(--ui-accent\)/.test(sheet)) {
     fail('flat rows: a Written card has no hover edge or does not mark the chosen entry in the accent')
   }
   const ents = () => [...d.hostEl.querySelectorAll('.pa-written .pa-tl > .pa-ent')]
   if (ents().length !== 3) fail(`decks: 3 consecutive software-factory records do not fold into one deck (${ents().length} entries)`)
   const deck = () => d.hostEl.querySelector('.pa-written .pa-deck')
   const head = () => deck()?.querySelector('.pa-deck-row')
-  const pins = ents().map(e => e.querySelector(':scope > .pa-pin svg')?.getAttribute('data-g'))
-  if (pins.length !== 3 || pins.some(p => !p)) fail(`row cards: a Written entry has no pin: ${pins}`)
+  const pins = ents().map(e => e.querySelector('.pa-ent-card > .pa-trk > i[data-k="at"]')?.getAttribute('data-m'))
+  if (pins.length !== 3 || pins.some(p => !p)) fail(`row cards: a Written entry has no track end: ${pins}`)
   const own = sheet.match(/oklch\((?!from var\(--ui-)|#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(/gi)
   if (own) fail(`theme colours: the panel paints colours of its own instead of the Hermes theme's: ${own.join(' ')}`)
   if (deck()?.querySelector('[data-slot="badge"]')?.textContent !== '3'
@@ -5710,7 +5730,7 @@ REST.scan = 'ok'
   REST.pending = { ...PENDING_CAND, skills: [], counts: { memory: 0, skills: 0 }, candidates: PENDING_CAND.candidates.slice(0, 2) }
   REST.count = { counts: { memory: 0, skills: 0 }, records: { memory: 0, skills: 2 }, candidates: 2 }
   const lone = await mount('en')
-  if (lone.hostEl.querySelector('.pa-cols > .pa-allclear h2')?.textContent !== 'All caught up') {
+  if (lone.hostEl.querySelector('.pa-line > .pa-allclear h2')?.textContent !== 'All caught up') {
     fail('candidates: 0 cards + 2 candidates does not read "All caught up"')
   }
   const see = lone.hostEl.querySelector('.pa-allclear .pa-see-parked')
