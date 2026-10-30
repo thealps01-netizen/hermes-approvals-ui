@@ -173,7 +173,7 @@ const BUNDLES = {
         hintUndo: 'Undo puts the files back exactly as they were before.',
         hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
         hintUndoRest: 'Undo puts the other files back as they were before this record; the one a forced undo already put back stays.',
-        hintRestore: 'Restore puts it back under Needs you.',
+        hintRestore: 'Restore puts it back on the line.',
         needsForce: 'Undo needs force',
         placeSkill: name => `Skill “${name}”`,
       },
@@ -392,7 +392,7 @@ const BUNDLES = {
         fullReview: 'Show the full review',
         fullReviewHide: 'Hide the full review',
         useShort: 'Use the short version',
-        openNeeds: 'Go to Needs you',
+        openNeeds: 'Back to the line',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -499,7 +499,7 @@ const BUNDLES = {
         title: (name, n) => `${name} · ${plural(n, 'note', 'notes')}`,
         notesTitle: name => `Notes in ${name} · longest first`,
         draftMerge: 'Ask Hermes to combine notes',
-        draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits under Needs you.',
+        draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits on the line.',
         drafted: 'The request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
@@ -509,10 +509,10 @@ const BUNDLES = {
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         emptyTitle: name => `No notes in ${name} yet`,
-        emptyMemory: 'Memory holds what Hermes knows about your work. Ask in chat to add a note — it waits under '
-          + 'Needs you first.',
-        emptyProfile: 'Profile holds what Hermes knows about you. Ask in chat to add a note — it waits under '
-          + 'Needs you first.',
+        emptyMemory: 'Memory holds what Hermes knows about your work. Ask in chat to add a note — it waits on the '
+          + 'line first.',
+        emptyProfile: 'Profile holds what Hermes knows about you. Ask in chat to add a note — it waits on the '
+          + 'line first.',
         files: 'Files',
         note: (i, len) => `Note ${i} · ${plural(len, 'character', 'characters')}`,
         noteLength: len => plural(grouped(len), 'character', 'characters'),
@@ -557,8 +557,8 @@ const BUNDLES = {
         noFiles: 'no changed files',
         rejected: 'Not saved — you can restore it from “Written”',
         stale: 'This record changed since it was shown — the list is read again.',
-        restored: id => (id ? `The record is back under Needs you as #${id}.` : 'The record is back under Needs you.'),
-        restoredAll: ids => `The changes are back under Needs you as ${ids}.`,
+        restored: id => (id ? `The record is back on the line as #${id}.` : 'The record is back on the line.'),
+        restoredAll: ids => `The changes are back on the line as ${ids}.`,
         restoreFailed: 'Could not restore the record',
         frontGone: 'It left the queue while you were away from it — it may have been decided elsewhere. The next record is now in front.',
       },

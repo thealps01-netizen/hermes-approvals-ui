@@ -4668,6 +4668,7 @@ REST.scan = 'ok'
   const mm = await mount('en', 'page')
   if (mm.hostEl.querySelector('.pa-date, .pa-progress, .pa-pips')) fail('mockup-match: the dated headline or day progress is back')
   if (/under Pending/.test(readFileSync(SRC, 'utf8'))) fail('mockup-match: a text still points to a "Pending" tab')
+  if (/Needs you/.test(readFileSync(SRC, 'utf8'))) fail('the line: a text still points to the old "Needs you" screen')
   await toFront(mm.hostEl, 'skills:aaa11111')
   const foot = mm.hostEl.querySelector('.pa-cell .pa-dfoot')
   const later = foot?.querySelector('.pa-later')
@@ -4743,7 +4744,7 @@ REST.scan = 'ok'
   const blank = none.hostEl.querySelector('.pa-written .pa-state')
   if (!blank || !/No activity yet/.test(blank.textContent || '')) fail('activity: an empty history draws no empty state')
   if (!/you can undo from here/.test(blank?.textContent || '')) fail('activity: the empty history does not say what it is for')
-  await click(buttons(blank, /^Go to Needs you$/)[0], 60)
+  await click(buttons(blank, /^Back to the line$/)[0], 60)
   if (viewOf(none.hostEl) !== 'line' || none.hostEl.querySelector('.pa-written')) {
     fail('activity: the empty history offers no way back to the line')
   }

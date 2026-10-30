@@ -599,8 +599,10 @@ add('f21', 'Error — Written could not be read', await frame(async hostEl => {
   await goWritten(hostEl)
 }, PENDING, HISTORY, MEMORY, { '/history?limit=50': 'state.db is locked' }))
 
-add('f22', 'Loading — Memory still reading: the line without its rings', await frame(async hostEl => {
-  need(!hostEl.querySelector('.pa-mring'), 'f22: a ring is drawn before Memory was read')
+add('f22', 'Loading — Memory still reading: the rings hold their place with no value', await frame(async hostEl => {
+  const rings = [...hostEl.querySelectorAll('.pa-hd .pa-mring')]
+  need(rings.length === 2 && rings.every(r => r.getAttribute('data-reading') === '1'
+    && r.querySelector('b')?.textContent === '—'), 'f22: a ring states a value before Memory was read')
 }, PENDING, HISTORY, MEMORY, { '/memory': 'hang' }))
 
 add('f23', 'Error — the line could not be read, its Details open on the cause', await frame(async hostEl => {
