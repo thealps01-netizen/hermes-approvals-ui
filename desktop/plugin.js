@@ -1205,6 +1205,8 @@ const STYLE = `
 .pa-crumb-icon{display:inline-flex;color:var(--ui-text-secondary)}
 .pa-wsplit .pa-dbody{padding:10px 0}
 .pa-wsplit .pa-dfoot{padding:${G.xs}px 0;position:static}
+.pa-wsplit .pa-actions{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;min-width:0}
+.pa-wsplit .pa-act-note{min-width:0;white-space:normal;overflow-wrap:anywhere}
 .pa-wsplit .pa-dtitle{font-size:${FS.detail}px}
 .pa-mfiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0}
 .pa-root .pa-mfile{display:flex;align-items:center;gap:${G.base}px;margin:0;padding:14px 16px;

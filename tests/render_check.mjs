@@ -5247,6 +5247,10 @@ REST.scan = 'ok'
   // items 10, 11, 12, 13, 14 on the Activity tab and a pending card.
   const act = await mount('en', 'page')
   const css = sheetOf(act)
+  if (!/\.pa-wsplit \.pa-actions\{[^}]*flex-wrap:wrap/.test(css)
+      || !/\.pa-wsplit \.pa-act-note\{[^}]*white-space:normal/.test(css)) {
+    fail('Written: the note beside the actions cannot wrap in the side column, so it runs past the edge')
+  }
   await toFront(act.hostEl, 'skills:aaa11111')
   const full = buttons(act.hostEl.querySelector('.pa-detail'), /^Show the full review$/)[0]
   if (full) await click(full, 40)
