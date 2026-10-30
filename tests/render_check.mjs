@@ -1955,6 +1955,7 @@ const decidedToday = entries => entries.filter(e => (e.kind === 'apply' || e.kin
   }
   if (!en.hostEl.querySelector('.pa-root')) fail('the pane root lost its container class')
   const icon = en.hostEl.querySelector('.pa-refresh')
+  globalThis.paRefreshLabel = icon?.getAttribute('aria-label')
   if (!icon || icon.getAttribute('data-slot') !== 'button' || !icon.querySelector('svg') || !icon.getAttribute('aria-label')) {
     fail('the refresh control is gone (kit Button + svg + aria-label expected)')
   }
@@ -5826,7 +5827,7 @@ console.log('  groups: one card per group at its first member, no member card ·
   + '#n on findings, rule checks and stale lines · Result in Details · Reject #n → ids:[member] · Reject all → groups · '
   + 'Approve → groups + versions[groupId], held by the group gate · bulk → groups + ids in one /decide · '
   + 'history row folds its changes, Undo/Restore on the row · chip posts /reviews when only records move')
-console.log(`  chip: "${en.chipText}" · KPI cards: 4 · refresh: kit Button + Tip + "${en.hostEl.querySelector('.pa-refresh')?.getAttribute('aria-label')}"`)
+console.log(`  chip: "${en.chipText}" · KPI cards: 4 · refresh: kit Button + Tip + "${globalThis.paRefreshLabel}"`)
 
 const dumpPath = process.env.PREVIEW_OUT
 if (dumpPath) {

@@ -1982,3 +1982,21 @@ flow itself. The brief, the station rules, the source mapping and the action tab
   subagent) is not returned, so it is never guessed; unknown paths read "source not recorded".
 - **Narrow panes** stack the stations vertically through `@container` (never `@media`, which reads
   the window, not the pane).
+
+Render-check promises retired with the old layout, each replaced by the nearest promise the line
+keeps (so a later reader knows the check was moved on purpose, not lost):
+
+- **Candidates header** (collapsed button with `aria-controls`, fixed height, matching row heights):
+  Parked is always drawn. The check now asserts "Parked · N", each card's leave day, that parked
+  cards cannot be picked in Select, and that an empty line offers a collapsed "See parked".
+- **Memory opens on the fullest file by default**: the Memory page is reached only through a file's
+  ring. The check asserts that only the nearly-full ring is warm and that it opens that file.
+- **A group card's second line names its files**: the second line is the source now. The check
+  asserts it does not repeat the title and that the record names every file (`SKILL.md`, `notes.md`).
+- **Removed structure**: fixed deck heights (173/74 px), row identity colours, the top bar with its
+  pips and day progress, `.pa-headline`/`.pa-counts`, group-row checkboxes. Covered instead by the
+  Written pins, the header-fits checks, the header sentence and group picking through Select.
+
+The new structure checks fail on the 1.21.1 panel (`node tests/render_check.mjs <1.21.1 plugin.js>`
+exits 1; e.g. "the line is not drawn as one list of stations", "one station holds the owner's next
+move; 0 are lit").
