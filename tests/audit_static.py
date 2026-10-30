@@ -224,20 +224,18 @@ def check_motion_table() -> None:
 
 
 def check_card_surface_from_table() -> None:
-    """The app frame's surfaces are defined once, not twice. Since the split layout (2026-10) there is
-    no floating card: the frame is the segmented tab track, its active pill and the tinted list
-    column (spec R1.2, R10). Each sheet rule reads its ground, stroke and radius from the shared
-    constants (the app's `--ui-bg-*` tokens, `${HAIRLINE}`, `${R.*}px`, `tint(...)`): a literal `8px`
-    or a hand-written stroke in the sheet is how the class and the constant drift apart. The pane root
-    and the list column paint no ground and no edge: the app's own pages are flat."""
+    """The app frame's surfaces are defined once, not twice. Since the line (2026-10-30) the frame is
+    the header, the five stations and the cards under them (Docs/approvals-line-redesign-2026-10-30.md).
+    Each sheet rule reads its ground and stroke from the app's `--ui-*` tokens and the shared constants
+    (`${HAIRLINE}`, `${R.*}px`): a literal `8px` or a hand-written stroke in the sheet is how the class
+    and the constant drift apart. The pane root and the line paint no ground and no edge: the app's own
+    pages are flat; only a card is a box."""
     js = JS.read_text(encoding="utf-8")
-    for rule, needles in ((".pa-tabs{", (("var(--ui-bg-tertiary)", "the track ground"),
-                                         ("border-radius:${R.box}px", "the track radius"))),
-                          (".pa-root .pa-tab{", (("border-radius:${R.ctl}px", "the tab radius"),)),
-                          ('.pa-root .pa-tab[data-on="1"]{', (("var(--ui-bg-chrome)", "the active tab ground"),
-                                                              ("var(--ui-stroke-tertiary)",
-                                                               "the active tab ring"))),
-                          (".pa-list{", (("border-right:${HAIRLINE}", "the hairline stroke"),)),
+    for rule, needles in ((".pa-node{", (("background:var(--ui-bg-elevated)", "the station ground"),
+                                         ("border:2px solid var(--ui-stroke-primary)", "the station ring"))),
+                          (".pa-lc{", (("background:var(--ui-bg-elevated)", "the card ground"),
+                                       ("border:1px solid var(--ui-stroke-tertiary)", "the card edge"))),
+                          (".pa-tools{", (("border-left:${HAIRLINE}", "the hairline stroke"),)),
                           (".pa-verdict{", (("border-bottom:${HAIRLINE}", "the verdict hairline"),)),
                           (".pa-file{", (("border-radius:${R.box}px", "the file box radius"),))):
         if rule not in js:
@@ -247,7 +245,7 @@ def check_card_surface_from_table() -> None:
         for needle, why in needles:
             if needle not in body:
                 _report(f"plugin.js: {rule[:-1]} does not read {why} from the shared constant")
-    for rule in (".pa-root{", ".pa-list{"):
+    for rule in (".pa-root{", ".pa-line{"):
         body = js.split(rule, 1)[-1].split("\n.", 1)[0]
         if "box-shadow" in body or "background" in body:
             _report(f"plugin.js: {rule[:-1]} paints a ground or an edge again — the app's pages are flat "
@@ -654,23 +652,24 @@ def check_no_media() -> None:
 
 
 def check_app_layout() -> None:
-    """The split-layout promises the keyboard and the screen reader rely on (spec R4.1, R6, R7.2).
+    """The line's promises the keyboard and the screen reader rely on (spec R4.1, R6, R7.2).
 
-    * The Needs-you keys (J/K/A/X/L) never fire while the user types: a text-entry guard (`typing`:
+    * The record keys (J/K/A/X/L) never fire while the user types: a text-entry guard (`typing`:
       textarea, select, contenteditable, role=textbox, a non-checkbox input) and a modifier guard
       (Ctrl/Meta/Alt, an already handled event) sit before any key is read — without them Ctrl+A
       or an `a` typed into a field approves a record.
     * The footer's primary carries `aria-keyshortcuts` `A`, so the key is announced and the handler
       finds the very button a click would press (held state included).
     * The fix toggle's buttons carry `aria-pressed`: without it the two states read the same.
-    * The selected list row carries `aria-current`: it is the only way to know which record the
-      detail column shows.
+    * The journey strip marks the station the record stands at with `aria-current="step"`, and the
+      Written timeline marks the entry its right column shows with `aria-current`: without them
+      nothing says which station or which entry is the one drawn.
     """
     src = JS.read_text(encoding="utf-8")
     typing = src.split("const typing = el => {", 1)[-1].split("\n}\n", 1)[0] \
         if "const typing = el => {" in src else ""
-    listing = _function_body(src, "NeedsYou")
-    row = _function_body(src, "QueueRow")
+    listing = _function_body(src, "TheLine")
+    row = _function_body(src, "ActRow")
     detail = _function_body(src, "RecordDetail")
     keys = listing.split("const onKeyDown = e => {", 1)[-1].split("\n  }\n", 1)[0] \
         if "const onKeyDown = e => {" in listing else ""
@@ -678,14 +677,14 @@ def check_app_layout() -> None:
             or "textarea, select, [contenteditable=\"\"], [contenteditable=\"true\"], [role=\"textbox\"]"
             not in typing
             or "!['checkbox', 'radio', 'button'].includes(" not in typing):
-        _report("plugin.js: the Needs-you key handler lost its text-entry guard — a key typed into a "
+        _report("plugin.js: the line's key handler lost its text-entry guard — a key typed into a "
                 "field would approve or reject a record")
     if "if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return" not in keys:
-        _report("plugin.js: the Needs-you key handler lost its modifier guard — Ctrl+A would approve "
+        _report("plugin.js: the line's key handler lost its modifier guard — Ctrl+A would approve "
                 "a record")
-    if "className: 'pa-split'," not in listing or "    onKeyDown,\n" not in listing:
-        _report("plugin.js: the Needs-you keys are not handled on the split root — they would act "
-                "outside the tab or not at all")
+    if "className: 'pa-line pa-split'," not in listing or listing.count("    onKeyDown,\n") != 2:
+        _report("plugin.js: the record keys are not handled on the line root and the open record — they "
+                "would act outside the line or not at all")
     if "'aria-keyshortcuts': hot ? 'A' : undefined" not in src \
             or "const a = advised ? '' : t('pa.key.a')" not in detail:
         _report("plugin.js: the primary action lost aria-keyshortcuts A — the key is not announced "
@@ -693,9 +692,10 @@ def check_app_layout() -> None:
     if "jsx(SegmentedControl, {" not in detail or "value: view, onChange: setView" not in detail:
         _report("plugin.js: the fix toggle is not the kit SegmentedControl — its buttons carry aria-pressed, "
                 "so With the fix and As written read the same without it")
-    if "'aria-current': on ? 'true' : undefined" not in row:
-        _report("plugin.js: the selected list row lost aria-current — nothing says which record the "
-                "detail shows")
+    if "'aria-current': on ? 'true' : undefined" not in row \
+            or "'aria-current': i === now ? 'step' : undefined" not in detail:
+        _report("plugin.js: the chosen Written entry or the journey's current station lost aria-current — "
+                "nothing says which entry or station is the one drawn")
 
 
 def check_two_step_actions() -> None:
@@ -802,15 +802,15 @@ def check_skill_groups_panel() -> None:
     """
     src = JS.read_text(encoding="utf-8")
     units = _function_body(src, "units")
-    listing = _function_body(src, "NeedsYou")
+    listing = _function_body(src, "TheLine")
     card = _function_body(src, "RecordDetail")
     chip = _function_body(src, "Chip")
     for needle in ("if (drawn.has(group.id)) continue", "parts, plain: { stale: group.stale || [], fix }"):
         if needle not in units:
             _report(f"plugin.js: units() lost {needle!r} — a skill group is not folded into one card")
-    # Split layout: one unit = one list row (`QueueRow`) and, when selected, one detail
+    # The line: one unit = one card (`LineCard`) under its station and, when opened, one record view
     # (`RecordDetail`); both are drawn from the folded `units(data)` queue, never from the raw members.
-    if ("units(data)" not in listing or "...order.map(u => jsx(QueueRow, {" not in listing
+    if ("units(data)" not in listing or "const card = (u, extra) => jsx(LineCard, {" not in listing
             or "jsx(RecordDetail, {" not in listing):
         _report("plugin.js: the pending list does not draw ONE front card per skill group — its members "
                 "would be cards of their own")
@@ -1160,13 +1160,13 @@ def check_round3_surface() -> None:
             _report(f"plugin.js:{line}: a Badge restyled through style= — drive it by variant/size")
     if re.search(r"^\.pa-(pill|deck-count|kbd)\{", js, re.M):
         _report("plugin.js: a hand-built pill or key chip is back — use the kit Badge/Kbd")
-    history = _function_body(js, "HistoryList")
-    if (".pa-list{display:flex;flex-direction:column" not in js
-            or js.count("className: 'pa-list pa-activity-list'") != 1
-            or "className: 'pa-list pa-activity-list'" not in history
+    history = _function_body(js, "WrittenPage")
+    if (".pa-tl{" not in js
+            or js.count("className: 'pa-tl pa-activity-list'") != 1
+            or "className: 'pa-tl pa-activity-list'" not in history
             or "jsx(ActRow, {" not in history
-            or re.search(r"\.pa-activity-list\{[^}]*display:\s*grid", js)):
-        _report("plugin.js: Activity is a grid of big cards again, not one list of short rows")
+            or re.search(r"\.pa-(tl|activity-list)\{[^}]*display:\s*grid", js)):
+        _report("plugin.js: Written is a grid of big cards again, not one timeline of short entries")
 
 
 def check_version_consistency() -> None:
@@ -1266,8 +1266,9 @@ def main() -> int:
           "native `title` on a button (the themed Tip / aria-label owns hover text), theme "
           "colors only (no hex, rgb/hsl or named colour anywhere in plugin.js), only --ui-*/--hx-*/--pa-* "
           "variables and every --ui-* defined, no @media (the pane answers through @container), the "
-          "Needs-you keys guarded against typing and modifiers, aria-keyshortcuts on the primary, "
-          "aria-pressed on the fix toggle, aria-current on the selected row, type sizes from one FS table, "
+          "record keys guarded against typing and modifiers, aria-keyshortcuts on the primary, "
+          "aria-pressed on the fix toggle, aria-current on the chosen Written entry and the journey's station, "
+          "type sizes from one FS table, "
           "a container-query KPI row, "
           "number-first percentages, the two-step clear/delete/force-undo unchanged, a record that "
           "cannot be applied never bulk-approvable (bulk Approve locked, every card still tickable for "

@@ -27,7 +27,6 @@ const BrainIcon = icons?.Brain || null
 const UsersIcon = icons?.Users || null
 const BookIcon = icons?.Book || null
 const CrossIcon = icons?.X || null
-const TrashIcon = icons?.Trash2 || null
 
 let ctxRef = null
 
@@ -38,6 +37,83 @@ const BUNDLES = {
     pa: {
       pane: {
         title: 'Approvals',
+      },
+      st: {
+        proposes: 'Hermes proposes',
+        proposesSub: 'held, nothing written',
+        rules: 'Your rules',
+        rulesSub: 'instant · free',
+        reviewer: 'Reviewer',
+        reviewerSub: model => (model ? `${model} · starts when you press` : 'starts when you press'),
+        you: 'You',
+        youSub: 'save or don’t save',
+        written: 'Written',
+        writtenSub: 'today · can be undone',
+      },
+      src: {
+        chat: 'in your chat',
+        chatWhy: why => `You asked: ${why}`,
+        refine: 'while you ran /refine',
+        self: 'after a chat ended, on its own',
+        job: 'automatic job',
+        none: 'source not recorded',
+      },
+      line: {
+        label: 'The line',
+        lead: n => `${plural(n, 'change is', 'changes are')} on the line.`,
+        tail: 'None is written until you save it at the fourth stop.',
+        emptyLead: 'Nothing is on the line.',
+        emptyTail: 'When Hermes wants to change its memory or a skill, it stops here for you.',
+        nothing: 'Nothing here',
+        passed: n => `${n} passed, moved on`,
+        stopped: 'Stopped here',
+        noModel: 'No reviewer model set',
+        waits: 'Waits for you',
+        check: 'Check',
+        checkBoth: 'Check both',
+        checkAll: 'Check all',
+        notRead: 'not read yet',
+        gaveUp: at => `Gave up at ${at} · try again`,
+        gaveUpNow: 'Gave up · try again',
+        readingNow: 'Reading now',
+        fine: 'Rules + reviewer: fine',
+        advise: 'Reviewer advises not to save',
+        checked: at => `checked ${at}`,
+        allActivity: 'All activity',
+        clearBody: (n, parked) => [`${n} decided today`, parked
+          ? `${plural(parked, 'parked change waits', 'parked changes wait')} on their own and need nothing from you.`
+          : 'nothing waits for you.'].join(' · '),
+        seeParked: 'See parked',
+        reading: 'Reading what is on the line…',
+        readingBody: 'The stations fill in as soon as the list arrives.',
+        errorTitle: 'The line could not be read',
+        errorBody: 'Nothing was lost and nothing was written. Try again in a moment; Details says what went wrong.',
+      },
+      park: {
+        title: n => `Parked · ${n}`,
+        body: days => `Made by Hermes alone. A similar change sends it up the line; otherwise it leaves after ${days} days.`,
+        leaves: date => `leaves ${date}`,
+      },
+      rec: {
+        back: 'The line',
+        pos: (kind, i, n) => `${kind} · ${i} of ${n} on the line`,
+        undoLater: 'You can undo it later.',
+      },
+      trip: {
+        label: 'Where this change is',
+        proposed: at => `Proposed ${at}`,
+        passed: 'passed',
+        stopped: 'stopped here',
+        reviewerAt: at => `Reviewer ${at}`,
+        waits: 'waits for you',
+        reading: 'reading now',
+        gaveUp: 'gave up',
+        noModel: 'no model set',
+        now: 'now',
+        after: 'after you save',
+      },
+      wr: {
+        body: 'Every save, every “Don’t save”, and every change made outside Approvals. Newest first.',
       },
       action: {
         refresh: 'Refresh',
@@ -51,26 +127,6 @@ const BUNDLES = {
         w: n => `${n}w`,
         mo: n => `${n}mo`,
         y: n => `${n}y`,
-      },
-      day: {
-        today: 'Today',
-        decided: (n, all) => `${n} of ${all} decided`,
-      },
-      cand: {
-        title: n => `Candidates · ${n}`,
-        hint: days => `Skill changes the agent made on its own. Each waits here up to ${days} days; `
-          + 'a similar change makes it a card.',
-        word: 'Candidate',
-      },
-      list: {
-        waiting: n => `Waiting · ${n}`,
-        waitingShort: n => `${n} waiting`,
-        position: (i, n) => `${i} of ${n}`,
-      },
-      row: {
-        safe: 'Safe to save',
-        edit: 'Needs one edit',
-        checking: 'Checking…',
       },
       verdict: {
         safe: 'Safe to save',
@@ -99,37 +155,13 @@ const BUNDLES = {
       },
       key: {
         a: 'A',
-        j: 'J',
-        k: 'K',
         x: 'X',
         l: 'L',
-        space: 'Space',
         esc: 'Esc',
-      },
-      legend: {
-        move: 'move',
-        pick: 'select',
-        done: 'done',
       },
       done: {
         saved: s => `Saved “${s}”`,
         notSaved: s => `Not saved “${s}”`,
-      },
-      clear: {
-        decided: n => `${n} decided today · nothing written without you`,
-        none: 'Nothing decided today · nothing written without you',
-        last: (said, words, at) => `Last: “${said}” · ${words} · ${at}`,
-        firstTitle: 'Nothing waiting',
-        waiting: n => `${n} waiting for you`,
-        firstBody: 'When Hermes wants to change its memory or a skill, the change waits here until you decide. '
-          + 'Nothing is written without you.',
-        full: (word, pct) => `${word} is ${pct}% full — tidy it up before it runs out of room.`,
-      },
-      week: {
-        title: 'This week',
-        label: (saved, notSaved) => `This week: ${saved} saved, ${notSaved} not saved`,
-        gap: 'Striped days are older than the history the panel keeps.',
-        day: d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d] || '',
       },
       act: {
         canUndo: 'Can be undone',
@@ -141,7 +173,7 @@ const BUNDLES = {
         hintUndo: 'Undo puts the files back exactly as they were before.',
         hintForce: 'Force undo puts the files back as they were before this record and throws away the later change.',
         hintUndoRest: 'Undo puts the other files back as they were before this record; the one a forced undo already put back stays.',
-        hintRestore: 'Restore puts it back under Needs you.',
+        hintRestore: 'Restore puts it back on the line.',
         needsForce: 'Undo needs force',
         placeSkill: name => `Skill “${name}”`,
       },
@@ -169,12 +201,7 @@ const BUNDLES = {
         profileLabel: 'Profile',
         meter: (word, pct) => `${word} ${pct}% full`,
         reading: word => `${word}: reading…`,
-      },
-      tab: {
-        memory: 'Memory',
-        pending: 'Needs you',
-        history: 'Activity',
-        label: 'Approval views',
+        unread: word => `${word} could not be read — open it to try again`,
       },
       field: {
         failedBefore: 'Saving was attempted',
@@ -320,19 +347,18 @@ const BUNDLES = {
       },
       bulk: {
         select: 'Select this record',
-        selected: n => `${n} selected`,
         title: n => `${plural(n, 'record', 'records')} selected`,
-        crumb: 'Selection',
-        each: 'Each record is decided on its own, exactly as if you opened it. Click a row on the left to read it first.',
         all: 'Select all',
         none: 'Clear selection',
+        picked: (n, ok) => (ok === n ? `${n} picked.`
+          : `${n} picked. Only ${ok} the reviewer has read can be saved; the rest need their check first.`),
         done: 'Cancel',
         approve: n => `Save ${n}`,
         reject: n => `Don’t save ${n}`,
-        confirmApprove: n => `Save ${plural(n, 'record', 'records')} now? Each lands in “Activity” and can be undone there.`,
+        confirmApprove: n => `Save ${plural(n, 'record', 'records')} now? Each lands in “Written” and can be undone there.`,
         advisedReject: (n, all) => all === 1 ? 'The reviewer advised not saving it.'
           : `The reviewer advised not saving ${n} of them.`,
-        confirmReject: n => `Don’t save ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from the “Activity” tab.`,
+        confirmReject: n => `Don’t save ${plural(n, 'record', 'records')}? They leave the queue; each can be restored from “Written”.`,
         confirm: 'Confirm',
         cancel: 'Cancel',
         approvedDone: (ok, all) => `${ok} of ${all} saved`,
@@ -361,11 +387,13 @@ const BUNDLES = {
         saveChanges: 'Save changes',
         deleteSkill: 'Delete skill',
         dontSave: 'Don’t save',
+        save: 'Save',
+        see: 'See',
+        seeFix: 'See the fix',
         fullReview: 'Show the full review',
         fullReviewHide: 'Hide the full review',
         useShort: 'Use the short version',
-        openMemory: 'Open Memory',
-        openNeeds: 'Go to Needs you',
+        openNeeds: 'Back to the line',
       },
       op: {
         lines: (a, r) => `+${a} −${r}`,
@@ -374,7 +402,7 @@ const BUNDLES = {
         capped: (shown, total) => `Showing ${shown} of ${total} lines`,
         noText: 'No text recorded for this operation.',
         wholeSkill: 'whole skill',
-        deletesSkill: 'Deletes the whole skill folder. You can bring it back from the “Activity” tab.',
+        deletesSkill: 'Deletes the whole skill folder. You can bring it back from “Written”.',
       },
       hist: {
         apply: 'Saved',
@@ -413,7 +441,6 @@ const BUNDLES = {
         wordsNotSaved: 'Not saved',
         wordsFailed: 'Couldn’t save',
         dayToday: 'Today',
-        dayNothing: 'nothing yet',
         dayYesterday: 'Yesterday',
         headSaved: n => `${n} saved`,
         headNotSaved: n => `${n} not saved`,
@@ -450,19 +477,17 @@ const BUNDLES = {
         rawAs: text => `Hermes recorded it as: ${text}`,
       },
       empty: {
-        errorTitle: 'The waiting changes could not be read',
         errorBody: 'Try again in a moment. If it keeps failing, Details says what went wrong.',
         retry: 'Retry',
-        loadingPending: 'Reading what is waiting…',
         loadingHistory: 'Reading activity…',
         historyTitle: 'No activity yet',
         historyBody: 'Every save, every “Don’t save” and every change made outside Approvals shows up here, '
           + 'and you can undo from here.',
         loading: 'Reading your memory files…',
-        historyError: 'Activity could not be read',
+        historyError: 'Written could not be read',
         memoryError: 'Memory could not be read',
         scanFailed: why => `Changes made outside Approvals could not be checked${why ? `: ${why}` : ''}. `
-          + 'The pending list is current; an outside change may be missing from “Activity” until a check succeeds.',
+          + 'The pending list is current; an outside change may be missing from “Written” until a check succeeds.',
         refreshFailed: why => `This view could not be refreshed${why ? `: ${why}` : ''}. It shows the last `
           + 'successful read.',
       },
@@ -473,21 +498,22 @@ const BUNDLES = {
         nearlyFull: pct => `${pct}% · nearly full`,
         full: pct => `${pct}% · full`,
         title: (name, n) => `${name} · ${plural(n, 'note', 'notes')}`,
+        notesTitle: name => `Notes in ${name} · longest first`,
         draftMerge: 'Ask Hermes to combine notes',
-        draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits under Needs you.',
+        draftHint: 'Puts a request into the chat box without sending it. Hermes’s proposal still waits on the line.',
         drafted: 'The request is in the chat box — read it, then send.',
         noComposer: 'No chat box is open — open a chat, then try again.',
         delete: 'Delete',
-        deleteConfirm: 'About to delete — you can undo this from the “Activity” tab',
+        deleteConfirm: 'About to delete — you can undo this from “Written”',
         deleteCancel: 'Cancel',
         deleteTip: n => `Delete note ${n}`,
         deleted: text => `Deleted: ${text}`,
         deleteFailed: 'Could not delete',
         emptyTitle: name => `No notes in ${name} yet`,
-        emptyMemory: 'Memory holds what Hermes knows about your work. Ask in chat to add a note — it waits under '
-          + 'Needs you first.',
-        emptyProfile: 'Profile holds what Hermes knows about you. Ask in chat to add a note — it waits under '
-          + 'Needs you first.',
+        emptyMemory: 'Memory holds what Hermes knows about your work. Ask in chat to add a note — it waits on the '
+          + 'line first.',
+        emptyProfile: 'Profile holds what Hermes knows about you. Ask in chat to add a note — it waits on the '
+          + 'line first.',
         files: 'Files',
         note: (i, len) => `Note ${i} · ${plural(len, 'character', 'characters')}`,
         noteLength: len => plural(grouped(len), 'character', 'characters'),
@@ -515,25 +541,25 @@ const BUNDLES = {
         awaiting: n => `${plural(n, 'write awaits', 'writes await')} your approval`,
         title: 'Hermes — pending approvals',
         body: (n, m, s) => `${plural(n, 'write awaits', 'writes await')} you (memory ${m}, skill ${s})`,
-        saved: 'Saved — you can undo it from the “Activity” tab',
+        saved: 'Saved — you can undo it from “Written”',
         failed: 'Could not be applied',
         applyError: 'Could not apply the record',
-        lateApplied: 'Applied — it took longer than the panel waits. It is in the “Activity” tab.',
+        lateApplied: 'Applied — it took longer than the panel waits. It is in “Written”.',
         lateRunning: 'Still being applied — the panel stopped waiting. The list updates when it is done.',
         lateNothing: 'The panel stopped waiting and no change was recorded. The list is read again.',
         lateRejectedElsewhere: 'It was turned down somewhere else (for example from chat) while the panel waited — nothing was saved.',
-        lateAppliedElsewhere: 'It was saved somewhere else (for example from chat) while the panel waited — it is in the “Activity” tab.',
-        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check the “Activity” tab. The list is read again.',
+        lateAppliedElsewhere: 'It was saved somewhere else (for example from chat) while the panel waited — it is in “Written”.',
+        lateUnknown: 'The panel stopped waiting and could not tell whether the change was applied — check “Written”. The list is read again.',
         undoFailed: 'Could not be undone',
         undoError: 'Undo failed',
         undoOk: files => `Undone: ${files}`,
         undoThrown: n => `Also marked undone: ${plural(n, 'later save', 'later saves')} it threw away.`,
         deletedFile: file => `${file} (it did not exist before this write, so it was removed)`,
         noFiles: 'no changed files',
-        rejected: 'Not saved — you can restore it from the “Activity” tab',
+        rejected: 'Not saved — you can restore it from “Written”',
         stale: 'This record changed since it was shown — the list is read again.',
-        restored: id => (id ? `The record is back under Needs you as #${id}.` : 'The record is back under Needs you.'),
-        restoredAll: ids => `The changes are back under Needs you as ${ids}.`,
+        restored: id => (id ? `The record is back on the line as #${id}.` : 'The record is back on the line.'),
+        restoredAll: ids => `The changes are back on the line as ${ids}.`,
         restoreFailed: 'Could not restore the record',
         frontGone: 'It left the queue while you were away from it — it may have been decided elsewhere. The next record is now in front.',
       },
@@ -675,12 +701,15 @@ const refocus = from => {
   const root = from?.closest('.pa-root')
   if (!root) return
   const own = from.closest('.pa-cell') || from
+  const gone = own.getAttribute('data-key')
   const at = [...root.querySelectorAll('.pa-cell')].findIndex(c => c === own)
   const move = () => {
     if (!lost()) return
-    const left = [...root.querySelectorAll('.pa-cell')].filter(c => !c.querySelector('.pa-leaving'))
+    const left = [...root.querySelectorAll('.pa-cell')]
+      .filter(c => !c.querySelector('.pa-leaving') && (!gone || c.getAttribute('data-key') !== gone))
     const next = left[Math.min(Math.max(at, 0), left.length - 1)]
-    const target = next?.querySelector('.pa-card') || root.querySelector('[role="tab"][aria-selected="true"]')
+    const target = next?.querySelector('.pa-card') || root.querySelector('.pa-lc-main')
+      || [...root.querySelectorAll('.pa-back-btn, .pa-refresh')].find(b => !own.contains(b))
     target?.focus()
   }
   for (const ms of [450, 900, 1500]) window.setTimeout(move, ms)
@@ -802,15 +831,13 @@ const plainGist = (t, raw) => {
   if (!g) return String(raw || '')
   return (g.note ? t('pa.hist.gistNote', g.change, g.place, g.name) : g.full) + oldWords(g.rest)
 }
-const TAB_KEY = { pending: 'pa.tab.pending', history: 'pa.tab.history', memory: 'pa.tab.memory' }
-const KIND_VARIANT = { apply: 'success', rejected: 'muted', external: 'warn', failed: 'destructive' }
 const HAIRLINE = '1px solid var(--ui-stroke-tertiary)'
 const WARN = 'var(--ui-yellow)'
 const DIFF_OLD = { background: 'var(--ui-diff-remove-background)', color: 'var(--ui-diff-remove-foreground)' }
 const DIFF_NEW = { background: 'var(--ui-diff-add-background)', color: 'var(--ui-diff-add-foreground)' }
 const R = { box: 6, ctl: 6, pill: 999 }
 const FS = {
-  micro: 12, meta: 12, body: 13, lead: 13, bar: 14, tab: 12, row: 13, preview: 12, detail: 15, empty: 14,
+  title: 22, micro: 12, meta: 12, body: 13, lead: 13, bar: 14, tab: 12, row: 13, preview: 12, detail: 15, empty: 14,
   brand: 14, hero: 18
 }
 const G = { xxs: 4, xs: 8, sm: 12, base: 16, lg: 24, xl: 32 }
@@ -850,179 +877,8 @@ const STYLE = `
 .pa-root button:focus-visible,.pa-root input:focus-visible,.pa-root summary:focus-visible,
 .pa-root [role="button"]:focus-visible,.pa-root .pa-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
 .pa-tipwrap{display:inline-flex}
-.pa-cb{position:absolute;left:12px;top:10px;width:28px;height:28px;display:grid;place-items:center;z-index:1}
-.pa-rowwrap[data-picking="1"] .pa-row>.pa-tile{visibility:hidden}
-.pa-rowwrap[data-picked="1"]{background:${tint('var(--ui-accent)', 10)}}
-.pa-gms{display:flex;align-items:center;gap:14px;flex:none}
-.pa-gm{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
-.pa-gm>b{font-weight:500;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
-.pa-gm-bar{display:block;position:relative;width:44px;height:4px;border-radius:2px;overflow:hidden;
-  background:${tint('var(--ui-text-primary)', 12)}}
-.pa-gm-bar>i{position:absolute;top:0;bottom:0;left:0;border-radius:2px;background:var(--pa-tone)}
-.pa-bar{display:grid;grid-template-columns:auto auto minmax(0,1fr);grid-template-rows:${H.bar}px;align-items:center;
-  column-gap:14px;padding:0 16px;border-bottom:${HAIRLINE};box-sizing:border-box;min-width:0;flex:none}
-.pa-bar-title{font-size:${FS.bar}px;font-weight:600;letter-spacing:-.01em;color:var(--ui-text-primary);white-space:nowrap}
-.pa-bar-tabs{min-width:0;display:flex}
-.pa-bar-side{display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
 .pa-alerts-row{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:${FS.meta}px;
   color:var(--ui-text-secondary);white-space:nowrap}
-.pa-tabs{display:flex;align-items:center;gap:2px;padding:2px;border-radius:${R.box}px;background:var(--ui-bg-tertiary);
-  min-width:0;overflow-x:auto;overflow-y:hidden}
-.pa-root .pa-tab{display:flex;align-items:center;gap:6px;margin:0;padding:3px 10px;border:0;border-radius:${R.ctl}px;
-  background:transparent;font:inherit;font-size:${FS.tab}px;font-weight:500;color:var(--ui-text-secondary);
-  cursor:pointer;white-space:nowrap;flex-shrink:0;transition:${move('hover', 'color, background-color')}}
-.pa-root .pa-tab:hover{color:var(--ui-text-primary)}
-.pa-root .pa-tab[data-on="1"]{background:var(--ui-bg-chrome);color:var(--ui-text-primary);
-  box-shadow:0 1px 2px color-mix(in srgb,var(--ui-text-primary) 12%,transparent),0 0 0 1px var(--ui-stroke-tertiary)}
-.pa-tab:focus-visible{outline:2px solid var(--ui-accent);outline-offset:1px}
-.pa-progress{display:flex;align-items:center;gap:10px;font-size:${FS.meta}px;color:var(--ui-text-secondary);
-  white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
-.pa-pips{display:flex;gap:3px;flex:none}
-.pa-pip{width:10px;height:6px;border-radius:2px;background:${tint('var(--ui-text-primary)', 14)}}
-.pa-pip[data-k="apply"]{background:var(--ui-green)}
-.pa-pip[data-k="rejected"]{background:${tint('var(--ui-text-primary)', 40)}}
-.pa-strip{display:flex;flex-direction:column;gap:${G.xs}px;padding:${G.xs}px 16px;flex:none}
-.pa-body{flex:1;min-height:0;display:flex;min-width:0}
-.pa-split{display:grid;grid-template-columns:${W.list}px minmax(0,1fr);flex:1;min-height:0;min-width:0}
-.pa-split.pa-split-clear{grid-template-columns:minmax(0,1fr)}
-.pa-list{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:${HAIRLINE}}
-.pa-list-head{display:flex;align-items:center;gap:8px;padding:0 14px;box-sizing:border-box;flex:none;
-  font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
-.pa-list-head>.pa-select,.pa-list-head>.pa-list-side{margin-left:auto}
-.pa-list-rows{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
-  padding:${G.xs}px;box-sizing:border-box}
-.pa-list-foot{margin-top:auto;display:flex;align-items:center;gap:14px;padding:0 14px;box-sizing:border-box;flex:none;
-  border-top:${HAIRLINE};font-size:${FS.micro}px;color:var(--ui-text-secondary);min-width:0}
-.pa-list-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.pa-legend{display:flex;align-items:center;gap:14px;min-width:0;flex-wrap:wrap}
-.pa-split[data-lone="1"]{grid-template-columns:minmax(0,1fr)}
-.pa-split[data-lone="1"]>.pa-list{border-right:0}
-.pa-cand{display:flex;flex-direction:column;gap:2px;flex:none;min-width:0;margin-top:${G.xs}px}
-.pa-root .pa-cand-head{display:flex;align-items:center;gap:${G.xs}px;flex:none;box-sizing:border-box;width:100%;
-  min-width:0;margin:0;padding:0 12px;border:0;border-radius:${R.ctl}px;background:transparent;font:inherit;
-  font-size:${FS.meta}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer}
-.pa-root .pa-cand-head:hover{background:var(--hx-field)}
-.pa-cand-title{flex:none;white-space:nowrap;font-weight:500;color:var(--ui-text-primary)}
-.pa-cand-tip{display:flex;flex:1 1 0;min-width:0}
-.pa-cand-hint{flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.pa-cand-rows{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
-.pa-root .pa-btn-kbd{margin-left:8px}
-.pa-rowwrap{--pa-hc:color-mix(in oklch,var(--pa-id,var(--ui-accent)) 62%,var(--ui-accent));display:flex;
-  align-items:stretch;min-width:0;position:relative;flex:none;box-sizing:border-box;border-radius:${R.ctl}px;
-  overflow:hidden}
-.pa-root .pa-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:3px 10px;align-items:start;flex:1;
-  min-width:0;margin:0;padding:10px 12px;border:0;background:transparent;font:inherit;color:inherit;text-align:left;
-  cursor:pointer;position:relative;box-sizing:border-box;transition:${move('hover', 'background-color')}}
-.pa-root .pa-row:hover{background:var(--ui-row-hover-background)}
-.pa-rowwrap[data-on="1"]{background:var(--ui-row-active-background)}
-.pa-rowwrap .pa-tile{color:var(--pa-hc)}
-.pa-deck[data-open="1"]{flex-direction:column}
-.pa-deck[data-open="1"]>.pa-row{flex:none;height:${H.actRow}px}
-.pa-root .pa-row{grid-template-columns:28px minmax(0,1fr) auto auto;row-gap:2px}
-.pa-row>.pa-row-text{display:contents}
-.pa-row>.pa-tile{grid-column:1;grid-row:1 / span 2}
-.pa-row-text>.pa-row-title,.pa-row-text>.pa-deck-title{grid-column:2 / -1;grid-row:1}
-.pa-row-text>.pa-row-preview{grid-column:2 / 4;grid-row:2}
-.pa-row-text>.pa-row-meta{grid-column:2 / 4;grid-row:3}
-.pa-row>.pa-row-time{grid-column:4;grid-row:2;align-self:center;padding-top:0}
-.pa-row:has(.pa-row-meta)>.pa-row-time{grid-row:3}
-.pa-row:has(.pa-row-meta) .pa-row-preview{grid-column:2 / -1}
-.pa-root .pa-row:is(:has(.pa-row-meta),.pa-act-row,.pa-deck-row){align-content:center}
-.pa-row:has(.pa-row-meta) .pa-row-title,.pa-act-row .pa-row-preview{display:-webkit-box;-webkit-box-orient:vertical;
-  -webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
-.pa-act-row>.pa-row-time{align-self:start;padding-top:1px}
-.pa-act-row .pa-row-preview{text-wrap:balance}
-.pa-deck-row .pa-row-preview{grid-column:2}
-.pa-deck-title{display:flex;align-items:center;gap:6px;min-width:0}
-.pa-deck-title>.pa-row-title{min-width:0}
-.pa-deck-chev{color:var(--ui-text-secondary)}
-.pa-kos{grid-column:3;grid-row:2;display:flex;gap:3px;justify-self:end;align-self:center;margin-right:2px}
-.pa-ko{width:8px;height:8px;border-radius:50%;box-sizing:border-box;flex:none;background:var(--pa-tone)}
-.pa-ko[data-k="rejected"]{background:transparent;border:1.5px solid var(--ui-text-secondary)}
-.pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px;border-top:1px solid var(--ui-stroke-tertiary)}
-.pa-root .pa-act-sub{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:10px;align-items:center;
-  height:${H.actSub}px;margin:0;padding:0 8px 0 22px;border:0;border-radius:7px;background:transparent;font:inherit;
-  font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
-  transition:${move('hover', 'background-color')}}
-.pa-root .pa-act-sub:hover{background:var(--ui-row-hover-background)}
-.pa-root .pa-act-sub[aria-current="true"]{background:var(--ui-row-active-background);color:var(--ui-text-primary)}
-.pa-act-sub-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pa-act-sub-text>b{font-weight:600;color:var(--ui-text-primary)}
-.pa-act-sub-time{font-variant-numeric:tabular-nums;white-space:nowrap}
-.pa-tile{width:28px;height:28px;display:grid;place-items:center;box-sizing:border-box;
-  color:var(--ui-text-secondary);flex:none}
-.pa-row-text{min-width:0;display:flex;flex-direction:column;gap:2px}
-.pa-row-title{font-size:${FS.row}px;font-weight:500;color:var(--ui-text-primary);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
-.pa-row-preview{font-size:${FS.preview}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-wrap:pretty;
-  text-overflow:ellipsis}
-.pa-row-meta{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:${FS.micro}px;color:var(--ui-text-secondary);
-  min-width:0;white-space:nowrap}
-.pa-row-time{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;padding-top:2px;
-  white-space:nowrap;justify-self:end}
-.pa-dots{display:flex;gap:2px;flex:none}
-.pa-dot{width:5px;height:5px;border-radius:50%;background:${tint('var(--ui-text-primary)', 25)}}
-.pa-dot[data-k="ok"]{background:var(--ui-green)}
-.pa-dot[data-k="bad"]{background:var(--ui-red)}
-.pa-dot[data-k="warn"]{background:${WARN}}
-.pa-done{display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box;flex:none;
-  border-radius:${R.ctl}px;font-size:${FS.preview}px;color:var(--ui-text-secondary);min-width:0}
-.pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}
-.pa-done-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pa-detail{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
-.pa-detail>.pa-card{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0;overflow-wrap:anywhere;
-  animation:${rise('enter')};transition:${move('exit', 'opacity, transform')}}
-.pa-back{display:none;align-items:center;gap:6px;padding:0 12px;box-sizing:border-box;border-bottom:${HAIRLINE};flex:none;
-  font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-back>.pa-back-pos{margin-left:auto;font-variant-numeric:tabular-nums}
-.pa-dh{display:flex;flex-direction:column;gap:6px;padding:16px 20px 0;flex:none;min-width:0}
-.pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
-  flex-wrap:nowrap;white-space:nowrap}
-.pa-crumb>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.pa-crumb>.pa-crumb-end,.pa-crumb>.pa-crumb-icon,.pa-crumb>.pa-crumb-sep{flex:none}
-.pa-crumb>.pa-crumb-end{margin-left:auto}
-.pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-crumb-sep{color:var(--ui-text-secondary)}
-.pa-crumb-icon{display:inline-flex;color:var(--ui-text-secondary)}
-.pa-dtitle{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;font-size:${FS.detail}px;font-weight:600;
-  letter-spacing:-.015em;color:var(--ui-text-primary);min-width:0;text-wrap:balance}
-.pa-dtitle>[role="heading"]{text-wrap:balance}
-.pa-verdict{margin:14px 20px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;
-  padding:0 0 12px;border-bottom:${HAIRLINE};flex:none}
-.pa-verdict>.pa-seal{display:none}
-.pa-vtitle::before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;
-  background:var(--pa-tone);vertical-align:.08em}
-.pa-seal{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--pa-tone);
-  background:color-mix(in srgb,var(--pa-tone) 16%,transparent);
-  box-shadow:0 0 0 4px color-mix(in srgb,var(--pa-tone) 7%,transparent)}
-.pa-vtext{min-width:0;display:flex;flex-direction:column;gap:3px}
-.pa-vtitle{font-size:${FS.lead}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-chips{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
-.pa-chip{display:inline-flex;align-items:center;gap:5px;min-width:0}
-.pa-root .pa-chip-btn{margin:0;padding:0;border:0;background:none;font:inherit;color:var(--ui-text-primary);cursor:pointer;
-  text-align:left;text-decoration:none}
-.pa-chip-glyph{display:inline-grid;place-items:center;width:12px;flex:none;font-weight:700}
-.pa-chip-glyph[data-k="ok"]{color:var(--ui-green)}
-.pa-chip-glyph[data-k="bad"]{color:var(--ui-red)}
-.pa-chip-glyph[data-k="warn"]{color:${WARN}}
-.pa-chip-glyph[data-k="wait"]{color:var(--ui-text-secondary)}
-.pa-steps{display:flex;flex-direction:column;gap:6px;margin-top:4px;font-size:${FS.preview}px;color:var(--ui-text-secondary)}
-.pa-step{display:flex;align-items:center;gap:8px}
-.pa-step-ring{width:9px;height:9px;border-radius:50%;border:2px solid ${tint('var(--ui-text-primary)', 25)};flex:none}
-.pa-vside{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:${FS.micro}px;line-height:1.5;
-  color:var(--ui-text-secondary);text-align:right;min-width:0}
-.pa-toggle{display:flex}
-.pa-vside>.pa-again{margin-left:auto}
-.pa-test{margin:10px 20px 0;padding:0 0 12px;border-bottom:${HAIRLINE};display:flex;flex-direction:column;gap:4px;flex:none;
-  font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
-.pa-test-head{display:flex;align-items:baseline;gap:${G.xs}px;flex-wrap:wrap;color:var(--ui-text-primary)}
-.pa-test-title{font-weight:600}
-.pa-test-row[data-w="new"]{color:var(--ui-green)}
-.pa-test-row[data-w="old"]{color:var(--ui-red)}
-.pa-test-act{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;margin-top:4px}
-.pa-dbody{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 20px;display:flex;flex-direction:column;
-  gap:10px;mask-image:linear-gradient(to bottom,transparent 0,var(--pa-surface) ${G.base}px);scrollbar-gutter:stable}
-.pa-dbody>*{flex:none}
 .pa-file{border:${HAIRLINE};border-radius:${R.box}px;overflow:hidden;min-width:0}
 .pa-file-head{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:${FS.meta}px;
   color:var(--ui-text-secondary);border-bottom:${HAIRLINE};background:transparent;min-width:0}
@@ -1046,14 +902,6 @@ const STYLE = `
 .pa-dl[data-k="-"] .pa-mark{background:${tint('var(--ui-red)', 28)}}
 .pa-why{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-secondary)}
 .pa-why>b{color:var(--ui-text-primary);font-weight:500}
-.pa-dfoot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px 14px;padding:${G.xs}px 20px;box-sizing:border-box;
-  border-top:${HAIRLINE};flex:none;min-width:0}
-.pa-dfoot-left{display:flex;align-items:center;gap:${G.xs}px;min-width:0;flex:1 1 160px}
-.pa-actions{display:flex;flex-wrap:nowrap;flex:none;justify-content:flex-end;align-items:center;gap:${G.xs}px;margin-left:auto;min-width:0}
-.pa-dfoot-right{display:flex;align-items:center;gap:${G.xs}px;margin-left:auto;flex:none;min-width:0}
-.pa-later+.pa-actions{margin-left:0}
-.pa-dfoot[data-armed="1"]{flex-wrap:nowrap}
-.pa-dfoot[data-armed="1"]>.pa-actions{flex:none;flex-wrap:nowrap}
 .pa-meter-box{display:flex;flex-direction:column;gap:5px;min-width:190px}
 .pa-meter-label{display:flex;gap:${G.sm}px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 .pa-meter-label>b{margin-left:auto;color:var(--ui-text-primary);font-weight:500;font-variant-numeric:tabular-nums}
@@ -1067,16 +915,6 @@ const STYLE = `
 .pa-warnline{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-primary);flex:1 1 auto;min-width:0}
 .pa-warnline::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:${WARN};
   margin-right:6px;vertical-align:middle}
-.pa-clear{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;
-  flex:1;padding:32px 20px}
-.pa-clear-seal{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;margin-bottom:10px;
-  color:var(--ui-green);background:${tint('var(--ui-green)', 16)};
-  box-shadow:0 0 0 6px ${tint('var(--ui-green)', 8)},0 0 0 12px ${tint('var(--ui-green)', 4)}}
-.pa-clear-title{font-size:${FS.empty}px;font-weight:600;color:var(--ui-text-primary)}
-.pa-clear-warn{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
-  font-size:${FS.preview}px;color:var(--ui-text-secondary)}
-.pa-clear-warn>span::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:${WARN};
-  margin-right:6px;vertical-align:middle}
 .pa-state{flex:1;min-width:0;display:grid;place-items:center;align-content:center;gap:${G.sm}px;padding:${G.lg}px;
   text-align:center}
 .pa-state>*{max-width:48ch}
@@ -1084,57 +922,14 @@ const STYLE = `
 .pa-state-label{font-size:${FS.body}px;color:var(--ui-text-secondary)}
 .pa-tech{display:flex;flex-direction:column;align-items:flex-start;gap:${G.xs}px;min-width:0}
 .pa-act-places{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pa-clear-body{font-size:${FS.preview}px;color:var(--ui-text-secondary)}
-.pa-clear-last{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px;
-  font-size:${FS.preview}px;color:var(--ui-text-secondary)}
 .pa-act-files{${MONO};font-size:${FS.meta}px;
   color:var(--ui-text-primary);overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
 .pa-act-said{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);overflow-wrap:anywhere;min-width:0}
 .pa-dtitle .pa-act-said{font:inherit;line-height:1.35}
 .pa-act-hint{font-size:${FS.meta}px;color:var(--ui-text-secondary);flex:1 1 200px;min-width:0}
-.pa-day{display:flex;align-items:flex-end;padding:0 14px 2px;margin:0 -${G.xs}px;box-sizing:border-box;flex:none;
-  font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
 .pa-outcome{margin:2px 20px 0}
 .pa-chip-dot{width:6px;height:6px;border-radius:50%;background:var(--pa-tone)}
 .pa-section{font-size:${FS.meta}px;font-weight:500;color:var(--ui-text-secondary)}
-.pa-memrows{display:flex;flex-direction:column;min-width:0}
-.pa-root .pa-memrow{display:flex;flex-direction:column;justify-content:center;gap:6px;margin:0;padding:0 14px;border:0;
-  border-radius:${R.ctl}px;background:transparent;font:inherit;color:inherit;
-  text-align:left;cursor:pointer;position:relative;box-sizing:border-box;flex:none;min-width:0}
-.pa-root .pa-memrow:hover{background:var(--ui-row-hover-background)}
-.pa-root .pa-memrow[data-on="1"]{background:var(--ui-row-active-background)}
-.pa-memrow-top{display:flex;align-items:baseline;gap:8px;font-size:${FS.row}px;font-weight:500;color:var(--ui-text-primary)}
-.pa-memrow-top>b{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.pa-memrow-top>b[data-full]::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;
-  background:${WARN};margin-right:6px;vertical-align:middle}
-.pa-memrow-top>b[data-full="bad"]::before{background:var(--ui-red)}
-.pa-memrow-sub{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
-.pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:8px 12px;
-  --pa-ct:${WARN};${CALLOUT};font-size:${FS.meta}px;color:var(--ui-text-primary)}
-.pa-banner>span{flex:1 1 220px;min-width:0}
-.pa-notes{display:flex;flex-direction:column;gap:2px}
-.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:start;padding:10px 12px;
-  border-radius:${R.ctl}px}
-.pa-note-row[data-longest="1"] .pa-note-len{color:var(--ui-text-primary);font-weight:600}
-.pa-note-row[data-longest="1"] .pa-note-len::before{content:'';display:inline-block;width:6px;height:6px;margin-right:6px;
-  border-radius:50%;background:${WARN};vertical-align:middle}
-.pa-note-len{font-size:${FS.micro}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;
-  padding-top:2px}
-.pa-note-row[data-armed="1"]{background:var(--hx-field)}
-.pa-note-n{font-size:${FS.micro}px;color:var(--ui-text-secondary);text-align:right;padding-top:2px;
-  font-variant-numeric:tabular-nums}
-.pa-note-text{font-size:${FS.body}px;line-height:1.55;color:var(--ui-text-primary);white-space:pre-wrap;overflow-wrap:anywhere}
-.pa-note-ask{grid-column:2 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px;font-size:${FS.meta}px;
-  color:var(--ui-text-primary)}
-.pa-note-ask>span{flex:1 1 200px;min-width:0}
-.pa-sel-count{color:var(--ui-text-primary);font-weight:600;font-variant-numeric:tabular-nums}
-.pa-sum{display:flex;flex-direction:column;gap:6px}
-.pa-sum-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;
-  min-width:0}
-.pa-sum-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.pa-sum-meta{font-size:${FS.micro}px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pa-sum-chip{font-size:${FS.meta}px;color:var(--ui-text-secondary);white-space:nowrap}
 .pa-free{max-height:none !important;overflow:visible !important}
 .pa-fade{--pa-fade:${LINE}px}
 .pa-fade[data-more="1"]{-webkit-mask-image:linear-gradient(to bottom,var(--ui-base) calc(100% - var(--pa-fade)),transparent);
@@ -1181,141 +976,324 @@ const STYLE = `
 .pa-alert-danger{--pa-ct:var(--ui-red)}
 .pa-loses{margin:4px 0 0;padding-left:18px;list-style:disc}
 .pa-loses>li{overflow-wrap:anywhere}
+.pa-root{display:flex;flex-direction:column;box-sizing:border-box;min-width:0;--pa-surface:var(--ui-bg-chrome)}
+.pa-hd{display:flex;align-items:center;gap:${G.base}px;padding:18px 22px 14px;border-bottom:${HAIRLINE};flex:none;
+  min-width:0}
+.pa-hd-text{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:4px}
+.pa-h1{font-size:${FS.title}px;font-weight:600;letter-spacing:-.02em;color:var(--ui-text-primary);margin:0}
+.pa-hd-line{margin:0;font-size:${FS.body}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-hd-line>b{font-weight:500;color:var(--ui-text-primary)}
+.pa-hd-side{display:flex;align-items:center;gap:${G.base}px;flex:none;min-width:0}
+.pa-rings{display:flex;align-items:center;gap:14px}
+.pa-root .pa-mring{display:flex;align-items:center;gap:8px;margin:0;padding:2px 4px;border:0;border-radius:${R.ctl}px;
+  background:transparent;font:inherit;font-size:${FS.meta}px;color:var(--ui-text-secondary);cursor:pointer;text-align:left;
+  transition:${move('hover', 'background-color')}}
+.pa-root .pa-mring:hover{background:var(--ui-row-hover-background)}
+.pa-mring>span{display:flex;flex-direction:column;line-height:1.25}
+.pa-mring b{font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-ring{width:34px;height:34px;transform:rotate(-90deg);flex:none}
+.pa-ring>circle{fill:none;stroke-width:4}
+.pa-ring-bg{stroke:var(--ui-stroke-secondary)}
+.pa-ring-fg{stroke:var(--ui-text-secondary);stroke-linecap:round}
+.pa-ring[data-warm="1"]>.pa-ring-fg{stroke:var(--ui-orange)}
+.pa-tools{display:flex;align-items:center;gap:${G.sm}px;padding-left:${G.base}px;border-left:${HAIRLINE}}
+.pa-alerts-row{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:${FS.meta}px;
+  color:var(--ui-text-secondary);white-space:nowrap}
+.pa-strip{display:flex;flex-direction:column;gap:${G.xs}px;padding:${G.xs}px 22px;flex:none}
+.pa-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden}
+.pa-ico{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.pa-ico[data-tone="ok"]{color:var(--ui-green)}
+.pa-ico[data-tone="bad"]{color:var(--ui-red)}
+.pa-ico[data-tone="warn"]{color:${WARN}}
+.pa-ico[data-tone="run"]{color:var(--ui-accent)}
+.pa-line{display:flex;flex-direction:column;gap:18px;padding:${G.base}px 22px 22px;min-width:0;position:relative;
+  flex:1 0 auto;box-sizing:border-box}
+.pa-line[data-open="1"]{padding:0;gap:0}
+.pa-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:start;min-width:0}
+.pa-cols[data-dim="1"]{opacity:.55}
+.pa-st{display:flex;flex-direction:column;align-items:center;min-width:0;position:relative;text-align:center}
+.pa-st:not([data-st="written"])::after{content:'';position:absolute;top:29px;left:calc(50% + 34px);
+  width:calc(100% - 54px);height:0;border-top:2px solid var(--ui-stroke-primary)}
+.pa-st[data-out="lit"]::after{border-top-color:var(--ui-accent)}
+.pa-st[data-out="dash"]::after{border-top-style:dashed}
+.pa-arrow{position:absolute;top:25px;left:calc(150% - 29px);width:9px;height:10px;display:block;z-index:1}
+.pa-arrow>svg{display:block;width:9px;height:10px;fill:var(--ui-stroke-primary)}
+.pa-arrow[data-lit="1"]>svg{fill:var(--ui-accent)}
+.pa-node{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;flex:none;
+  box-sizing:border-box;background:var(--ui-bg-elevated);border:2px solid var(--ui-stroke-primary);
+  color:var(--ui-text-secondary);z-index:1}
+.pa-st[data-lit="1"]>.pa-node{border:3px solid var(--ui-accent);color:var(--ui-accent)}
+.pa-node-sm{width:40px;height:40px}
+.pa-node-xs{width:36px;height:36px}
+.pa-node-md{width:44px;height:44px}
+.pa-node-ok{width:48px;height:48px;border-color:var(--ui-green);color:var(--ui-green)}
+.pa-cnt{position:absolute;top:-6px;right:-10px;display:flex}
+.pa-st-text{margin-top:8px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pa-st-name{margin:0;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-st-sub{font-size:${FS.meta}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-st-body{display:flex;flex-direction:column;gap:8px;margin-top:12px;width:100%;min-width:0;text-align:left}
+.pa-st-body:empty{display:none}
+.pa-lc{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border:1px solid var(--ui-stroke-tertiary);
+  border-radius:8px;background:var(--ui-bg-elevated);box-sizing:border-box;min-width:0;
+  transition:${move('exit', 'opacity, transform')}}
+.pa-lc[data-ready="1"],.pa-lc[data-picked="1"]{border:1.5px solid var(--ui-accent);padding:7.5px 9.5px}
+.pa-lc[data-tone="stop"]{border-color:color-mix(in srgb,var(--ui-red) 55%,var(--ui-stroke-tertiary))}
+.pa-lc-k{display:flex;align-items:center;gap:6px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-lc-kick{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.pa-root .pa-lc-main{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;border:0;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;min-width:0;width:100%;border-radius:4px}
+.pa-lc-t{font-size:${FS.body}px;font-weight:500;color:var(--ui-text-primary);overflow-wrap:anywhere;line-height:1.35}
+.pa-lc-s{font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-lc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.pa-srcs{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pa-src{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:8px;padding:6px 8px;
+  border:1px dashed var(--ui-stroke-secondary);border-radius:8px;color:var(--ui-text-secondary);min-width:0}
+.pa-src>b{font-size:${FS.lead + 3}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-src>span{font-size:${FS.meta}px;line-height:1.35}
+.pa-gate{display:flex;align-items:center;justify-content:center;gap:6px;font-size:${FS.meta}px;
+  color:var(--ui-text-secondary);text-align:center}
+.pa-grp{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px;font-size:${FS.meta}px;
+  color:var(--ui-text-secondary)}
+.pa-grp b{font-weight:500;color:var(--ui-text-primary)}
+.pa-done-list{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pa-done{display:flex;align-items:center;gap:8px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-done-text{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pa-done-text>b{font-weight:500;color:var(--ui-text-primary)}
+.pa-done-mark{display:inline-flex;flex:none;color:var(--ui-green)}
+.pa-st-body>.pa-all-activity{align-self:flex-start}
+.pa-park{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:14px;align-items:start;padding:12px 14px;
+  border:1.5px dashed var(--ui-stroke-secondary);border-radius:10px;min-width:0;position:relative}
+.pa-park::before{content:'';position:absolute;left:calc((100% - 56px) / 10 - 1px);top:-20px;height:18px;
+  border-left:1.5px dashed var(--ui-stroke-secondary)}
+.pa-park-head{display:flex;align-items:flex-start;gap:12px;min-width:0}
+.pa-park-head h3{margin:0 0 2px;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-park-head p{margin:0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary)}
+.pa-park-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.pa-clock{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.pa-cols>.pa-allclear{grid-column:1 / 5;grid-row:2;align-self:start;justify-content:center;padding:14px 18px}
+.pa-cols[data-clear="1"]>.pa-st[data-st="written"]{grid-row:1 / span 2}
+.pa-allclear>.pa-msg-text{flex:0 1 auto}
+.pa-allclear,.pa-msg{display:flex;align-items:center;flex-wrap:wrap;gap:14px;padding:18px;
+  border:1.5px dashed var(--ui-stroke-secondary);border-radius:12px;min-width:0}
+.pa-msg-text{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pa-msg-text>h2{margin:0;font-size:${FS.empty}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-msg-text>p{margin:0;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-msg-err{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;box-sizing:border-box;
+  border:2px solid var(--ui-red);color:var(--ui-red)}
+.pa-bulk{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;
+  margin:auto -22px -22px;padding:12px 22px;border-top:${HAIRLINE};background:var(--pa-surface)}
+.pa-bulk-n{flex:1 1 220px;min-width:0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-primary)}
+.pa-bulk-meter{flex:1 1 200px;min-width:0}
+.pa-root .pa-btn-kbd{margin-left:8px}
+.pa-back{display:flex;align-items:center;gap:10px;padding:0 22px;box-sizing:border-box;border-bottom:${HAIRLINE};flex:none;
+  font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0}
+.pa-back-pos{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.pa-detail{display:flex;flex-direction:column;min-width:0;position:relative}
+.pa-detail>.pa-card{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;overflow-wrap:anywhere;
+  animation:${rise('enter')};transition:${move('exit', 'opacity, transform')}}
+.pa-line>.pa-detail{flex:1 0 auto}
+.pa-trip{list-style:none;margin:0;padding:14px 22px 12px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
+  position:relative;border-bottom:${HAIRLINE};flex:none}
+.pa-trip::before,.pa-trip::after{content:'';position:absolute;top:31px;left:calc(22px + (100% - 44px) / 10);height:0;
+  border-top:2px solid var(--ui-stroke-primary)}
+.pa-trip::before{right:calc(22px + (100% - 44px) / 10)}
+.pa-trip::after{width:calc(var(--pa-at) * (100% - 44px) / 5);border-top-color:var(--ui-accent)}
+.pa-tp{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0;padding:0 4px}
+.pa-tp>b{margin-top:6px;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-tp>span{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-tp[data-k="past"]>.pa-node{border-color:var(--ui-accent)}
+.pa-tp[data-k="now"]>.pa-node{border:3px solid var(--ui-accent);color:var(--ui-accent)}
+.pa-rec{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start;padding:18px 22px;
+  flex:1 0 auto;min-width:0}
+.pa-dbody{display:flex;flex-direction:column;gap:10px;min-width:0}
+.pa-dbody>*{flex:none}
+.pa-side{display:flex;flex-direction:column;gap:12px;min-width:0;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-side>.pa-again{align-self:flex-start}
+.pa-rvfacts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;margin:0}
+.pa-rvfacts>dd{margin:0;font-weight:600;color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-dtitle{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;font-size:${FS.detail + 2}px;font-weight:600;
+  letter-spacing:-.015em;color:var(--ui-text-primary);min-width:0;text-wrap:balance}
+.pa-lede{font-size:${FS.body}px}
+.pa-verdict{display:flex;flex-direction:column;gap:6px;padding:0 0 12px;border-bottom:${HAIRLINE}}
+.pa-verdict>.pa-seal{display:none}
+.pa-vtitle::before{content:'';display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;
+  background:var(--pa-tone);vertical-align:.08em}
+.pa-vtext{min-width:0;display:flex;flex-direction:column;gap:6px}
+.pa-vtitle{font-size:${FS.lead}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-chips{display:flex;flex-direction:column;gap:4px;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-chip{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.pa-root .pa-chip-btn{margin:0;padding:0;border:0;background:none;font:inherit;color:var(--ui-text-primary);cursor:pointer;
+  text-align:left;text-decoration:none}
+.pa-chip-glyph{display:inline-grid;place-items:center;width:12px;flex:none;font-weight:700}
+.pa-chip-glyph[data-k="ok"]{color:var(--ui-green)}
+.pa-chip-glyph[data-k="bad"]{color:var(--ui-red)}
+.pa-chip-glyph[data-k="warn"]{color:${WARN}}
+.pa-chip-glyph[data-k="wait"]{color:var(--ui-text-secondary)}
+.pa-steps{display:flex;flex-direction:column;gap:6px;margin-top:4px;font-size:${FS.preview}px;color:var(--ui-text-secondary)}
+.pa-step{display:flex;align-items:center;gap:8px}
+.pa-step-ring{width:9px;height:9px;border-radius:50%;border:2px solid ${tint('var(--ui-text-primary)', 25)};flex:none}
+.pa-toggle{display:flex}
+.pa-test{padding:10px 12px;border:1px dashed var(--ui-stroke-secondary);border-radius:8px;display:flex;
+  flex-direction:column;gap:4px;font-size:${FS.meta}px;line-height:1.5;color:var(--ui-text-secondary)}
+.pa-test-head{display:flex;align-items:baseline;gap:${G.xs}px;flex-wrap:wrap;color:var(--ui-text-primary)}
+.pa-test-title{font-weight:600}
+.pa-test-row[data-w="new"]{color:var(--ui-green)}
+.pa-test-row[data-w="old"]{color:var(--ui-red)}
+.pa-test-act{display:flex;align-items:center;gap:${G.xs}px;flex-wrap:wrap;margin-top:4px}
+.pa-dfoot{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px 14px;padding:${G.xs}px 22px;box-sizing:border-box;
+  border-top:${HAIRLINE};flex:none;min-width:0;position:sticky;bottom:0;z-index:1;background:var(--pa-surface)}
+.pa-dfoot-left{display:flex;align-items:center;flex-wrap:wrap;gap:${G.xs}px 14px;min-width:0;flex:1 1 200px}
+.pa-effect{display:inline-flex;align-items:center;gap:6px;min-width:0;font-size:${FS.meta}px;line-height:1.4;
+  color:var(--ui-text-secondary)}
+.pa-actions{display:flex;flex-wrap:nowrap;flex:none;justify-content:flex-end;align-items:center;gap:${G.xs}px;
+  margin-left:auto;min-width:0}
+.pa-dfoot-right{display:flex;align-items:center;gap:${G.xs}px;margin-left:auto;flex:none;min-width:0}
+.pa-later+.pa-actions{margin-left:0}
+.pa-dfoot[data-armed="1"]{flex-wrap:nowrap}
+.pa-dfoot[data-armed="1"]>.pa-actions{flex:none;flex-wrap:nowrap}
+.pa-written,.pa-memory{display:flex;flex-direction:column;gap:${G.base}px;padding:${G.base}px 22px 22px;min-width:0;
+  box-sizing:border-box}
+.pa-ttl{display:flex;align-items:center;gap:12px;min-width:0}
+.pa-ttl .pa-h1{font-size:${FS.title}px}
+.pa-ttl p{margin:2px 0 0;font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-secondary)}
+.pa-wsplit{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:26px;align-items:start;min-width:0}
+.pa-tl-col{display:flex;flex-direction:column;gap:${G.sm}px;min-width:0}
+.pa-tl-col>.pa-activity-clear{align-self:flex-start}
+.pa-tl{position:relative;display:flex;flex-direction:column;gap:8px;padding-left:44px;min-width:0}
+.pa-tl::before{content:'';position:absolute;left:15px;top:4px;bottom:4px;border-left:2px solid var(--ui-stroke-tertiary)}
+.pa-day{margin-top:6px;font-size:${FS.meta}px;font-weight:600;color:var(--ui-text-secondary)}
+.pa-ent{position:relative;display:flex;flex-direction:column;min-width:0}
+.pa-pin{position:absolute;left:-44px;top:6px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;
+  box-sizing:border-box;background:var(--ui-bg-elevated);border:2px solid var(--ui-stroke-primary);
+  color:var(--ui-text-secondary);z-index:1}
+.pa-pin[data-k="ok"]{border-color:var(--ui-green);color:var(--ui-green)}
+.pa-pin[data-k="bad"]{border-color:var(--ui-red);color:var(--ui-red)}
+.pa-root .pa-ent-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;margin:0;padding:8px 12px;
+  border:1px solid var(--ui-stroke-tertiary);border-radius:8px;background:var(--ui-bg-elevated);font:inherit;
+  color:inherit;text-align:left;cursor:pointer;width:100%;box-sizing:border-box;min-width:0;position:relative;z-index:1;
+  transition:${move('hover', 'border-color')}}
+.pa-root .pa-ent-card:hover{border-color:var(--ui-stroke-secondary)}
+.pa-ent[data-on="1"]>.pa-ent-card{border-color:var(--ui-accent)}
+.pa-deck[data-open="0"]::after{content:'';position:absolute;left:6px;right:6px;bottom:-4px;height:8px;
+  border:1px solid var(--ui-stroke-tertiary);border-top:0;border-radius:0 0 8px 8px;background:var(--ui-bg-elevated)}
+.pa-deck[data-open="0"]{margin-bottom:4px}
+.pa-ent-t{display:flex;align-items:center;gap:6px;min-width:0;font-size:${FS.body}px;font-weight:500;
+  color:var(--ui-text-primary);overflow-wrap:anywhere}
+.pa-ent-time{font-size:${FS.meta}px;color:var(--ui-text-secondary);font-variant-numeric:tabular-nums;justify-self:end;
+  white-space:nowrap}
+.pa-ent-s{font-size:${FS.meta}px;line-height:1.4;color:var(--ui-text-secondary);min-width:0;overflow-wrap:anywhere}
+.pa-ent-state{justify-self:end;white-space:nowrap}
+.pa-deck-chev{color:var(--ui-text-secondary)}
+.pa-deck-subs{display:flex;flex-direction:column;padding:${G.xxs}px 0 0}
+.pa-root .pa-act-sub{display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:10px;align-items:center;
+  height:${H.actSub}px;margin:0;padding:0 8px 0 12px;border:0;border-radius:7px;background:transparent;font:inherit;
+  font-size:${FS.preview}px;color:var(--ui-text-secondary);text-align:left;cursor:pointer;box-sizing:border-box;
+  transition:${move('hover', 'background-color')}}
+.pa-root .pa-act-sub:hover{background:var(--ui-row-hover-background)}
+.pa-root .pa-act-sub[aria-current="true"]{background:var(--ui-row-active-background);color:var(--ui-text-primary)}
+.pa-act-sub-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa-act-sub-text>b{font-weight:600;color:var(--ui-text-primary)}
+.pa-act-sub-time{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pa-clear-arm{display:flex;flex-direction:column;gap:${G.xs}px}
+.pa-clear-row{display:flex;gap:${G.xs}px;flex-wrap:wrap}
+.pa-wsplit>.pa-detail{min-width:0}
+.pa-dh{display:flex;flex-direction:column;gap:6px;padding:0;flex:none;min-width:0}
+.pa-dh-when{display:none;font-size:${FS.meta}px;color:var(--ui-text-secondary)}
+.pa-crumb{display:flex;align-items:center;gap:7px;font-size:${FS.meta}px;color:var(--ui-text-secondary);min-width:0;
+  flex-wrap:wrap}
+.pa-crumb>span{min-width:0;overflow-wrap:anywhere}
+.pa-crumb-sep{color:var(--ui-text-secondary)}
+.pa-crumb-icon{display:inline-flex;color:var(--ui-text-secondary)}
+.pa-wsplit .pa-dbody{padding:10px 0}
+.pa-wsplit .pa-dfoot{padding:${G.xs}px 0;position:static}
+.pa-wsplit .pa-actions{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;min-width:0}
+.pa-wsplit .pa-act-note{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.pa-wsplit .pa-dtitle{font-size:${FS.detail}px}
+.pa-mfiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0}
+.pa-root .pa-mfile{display:flex;align-items:center;gap:${G.base}px;margin:0;padding:14px 16px;
+  border:1px solid var(--ui-stroke-tertiary);border-radius:10px;background:var(--ui-bg-elevated);font:inherit;color:inherit;
+  text-align:left;cursor:pointer;min-width:0;transition:${move('hover', 'border-color')}}
+.pa-root .pa-mfile:hover{border-color:var(--ui-stroke-secondary)}
+.pa-root .pa-mfile[data-on="1"]{border-color:var(--ui-accent)}
+.pa-mfile>.pa-ring{width:76px;height:76px}
+.pa-mfile>.pa-ring>circle{stroke-width:7}
+.pa-mfile-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pa-mfile-name{font-size:${FS.detail}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-mfile-pct{font-size:${FS.title + 2}px;font-weight:600;color:var(--ui-text-primary);font-variant-numeric:tabular-nums}
+.pa-mfile-sub{font-size:${FS.meta}px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
+.pa-banner{display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px ${G.sm}px;padding:10px 12px;
+  --pa-ct:var(--ui-orange);${CALLOUT};font-size:${FS.meta}px;line-height:1.45;color:var(--ui-text-primary)}
+.pa-banner>span{flex:1 1 220px;min-width:0}
+.pa-notes-wrap{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
+.pa-notes-head{margin:0;font-size:${FS.body}px;font-weight:600;color:var(--ui-text-primary)}
+.pa-notes{display:flex;flex-direction:column}
+.pa-note-row{display:grid;grid-template-columns:22px minmax(0,1fr) 90px 28px;gap:10px;align-items:center;
+  padding:8px 10px;border-bottom:${HAIRLINE};min-width:0}
+.pa-note-row[data-armed="1"]{background:var(--hx-field);border-radius:${R.ctl}px}
+.pa-note-n{font-size:${FS.meta}px;color:var(--ui-text-secondary);text-align:right;font-variant-numeric:tabular-nums}
+.pa-note-text{font-size:${FS.body}px;line-height:1.5;color:var(--ui-text-primary);min-width:0;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis}
+.pa-note-row[data-armed="1"]>.pa-note-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.pa-len{display:block;position:relative;height:4px;border-radius:2px;overflow:hidden;
+  background:${tint('var(--ui-text-primary)', 12)}}
+.pa-len>i{display:block;height:100%;border-radius:2px;background:var(--ui-text-secondary)}
+.pa-len[data-long="1"]>i{background:var(--ui-orange)}
+.pa-note-ask{grid-column:2 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:${G.xs}px;font-size:${FS.meta}px;
+  color:var(--ui-text-primary)}
+.pa-note-ask>span{flex:1 1 200px;min-width:0}
+.pa-promise{font-size:${FS.meta}px;color:var(--ui-text-secondary)}
 @keyframes pa-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .pa-view{animation:${rise('enter')}}
-.pa-root .pa-row:hover,.pa-root .pa-tab:hover,.pa-root .pa-memrow:hover,.pa-root .pa-act-sub:hover{transition:none}
+@container (max-width:1100px){
+  .pa-rec{grid-template-columns:minmax(0,1fr) 260px;gap:18px}
+  .pa-wsplit{grid-template-columns:minmax(0,1fr) 320px;gap:18px}}
 @container (max-width:760px){
-  .pa-bar{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:${H.bar}px auto;padding:0}
-  .pa-bar-title{padding-left:12px}.pa-bar-side{padding-right:12px}
-  .pa-bar-tabs{grid-column:1 / -1;grid-row:2;padding:8px 12px;border-top:${HAIRLINE}}
-  .pa-split{grid-template-columns:minmax(0,1fr)}
-  .pa-split>.pa-list{border-right:0}
-  .pa-split[data-open="1"]>.pa-list{display:none}
-  .pa-split[data-open="0"]>.pa-detail{display:none}
-  .pa-split[data-selecting="1"]{display:flex;flex-direction:column}
-  .pa-split[data-selecting="1"]>.pa-list{flex:1 1 0;min-height:0}
-  .pa-split[data-selecting="1"]>.pa-detail{display:flex;flex:none;border-top:${HAIRLINE}}
-  .pa-split[data-selecting="1"]>.pa-detail>.pa-card{flex:none}
-  .pa-split[data-selecting="1"] .pa-bulk>.pa-dh,.pa-split[data-selecting="1"] .pa-bulk>.pa-dbody{display:none}
-  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}
-  .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:${HAIRLINE}}
-  .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
-  .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
-  .pa-memory>.pa-detail>.pa-card{flex:none}
-  .pa-memory .pa-dbody{flex:none;overflow:visible}
-  .pa-back{display:flex}
-  .pa-dh{padding:12px 12px 0}.pa-verdict{margin:12px 12px 0}.pa-test{margin:10px 12px 0}.pa-dbody{padding:12px}
-  .pa-dfoot{padding:${G.xs}px 12px}
-  .pa-dfoot>.pa-actions{flex-wrap:nowrap}
-  .pa-detail>.pa-card{overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
-  .pa-detail>.pa-card>.pa-dbody{flex:none;overflow:visible;mask-image:none}
-  .pa-detail>.pa-card>.pa-back{position:sticky;top:0;z-index:1;background:var(--pa-surface)}
-  .pa-detail>.pa-card>.pa-dfoot{position:sticky;bottom:0;z-index:1;margin-top:auto;background:var(--pa-surface)}
-  .pa-root:has(.pa-split[data-open="1"]>.pa-detail>.pa-card)>.pa-top{display:none}
-  .pa-memory .pa-memrows{gap:${G.xs}px;padding:${G.xs}px}
-  .pa-memory .pa-memrow{border-bottom:0}
-  .pa-note-row{grid-template-columns:22px minmax(0,1fr) auto}
-  .pa-note-row>.pa-note-len{grid-column:2;grid-row:2;padding-top:0}
-  .pa-note-row>.pa-tipwrap{grid-column:3;grid-row:1}}
+  .pa-hd{flex-wrap:wrap;padding:14px 14px 12px}
+  .pa-hd-side{width:100%;justify-content:space-between}
+  .pa-strip{padding:${G.xs}px 14px}
+  .pa-line{padding:12px 14px 18px}
+  .pa-line[data-open="1"]{padding:0}
+  .pa-bulk{margin:auto -14px -18px;padding:10px 14px}
+  .pa-cols{grid-template-columns:minmax(0,1fr);gap:0}
+  .pa-st{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:12px;align-items:start;text-align:left;
+    padding-bottom:18px}
+  .pa-st>.pa-node{width:44px;height:44px;grid-row:1 / span 2}
+  .pa-st>.pa-node>.pa-ico{width:22px;height:22px}
+  .pa-st-text{grid-column:2;margin-top:2px}
+  .pa-st-body{grid-column:2;margin-top:8px}
+  .pa-st:not([data-st="written"])::after{top:44px;left:21px;width:0;height:calc(100% - 44px);border-top:0;
+    border-left:2px solid var(--ui-stroke-primary)}
+  .pa-st[data-out="lit"]::after{border-left-color:var(--ui-accent)}
+  .pa-st[data-out="dash"]::after{border-left-style:dashed}
+  .pa-arrow{display:none}
+  .pa-cols>.pa-allclear{grid-column:1;grid-row:auto;margin-bottom:18px}
+  .pa-cols[data-clear="1"]>.pa-st[data-st="written"]{grid-row:auto}
+  .pa-park::before{display:none}
+  .pa-gate{justify-content:flex-start}
+  .pa-cnt{top:-4px;right:-8px}
+  .pa-srcs{flex-direction:row;flex-wrap:wrap}
+  .pa-src{padding:4px 8px}
+  .pa-park,.pa-park-cards{grid-template-columns:minmax(0,1fr)}
+  .pa-back{padding:0 14px}
+  .pa-trip{padding:12px 14px 10px}
+  .pa-trip::before,.pa-trip::after{top:29px;left:calc(14px + (100% - 28px) / 10)}
+  .pa-trip::before{right:calc(14px + (100% - 28px) / 10)}
+  .pa-trip::after{width:calc(var(--pa-at) * (100% - 28px) / 5)}
+  .pa-rec{grid-template-columns:minmax(0,1fr);padding:14px}
+  .pa-dfoot{padding:${G.xs}px 14px}
+  .pa-written,.pa-memory{padding:12px 14px 18px}
+  .pa-wsplit{grid-template-columns:minmax(0,1fr)}
+  .pa-note-row{grid-template-columns:22px minmax(0,1fr) 28px}
+  .pa-note-row>.pa-len{grid-column:2;grid-row:2}
+  .pa-body{scrollbar-gutter:stable}}
 @container (max-width:560px){
+  .pa-tools{padding-left:0;border-left:0}
+  .pa-mfiles{grid-template-columns:minmax(0,1fr)}
   .pa-crumb>.pa-crumb-end[data-when]{display:none}
   .pa-dh-when{display:block}
-  .pa-meter-box{flex:1 1 100%;min-width:0}
   .pa-btn-kbd{display:none}
-  .pa-verdict{grid-template-columns:minmax(0,1fr)}
-  .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}}
-@container (max-width:760px){.pa-pips,.pa-gm-bar{display:none}}
-@container (max-width:480px){.pa-bar .pa-progress{display:none}}
-.pa-bar:is([data-fit="1"],[data-fit="2"]) :is(.pa-pips,.pa-gm-bar),.pa-bar[data-fit="2"] .pa-progress{display:none}
-.pa-root{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);
-  box-sizing:border-box;--pa-surface:var(--ui-bg-chrome);--pa-on-deep:var(--ui-text-primary)}
-.pa-root>.pa-bar{grid-column:1 / -1;grid-row:1}
-.pa-root>.pa-strip{grid-column:1 / -1;grid-row:2}
-.pa-root>.pa-top{grid-column:1 / -1;grid-row:3}
-.pa-root>.pa-body{grid-column:1 / -1;grid-row:4;min-height:0}
-.pa-list,.pa-detail{overflow:hidden}
-.pa-tab>.pa-tag{margin-left:${G.xxs}px}
-.pa-sum-text>.pa-row-title{white-space:normal;overflow:visible}
-.pa-top{justify-content:flex-start;align-items:stretch;padding:0;gap:0;border-bottom:${HAIRLINE};overflow:hidden}
-.pa-top>.pa-hero{margin-bottom:0}
-.pa-top>.pa-clear-last,.pa-top>.pa-clear-warn{justify-content:flex-start;text-align:left;
-  padding:${G.xs}px ${G.lg}px ${G.sm}px;border-top:${HAIRLINE}}
-.pa-top>.pa-clear-warn+.pa-clear-last,.pa-top>.pa-clear-last+.pa-clear-warn{border-top:0;padding-top:0}
-.pa-top .pa-clear-seal{font-size:${FS.hero}px;font-weight:600;font-variant-numeric:tabular-nums}
-.pa-top[data-slim="1"]>.pa-hero{gap:${G.base}px;
-  padding:${G.sm}px ${G.base}px ${G.sm}px ${G.lg}px}
-.pa-top[data-slim="1"] .pa-hero-lead{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:${G.sm}px;
-  row-gap:2px}
-.pa-top[data-slim="1"] .pa-clear-title{font-size:${FS.brand}px}
-.pa-top[data-slim="1"]>.pa-clear-last,.pa-top[data-slim="1"]>.pa-clear-warn{display:none}
-.pa-hero{align-self:stretch;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:${G.lg}px;
-  align-items:center;padding:${G.lg}px;text-align:left;color:var(--pa-on-deep);margin-bottom:${G.sm}px}
-.pa-hero[data-week="0"]{grid-template-columns:minmax(0,1fr)}
-.pa-hero-lead{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
-.pa-hero .pa-clear-seal{display:none}
-.pa-hero .pa-clear-title{color:var(--pa-on-deep);font-size:${FS.hero}px;letter-spacing:-.02em}
-.pa-hero .pa-clear-body{color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
-.pa-week{display:flex;flex-direction:column;gap:${G.xs}px;min-width:0}
-.pa-week-title{font-size:${FS.meta}px;font-weight:500}
-.pa-week-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:${G.xs}px;height:${H.week}px}
-.pa-week-day{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;font-size:${FS.micro}px;
-  color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
-.pa-week-day[data-today="1"]{color:var(--pa-on-deep);font-weight:600}
-.pa-week-col{flex:1;width:100%;max-width:26px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;
-  border-radius:7px;background:color-mix(in srgb,var(--pa-on-deep) 10%,transparent);overflow:hidden}
-.pa-week-col>i{display:block;border-radius:5px;min-height:0}
-.pa-week-col>i[data-k="apply"]{background:var(--ui-accent)}
-.pa-week-col>i[data-k="rejected"]{background:color-mix(in srgb,var(--ui-accent) 40%,transparent)}
-.pa-week-day[data-gap="1"]>.pa-week-col{background:repeating-linear-gradient(135deg,
-  color-mix(in srgb,var(--pa-on-deep) 16%,transparent) 0 3px,transparent 3px 7px)}
-.pa-week-note{font-size:${FS.micro}px;color:color-mix(in srgb,var(--pa-on-deep) 86%,transparent)}
-@container (max-width:560px){
-  .pa-hero{grid-template-columns:minmax(0,1fr);gap:${G.base}px;padding:${G.base}px ${G.lg}px}
-  .pa-week-bars{height:${H.weekNarrow}px}
-  .pa-top[data-slim="1"] .pa-clear-body{display:none}
-}
-@container (min-width:761px){
-  .pa-root>.pa-bar{grid-column:1;grid-row:1 / -1;width:${W.rail}px;display:flex;flex-direction:column;
-    align-items:stretch;gap:${G.xxs}px;padding:14px 10px 12px;border-bottom:0;border-right:${HAIRLINE};
-    color:var(--pa-on-deep);background:var(--ui-sidebar-surface-background)}
-  .pa-root>.pa-strip,.pa-root>.pa-top,.pa-root>.pa-body{grid-column:2}
-  .pa-root>.pa-strip{grid-row:1}
-  .pa-root>.pa-top{grid-row:2}
-  .pa-root>.pa-body{grid-row:3 / -1}
-  .pa-bar-title{color:var(--pa-on-deep);font-size:${FS.row}px;padding:0 8px;margin-bottom:12px}
-  .pa-bar-tabs{display:block}
-  .pa-tabs{flex-direction:column;align-items:stretch;gap:2px;padding:0;background:transparent}
-  .pa-root .pa-tab{min-height:28px;padding:0 8px;border:1px solid transparent;border-radius:${R.ctl}px;
-    font-size:${FS.row}px;color:var(--ui-text-secondary)}
-  .pa-root .pa-tab:hover{color:var(--ui-text-primary);background:var(--ui-control-hover-background)}
-  .pa-root .pa-tab[data-on="1"]{background:var(--ui-bg-tertiary);border-color:var(--ui-stroke-tertiary);
-    color:var(--ui-text-primary);font-weight:500;box-shadow:none}
-  .pa-tab>.pa-tag{margin-left:auto}
-  .pa-root .pa-tab:focus-visible{outline-color:var(--pa-on-deep)}
-  .pa-bar-side{margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
-    gap:10px 8px;padding:12px 8px 0;border-top:${HAIRLINE};background:transparent}
-  .pa-bar-side>.pa-progress,.pa-bar-side>.pa-gms{grid-column:1 / -1}
-  .pa-progress{flex-wrap:wrap;row-gap:6px}
-  .pa-gms{flex-direction:column;align-items:stretch;gap:8px}
-  .pa-gm>.pa-gm-bar{flex:1;width:auto}}
-@container (min-width:761px) and (max-width:1100px){.pa-meter-box{flex:1}
-  .pa-split{grid-template-columns:${W.listMid}px minmax(0,1fr)}
-  .pa-dh{padding:12px 14px 0}.pa-dbody{padding:12px 14px}.pa-dfoot{padding:${G.xs}px 14px}
-  .pa-verdict{grid-template-columns:minmax(0,1fr);margin:12px 14px 0}
-  .pa-test{margin:10px 14px 0}
-  .pa-vside{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left}
-  .pa-root .pa-row{grid-template-columns:22px minmax(0,1fr) auto auto;padding:8px 10px;column-gap:8px}
-  .pa-tile{width:22px;height:22px}.pa-cb{left:10px;top:8px;width:22px;height:22px}
-  .pa-sum-row{grid-template-columns:22px minmax(0,1fr);gap:4px 8px;padding:8px}
-  .pa-sum-row>.pa-sum-chip{grid-column:2}
-  .pa-split.pa-memory{display:flex;flex-direction:column;overflow-y:auto}
-  .pa-split.pa-memory>.pa-list{display:flex;flex:none;border-bottom:0}
-  .pa-split.pa-memory>.pa-detail{display:flex;flex:none}
-  .pa-memory>.pa-list>.pa-list-foot,.pa-memory>.pa-list>.pa-list-head,.pa-memory .pa-back{display:none}
-  .pa-memory .pa-memrows{flex-direction:row;gap:${G.xs}px;padding:${G.xs}px}
-  .pa-memory .pa-memrows>.pa-memrow{flex:1 1 0;min-width:0;border-bottom:0}
-  .pa-memory>.pa-detail>.pa-card{flex:none}
-  .pa-memory .pa-dbody{flex:none;overflow:visible}}
+  .pa-tp>span:not(.pa-node){display:none}
+  .pa-meter-box{flex:1 1 100%;min-width:0}}
 `
 
 const fieldBox = height => ({ height, overflowY: 'auto', overflowX: 'hidden' })
@@ -1404,37 +1382,6 @@ function useFade(inner) {
   return { ref, more: more ? '1' : '0', sync }
 }
 
-const BAR_STEPS = 2
-const barSpills = bar => [...bar.querySelectorAll('*')].some(el => el.clientWidth > 0
-  && el.scrollWidth > el.clientWidth + 1 && window.getComputedStyle(el).overflowX === 'visible')
-
-function fitBar(bar) {
-  const list = bar.querySelector('[role="tablist"]')
-  if (list) {
-    const down = window.getComputedStyle(list).flexDirection === 'column'
-    list.setAttribute('aria-orientation', down ? 'vertical' : 'horizontal')
-  }
-  for (let step = 0; step <= BAR_STEPS; step++) {
-    bar.setAttribute('data-fit', String(step))
-    if (!barSpills(bar)) return
-  }
-}
-
-function useBarFit() {
-  const ref = useRef(null)
-  useLayoutEffect(() => {
-    if (ref.current) fitBar(ref.current)
-  })
-  useEffect(() => {
-    const bar = ref.current
-    if (!bar || typeof window.ResizeObserver === 'undefined') return undefined
-    const watch = new window.ResizeObserver(() => fitBar(bar))
-    watch.observe(bar)
-    return () => watch.disconnect()
-  }, [])
-  return ref
-}
-
 function Raw({ children, height, tone, className }) {
   const fade = useFade(true)
   const diff = tone === 'remove' ? DIFF_OLD : tone === 'add' ? DIFF_NEW : null
@@ -1472,9 +1419,6 @@ function Field({ label: title, children }) {
 }
 
 const TONE_COLOR = { ok: 'var(--ui-green)', warn: WARN, bad: 'var(--ui-red)', off: 'var(--ui-text-tertiary)' }
-const pendingBadge = n => jsx(Badge, {
-  className: 'pa-tag', variant: 'solid', children: String(n)
-}, 'badge')
 
 const errText = e => {
   const text = String(e?.message || e || '')
@@ -1595,43 +1539,6 @@ function useLeave(key) {
   return { leaving, leave }
 }
 
-function Tabs({ label: name, items, value, onSelect, idBase, listClass = 'pa-tabs', tabClass = 'pa-tab' }) {
-  const refs = useRef({})
-  const keys = items.map(item => item.id)
-  const onKeyDown = e => {
-    const at = keys.indexOf(value)
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
-    const next = step ? at + step : { Home: 0, End: keys.length - 1 }[e.key]
-    if (next === undefined) return
-    e.preventDefault()
-    const id = keys[(next + keys.length) % keys.length]
-    refs.current[id]?.focus()
-    onSelect(id)
-  }
-  return jsx('div', {
-    role: 'tablist',
-    'aria-label': name,
-    'aria-orientation': listClass === 'pa-tabs' ? undefined : 'vertical',
-    className: listClass,
-    style: listClass === 'pa-tabs' ? { overflowX: 'auto', flex: '1 1 auto' } : undefined,
-    onKeyDown,
-    children: items.map(item =>
-      jsx('button', {
-        ref: el => { refs.current[item.id] = el },
-        type: 'button',
-        role: 'tab',
-        id: `${idBase}-${item.id}`,
-        'aria-selected': value === item.id,
-        'aria-controls': `${idBase}-panel`,
-        tabIndex: value === item.id ? 0 : -1,
-        className: tabClass,
-        'data-on': value === item.id ? '1' : '0',
-        onClick: () => onSelect(item.id),
-        children: item.label
-      }, item.id))
-  }, 'tabs')
-}
-
 const reviewed = item => {
   const review = item.review || {}
   return review.status === 'done' && !(review.hard || []).length
@@ -1704,7 +1611,6 @@ const cardState = (hard, stale, fix, failedBefore, status, verdict) => (hard ? [
             : verdict === 'reject' ? ['pa.status.reject', 'destructive']
               : verdict === 'fix' ? ['pa.status.fix', 'warn']
                 : ['pa.status.approve', 'success'])
-const TONE = { destructive: 'var(--ui-red)', success: 'var(--ui-accent)', muted: 'var(--ui-text-tertiary)' }
 const tally = (ops, mark) => ops.reduce((n, op) =>
   n + ((mark === '+' ? op.added : op.removed) ?? lineRows(op).filter(r => r[0] === mark).length), 0)
 const alertBox = (key, children, danger) =>
@@ -2143,7 +2049,6 @@ const recordFile = (subsystem, item) => {
 const tileOf = (subsystem, file) => (subsystem === 'memory' ? (isProfile(file) ? UsersIcon : BrainIcon) : BookIcon)
 const markOf = (subsystem, file) => (subsystem !== 'memory' ? 'var(--ui-accent)'
   : isProfile(file) ? 'var(--ui-cyan)' : 'var(--ui-purple)')
-const Tile = ({ of }) => jsx('span', { className: 'pa-tile', 'aria-hidden': true, children: icon(of, 15) }, 'tile')
 const AGO_SHORT = [
   [60, 'pa.ago.now'], [60, 'pa.ago.m'], [24, 'pa.ago.h'], [7, 'pa.ago.d'], [4.35, 'pa.ago.w'], [12, 'pa.ago.mo'],
   [Infinity, 'pa.ago.y']
@@ -2156,48 +2061,6 @@ const ago = (t, ts) => {
     v /= step
   }
   return ''
-}
-const weekSeries = (entries, now, cut) => {
-  const base = new Date(now * 1000)
-  const at = k => new Date(base.getFullYear(), base.getMonth(), base.getDate() + k).getTime() / 1000
-  const oldest = Math.min(...entries.map(e => Number(e.ts) || Infinity))
-  return Array.from({ length: 7 }, (_, i) => {
-    const from = at(i - 6)
-    const to = at(i - 5)
-    const mine = entries.filter(e => e.ts >= from && e.ts < to)
-    return {
-      day: new Date(from * 1000).getDay(), today: i === 6, gap: Boolean(cut) && from <= oldest,
-      saved: mine.filter(e => e.kind === 'apply').length, notSaved: mine.filter(e => e.kind === 'rejected').length
-    }
-  })
-}
-function WeekChart({ t, entries, cut }) {
-  const days = weekSeries(entries, Date.now() / 1000, cut)
-  const top = Math.max(1, ...days.map(d => d.saved + d.notSaved))
-  const sum = k => days.reduce((n, d) => n + (d.gap ? 0 : d[k]), 0)
-  return jsxs('div', {
-    className: 'pa-week',
-    children: [
-      jsx('div', { className: 'pa-week-title', children: t('pa.week.title') }, 'title'),
-      jsx('div', {
-        className: 'pa-week-bars', role: 'img', 'aria-label': t('pa.week.label', sum('saved'), sum('notSaved')),
-        children: days.map((d, i) => jsxs('div', {
-          className: 'pa-week-day', 'data-gap': d.gap ? '1' : '0', 'data-today': d.today ? '1' : '0',
-          children: [
-            jsx('div', {
-              className: 'pa-week-col',
-              children: d.gap ? null : [
-                jsx('i', { 'data-k': 'rejected', style: { height: `${(d.notSaved * 100) / top}%` } }, 'no'),
-                jsx('i', { 'data-k': 'apply', style: { height: `${(d.saved * 100) / top}%` } }, 'yes')
-              ]
-            }, 'col'),
-            jsx('span', { 'aria-hidden': true, children: t('pa.week.day', d.day) }, 'name')
-          ]
-        }, i))
-      }, 'bars'),
-      days.some(d => d.gap) ? jsx('div', { className: 'pa-week-note', children: t('pa.week.gap') }, 'gap') : null
-    ]
-  }, 'week')
 }
 const decidedToday = entries => entries
   .filter(e => (e.kind === 'apply' || e.kind === 'rejected') && dayKey(e.ts) === dayKey(Date.now() / 1000))
@@ -2266,81 +2129,6 @@ const restoreEntry = async (t, entry, onChanged) => {
   }
 }
 
-function BarMeters({ data, t, reading }) {
-  if (reading) {
-    return jsx('span', {
-      className: 'pa-gms',
-      children: ['memory', 'user'].map(id => {
-        const word = t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
-        return jsxs('span', {
-          className: 'pa-gm', 'data-file': id, 'data-reading': '1', role: 'img',
-          'aria-label': t('pa.kpi.reading', word), style: { '--pa-tone': TONE_COLOR.off },
-          children: [
-            jsx('span', { className: 'pa-gm-word', 'aria-hidden': true, children: word }, 'word'),
-            jsx('span', {
-              className: 'pa-gm-bar', 'aria-hidden': true, children: jsx('i', { style: { width: 0 } }, 'fill')
-            }, 'bar'),
-            jsx('b', { 'aria-hidden': true, children: '—' }, 'pct')
-          ]
-        }, id)
-      })
-    }, 'meters')
-  }
-  const rows = ['memory', 'user'].filter(id => data?.[id])
-  if (!rows.length) return null
-  return jsx('span', {
-    className: 'pa-gms',
-    children: rows.map(id => {
-      const { pct, tone } = fill(data[id])
-      const word = t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
-      return jsxs('span', {
-        className: 'pa-gm',
-        'data-file': id,
-        role: 'img',
-        'aria-label': t('pa.kpi.meter', word, pct),
-        style: { '--pa-tone': TONE_COLOR[tone] },
-        children: [
-          jsx('span', { className: 'pa-gm-word', 'aria-hidden': true, children: word }, 'word'),
-          jsx('span', {
-            className: 'pa-gm-bar', 'aria-hidden': true,
-            children: jsx('i', { style: { width: `${Math.min(100, pct)}%` } }, 'fill')
-          }, 'bar'),
-          jsx('b', { 'aria-hidden': true, children: `${pct}%` }, 'pct')
-        ]
-      }, id)
-    })
-  }, 'meters')
-}
-
-const PIPS_FROM = 2
-function DayProgress({ entries, n, compact }) {
-  const t = usePluginI18n(ID)
-  const done = decidedToday(entries)
-  const all = done.length + n
-  if (!all && !compact) return null
-  const text = t('pa.day.decided', done.length, all)
-  const pips = all >= PIPS_FROM && all <= 12
-  if (compact && !pips) return null
-  return jsxs('div', {
-    className: 'pa-progress',
-    children: [
-      compact ? null : jsx('span', { children: t('pa.day.today') }, 'today'),
-      pips
-        ? jsx('span', {
-            className: 'pa-pips',
-            role: 'img',
-            'aria-label': text,
-            children: [
-              ...done.map((e, i) => jsx('i', { className: 'pa-pip', 'data-k': e.kind }, `d${i}`)),
-              ...Array.from({ length: n }, (_, i) => jsx('i', { className: 'pa-pip' }, `w${i}`))
-            ]
-          }, 'pips')
-        : null,
-      compact ? null : jsx('span', { className: 'pa-progress-text', children: text }, 'text')
-    ]
-  })
-}
-
 function RefreshButton({ onClick, label: title, tip }) {
   return jsx(Tip, {
     label: tip || title,
@@ -2388,101 +2176,10 @@ const recordTitle = (t, subsystem, item) => {
 }
 const rowTitle = (t, subsystem, item) => (item.summary ? plainGist(t, item.summary) : recordTitle(t, subsystem, item))
   || t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
-const rowPreview = (t, subsystem, item) => {
-  const plain = item.plain || {}
-  if (item.parts) {
-    const files = [...new Set((item.result || []).map(r => String(r.file || '').split('/').pop()).filter(Boolean))]
-    return files.join(' · ') || t('pa.grp.changes', item.parts.length)
-  }
-  if (subsystem === 'memory') return plain.headline || ''
-  return (plain.what || [])[0] || plain.headline || ''
-}
-const stateOf = item => {
-  const review = item.review || {}
-  const facts = reviewFacts(review)
-  const plain = item.plain || {}
-  const stale = item.parts ? (item.stale || []) : (plain.stale || [])
-  const failedBefore = item.parts
-    ? (item.parts || []).some(p => (p.plain || {}).last_error)
-    : Boolean(plain.last_error)
-  return cardState(facts.hard.length > 0, stale.length > 0, Boolean(plain.fix), failedBefore, facts.status,
-    review.verdict)
-}
-const ROW_WORD = {
-  'pa.status.approve': 'pa.row.safe',
-  'pa.status.fix': 'pa.row.edit',
-  'pa.status.fixFirst': 'pa.row.edit',
-  'pa.status.reviewing': 'pa.row.checking'
-}
 const FAMILIES = ['duplicate', 'contradiction', 'wrong', 'rule']
 const FAMILY_CHIP = {
   duplicate: 'pa.chip.duplicate', contradiction: 'pa.chip.contradiction', wrong: 'pa.chip.wrong', rule: 'pa.chip.rule',
   known: 'pa.chip.known', session: 'pa.chip.session', trim: 'pa.chip.trim', drift: 'pa.chip.drift'
-}
-const dotStates = (subsystem, item) => {
-  if ((item.review || {}).status !== 'done') return FAMILIES.map(() => 'wait')
-  const rows = checkRows(subsystem, item)
-  const flag = stateOf(item)[1] === 'warn' ? 'warn' : 'bad'
-  return FAMILIES.map(f => (rows.some(r => r.state === 'bad' && r.key.startsWith(f)) ? flag : 'ok'))
-}
-
-function QueueRow({ unit, on, t, onSelect, picking, picked, onPick, cand }) {
-  const { subsystem, item } = unit
-  const key = queueKey(unit)
-  const title = rowTitle(t, subsystem, item)
-  const typeLabel = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
-  const [stateKey] = stateOf(item)
-  const word = cand ? t('pa.cand.word') : t(ROW_WORD[stateKey] || stateKey)
-  return jsxs('div', {
-    className: 'pa-rowwrap',
-    role: 'listitem',
-    'data-on': on ? '1' : '0',
-    'data-picking': picking ? '1' : undefined,
-    'data-picked': picking && picked ? '1' : undefined,
-    style: { height: H.row, '--pa-id': markOf(subsystem, recordFile(subsystem, item)) },
-    children: [
-      picking
-        ? jsx('span', {
-            className: 'pa-cb',
-            'data-on': picked ? '1' : '0',
-            children: jsx(Checkbox, {
-              className: 'pa-pick', checked: picked === true,
-              'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
-              onCheckedChange: () => onPick(key)
-            })
-          }, 'pick')
-        : null,
-      jsxs('button', {
-        type: 'button',
-        className: 'pa-row',
-        'data-key': key,
-        'aria-current': on ? 'true' : undefined,
-        'aria-label': `${typeLabel}: ${title} · ${word}`,
-        onClick: () => onSelect(key),
-        children: [
-          jsx(Tile, { of: tileOf(subsystem, recordFile(subsystem, item)) }, 'tile'),
-          jsxs('span', {
-            className: 'pa-row-text',
-            children: [
-              jsx('span', { className: 'pa-row-title', children: title }, 'title'),
-              jsx('span', { className: 'pa-row-preview', children: rowPreview(t, subsystem, item) }, 'preview'),
-              jsxs('span', {
-                className: 'pa-row-meta',
-                children: [
-                  jsx('span', {
-                    className: 'pa-dots', 'aria-hidden': true,
-                    children: dotStates(subsystem, item).map((s, i) => jsx('i', { className: 'pa-dot', 'data-k': s }, i))
-                  }, 'dots'),
-                  jsx('span', { className: 'pa-row-word', children: word }, 'word')
-                ]
-              }, 'meta')
-            ]
-          }, 'text'),
-          jsx('span', { className: 'pa-row-time', children: ago(t, item.staged_at) }, 'time')
-        ]
-      }, 'row')
-    ]
-  }, key)
 }
 
 function DoneRow({ done, entries, t, onChanged }) {
@@ -2664,7 +2361,810 @@ const VERDICT = {
   edit: WARN, unchecked: WARN, running: 'var(--ui-accent)', safe: 'var(--ui-green)'
 }
 
-function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf }) {
+const CIRCLE = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0-${2 * r} 0`
+const GLYPH = {
+  agent: ['M8 8h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3z', 'M12 4v4M9.5 13h.01M14.5 13h.01'],
+  alert: [CIRCLE(12, 12, 8.5), 'M12 8v5M12 16.2v.1'],
+  book: ['M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z', 'M12 6.5v13'],
+  chat: ['M4 5h16v11H9l-5 4z'],
+  check: ['M5 12.5l4.5 4.5L19 7.5'],
+  edit: ['M4 20h4L19 9l-4-4L4 16z'],
+  eye: ['M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z', CIRCLE(12, 12, 2.5)],
+  file: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5'],
+  flask: ['M9.5 3.5h5M10 3.5v6L4.8 18.3A1.5 1.5 0 0 0 6.1 20.5h11.8a1.5 1.5 0 0 0 1.3-2.2L14 9.5v-6', 'M7.5 14.5h9'],
+  gear: [CIRCLE(12, 12, 3),
+    'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1'],
+  hourglass: ['M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9'],
+  left: ['M14 7l-5 5 5 5'],
+  lock: ['M7 11h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z', 'M8 11V8a4 4 0 0 1 8 0v3'],
+  moon: ['M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z'],
+  out: ['M14 4h6v6M20 4l-9 9M18 14v6H4V6h6'],
+  person: [CIRCLE(12, 8, 3.5), 'M5 20c1.2-3.6 4-5 7-5s5.8 1.4 7 5'],
+  refresh: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3', 'M19.5 4.5v4h-4'],
+  right: ['M10 7l5 5-5 5'],
+  shield: ['M12 3l7 3v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z', 'M9 12l2 2 4-4'],
+  spark: ['M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z', 'M18.5 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z'],
+  spin: ['M12 3.5a8.5 8.5 0 1 1-8.5 8.5'],
+  trash: ['M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13'],
+  undo: ['M9 7L5 11l4 4', 'M5 11h9a5 5 0 0 1 0 10h-2'],
+  x: ['M7 7l10 10M17 7L7 17']
+}
+const Glyph = ({ of, size = 14, tone }) => jsx('svg', {
+  className: 'pa-ico', viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': true, focusable: 'false', 'data-g': of,
+  'data-tone': tone || undefined,
+  children: (GLYPH[of] || []).map((d, i) => jsx('path', { d }, `p${i}`))
+})
+const ringArc = (r, pct) => {
+  const c = 2 * Math.PI * r
+  return `${(c * Math.min(100, Math.max(0, Number(pct) || 0))) / 100} ${c}`
+}
+const Ring = ({ pct, box, r, warm }) => jsxs('svg', {
+  className: 'pa-ring', viewBox: `0 0 ${box} ${box}`, 'aria-hidden': true, 'data-warm': warm ? '1' : '0',
+  children: [
+    jsx('circle', { className: 'pa-ring-bg', cx: box / 2, cy: box / 2, r }, 'bg'),
+    jsx('circle', { className: 'pa-ring-fg', cx: box / 2, cy: box / 2, r, strokeDasharray: ringArc(r, pct) }, 'fg')
+  ]
+})
+const STATIONS = [
+  ['proposes', 'spark', 'pa.st.proposes', 'pa.st.proposesSub'], ['rules', 'shield', 'pa.st.rules', 'pa.st.rulesSub'],
+  ['reviewer', 'eye', 'pa.st.reviewer', ''], ['you', 'person', 'pa.st.you', 'pa.st.youSub'],
+  ['written', 'book', 'pa.st.written', 'pa.st.writtenSub']
+]
+const STATION_AT = { rules: 1, unassigned: 2, waits: 2, reading: 2, you: 3 }
+const SOURCES = [['chat', 'chat', 'pa.src.chat'], ['refine', 'agent', 'pa.src.refine'],
+  ['self', 'moon', 'pa.src.self'], ['job', 'gear', 'pa.src.job'], ['none', 'file', 'pa.src.none']]
+const SOURCE = Object.fromEntries(SOURCES.map(([id, glyph, key]) => [id, { glyph, key }]))
+const recurOf = item => item.recur || (item.parts || []).map(p => p.recur).find(Boolean) || null
+const sourceOf = item => {
+  const path = Number(recurOf(item)?.path) || 0
+  const origin = item.origin || (item.parts || []).map(p => p.origin).find(Boolean) || ''
+  if (path === 1 || path === 2) return 'chat'
+  if (path === 4) return 'refine'
+  if (path === 3 || (!path && origin === 'background_review')) return 'self'
+  if (path === 5) return 'job'
+  return 'none'
+}
+const sourceText = (t, item) => {
+  const recur = recurOf(item)
+  return Number(recur?.path) === 1 && recur.why ? t('pa.src.chatWhy', recur.why) : t(SOURCE[sourceOf(item)].key)
+}
+const placeOf = item => {
+  const plain = item.plain || {}
+  const review = item.review || {}
+  const parts = item.parts || []
+  const stale = item.parts ? (item.stale || []) : (plain.stale || [])
+  if (stale.length || (review.hard || []).length || plain.fix || plain.last_error
+    || parts.some(p => (p.plain || {}).fix || (p.plain || {}).last_error)) return 'rules'
+  const status = reviewFacts(review).status
+  if (status === 'unassigned') return 'unassigned'
+  if (status === 'running') return 'reading'
+  if (status === 'done') return 'you'
+  return 'waits'
+}
+const stopWhy = (t, item) => {
+  const plain = item.plain || {}
+  const hard = (item.review || {}).hard || []
+  const stale = item.parts ? (item.stale || []) : (plain.stale || [])
+  const failed = item.parts ? item.parts.find(p => (p.plain || {}).last_error) : null
+  if (hard.length) return `${tagOf(hard[0])}${hard[0].text}`
+  if (stale.length) return t('pa.status.stale')
+  if (plain.fix || (item.parts || []).some(p => (p.plain || {}).fix)) {
+    return (plain.recommendation || {}).reason || t('pa.status.fixFirst')
+  }
+  return `${t('pa.field.failedBefore')}: ${plain.last_error || (failed ? failed.plain.last_error : '')}`
+}
+const hasFix = item => Boolean((item.plain || {}).fix || (item.parts || []).some(p => (p.plain || {}).fix))
+const shortDate = s => new Date(Number(s) * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+const costOf = review => (typeof review?.usage?.cost_usd === 'number' && review.usage.cost_status !== 'included'
+  ? `$${review.usage.cost_usd.toFixed(3)}` : '')
+const PIN = { apply: ['check', 'ok'], rejected: ['undo', ''], expired: ['hourglass', ''], failed: ['alert', 'bad'],
+  external: ['out', ''] }
+const lineOrder = list => ['rules', 'unassigned', 'waits', 'reading', 'you']
+  .flatMap(place => list.filter(u => placeOf(u.item) === place))
+
+function ReadyActions({ unit, onOpen, onChanged }) {
+  const t = usePluginI18n(ID)
+  const { subsystem, item } = unit
+  const key = queueKey(unit)
+  const { busy, run } = useRun(t, key)
+  const { leaving, leave } = useLeave(key)
+  const plain = item.plain || {}
+  const review = item.review || {}
+  const direct = pickable(item) && !reviewFacts(review).edits && review.verdict !== 'reject'
+    && !(plain.refused || []).length && (plain.groups || []).length < 2
+  const ids = [item.id, ...(item.parts || []).map(p => p.id)]
+  const decide = decision => run(decision, async () => {
+    const r = await decideOne(t, item.parts ? 'skills' : subsystem, [item], decision, [], false)
+    if (r?.ok) {
+      addDone({ key, ids, title: rowTitle(t, subsystem, item), decision, at: Date.now() })
+      leave()
+    } else onChanged()
+    return r
+  })
+  return jsxs('div', {
+    className: 'pa-lc-acts',
+    children: [
+      direct
+        ? jsx(Button, {
+            variant: 'default', size: 'sm', className: 'pa-lc-save', disabled: leaving || (Boolean(busy) && busy !== 'approve'),
+            loading: busy === 'approve', onClick: () => void decide('approve'), children: t('pa.btn.save')
+          }, 'save')
+        : null,
+      jsx(Button, {
+        variant: 'outline', size: 'sm', className: 'pa-lc-reject', disabled: leaving || (Boolean(busy) && busy !== 'reject'),
+        loading: busy === 'reject', onClick: () => void decide('reject'), children: t('pa.btn.dontSave')
+      }, 'reject'),
+      jsx(Button, {
+        variant: 'text', size: 'sm', className: 'pa-lc-see', disabled: leaving, onClick: () => onOpen(key),
+        children: t('pa.btn.see')
+      }, 'see')
+    ]
+  })
+}
+
+function CheckAll({ list, onChanged }) {
+  const t = usePluginI18n(ID)
+  const [busy, setBusy] = useState(false)
+  const n = list.length
+  const go = async () => {
+    setBusy(true)
+    try {
+      for (const u of list) await askReview(t, u.item.parts ? 'skills' : u.subsystem, u.item.id, () => 0)
+    } catch (e) {
+      host.notifyError?.(e, t('pa.notify.failed'))
+    } finally {
+      setBusy(false)
+      onChanged()
+    }
+  }
+  return jsx(Button, {
+    variant: 'outline', size: 'sm', className: 'pa-check-all', loading: busy, onClick: () => void go(),
+    children: t(n === 1 ? 'pa.line.check' : n === 2 ? 'pa.line.checkBoth' : 'pa.line.checkAll')
+  })
+}
+
+function TodayRow({ entry, t, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const canUndo = Boolean(entry.undoable) && !entry.undone
+  const canRestore = !canUndo && setAside(entry) && entry.restorable === true && !entry.restored
+  const { name, words, said } = actLine(t, entry)
+  const what = name !== words ? name : said
+  const [glyph, tone] = PIN[entry.kind] || PIN.apply
+  const go = async () => {
+    setBusy(true)
+    try {
+      if (canUndo) await undoEntry(t, entry, onChanged)
+      else await restoreEntry(t, entry, onChanged)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return jsxs('div', {
+    className: 'pa-done', 'data-k': entry.kind, role: 'listitem',
+    children: [
+      jsx(Glyph, { of: glyph, tone }, 'mark'),
+      jsxs('span', {
+        className: 'pa-done-text',
+        children: [jsx('b', { children: words }, 'w'), what && what !== words ? ` ${short(what, 60)}` : '']
+      }, 'text'),
+      canUndo || canRestore
+        ? jsx(Button, {
+            variant: 'text', size: 'inline', loading: busy, onClick: () => void go(),
+            className: canUndo ? 'pa-done-undo' : 'pa-restore',
+            children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
+          }, 'act')
+        : null
+    ]
+  }, entry.id)
+}
+
+function LineCard({ unit, t, kicker, sub, tone, ready, selecting, picked, onPick, onOpen, children }) {
+  const { subsystem, item } = unit
+  const key = queueKey(unit)
+  const title = rowTitle(t, subsystem, item)
+  const leaving = Boolean(useHeld(key)?.leaving)
+  return jsxs('div', {
+    className: leaving ? 'pa-lc pa-leaving' : 'pa-lc',
+    role: 'listitem',
+    'data-key': key,
+    'data-tone': tone || undefined,
+    'data-ready': ready ? '1' : undefined,
+    'data-picked': selecting && picked ? '1' : undefined,
+    children: [
+      selecting || kicker
+        ? jsxs('div', {
+            className: 'pa-lc-k',
+            children: [
+              selecting
+                ? jsx(Checkbox, {
+                    className: 'pa-pick', checked: picked === true,
+                    'aria-label': `${t(item.parts ? 'pa.grp.select' : 'pa.bulk.select')}: ${title} #${item.id}`,
+                    onCheckedChange: () => onPick(key)
+                  }, 'pick')
+                : null,
+              kicker
+            ]
+          }, 'k')
+        : null,
+      jsxs('button', {
+        type: 'button',
+        className: 'pa-lc-main',
+        'data-key': key,
+        'aria-label': `${t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')}: ${title}`,
+        onClick: () => (selecting ? onPick(key) : onOpen(key)),
+        children: [
+          jsx('span', { className: 'pa-lc-t', children: title }, 't'),
+          sub ? jsx('span', { className: 'pa-lc-s', children: sub }, 's') : null
+        ]
+      }, 'main'),
+      selecting ? null : children
+    ]
+  }, key)
+}
+
+function BulkBar({ items, picked, setPicked, onDone, onCancel }) {
+  const t = usePluginI18n(ID)
+  const [arming, setArming] = useState('')
+  const [busy, setBusy] = useState(false)
+  const barAt = useRef(null)
+  const armedBy = useRef('')
+  useEffect(() => {
+    const bar = barAt.current
+    if (arming) {
+      armedBy.current = arming
+      bar?.querySelector('.pa-bulk-cancel')?.focus()
+      return
+    }
+    const was = armedBy.current
+    armedBy.current = ''
+    const now = document.activeElement
+    if (!was || !bar || (now && now !== document.body && now.isConnected)) return
+    const back = [...bar.querySelectorAll('button')].find(b => b.dataset.arms === was)
+    back?.focus()
+  }, [arming])
+  const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
+  const held = chosen.filter(({ item }) => !pickable(item)).length
+  const advised = chosen.filter(({ item }) => (item.review || {}).status === 'done' && item.review.verdict === 'reject')
+    .length
+  const n = chosen.length
+  const fit = n ? bulkFit(chosen) : null
+
+  const run = async decision => {
+    if (decision === 'approve' && held) {
+      setArming('')
+      return
+    }
+    setBusy(true)
+    for (const c of chosen) decidedHere.add(queueKey(c))
+    let ok = 0
+    const bad = []
+    try {
+      for (const subsystem of ['memory', 'skills']) {
+        const group = chosen.filter(c => c.subsystem === subsystem).map(c => c.item)
+        if (!group.length) continue
+        try {
+          const res = await decideAll(t, subsystem, group, decision)
+          const results = res?.results || []
+          ok += results.filter(r => r.ok).length
+          bad.push(...results.filter(r => !r.ok)
+            .map(r => r.error || t(r.stale ? 'pa.notify.stale' : 'pa.notify.failed')))
+          if (!res?.ok && !results.length) bad.push(res?.error || t('pa.notify.failed'))
+        } catch (e) {
+          bad.push(String(e?.message || e))
+        }
+      }
+      const said = t(decision === 'reject' ? 'pa.bulk.rejectedDone' : 'pa.bulk.approvedDone', ok, n)
+      host.notify(bad.length
+        ? { kind: 'error', message: `${said} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
+        : { kind: 'success', message: said })
+    } finally {
+      refocus(barAt.current)
+      setBusy(false)
+      setArming('')
+      setPicked(new Set())
+      onDone()
+    }
+  }
+  const escape = e => {
+    if (e.key === 'Escape' && !busy) {
+      e.stopPropagation()
+      setArming('')
+    }
+  }
+  return jsxs('div', {
+    ref: barAt,
+    className: 'pa-bulk',
+    role: 'group',
+    'aria-label': t('pa.bulk.title', n),
+    'data-armed': arming ? '1' : undefined,
+    children: arming ? [
+      jsx('div', {
+        className: 'pa-warnline',
+        role: 'alert',
+        onKeyDown: escape,
+        children: arming === 'reject' ? t('pa.bulk.confirmReject', n)
+          : advised ? `${t('pa.bulk.confirmApprove', n)} ${t('pa.bulk.advisedReject', advised, n)}`
+            : t('pa.bulk.confirmApprove', n)
+      }, 'copy'),
+      jsxs('div', {
+        className: 'pa-actions',
+        onKeyDown: escape,
+        children: [
+          jsx(Button, {
+            className: 'pa-bulk-cancel', variant: 'text', size: 'sm', disabled: busy,
+            onClick: () => setArming(''), children: t('pa.bulk.cancel')
+          }, 'back'),
+          jsx(Button, {
+            className: 'pa-bulk-go', variant: arming === 'reject' ? 'outline' : 'default', size: 'sm', loading: busy,
+            onClick: () => void run(arming), children: t('pa.bulk.confirm')
+          }, 'go')
+        ]
+      }, 'armed')
+    ] : [
+      jsx('span', { className: 'pa-bulk-n', children: t('pa.bulk.picked', n, n - held) }, 'n'),
+      jsx(Button, {
+        className: 'pa-select-all', variant: 'text', size: 'sm',
+        onClick: () => setPicked(n === items.length ? new Set() : new Set(items.map(queueKey))),
+        children: t(n === items.length ? 'pa.bulk.none' : 'pa.bulk.all')
+      }, 'all'),
+      fit ? jsx('div', { className: 'pa-bulk-meter', children: jsx(Meter, { fit }, 'meter') }, 'meter') : null,
+      jsxs('div', {
+        className: 'pa-actions',
+        children: [
+          jsx(Button, {
+            className: 'pa-select', variant: 'text', size: 'sm', onClick: onCancel,
+            children: [t('pa.bulk.done'), kbd(t('pa.key.esc'), 'pa-btn-kbd')]
+          }, 'cancel'),
+          jsx(Button, {
+            variant: 'outline', size: 'sm', 'data-arms': 'reject', disabled: !n,
+            onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
+          }, 'reject'),
+          jsx(Tip, {
+            label: held ? t('pa.bulk.held', held) : '',
+            children: jsx('span', {
+              className: 'pa-tipwrap',
+              children: jsx(Button, {
+                className: held ? 'pa-held' : undefined,
+                variant: 'default', size: 'sm', 'data-arms': 'approve', disabled: !n,
+                'aria-disabled': held > 0 || undefined,
+                'aria-description': held ? t('pa.bulk.held', held) : undefined,
+                onClick: held ? () => warnOnce(t('pa.bulk.held', held))
+                  : () => setArming('approve'),
+                children: t('pa.bulk.approve', n)
+              }, 'btn')
+            }, 'wrap')
+          }, 'approve')
+        ]
+      }, 'actions')
+    ]
+  })
+}
+
+function Stations({ t, lit, counts, model, bodies, dim, extra }) {
+  return jsx('div', {
+    className: 'pa-cols',
+    role: 'list',
+    'aria-label': t('pa.line.label'),
+    'aria-keyshortcuts': 'J K',
+    'data-dim': dim ? '1' : undefined,
+    'data-clear': extra ? '1' : undefined,
+    children: [...STATIONS.map(([id, glyph, key, subKey], i) => jsxs('section', {
+      className: 'pa-st',
+      role: 'listitem',
+      'data-st': id,
+      'data-lit': lit === i ? '1' : undefined,
+      'data-out': lit === i + 1 ? 'lit' : i === 3 ? 'dash' : undefined,
+      'aria-label': t(key),
+      children: [
+        i < 4
+          ? jsx('span', {
+              className: 'pa-arrow', 'aria-hidden': true,
+              'data-lit': lit === i + 1 ? '1' : undefined, 'data-dash': i === 3 ? '1' : undefined,
+              children: jsx('svg', { viewBox: '0 0 9 10', children: jsx('path', { d: 'M0 0l9 5-9 5z' }) })
+            }, 'arrow')
+          : null,
+        jsxs('span', {
+          className: 'pa-node',
+          children: [
+            jsx(Glyph, { of: glyph, size: 28 }, 'g'),
+            counts[i] ? jsx('span', {
+              className: 'pa-cnt',
+              children: jsx(Badge, { variant: lit === i ? 'solid' : 'muted', children: String(counts[i]) })
+            },
+              'n') : null
+          ]
+        }, 'node'),
+        jsxs('div', {
+          className: 'pa-st-text',
+          children: [
+            jsx('h2', { className: 'pa-st-name', children: t(key) }, 'name'),
+            jsx('div', {
+              className: 'pa-st-sub', children: subKey ? t(subKey) : t('pa.st.reviewerSub', model)
+            }, 'sub')
+          ]
+        }, 'text'),
+        jsx('div', { className: 'pa-st-body', children: bodies[i] }, 'body')
+      ]
+    }, id)), extra || null]
+  }, 'cols')
+}
+
+function TheLine({ data, error, refresh, onChanged, hist, onOpen, selectOn, setSelectOn, onRecord }) {
+  const t = usePluginI18n(ID)
+  const rootAt = useRef(null)
+  const [sel, setSel] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState(() => new Set())
+  const [candOpen, setCandOpen] = useState(false)
+  const focusRow = useRef('')
+  const lastAt = useRef(0)
+  const prevSel = useRef(null)
+  const done = useDone()
+  const items = data ? units(data) : []
+  const queue = useQueue(items)
+  const order = lineOrder(queue.order)
+  const keys = order.map(queueKey)
+  const cands = (data?.candidates || []).map(item => ({ subsystem: 'skills', item, cand: true }))
+  const candKeys = cands.map(queueKey)
+  const canSelect = items.length > 1
+  const selecting = selectOn && canSelect
+  useEffect(() => {
+    if (selectOn && !canSelect) setSelectOn(false)
+  }, [selectOn, canSelect])
+  useEffect(() => {
+    if (!selectOn) setPicked(prev => (prev.size ? new Set() : prev))
+  }, [selectOn])
+  const sig = keys.join('\n')
+  useEffect(() => {
+    const here = new Set(keys)
+    setPicked(prev => {
+      const kept = here.size > 1 ? [...prev].filter(key => here.has(key)) : []
+      return kept.length === prev.size ? prev : new Set(kept)
+    })
+  }, [sig])
+  const selKey = !open ? null : keys.includes(sel) || candKeys.includes(sel) ? sel
+    : (keys[Math.min(lastAt.current, keys.length - 1)] || null)
+  const allSig = [...keys, ...candKeys].join('\n')
+  useEffect(() => {
+    onRecord?.(Boolean(selKey))
+  }, [Boolean(selKey)])
+  useEffect(() => {
+    if (selKey && keys.includes(selKey)) lastAt.current = keys.indexOf(selKey)
+    const was = prevSel.current
+    if (was && was !== selKey && !keys.includes(was) && !candKeys.includes(was)) {
+      const mine = Boolean(held.get(was)?.leaving || held.get(was)?.busy) || decidedHere.has(was)
+        || doneHere.some(d => d.key === was)
+      decidedHere.delete(was)
+      if (!mine && open) host.notify({ kind: 'info', message: t('pa.notify.frontGone') })
+    }
+    prevSel.current = selKey
+    if (open && sel !== selKey && selKey) setSel(selKey)
+    if (open && !selKey) setOpen(false)
+  }, [selKey, allSig])
+  useEffect(() => {
+    if (!focusRow.current) return
+    const key = focusRow.current
+    focusRow.current = ''
+    rootAt.current?.querySelector(`.pa-lc-main[data-key="${key}"]`)?.focus()
+  })
+  const togglePick = key => setPicked(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+  const choose = key => {
+    setSel(key)
+    setOpen(true)
+  }
+  const later = key => {
+    const i = keys.indexOf(key)
+    queue.later(key)
+    const next = keys[i + 1] || keys[0]
+    if (next) setSel(next)
+  }
+  const back = () => {
+    focusRow.current = selKey || ''
+    setOpen(false)
+  }
+  const step = by => {
+    const pool = selKey && candKeys.includes(selKey) ? candKeys : keys
+    const next = pool[pool.indexOf(selKey) + by]
+    if (next) setSel(next)
+  }
+  const stepFocus = (from, by) => {
+    const cards = [...(rootAt.current?.querySelectorAll('.pa-lc-main') || [])]
+    const at = cards.indexOf(from)
+    const next = cards[at < 0 ? 0 : at + by]
+    next?.focus()
+  }
+  const onKeyDown = e => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === 'Escape' && selecting && !rootAt.current?.querySelector('.pa-bulk [role="alert"]')) {
+      e.preventDefault()
+      setSelectOn(false)
+      return
+    }
+    if (e.key === 'Escape' && open && selKey && !rootAt.current?.querySelector('.pa-warnline')) {
+      e.preventDefault()
+      back()
+      return
+    }
+    if (typing(e.target)) return
+    const k = String(e.key || '').toLowerCase()
+    const rowKey = e.target?.closest?.('.pa-lc-main')?.getAttribute('data-key')
+    if (selecting && k === ' ' && rowKey) {
+      e.preventDefault()
+      togglePick(rowKey)
+      return
+    }
+    if (selecting) return
+    if (!['j', 'k', 'a', 'x', 'l'].includes(k)) return
+    const root = rootAt.current
+    if (!root || root.querySelector('.pa-warnline')) return
+    if (!selKey) {
+      if (k !== 'j' && k !== 'k') return
+      e.preventDefault()
+      stepFocus(e.target?.closest?.('.pa-lc-main'), k === 'j' ? 1 : -1)
+      return
+    }
+    if (held.get(selKey)?.busy || held.get(selKey)?.leaving) return
+    if (k === 'j' || k === 'k') {
+      e.preventDefault()
+      step(k === 'j' ? 1 : -1)
+      return
+    }
+    if (e.repeat && k !== 'l') return
+    const target = root.querySelector(`.pa-detail [aria-keyshortcuts="${k.toUpperCase()}"]`)
+    if (!target) return
+    e.preventDefault()
+    target.click()
+  }
+
+  const entries = hist?.data?.entries || []
+  const todayKey = dayKey(Date.now() / 1000)
+  const today = entries.filter(e => dayKey(e.ts) === todayKey)
+  const here = done.filter(d => !keys.includes(d.key))
+  const mineIds = new Set(here.map(d => entryFor(entries, d.ids)?.id).filter(Boolean))
+  const nothing = jsx('div', { className: 'pa-gate pa-nothing', children: t('pa.line.nothing') }, 'nothing')
+  const writtenBody = [
+    jsx('div', {
+      className: 'pa-done-list', role: 'list', 'aria-label': t('pa.st.written'),
+      children: [
+        ...here.map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`)),
+        ...today.filter(e => !mineIds.has(e.id)).slice(0, Math.max(0, 4 - here.length))
+          .map(entry => jsx(TodayRow, { entry, t, onChanged }, entry.id))
+      ]
+    }, 'today'),
+    jsx(Button, {
+      variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
+      children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
+    }, 'all')
+  ]
+  const model = items.map(u => (u.item.review || {}).model).find(Boolean) || ''
+  if (!data) {
+    const blank = [null, null, null, null, null]
+    return jsxs('div', {
+      ref: rootAt,
+      className: 'pa-line',
+      'data-state': error ? 'error' : 'loading',
+      children: [
+        jsx(Stations, { t, lit: -1, counts: blank, model, bodies: blank, dim: true }, 'stations'),
+        error
+          ? jsxs('div', {
+              className: 'pa-msg', role: 'alert',
+              children: [
+                jsx('span', { className: 'pa-msg-err', children: jsx(Glyph, { of: 'alert', size: 20 }) }, 'g'),
+                jsxs('div', {
+                  className: 'pa-msg-text',
+                  children: [jsx('h2', { children: t('pa.line.errorTitle') }, 'h'),
+                    jsx('p', { children: t('pa.line.errorBody') }, 'p')]
+                }, 'text'),
+                jsx(TechDetails, { t, rows: [{ label: t('pa.tech.cause'), value: errText(error) }] }, 'tech'),
+                jsx(Button, { variant: 'outline', size: 'sm', onClick: refresh, children: t('pa.empty.retry') }, 'retry'),
+                jsx(Button, {
+                  variant: 'text', size: 'sm', className: 'pa-all-activity', onClick: () => onOpen('written'),
+                  children: [t('pa.line.allActivity'), jsx(Glyph, { of: 'right' }, 'g')]
+                }, 'all')
+              ]
+            }, 'msg')
+          : jsxs('div', {
+              className: 'pa-msg', role: 'status',
+              children: [
+                jsx(Loader, { label: t('pa.line.reading'), style: { width: 26, height: 26 } }, 'g'),
+                jsxs('div', {
+                  className: 'pa-msg-text',
+                  children: [jsx('h2', { children: t('pa.line.reading') }, 'h'),
+                    jsx('p', { children: t('pa.line.readingBody') }, 'p')]
+                }, 'text')
+              ]
+            }, 'msg')
+      ]
+    }, 'line')
+  }
+
+  const front = open
+    ? (order.find(u => queueKey(u) === selKey) || cands.find(u => queueKey(u) === selKey) || null)
+    : null
+  if (front && !selecting) {
+    const pool = front.cand ? candKeys : keys
+    const kind = t(front.subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
+    return jsx('div', {
+      ref: rootAt,
+      className: 'pa-line pa-split',
+      'data-open': '1',
+      onKeyDown,
+      children: jsx('div', {
+        className: 'pa-detail pa-cell',
+        'data-key': selKey,
+        children: jsx(RecordDetail, {
+          subsystem: front.subsystem, item: front.item, onChanged, keyOf: selKey, cand: Boolean(front.cand),
+          onLater: front.cand ? null : () => later(selKey), onBack: back,
+          back: { label: t('pa.rec.back'), pos: t('pa.rec.pos', kind, pool.indexOf(selKey) + 1, pool.length) }
+        }, selKey)
+      }, 'detail')
+    }, 'line')
+  }
+
+  const at = place => order.filter(u => placeOf(u.item) === place)
+  const stops = at('rules')
+  const unassigned = at('unassigned')
+  const waits = at('waits')
+  const reading = at('reading')
+  const ready = at('you')
+  const reviewerN = unassigned.length + waits.length + reading.length
+  const lit = ready.length ? 3 : stops.length ? 1 : unassigned.length + waits.length ? 2 : -1
+  const counts = [items.length, stops.length, reviewerN, ready.length, 0]
+  const card = (u, extra) => jsx(LineCard, {
+    unit: u, t, selecting, picked: picked.has(queueKey(u)), onPick: togglePick, onOpen: choose, ...extra
+  }, queueKey(u))
+  const kick = (glyph, text, tone) => jsxs('span', {
+    className: 'pa-lc-kick', children: [jsx(Glyph, { of: glyph, tone }, 'g'), jsx('span', { children: text }, 't')]
+  }, 'kick')
+  const sources = SOURCES.map(([id, glyph, key]) => [id, glyph, key, items.filter(u => sourceOf(u.item) === id).length])
+    .filter(([, , , n]) => n)
+  const groupHead = (label, n, extra) => jsxs('div', {
+    className: 'pa-grp',
+    children: [jsxs('span', { children: [jsx('b', { children: label }, 'b'), ` · ${n}`] }, 'l'), extra]
+  }, `grp-${label}`)
+  const bodies = [
+    sources.length
+      ? jsx('div', {
+          className: 'pa-srcs',
+          children: sources.map(([id, glyph, key, n]) => jsxs('div', {
+            className: 'pa-src', 'data-src': id,
+            children: [jsx(Glyph, { of: glyph, size: 18 }, 'g'), jsx('b', { children: String(n) }, 'n'),
+              jsx('span', { children: t(key) }, 't')]
+          }, id))
+        }, 'srcs')
+      : nothing,
+    !items.length ? nothing : [
+      items.length - stops.length
+        ? jsxs('div', {
+            className: 'pa-gate',
+            children: [jsx(Glyph, { of: 'check', tone: 'ok' }, 'g'), t('pa.line.passed', items.length - stops.length)]
+          }, 'passed')
+        : null,
+      ...stops.map(u => card(u, {
+        tone: 'stop', kicker: kick('lock', t('pa.line.stopped'), 'bad'), sub: stopWhy(t, u.item),
+        children: jsx('div', {
+          className: 'pa-lc-acts',
+          children: jsx(Button, {
+            variant: 'outline', size: 'sm', onClick: () => choose(queueKey(u)),
+            children: t(hasFix(u.item) ? 'pa.btn.seeFix' : 'pa.btn.see')
+          })
+        }, 'acts')
+      }))
+    ],
+    !reviewerN ? nothing : [
+      ...unassigned.map(u => card(u, {
+        kicker: kick('alert', t('pa.line.noModel'), 'warn'), sub: t('pa.review.unassigned')
+      })),
+      waits.length ? groupHead(t('pa.line.waits'), waits.length, jsx(CheckAll, { list: waits, onChanged }, 'check'))
+        : null,
+      ...waits.map(u => {
+        const review = u.item.review || {}
+        const failed = review.status === 'failed'
+        return card(u, {
+          kicker: failed ? kick('alert', review.finished ? t('pa.line.gaveUp', clock(review.finished * 1000))
+            : t('pa.line.gaveUpNow'), 'warn') : null,
+          sub: failed ? sourceText(t, u.item) : `${sourceText(t, u.item)} · ${t('pa.line.notRead')}`
+        })
+      }),
+      reading.length
+        ? groupHead(t('pa.line.readingNow'), reading.length,
+          jsx(Loader, { label: t('pa.line.readingNow'), style: { width: 14, height: 14 } }, 'spin'))
+        : null,
+      ...reading.map(u => card(u, { sub: sourceText(t, u.item) }))
+    ],
+    !ready.length ? nothing : ready.map((u, i) => {
+      const review = u.item.review || {}
+      const facts = reviewFacts(review)
+      const verdict = review.verdict === 'reject' ? 'reject' : (review.verdict === 'fix' || facts.edits) ? 'fix' : 'ok'
+      const sub = [sourceText(t, u.item), review.finished ? t('pa.line.checked', clock(review.finished * 1000)) : '',
+        costOf(review)].filter(Boolean).join(' · ')
+      return card(u, {
+        ready: i === 0, sub,
+        kicker: verdict === 'ok' ? kick('check', t('pa.line.fine'), 'ok')
+          : verdict === 'fix' ? kick('edit', t('pa.status.fix'), 'warn') : kick('alert', t('pa.line.advise'), 'bad'),
+        children: i === 0 ? jsx(ReadyActions, { unit: u, onOpen: choose, onChanged }, 'acts') : null
+      })
+    }),
+    writtenBody
+  ]
+  const empty = !items.length
+  const parked = cands.length && (!empty || candOpen) ? jsxs('div', {
+    className: 'pa-park',
+    'data-open': candOpen ? '1' : '0',
+    children: [
+      jsxs('div', {
+        className: 'pa-park-head',
+        children: [
+          jsx('span', { className: 'pa-node pa-node-sm', children: jsx(Glyph, { of: 'hourglass', size: 20 }) }, 'node'),
+          jsxs('div', {
+            children: [jsx('h3', { children: t('pa.park.title', cands.length) }, 'h'),
+              jsx('p', { children: t('pa.park.body', data.candidate_days || 14) }, 'p')]
+          }, 'text')
+        ]
+      }, 'head'),
+      jsx('div', {
+        className: 'pa-park-cards', role: 'list', 'aria-label': t('pa.park.title', cands.length),
+        children: cands.map(u => jsx(LineCard, {
+          unit: u, t, selecting: false, onOpen: choose,
+          sub: jsxs('span', {
+            className: 'pa-clock',
+            children: [jsx(Glyph, { of: SOURCE[sourceOf(u.item)].glyph }, 'g'),
+              [sourceText(t, u.item), u.item.recur?.expires ? t('pa.park.leaves', shortDate(u.item.recur.expires)) : '']
+                .filter(Boolean).join(' · ')]
+          })
+        }, queueKey(u)))
+      }, 'cards')
+    ]
+  }, 'park') : null
+  const decided = decidedToday(entries).length
+  return jsxs('div', {
+    ref: rootAt,
+    className: 'pa-line',
+    'data-selecting': selecting ? '1' : undefined,
+    'data-empty': empty ? '1' : undefined,
+    onKeyDown,
+    children: [
+      jsx(Stations, {
+        t, lit, counts, model, bodies,
+        extra: empty ? jsxs('div', {
+            className: 'pa-allclear', role: 'status',
+            children: [
+              jsx('span', { className: 'pa-node pa-node-ok', children: jsx(Glyph, { of: 'check', size: 24 }) }, 'node'),
+              jsxs('div', {
+                className: 'pa-msg-text',
+                children: [jsx('h2', { children: t('pa.stage.allClearTitle') }, 'h'),
+                  jsx('p', { children: t('pa.line.clearBody', decided, cands.length) }, 'p')]
+              }, 'text'),
+              cands.length
+                ? jsx(Button, {
+                    variant: 'text', size: 'sm', className: 'pa-see-parked', 'aria-expanded': candOpen,
+                    onClick: () => setCandOpen(v => !v),
+                    children: t('pa.line.seeParked')
+                  }, 'park')
+                : null
+            ]
+          }, 'clear') : null
+      }, 'stations'),
+      parked,
+      selecting
+        ? jsx(BulkBar, {
+            items, picked, setPicked, onCancel: () => setSelectOn(false),
+            onDone: () => {
+              setSelectOn(false)
+              onChanged()
+            }
+          }, 'bulk')
+        : null
+    ]
+  }, 'line')
+}
+
+function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf, cand }) {
   const t = usePluginI18n(ID)
   const [open, setOpen] = useState(false)
   const [shownLines, setShownLines] = useState(() => new Set())
@@ -2682,6 +3182,9 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   const { busy, run } = useRun(t, key)
   const { leaving, leave } = useLeave(key)
   const cardAt = useInert(leaving)
+  useEffect(() => {
+    if (lost()) cardAt.current?.focus()
+  }, [])
   const parts = item.parts || null
   const plain = item.plain || {}
   const groups = plain.groups || []
@@ -2853,12 +3356,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
           steps
         ]
       }, 'text'),
-      toggle || canAgain
-        ? jsxs('div', {
-            className: 'pa-vside',
-            children: [toggle, canAgain ? againButton : null]
-          }, 'side')
-        : null
     ]
   }, 'verdict')
 
@@ -3062,9 +3559,42 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
       guard('approve', () => decide('approve')), a)]
   }
   const primaries = primaryButtons()
-  const typeWord = t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill')
-  const sep = n => jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, `sep${n}`)
-  const crumbFile = subsystem === 'memory' && isProfile(kindTarget) ? [t('pa.kpi.profileLabel')] : []
+  const place = cand ? 'proposes' : placeOf(item)
+  const now = cand ? 0 : STATION_AT[place] ?? 3
+  const finished = review.finished ? clock(review.finished * 1000) : ''
+  const reviewerFact = status === 'done' ? [t(stateKey), costOf(review)].filter(Boolean).join(' · ')
+    : t(status === 'running' ? 'pa.trip.reading' : status === 'failed' ? 'pa.trip.gaveUp'
+      : status === 'unassigned' ? 'pa.trip.noModel' : 'pa.trip.waits')
+  const trip = [
+    [item.staged_at ? t('pa.trip.proposed', clock(item.staged_at * 1000)) : t('pa.st.proposes'), sourceText(t, item)],
+    [t('pa.st.rules'), cand ? '' : t(place === 'rules' ? 'pa.trip.stopped' : 'pa.trip.passed')],
+    [finished ? t('pa.trip.reviewerAt', finished) : t('pa.st.reviewer'), cand ? '' : reviewerFact],
+    [t('pa.st.you'), now === 3 ? t('pa.trip.now') : ''],
+    [t('pa.st.written'), t('pa.trip.after')]
+  ]
+  const journey = jsx('ol', {
+    className: 'pa-trip',
+    'aria-label': t('pa.trip.label'),
+    style: { '--pa-at': now },
+    children: STATIONS.map(([id, glyph], i) => jsxs('li', {
+      className: 'pa-tp',
+      'data-k': i < now ? 'past' : i === now ? 'now' : undefined,
+      'aria-current': i === now ? 'step' : undefined,
+      children: [
+        jsx('span', { className: 'pa-node pa-node-xs', children: jsx(Glyph, { of: glyph, size: 17 }) }, 'node'),
+        jsx('b', { children: trip[i][0] }, 'b'),
+        trip[i][1] ? jsx('span', { children: trip[i][1] }, 's') : null
+      ]
+    }, id))
+  }, 'trip')
+  const usage = review.usage || {}
+  const rvFacts = status !== 'done' ? [] : [
+    [t('pa.tech.model'), review.model || ''],
+    [t('pa.tech.tokens'), typeof usage.input === 'number' ? t('pa.review.tokens', usage.input, usage.output || 0) : ''],
+    [t('pa.tech.cost'), typeof usage.cost_usd === 'number' ? t('pa.review.cost', usage.cost_usd, usage.cost_status || '') : '']
+  ].filter(([, value]) => value)
+  const lede = item.recur?.why || plain.why
+  const effectLine = subsystem !== 'memory' && plain.effect ? plain.effect : t('pa.rec.undoLater')
 
   return jsxs('div', {
     ref: cardAt,
@@ -3077,63 +3607,66 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
     'data-key': key,
     children: [
       back ? jsx(BackBar, { label: back.label, pos: back.pos, onBack }, 'back') : null,
+      journey,
       jsxs('div', {
-        className: 'pa-dh',
+        className: 'pa-rec',
         children: [
           jsxs('div', {
-            className: 'pa-crumb',
+            className: 'pa-dbody',
             children: [
-              jsx('span', { className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(tileOf(subsystem, kindTarget), 13) },
-                'icon'),
-              jsx('span', { children: typeWord }, 'type'),
-              ...crumbFile.filter(Boolean).flatMap((c, i) => [sep(i), jsx('span', { children: c }, `c${i}`)]),
-              jsx('span', { className: 'pa-crumb-end', 'data-when': '1', children: when(t, item.staged_at) }, 'when')
+              jsxs('div', {
+                className: 'pa-dtitle',
+                children: [
+                  jsx('span', { id: titleId, role: 'heading', 'aria-level': 2, children: title }, 'title'),
+                  isGroup ? jsx('span', {
+                    className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
+                  }, 'stat') : null
+                ]
+              }, 'title'),
+              lede
+                ? jsxs('div', {
+                    className: 'pa-why pa-lede',
+                    children: [jsx('b', { children: t('pa.why.label') }, 'b'), ' ', lede]
+                  }, 'why')
+                : null,
+              toggle,
+              ...alerts,
+              ...diffs,
+              ...fixNotes,
+              groupsSection,
+              membersSection
             ]
-          }, 'crumb'),
-          jsxs('div', {
-            className: 'pa-dtitle',
+          }, 'body'),
+          jsxs('aside', {
+            className: 'pa-side',
+            'aria-label': t('pa.review.title'),
             children: [
-              jsx('span', { id: titleId, role: 'heading', 'aria-level': 2, children: title }, 'title'),
-              isGroup ? jsx('span', {
-                className: 'pa-change-stat', children: t('pa.op.lines', item.added || 0, item.removed || 0)
-              }, 'stat') : null
+              verdictCard,
+              item.test ? jsx(TestPanel, { t, test: item.test, id: item.id, busy, run, onChanged }, 'test') : null,
+              rvFacts.length ? jsx('dl', {
+                className: 'pa-rvfacts',
+                children: rvFacts.map(([label, value]) => [
+                  jsx('dt', { children: label }, `t-${label}`), jsx('dd', { children: value }, `d-${label}`)
+                ]).flat()
+              }, 'facts') : null,
+              jsx(Button, {
+                variant: 'text',
+                size: 'inline',
+                className: 'pa-fullchange-toggle pa-fold-btn',
+                disabled: leaving,
+                'aria-expanded': open,
+                'aria-controls': detailsId,
+                onClick: () => setOpen(v => !v),
+                children: [
+                  jsx(DisclosureCaret, { open }, 'caret'), t(open ? 'pa.btn.fullReviewHide' : 'pa.btn.fullReview')
+                ]
+              }, 'details'),
+              fullReview,
+              canAgain ? againButton : null
             ]
-          }, 'title'),
-          jsx('div', { className: 'pa-dh-when', children: when(t, item.staged_at) }, 'when')
+          }, 'side')
         ]
-      }, 'head'),
-      verdictCard,
-      item.test ? jsx(TestPanel, { t, test: item.test, id: item.id, busy, run, onChanged }, 'test') : null,
-      jsxs('div', {
-        className: 'pa-dbody',
-        children: [
-          ...alerts,
-          ...diffs,
-          ...fixNotes,
-          plain.why || item.recur?.why
-            ? jsxs('div', {
-                className: 'pa-why',
-                children: [jsx('b', { children: t('pa.why.label') }, 'b'), ' ', item.recur?.why || plain.why]
-              }, 'why')
-            : null,
-          subsystem !== 'memory' && plain.effect ? jsx('div', { className: 'pa-why', children: plain.effect }, 'effect') : null,
-          groupsSection,
-          membersSection,
-          jsx(Button, {
-            variant: 'text',
-            size: 'inline',
-            className: 'pa-fullchange-toggle pa-fold-btn',
-            disabled: leaving,
-            'aria-expanded': open,
-            'aria-controls': detailsId,
-            onClick: () => setOpen(v => !v),
-            children: [
-              jsx(DisclosureCaret, { open }, 'caret'), t(open ? 'pa.btn.fullReviewHide' : 'pa.btn.fullReview')
-            ]
-          }, 'details'),
-          fullReview
-        ]
-      }, 'body'),
+      }, 'rec'),
       jsxs('div', {
         className: 'pa-dfoot',
         'data-armed': armed ? '1' : undefined,
@@ -3159,7 +3692,15 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
             ]
           }, 'actions')
         ] : [
-          fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit }, 'meter') }, 'left') : null,
+          jsxs('div', {
+            className: 'pa-dfoot-left',
+            children: [
+              jsxs('span', {
+                className: 'pa-effect', children: [jsx(Glyph, { of: 'undo' }, 'g'), jsx('span', { children: effectLine }, 't')]
+              }, 'effect'),
+              fit ? jsx(Meter, { fit }, 'meter') : null
+            ]
+          }, 'left'),
           jsxs('div', {
             className: 'pa-dfoot-right',
             children: [
@@ -3194,7 +3735,6 @@ function RecordDetail({ subsystem, item, onChanged, onLater, onBack, back, keyOf
   })
 }
 
-const SEAL_TONE = { success: 'var(--ui-green)', warn: WARN, destructive: 'var(--ui-red)', muted: 'var(--ui-text-tertiary)' }
 const bulkFit = chosen => {
   const fits = chosen.filter(c => c.subsystem === 'memory').map(c => (c.item.plain || {}).fit)
   if (!fits.length || fits.some(x => !x || typeof x.before !== 'number' || typeof x.after !== 'number' || !x.limit)) {
@@ -3203,200 +3743,6 @@ const bulkFit = chosen => {
   const [first] = fits
   if (fits.some(x => x.file !== first.file || x.limit !== first.limit || x.before !== first.before)) return null
   return { ...first, after: fits.reduce((at, x) => at + x.after - x.before, first.before) }
-}
-
-function BulkDetail({ items, picked, setPicked, onChanged }) {
-  const t = usePluginI18n(ID)
-  const [arming, setArming] = useState('')
-  const [busy, setBusy] = useState(false)
-  const barAt = useRef(null)
-  const armedBy = useRef('')
-  useEffect(() => {
-    const bar = barAt.current
-    if (arming) {
-      armedBy.current = arming
-      bar?.querySelector('.pa-bulk-cancel')?.focus()
-      return
-    }
-    const was = armedBy.current
-    armedBy.current = ''
-    const now = document.activeElement
-    if (!was || !bar || (now && now !== document.body && now.isConnected)) return
-    const back = [...bar.querySelectorAll('button')].find(b => b.dataset.arms === was)
-    back?.focus()
-  }, [arming])
-  const chosen = items.filter(({ subsystem, item }) => picked.has(`${subsystem}:${item.id}`))
-  const held = chosen.filter(({ item }) => !pickable(item)).length
-  const advised = chosen.filter(({ item }) => (item.review || {}).status === 'done' && item.review.verdict === 'reject')
-    .length
-  const n = chosen.length
-  const fit = n ? bulkFit(chosen) : null
-
-  const run = async decision => {
-    if (decision === 'approve' && held) {
-      setArming('')
-      return
-    }
-    setBusy(true)
-    for (const c of chosen) decidedHere.add(queueKey(c))
-    let ok = 0
-    const bad = []
-    try {
-      for (const subsystem of ['memory', 'skills']) {
-        const group = chosen.filter(c => c.subsystem === subsystem).map(c => c.item)
-        if (!group.length) continue
-        try {
-          const res = await decideAll(t, subsystem, group, decision)
-          const results = res?.results || []
-          ok += results.filter(r => r.ok).length
-          bad.push(...results.filter(r => !r.ok)
-            .map(r => r.error || t(r.stale ? 'pa.notify.stale' : 'pa.notify.failed')))
-          if (!res?.ok && !results.length) bad.push(res?.error || t('pa.notify.failed'))
-        } catch (e) {
-          bad.push(String(e?.message || e))
-        }
-      }
-      host.notify(bad.length
-        ? { kind: 'error', message: `${t(decision === 'reject' ? 'pa.bulk.rejectedDone' : 'pa.bulk.approvedDone', ok, n)} · ${t('pa.bulk.failed', bad.length, bad[0])}` }
-        : { kind: 'success', message: t(decision === 'reject' ? 'pa.bulk.rejectedDone' : 'pa.bulk.approvedDone', ok, n) })
-    } finally {
-      refocus(barAt.current)
-      setBusy(false)
-      setArming('')
-      setPicked(new Set())
-      onChanged(true)
-    }
-  }
-
-  const summary = chosen.map(({ subsystem, item }) => {
-    const [stateKey, tone] = stateOf(item)
-    const ops = item.parts ? item.parts.flatMap(p => p.ops || []) : (item.ops || [])
-    const added = item.parts ? item.added || 0 : tally(ops, '+')
-    const removed = item.parts ? item.removed || 0 : tally(ops, '-')
-    const file = recordFile(subsystem, item)
-    return jsxs('div', {
-      className: 'pa-sum-row',
-      role: 'listitem',
-      children: [
-        jsx(Tile, { of: tileOf(subsystem, file) }, 'tile'),
-        jsxs('span', {
-          className: 'pa-sum-text',
-          children: [
-            jsx('span', { className: 'pa-row-title', children: rowTitle(t, subsystem, item) }, 'title'),
-            jsx('span', {
-              className: 'pa-sum-meta',
-              children: [t(subsystem === 'memory' ? 'pa.stage.typeMemory' : 'pa.stage.typeSkill'), file,
-                t('pa.op.lines', added, removed)].filter(Boolean).join(' · ')
-            }, 'meta')
-          ]
-        }, 'text'),
-        jsxs('span', {
-          className: 'pa-chip pa-sum-chip',
-          children: [
-            jsx('span', {
-              className: 'pa-chip-glyph', style: { color: SEAL_TONE[tone] }, 'aria-hidden': true,
-              children: icon(tone === 'success' ? CheckIcon : AlertIcon, 12)
-            }, 'g'),
-            jsx('span', { children: t(ROW_WORD[stateKey] || stateKey) }, 'text')
-          ]
-        }, 'chip')
-      ]
-    }, `${subsystem}:${item.id}`)
-  })
-
-  return jsxs('div', {
-    ref: barAt,
-    className: 'pa-card pa-bulk',
-    role: 'group',
-    'aria-label': t('pa.bulk.title', n),
-    children: [
-      jsxs('div', {
-        className: 'pa-dh',
-        children: [
-          jsxs('div', {
-            className: 'pa-crumb',
-            children: [
-              jsx('span', { children: t('pa.tab.pending') }, 'tab'),
-              jsx('span', { className: 'pa-crumb-sep', 'aria-hidden': true, children: '›' }, 'sep'),
-              jsx('span', { children: t('pa.bulk.crumb') }, 'crumb')
-            ]
-          }, 'crumb'),
-          jsx('div', {
-            className: 'pa-dtitle', children: jsx('span', { role: 'heading', 'aria-level': 2, children: t('pa.bulk.title', n) })
-          }, 'title')
-        ]
-      }, 'head'),
-      jsxs('div', {
-        className: 'pa-dbody',
-        children: [
-          jsx('div', { className: 'pa-sum', role: 'list', children: summary }, 'sum'),
-          jsx('div', { className: 'pa-why', children: t('pa.bulk.each') }, 'each')
-        ]
-      }, 'body'),
-      jsxs('div', {
-        className: 'pa-dfoot',
-        'data-armed': arming ? '1' : undefined,
-        style: { minHeight: H.detailFoot },
-        children: arming ? [
-          jsx('div', {
-            className: 'pa-warnline',
-            role: 'alert',
-            onKeyDown: e => {
-              if (e.key === 'Escape' && !busy) setArming('')
-            },
-            children: arming === 'reject' ? t('pa.bulk.confirmReject', n)
-              : advised ? `${t('pa.bulk.confirmApprove', n)} ${t('pa.bulk.advisedReject', advised, n)}`
-                : t('pa.bulk.confirmApprove', n)
-          }, 'copy'),
-          jsxs('div', {
-            className: 'pa-actions',
-            onKeyDown: e => {
-              if (e.key === 'Escape' && !busy) setArming('')
-            },
-            children: [
-              jsx(Button, {
-                className: 'pa-bulk-cancel',
-                variant: 'text', size: 'sm', disabled: busy,
-                onClick: () => setArming(''), children: t('pa.bulk.cancel')
-              }, 'cancel'),
-              jsx(Button, {
-                className: 'pa-bulk-go',
-                variant: arming === 'reject' ? 'outline' : 'default', size: 'sm', loading: busy,
-                onClick: () => void run(arming), children: t('pa.bulk.confirm')
-              }, 'go')
-            ]
-          }, 'actions')
-        ] : [
-          fit ? jsx('div', { className: 'pa-dfoot-left', children: jsx(Meter, { fit }, 'meter') },
-            'left') : null,
-          jsxs('div', {
-            className: 'pa-actions',
-            children: [
-              jsx(Button, {
-                variant: 'outline', size: 'sm', 'data-arms': 'reject',
-                onClick: () => setArming('reject'), children: t('pa.bulk.reject', n)
-              }, 'reject'),
-              jsx(Tip, {
-                label: held ? t('pa.bulk.held', held) : '',
-                children: jsx('span', {
-                  className: 'pa-tipwrap',
-                  children: jsx(Button, {
-                    className: held ? 'pa-held' : undefined,
-                    variant: 'default', size: 'sm', 'data-arms': 'approve',
-                    'aria-disabled': held > 0 || undefined,
-                    'aria-description': held ? t('pa.bulk.held', held) : undefined,
-                    onClick: held ? () => warnOnce(t('pa.bulk.held', held))
-                      : () => setArming('approve'),
-                    children: t('pa.bulk.approve', n)
-                  }, 'btn')
-                }, 'wrap')
-              }, 'approve')
-            ]
-          }, 'actions')
-        ]
-      }, 'foot')
-    ]
-  })
 }
 
 function units(data) {
@@ -3445,357 +3791,6 @@ function useQueue(list) {
   return { order: resolved, later }
 }
 
-function TopCard({ t, entries, cut, n: waiting, slim, away, onChanged, mem, onOpen }) {
-  const [busy, setBusy] = useState(false)
-  const n = decidedToday(entries).length
-  const last = entries.find(e => e.kind === 'apply' || e.kind === 'rejected')
-  const canUndo = Boolean(last?.undoable) && !last?.undone
-  const canRestore = !canUndo && setAside(last) && last?.restorable === true && !last?.restored
-  const said = last ? plainGist(t, String(last.summary || '')) : ''
-  const first = !n && !last && !waiting
-  const full = ['memory', 'user'].map(id => (mem?.[id] ? { id, ...fill(mem[id]) } : null))
-    .filter(f => f && f.pct >= 90).sort((a, b) => b.pct - a.pct)[0]
-  return jsxs('div', {
-    className: 'pa-clear pa-top',
-    role: 'status',
-    'data-waiting': waiting ? '1' : '0',
-    'data-slim': slim ? '1' : '0',
-    children: [
-      jsxs('div', {
-        className: 'pa-hero',
-        'data-week': first || slim ? '0' : '1',
-        children: [
-          jsxs('div', {
-            className: 'pa-hero-lead',
-            children: [
-              jsx('div', {
-                className: 'pa-clear-seal', 'aria-hidden': true, children: waiting ? String(waiting) : icon(CheckIcon, 24)
-              }, 'seal'),
-              jsx('div', {
-                className: 'pa-clear-title',
-                children: waiting ? t('pa.clear.waiting', waiting)
-                  : t(first ? 'pa.clear.firstTitle' : 'pa.stage.allClearTitle')
-              }, 'title'),
-              jsx('div', {
-                className: 'pa-clear-body',
-                children: first && !away ? t('pa.clear.firstBody') : n ? t('pa.clear.decided', n) : t('pa.clear.none')
-              }, 'body')
-            ]
-          }, 'lead'),
-          first || slim ? null : jsx(WeekChart, { t, entries, cut }, 'week')
-        ]
-      }, 'hero'),
-      last
-        ? jsxs('div', {
-            className: 'pa-clear-last',
-            children: [
-              jsx('span', {
-                children: t('pa.clear.last', short(said, 60), historyWords(t, last), when(t, last.ts))
-              }, 'text'),
-              canUndo || canRestore
-                ? jsx(Button, {
-                    variant: 'ghost', size: 'sm', loading: busy,
-                    className: canUndo ? 'pa-clear-undo' : 'pa-restore',
-                    onClick: async () => {
-                      setBusy(true)
-                      try {
-                        if (canUndo) await undoEntry(t, last, onChanged)
-                        else await restoreEntry(t, last, onChanged)
-                      } finally {
-                        setBusy(false)
-                      }
-                    },
-                    children: t(canUndo ? 'pa.btn.undo' : 'pa.btn.restore')
-                  }, 'undo')
-                : null
-            ]
-          }, 'last')
-        : null,
-      full
-        ? jsxs('div', {
-            className: 'pa-clear-warn',
-            children: [
-              jsx('span', {
-                children: t('pa.clear.full', t(full.id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel'),
-                  full.pct)
-              }, 'text'),
-              onOpen
-                ? jsx(Button, {
-                    variant: 'outline', size: 'sm', onClick: () => onOpen('memory'), children: t('pa.btn.openMemory')
-                  }, 'open')
-                : null
-            ]
-          }, 'full')
-        : null
-    ]
-  }, 'top')
-}
-
-function NeedsYou({ data, error, refresh, onChanged, hist, mem, onOpen }) {
-  const t = usePluginI18n(ID)
-  const rootAt = useRef(null)
-  const [sel, setSel] = useState(null)
-  const [open, setOpen] = useState(false)
-  const [picked, setPicked] = useState(() => new Set())
-  const [selectOn, setSelectOn] = useState(false)
-  const [candOpen, setCandOpen] = useState(false)
-  const focusRow = useRef(false)
-  const focusSel = useRef(false)
-  const lastAt = useRef(0)
-  const prevSel = useRef(null)
-  const done = useDone()
-  const items = data ? units(data) : []
-  const queue = useQueue(items)
-  const order = queue.order
-  const keys = order.map(queueKey)
-  const cands = (data?.candidates || []).map(item => ({ subsystem: 'skills', item, cand: true }))
-  const candKeys = candOpen ? cands.map(queueKey) : []
-  const selKey = keys.includes(sel) || candKeys.includes(sel) ? sel
-    : (keys[Math.min(lastAt.current, keys.length - 1)] || null)
-  const canSelect = items.length > 1
-  const selecting = selectOn && canSelect
-  useEffect(() => {
-    if (selectOn && !canSelect) setSelectOn(false)
-  }, [selectOn, canSelect])
-  const sig = keys.join('\n')
-  useEffect(() => {
-    const here = new Set(keys)
-    setPicked(prev => {
-      const kept = here.size > 1 ? [...prev].filter(key => here.has(key)) : []
-      return kept.length === prev.size ? prev : new Set(kept)
-    })
-  }, [sig])
-  const allSig = [...keys, ...candKeys].join('\n')
-  useEffect(() => {
-    if (selKey && keys.includes(selKey)) lastAt.current = keys.indexOf(selKey)
-    const was = prevSel.current
-    if (was && was !== selKey && !keys.includes(was) && !candKeys.includes(was)) {
-      const mine = Boolean(held.get(was)?.leaving || held.get(was)?.busy) || decidedHere.has(was)
-        || doneHere.some(d => d.key === was)
-      decidedHere.delete(was)
-      if (!mine) host.notify({ kind: 'info', message: t('pa.notify.frontGone') })
-    }
-    prevSel.current = selKey
-    if (sel !== selKey && selKey) setSel(selKey)
-  }, [selKey, allSig])
-  useEffect(() => {
-    if (!focusRow.current) return
-    focusRow.current = false
-    rootAt.current?.querySelector('.pa-row[aria-current="true"]')?.focus()
-  })
-  useEffect(() => {
-    if (!focusSel.current) return
-    focusSel.current = false
-    rootAt.current?.querySelector('.pa-select')?.focus()
-  })
-  const [peek, setPeek] = useState(false)
-  const pickSet = next => {
-    setPeek(false)
-    setPicked(next)
-  }
-  const togglePick = key => {
-    setPeek(false)
-    setPicked(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-  const toggleSelect = () => {
-    if (selecting) setPicked(new Set())
-    setPeek(false)
-    setSelectOn(!selecting)
-  }
-  const choose = key => {
-    setSel(key)
-    setOpen(true)
-    if (selecting) setPeek(true)
-  }
-  const later = key => {
-    const i = keys.indexOf(key)
-    queue.later(key)
-    const next = keys[i + 1] || keys[0]
-    if (next) setSel(next)
-  }
-  const back = () => {
-    setPeek(false)
-    setOpen(false)
-    focusRow.current = true
-  }
-  const step = by => {
-    const i = keys.indexOf(selKey)
-    const next = keys[i + by]
-    if (next) setSel(next)
-  }
-  const onKeyDown = e => {
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
-    if (e.key === 'Escape' && selecting && !rootAt.current?.querySelector('.pa-bulk [role="alert"]')) {
-      e.preventDefault()
-      toggleSelect()
-      focusSel.current = true
-      return
-    }
-    if (typing(e.target)) return
-    const k = String(e.key || '').toLowerCase()
-    const rowKey = e.target?.closest?.('.pa-row')?.getAttribute('data-key')
-    if (selecting && k === ' ' && rowKey) {
-      e.preventDefault()
-      togglePick(rowKey)
-      return
-    }
-    if (selecting) return
-    if (!['j', 'k', 'a', 'x', 'l'].includes(k)) return
-    const root = rootAt.current
-    if (!root || root.querySelector('.pa-warnline')) return
-    if (selKey && (held.get(selKey)?.busy || held.get(selKey)?.leaving)) return
-    if (k === 'j' || k === 'k') {
-      e.preventDefault()
-      if (e.target?.closest?.('.pa-list')) focusRow.current = true
-      step(k === 'j' ? 1 : -1)
-      return
-    }
-    if (e.repeat && k !== 'l') return
-    const target = root.querySelector(`.pa-detail [aria-keyshortcuts="${k.toUpperCase()}"]`)
-    if (!target) return
-    e.preventDefault()
-    target.click()
-  }
-
-  if (!data && error) return jsx(LoadError, { title: t('pa.empty.errorTitle'), error, onRetry: refresh }, 'error')
-  if (!data) return jsx(Loading, { label: t('pa.empty.loadingPending') }, 'loading')
-  const entries = hist?.data?.entries || []
-  if (!keys.length && !cands.length) {
-    return jsx('div', { ref: rootAt, className: 'pa-split pa-split-clear', 'data-open': '1' }, 'split')
-  }
-  const front = order.find(u => queueKey(u) === selKey) || cands.find(u => candKeys.includes(selKey)
-    && queueKey(u) === selKey) || null
-  const pool = front?.cand ? candKeys : keys
-  const position = selKey ? pool.indexOf(selKey) + 1 : 0
-  const showBulk = selecting && picked.size > 0 && !peek
-  const candHint = t('pa.cand.hint', data.candidate_days || 14)
-  const candSection = cands.length ? jsxs('div', {
-    className: 'pa-cand',
-    role: 'listitem',
-    children: [
-      jsxs('button', {
-        type: 'button',
-        className: 'pa-cand-head',
-        'aria-expanded': candOpen ? 'true' : 'false',
-        'aria-controls': 'pa-cand-rows',
-        style: { height: H.candHead },
-        onClick: () => setCandOpen(!candOpen),
-        children: [
-          jsx(DisclosureCaret, { open: candOpen, className: 'pa-deck-chev' }, 'chev'),
-          jsx('span', { className: 'pa-cand-title', children: t('pa.cand.title', cands.length) }, 'title'),
-          jsx(Tip, {
-            label: candHint,
-            children: jsx('span', { className: 'pa-cand-tip', children: jsx('span', {
-              className: 'pa-cand-hint', children: candHint
-            }) })
-          }, 'hint')
-        ]
-      }, 'head'),
-      candOpen ? jsx('div', {
-        id: 'pa-cand-rows',
-        className: 'pa-cand-rows',
-        role: 'list',
-        'aria-label': t('pa.cand.title', cands.length),
-        children: cands.map(u => jsx(QueueRow, {
-          unit: u, on: !showBulk && queueKey(u) === selKey, t, onSelect: choose, picking: false, cand: true
-        }, queueKey(u)))
-      }, 'rows') : null
-    ]
-  }, 'cand') : null
-  const list = jsxs('div', {
-    className: 'pa-list',
-    children: [
-      jsxs('div', {
-        className: 'pa-list-head',
-        style: { height: H.listHead },
-        children: [
-          ...(selecting ? [
-            jsx('span', { className: 'pa-sel-count', children: t('pa.bulk.selected', picked.size) }, 'count'),
-            jsx(Button, {
-              className: 'pa-select-all', variant: 'ghost', size: 'sm',
-              onClick: () => pickSet(picked.size === keys.length ? new Set() : new Set(keys)),
-              children: t(picked.size === keys.length ? 'pa.bulk.none' : 'pa.bulk.all')
-            }, 'all'),
-            jsx(Button, {
-              className: 'pa-select', variant: 'ghost', size: 'sm', onClick: toggleSelect, children: t('pa.bulk.done')
-            }, 'select')
-          ] : [
-            jsx('span', { children: t('pa.list.waiting', keys.length) }, 'count'),
-            canSelect
-              ? jsx(Button, {
-                  className: 'pa-select', variant: 'ghost', size: 'sm', onClick: toggleSelect,
-                  children: t('pa.stage.select')
-                }, 'select')
-              : null
-          ])
-        ]
-      }, 'head'),
-      jsxs('div', {
-        className: 'pa-list-rows',
-        role: 'list',
-        'aria-label': t('pa.list.waiting', keys.length),
-        'aria-keyshortcuts': 'J K',
-        children: [
-          ...order.map(u => jsx(QueueRow, {
-            unit: u, on: !showBulk && queueKey(u) === selKey, t, onSelect: choose,
-            picking: selecting, picked: picked.has(queueKey(u)), onPick: togglePick
-          }, queueKey(u))),
-          ...done.filter(d => !keys.includes(d.key))
-            .map(d => jsx(DoneRow, { done: d, entries, t, onChanged }, `done-${d.key}`)),
-          candSection
-        ]
-      }, 'rows'),
-      jsx('div', {
-        className: 'pa-list-foot',
-        style: { height: H.listFoot },
-        children: jsxs('div', {
-          className: 'pa-legend',
-          children: selecting ? [
-            jsxs('span', { children: [kbd(t('pa.key.space')), t('pa.legend.pick')] }, 'pick'),
-            jsxs('span', { children: [kbd(t('pa.key.esc')), t('pa.legend.done')] }, 'done')
-          ] : [
-            jsxs('span', { children: [kbd(t('pa.key.j')), kbd(t('pa.key.k')), t('pa.legend.move')] }, 'move')
-          ]
-        }, 'legend')
-      }, 'foot')
-    ]
-  }, 'list')
-  const detail = jsx('div', {
-    className: 'pa-detail pa-cell',
-    'data-key': selKey || '',
-    children: showBulk
-      ? jsx(BulkDetail, {
-          items, picked, setPicked: pickSet,
-          onChanged: () => {
-            setSelectOn(false)
-            onChanged()
-          }
-        }, 'bulk')
-      : front
-      ? jsx(RecordDetail, {
-          subsystem: front.subsystem, item: front.item, onChanged, keyOf: selKey,
-          onLater: () => later(selKey), onBack: back,
-          back: { label: t('pa.list.waitingShort', keys.length), pos: t('pa.list.position', position, pool.length) }
-        }, selKey)
-      : null
-  }, 'detail')
-  const lone = !keys.length && !front
-  return jsxs('div', {
-    ref: rootAt,
-    className: 'pa-split',
-    'data-lone': lone ? '1' : undefined,
-    'data-open': !lone && !showBulk && (open || !front) ? '1' : '0',
-    'data-selecting': showBulk ? '1' : undefined,
-    onKeyDown,
-    children: lone ? [list] : [list, detail]
-  }, 'split')
-}
-
 const histTile = entry => tileOf(entry.subsystem === 'skills' ? 'skills' : 'memory',
   (entry.files || []).map(f => f.path).find(isProfile) || '')
 const TITLE_MAX = 140
@@ -3839,109 +3834,6 @@ const decksOf = (t, entries) => entries.reduce((out, entry) => {
   else out.push({ key: line.deck, line, entries: [entry] })
   return out
 }, []).map(d => ({ ...d, id: d.entries[d.entries.length - 1].id }))
-
-function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
-  const { entries, line } = deck
-  const n = entries.length
-  const tally = DECK_TALLY.map(([kind, key]) => [entries.filter(e => e.kind === kind).length, key])
-    .filter(([c]) => c).map(([c, key]) => t(key, c)).join(' · ')
-  const head = jsxs('button', {
-    type: 'button',
-    className: 'pa-row pa-deck-row',
-    'aria-expanded': open ? 'true' : 'false',
-    'aria-label': `${line.name} · ${t('pa.hist.deckN', n)} · ${tally}`,
-    onClick: () => onToggle(deck),
-    children: [
-      jsx(Tile, { of: histTile(entries[0]) }, 'tile'),
-      jsxs('span', {
-        className: 'pa-row-text',
-        children: [
-          jsxs('span', {
-            className: 'pa-deck-title',
-            children: [
-              jsx('span', { className: 'pa-row-title', children: line.name }, 'title'),
-              jsx(Badge, { variant: 'muted', children: String(n) }, 'count'),
-              jsx(DisclosureCaret, { open, className: 'pa-deck-chev' }, 'chev')
-            ]
-          }, 'top'),
-          jsx('span', { className: 'pa-row-preview', children: tally }, 'preview')
-        ]
-      }, 'text'),
-      jsx('span', { className: 'pa-row-time', children: clock(entries[0].ts * 1000) }, 'time'),
-      open ? null : jsx('span', {
-        className: 'pa-kos', 'aria-hidden': true,
-        children: entries.map(e => jsx('i', {
-          className: 'pa-ko', 'data-k': e.kind, style: { '--pa-tone': (OUTCOME[e.kind] || OUTCOME.apply)[0] }
-        }, e.id))
-      }, 'kos')
-    ]
-  }, 'head')
-  const subs = open ? jsx('div', {
-    className: 'pa-deck-subs',
-    role: 'group',
-    'aria-label': line.name,
-    children: entries.map(e => {
-      const own = actLine(t, e)
-      return jsxs('button', {
-        type: 'button',
-        className: 'pa-act-sub',
-        'data-entry': e.id,
-        'aria-current': e.id === sel ? 'true' : undefined,
-        'aria-label': `${own.name} · ${own.said} · ${clock(e.ts * 1000)}`,
-        onClick: () => onSelect(e.id),
-        children: [
-          jsx('i', {
-            className: 'pa-ko', 'data-k': e.kind, 'aria-hidden': true,
-            style: { '--pa-tone': (OUTCOME[e.kind] || OUTCOME.apply)[0] }
-          }, 'ko'),
-          jsx('span', {
-            className: 'pa-act-sub-text',
-            children: e.kind === 'apply' ? own.change || own.words
-              : [jsx('b', { children: own.words }, 'w'), own.change ? ` · ${own.change}` : null]
-          }, 'text'),
-          jsx('span', { className: 'pa-act-sub-time', children: clock(e.ts * 1000) }, 'time')
-        ]
-      }, e.id)
-    })
-  }, 'subs') : null
-  return jsxs('div', {
-    className: 'pa-rowwrap pa-deck',
-    role: 'listitem',
-    'data-on': !open && entries.some(e => e.id === sel) ? '1' : '0',
-    'data-open': open ? '1' : '0',
-    style: { height: open ? H.actRow + 1 + 2 * G.xxs + n * H.actSub : H.actRow, '--pa-id': line.mark },
-    children: [head, subs]
-  }, `deck-${deck.id}`)
-}
-
-function ActRow({ entry, on, t, onSelect }) {
-  const { name, said, mark } = actLine(t, entry)
-  return jsx('div', {
-    className: 'pa-rowwrap',
-    role: 'listitem',
-    'data-on': on ? '1' : '0',
-    style: { height: H.actRow, '--pa-id': mark },
-    children: jsxs('button', {
-      type: 'button',
-      className: 'pa-row pa-act-row',
-      'data-entry': entry.id,
-      'aria-current': on ? 'true' : undefined,
-      'aria-label': `${name} · ${said}`,
-      onClick: () => onSelect(entry.id),
-      children: [
-        jsx(Tile, { of: histTile(entry) }, 'tile'),
-        jsxs('span', {
-          className: 'pa-row-text',
-          children: [
-            jsx('span', { className: 'pa-row-title', children: name }, 'title'),
-            jsx('span', { className: 'pa-row-preview', children: said }, 'preview')
-          ]
-        }, 'text'),
-        jsx('span', { className: 'pa-row-time', children: clock(entry.ts * 1000) }, 'time')
-      ]
-    }, 'row')
-  }, entry.id)
-}
 
 function ForceLoses({ t, conflict }) {
   const files = placeNames(t, conflict.paths).join(', ')
@@ -4202,29 +4094,113 @@ function HistoryDetail({ entry, onChanged, back, onBack }) {
   })
 }
 
-function HistoryList({ data, error, refresh, onChanged, onOpen }) {
+function ActDeck({ deck, sel, open, t, onToggle, onSelect }) {
+  const { entries, line } = deck
+  const n = entries.length
+  const tally = DECK_TALLY.map(([kind, key]) => [entries.filter(e => e.kind === kind).length, key])
+    .filter(([c]) => c).map(([c, key]) => t(key, c)).join(' · ')
+  const [glyph, tone] = PIN[entries[0].kind] || PIN.apply
+  return jsxs('div', {
+    className: 'pa-ent pa-deck',
+    role: 'listitem',
+    'data-on': !open && entries.some(e => e.id === sel) ? '1' : '0',
+    'data-open': open ? '1' : '0',
+    children: [
+      jsx('span', { className: 'pa-pin', 'data-k': tone || undefined, children: jsx(Glyph, { of: glyph, size: 15 }) }, 'pin'),
+      jsxs('button', {
+        type: 'button',
+        className: 'pa-ent-card pa-deck-row',
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-label': `${line.name} · ${t('pa.hist.deckN', n)} · ${tally}`,
+        onClick: () => onToggle(deck),
+        children: [
+          jsxs('span', {
+            className: 'pa-ent-t',
+            children: [
+              jsx('span', { children: line.name }, 'name'),
+              jsx(Badge, { variant: 'muted', children: String(n) }, 'count'),
+              jsx(DisclosureCaret, { open, className: 'pa-deck-chev' }, 'chev')
+            ]
+          }, 't'),
+          jsx('time', { className: 'pa-ent-time', children: clock(entries[0].ts * 1000) }, 'time'),
+          jsx('span', { className: 'pa-ent-s', children: tally }, 's')
+        ]
+      }, 'head'),
+      open ? jsx('div', {
+        className: 'pa-deck-subs',
+        role: 'group',
+        'aria-label': line.name,
+        children: entries.map(e => {
+          const own = actLine(t, e)
+          return jsxs('button', {
+            type: 'button',
+            className: 'pa-act-sub',
+            'data-entry': e.id,
+            'aria-current': e.id === sel ? 'true' : undefined,
+            'aria-label': `${own.name} · ${own.said} · ${clock(e.ts * 1000)}`,
+            onClick: () => onSelect(e.id),
+            children: [
+              jsx(Glyph, { of: (PIN[e.kind] || PIN.apply)[0], tone: (PIN[e.kind] || PIN.apply)[1] }, 'ko'),
+              jsx('span', {
+                className: 'pa-act-sub-text',
+                children: e.kind === 'apply' ? own.change || own.words
+                  : [jsx('b', { children: own.words }, 'w'), own.change ? ` · ${own.change}` : null]
+              }, 'text'),
+              jsx('span', { className: 'pa-act-sub-time', children: clock(e.ts * 1000) }, 'time')
+            ]
+          }, e.id)
+        })
+      }, 'subs') : null
+    ]
+  }, `deck-${deck.id}`)
+}
+
+function ActRow({ entry, on, t, onSelect }) {
+  const { name, said } = actLine(t, entry)
+  const [glyph, tone] = PIN[entry.kind] || PIN.apply
+  const [chip] = histChip(entry)
+  return jsxs('div', {
+    className: 'pa-ent',
+    role: 'listitem',
+    'data-on': on ? '1' : '0',
+    children: [
+      jsx('span', { className: 'pa-pin', 'data-k': tone || undefined, children: jsx(Glyph, { of: glyph, size: 15 }) }, 'pin'),
+      jsxs('button', {
+        type: 'button',
+        className: 'pa-ent-card pa-act-row',
+        'data-entry': entry.id,
+        'aria-current': on ? 'true' : undefined,
+        'aria-label': `${name} · ${said}`,
+        onClick: () => onSelect(entry.id),
+        children: [
+          jsx('span', { className: 'pa-ent-t', children: name }, 't'),
+          jsx('time', { className: 'pa-ent-time', children: clock(entry.ts * 1000) }, 'time'),
+          jsx('span', { className: 'pa-ent-s', children: said }, 's'),
+          jsx('span', { className: 'pa-ent-s pa-ent-state', children: t(chip) }, 'state')
+        ]
+      }, 'row')
+    ]
+  }, entry.id)
+}
+
+function WrittenPage({ data, error, refresh, onChanged, onOpen }) {
   const t = usePluginI18n(ID)
   const [sel, setSel] = useState(null)
-  const [open, setOpen] = useState(false)
   const [deckOpen, setDeckOpen] = useState(null)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const entries = data?.entries || []
   const all = data?.counts?.total ?? entries.length
   const todayKey = dayKey(Date.now() / 1000)
-  const today = entries.filter(e => dayKey(e.ts) === todayKey)
-  const headParts = [
-    today.filter(e => e.kind === 'apply' || e.kind === 'external').length,
-    today.filter(e => e.kind === 'rejected').length,
-    today.filter(e => e.kind === 'failed').length
-  ]
-  const headLine = [t('pa.hist.dayToday'), today.length ? null : t('pa.hist.dayNothing'),
-    headParts[0] ? t('pa.hist.headSaved', headParts[0]) : null,
-    headParts[1] ? t('pa.hist.headNotSaved', headParts[1]) : null,
-    headParts[2] ? t('pa.hist.headFailed', headParts[2]) : null].filter(Boolean).join(' · ')
   const groups = groupByDay(entries)
   const selected = entries.find(e => e.id === sel) || entries[0] || null
-  const position = selected ? entries.indexOf(selected) + 1 : 0
+  const today = entries.filter(e => dayKey(e.ts) === todayKey)
+  const headLine = [t('pa.hist.dayToday'),
+    ...[[['apply', 'external'], 'pa.hist.headSaved'], [['rejected'], 'pa.hist.headNotSaved'],
+      [['failed'], 'pa.hist.headFailed']].map(([kinds, key]) => {
+      const n = today.filter(e => kinds.includes(e.kind)).length
+      return n ? t(key, n) : null
+    })].filter(Boolean).join(' · ')
 
   const clear = async () => {
     setBusy(true)
@@ -4241,95 +4217,100 @@ function HistoryList({ data, error, refresh, onChanged, onOpen }) {
       refresh()
     }
   }
+  const head = jsxs('div', {
+    className: 'pa-ttl',
+    children: [
+      jsx('span', { className: 'pa-node pa-node-md', children: jsx(Glyph, { of: 'book', size: 21 }) }, 'node'),
+      jsxs('div', {
+        children: [jsx('h2', { className: 'pa-h1', children: t('pa.st.written') }, 'h'),
+          jsx('p', { children: t('pa.wr.body') }, 'p')]
+      }, 'text')
+    ]
+  }, 'ttl')
 
   if (!data && error) return jsx(LoadError, { title: t('pa.empty.historyError'), error, onRetry: refresh }, 'error')
   if (!data) return jsx(Loading, { label: t('pa.empty.loadingHistory') }, 'loading')
   if (!entries.length) {
-    return jsx('div', {
-      className: 'pa-state',
-      children: jsx(PanelEmpty, {
-        icon: 'history', title: t('pa.empty.historyTitle'), description: t('pa.empty.historyBody'),
-        action: onOpen
-          ? jsx(Button, {
-              variant: 'outline', size: 'sm', onClick: () => onOpen('pending'), children: t('pa.btn.openNeeds')
+    return jsxs('div', {
+      className: 'pa-written',
+      children: [
+        head,
+        jsx('div', {
+          className: 'pa-state',
+          children: jsx(PanelEmpty, {
+            icon: 'history', title: t('pa.empty.historyTitle'), description: t('pa.empty.historyBody'),
+            action: jsx(Button, {
+              variant: 'outline', size: 'sm', onClick: () => onOpen('line'), children: t('pa.btn.openNeeds')
             }, 'go')
-          : null
-      }, 'empty')
-    }, 'empty')
-  }
-  const pick = id => {
-    setSel(id)
-    setOpen(true)
+          }, 'empty')
+        }, 'empty')
+      ]
+    }, 'written')
   }
   const rows = groups.flatMap(g => [
-    g.key === todayKey ? null : jsx('div', { className: 'pa-day', style: { height: H.day }, children: dayHeading(t, g.ts) },
-      `day-${g.key}`),
+    jsx('div', {
+      className: 'pa-day', role: 'presentation',
+      children: g.key === todayKey ? headLine : dayHeading(t, g.ts)
+    }, `day-${g.key}`),
     ...decksOf(t, g.entries).map(d => (d.entries.length > 1
       ? jsx(ActDeck, {
-          deck: d, sel: selected?.id, open: deckOpen === d.id, t, onSelect: pick,
+          deck: d, sel: selected?.id, open: deckOpen === d.id, t, onSelect: setSel,
           onToggle: () => {
             setDeckOpen(deckOpen === d.id ? null : d.id)
             if (deckOpen !== d.id) setSel(d.entries[0].id)
           }
         }, `deck-${d.id}`)
-      : jsx(ActRow, { entry: d.entries[0], on: selected && d.entries[0].id === selected.id, t, onSelect: pick },
+      : jsx(ActRow, { entry: d.entries[0], on: selected && d.entries[0].id === selected.id, t, onSelect: setSel },
         d.entries[0].id)))
-  ]).filter(Boolean)
+  ])
   return jsxs('div', {
-    className: 'pa-split pa-activity',
-    'data-open': open ? '1' : '0',
+    className: 'pa-written',
     children: [
+      head,
       jsxs('div', {
-        className: 'pa-list pa-activity-list',
+        className: 'pa-wsplit',
         children: [
-          jsx('div', { className: 'pa-list-head', style: { height: H.listHead }, children: headLine }, 'head'),
+          jsxs('div', {
+            className: 'pa-tl-col',
+            children: [
+              jsx('div', { className: 'pa-tl pa-activity-list', role: 'list', 'aria-label': t('pa.st.written'), children: rows },
+                'rows'),
+              confirming
+                ? jsxs('div', {
+                    className: 'pa-clear-arm',
+                    role: 'alert',
+                    children: [
+                      jsx('span', { className: 'pa-alert pa-alert-danger', children: t('pa.hist.clearConfirm', all) }, 'copy'),
+                      jsxs('span', {
+                        className: 'pa-clear-row',
+                        children: [
+                          jsx(Button, {
+                            variant: 'outline', size: 'sm', disabled: busy,
+                            onClick: () => setConfirming(false), children: t('pa.hist.clearCancel')
+                          }, 'cancel'),
+                          jsx(Button, {
+                            variant: 'destructive', size: 'sm', loading: busy, className: 'pa-activity-clear-go',
+                            onClick: () => void clear(), children: t('pa.hist.clear', all)
+                          }, 'confirm')
+                        ]
+                      }, 'row')
+                    ]
+                  }, 'arming')
+                : jsx(Button, {
+                    variant: 'text', size: 'sm', className: 'pa-activity-clear',
+                    onClick: () => setConfirming(true), children: t('pa.hist.clear', all)
+                  }, 'arm')
+            ]
+          }, 'tl'),
           jsx('div', {
-            className: 'pa-list-rows', role: 'list', 'aria-label': t('pa.tab.history'), children: rows
-          }, 'rows'),
-          jsx('div', {
-            className: 'pa-list-foot',
-            style: { height: confirming ? undefined : H.listFoot, minHeight: H.listFoot, flexWrap: 'wrap' },
-            children: confirming
-              ? jsxs('div', {
-                  className: 'pa-clear-arm',
-                  role: 'alert',
-                  style: { display: 'flex', flexDirection: 'column', gap: G.xs, padding: `${G.xs}px 0`, width: '100%' },
-                  children: [
-                    jsx('span', { className: 'pa-alert pa-alert-danger', children: t('pa.hist.clearConfirm', all) }, 'copy'),
-                    jsxs('span', {
-                      style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: G.xs },
-                      children: [
-                        jsx(Button, {
-                          variant: 'outline', size: 'sm', disabled: busy,
-                          onClick: () => setConfirming(false), children: t('pa.hist.clearCancel')
-                        }, 'cancel'),
-                        jsx(Button, {
-                          variant: 'destructive', size: 'sm', loading: busy, className: 'pa-activity-clear-go',
-                          onClick: () => void clear(), children: t('pa.hist.clear', all)
-                        }, 'confirm')
-                      ]
-                    }, 'row')
-                  ]
-                }, 'arming')
-              : jsx(Button, {
-                  variant: 'ghost', size: 'sm', className: 'pa-activity-clear',
-                  onClick: () => setConfirming(true), children: t('pa.hist.clear', all)
-                }, 'arm')
-          }, 'foot')
+            className: 'pa-detail pa-cell',
+            'data-key': selected ? selected.id : '',
+            children: selected ? jsx(HistoryDetail, { entry: selected, onChanged }, selected.id) : null
+          }, 'detail')
         ]
-      }, 'list'),
-      jsx('div', {
-        className: 'pa-detail pa-cell',
-        'data-key': selected ? selected.id : '',
-        children: selected
-          ? jsx(HistoryDetail, {
-              entry: selected, onChanged, onBack: () => setOpen(false),
-              back: { label: t('pa.tab.history'), pos: t('pa.list.position', position, entries.length) }
-            }, selected.id)
-          : null
-      }, 'detail')
+      }, 'split')
     ]
-  }, 'split')
+  }, 'written')
 }
 
 function mergeRequest(file, percent) {
@@ -4342,40 +4323,9 @@ function mergeRequest(file, percent) {
   ].join(' ')
 }
 
-function MemFileRow({ label: name, store, t }) {
-  const { pct, tone } = store ? fill(store) : { pct: null, tone: 'off' }
-  return jsxs('span', {
-    className: 'pa-memrow-in',
-    style: { display: 'contents' },
-    children: [
-      jsxs('span', {
-        className: 'pa-memrow-top',
-        children: [
-          jsx('span', { children: name }, 'name'),
-          jsx('b', {
-            'data-full': tone === 'bad' ? 'bad' : pct >= 90 ? '1' : undefined,
-            children: pct === null ? '—' : tone === 'bad' ? t('pa.memory.full', pct)
-              : pct >= 90 ? t('pa.memory.nearlyFull', pct) : `${pct}%`
-          }, 'pct')
-        ]
-      }, 'top'),
-      jsx('span', {
-        className: 'pa-meter pa-meter-thin', 'aria-hidden': true, style: { '--pa-tone': TONE_COLOR[tone] },
-        children: jsx('i', { className: 'pa-meter-fill', style: { width: `${Math.min(100, pct ?? 0)}%` } }, 'fill')
-      }, 'meter'),
-      jsx('span', {
-        className: 'pa-memrow-sub',
-        children: store ? t('pa.memory.rowSub', store.entries?.length || 0, store.chars ?? 0, store.limit ?? 0)
-          : ''
-      }, 'sub')
-    ]
-  })
-}
-
-function MemoryView({ data, error, refresh, onChanged }) {
+function MemoryPage({ data, error, refresh, onChanged, file }) {
   const t = usePluginI18n(ID)
-  const [picked, setTarget] = useState(null)
-  const [open, setOpen] = useState(false)
+  const [picked, setTarget] = useState(file || null)
   const [confirming, setConfirming] = useState(null)
   const fullest = ['memory', 'user'].map(id => (data?.[id] ? { id, pct: fill(data[id]).pct } : null))
     .filter(f => f && f.pct >= 90).sort((a, b) => b.pct - a.pct)[0]
@@ -4383,15 +4333,17 @@ function MemoryView({ data, error, refresh, onChanged }) {
   const [busy, setBusy] = useState(false)
   const askAt = useRef(null)
   useEffect(() => {
+    if (file) setTarget(file)
+  }, [file])
+  useEffect(() => {
     if (confirming) askAt.current?.scrollIntoView?.({ block: 'nearest' })
   }, [confirming])
   const store = data?.[target]
   const pct = store ? fill(store).pct : 0
   const armed = (i, entry) => confirming?.target === target && confirming?.i === i && confirming?.text === entry
-  const lengths = (store?.entries || []).map(entry => entry.length)
-  const longest = Math.max(1, ...lengths)
-  const alone = lengths.length > 1 && lengths.filter(n => n === longest).length === 1
-  const longestAt = alone ? lengths.indexOf(longest) : -1
+  const notes = (store?.entries || []).map((entry, i) => ({ entry, i })).sort((a, b) => b.entry.length - a.entry.length)
+  const longest = Math.max(1, ...notes.map(n => n.entry.length))
+  const alone = notes.length > 1 && notes.filter(n => n.entry.length === longest).length === 1
   const draftMerge = async () => {
     let placed = false
     try {
@@ -4425,158 +4377,171 @@ function MemoryView({ data, error, refresh, onChanged }) {
   if (!store) return jsx(Loading, { label: t('pa.empty.loading') }, 'loading')
   const labelOf = id => t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
   return jsxs('div', {
-    className: 'pa-split pa-memory',
-    'data-open': open ? '1' : '0',
+    className: 'pa-memory',
     children: [
-      jsxs('div', {
-        className: 'pa-list',
-        children: [
-          jsx('div', { className: 'pa-list-head', style: { height: H.listHead }, children: t('pa.memory.files') }, 'head'),
-          jsx(Tabs, {
-            label: t('pa.memory.files'),
-            idBase: 'pa-mem',
-            listClass: 'pa-memrows',
-            tabClass: 'pa-memrow',
-            tabStyle: { height: H.memRow },
-            value: target,
-            onSelect: nm => {
-              setTarget(nm)
-              setConfirming(null)
-              setOpen(true)
-            },
-            items: ['memory', 'user'].map(id => ({
-              id, label: jsx(MemFileRow, { label: labelOf(id), store: data?.[id], t }, 'row')
-            }))
-          }, 'files'),
-          jsx('div', {
-            className: 'pa-list-foot', style: { height: H.listFoot },
-            children: jsx('span', { className: 'pa-promise', children: t('pa.footer.promise') }, 'promise')
-          }, 'foot')
-        ]
-      }, 'list'),
       jsx('div', {
-        className: 'pa-detail pa-cell',
-        'data-key': target,
-        children: jsxs('div', {
-          className: 'pa-card',
-          role: 'tabpanel',
-          id: 'pa-mem-panel',
-          'aria-labelledby': `pa-mem-${target}`,
-          children: [
-            jsx(BackBar, { label: t('pa.memory.files'), pos: '', onBack: () => setOpen(false) }, 'back'),
-            jsxs('div', {
-              className: 'pa-dh',
-              children: [
-                jsxs('div', {
-                  className: 'pa-dtitle',
+        className: 'pa-mfiles',
+        role: 'group',
+        'aria-label': t('pa.memory.files'),
+        children: ['memory', 'user'].map(id => {
+          const own = data?.[id]
+          const f = own ? fill(own) : { pct: 0, tone: 'off' }
+          return jsxs('button', {
+            type: 'button',
+            className: 'pa-mfile',
+            'data-k': id,
+            'data-on': id === target ? '1' : '0',
+            'aria-pressed': id === target ? 'true' : 'false',
+            onClick: () => {
+              setTarget(id)
+              setConfirming(null)
+            },
+            children: [
+              jsx(Ring, { pct: f.pct, box: 80, r: 33, warm: f.pct >= 90 }, 'ring'),
+              jsxs('span', {
+                className: 'pa-mfile-text',
+                children: [
+                  jsx('span', { className: 'pa-mfile-name', children: labelOf(id) }, 'name'),
+                  jsx('span', {
+                    className: 'pa-mfile-pct', 'data-full': f.tone === 'bad' ? 'bad' : f.pct >= 90 ? '1' : undefined,
+                    children: !own ? '—' : f.tone === 'bad' ? t('pa.memory.full', f.pct)
+                      : f.pct >= 90 ? t('pa.memory.nearlyFull', f.pct) : `${f.pct}%`
+                  }, 'pct'),
+                  jsx('span', {
+                    className: 'pa-mfile-sub',
+                    children: own ? t('pa.memory.rowSub', own.entries?.length || 0, own.chars ?? 0, own.limit ?? 0) : ''
+                  }, 'sub')
+                ]
+              }, 'text')
+            ]
+          }, id)
+        })
+      }, 'files'),
+      pct >= 90
+        ? jsxs('div', {
+            className: 'pa-banner',
+            children: [
+              jsx(Glyph, { of: 'alert', tone: 'warn' }, 'g'),
+              jsx('span', { children: t('pa.memory.warnBody') }, 'body'),
+              jsx(Tip, {
+                label: t('pa.memory.draftHint'),
+                children: jsx('span', {
+                  className: 'pa-tipwrap',
+                  children: jsx(Button, {
+                    className: 'pa-draft-merge', variant: 'outline', size: 'sm',
+                    onClick: () => void draftMerge(), children: t('pa.memory.draftMerge')
+                  }, 'draft')
+                }, 'wrap')
+              }, 'tip')
+            ]
+          }, 'warn')
+        : null,
+      jsxs('div', {
+        className: 'pa-notes-wrap',
+        role: 'region',
+        'aria-label': t('pa.memory.title', labelOf(target), notes.length),
+        children: [
+          jsx('h3', { className: 'pa-notes-head', children: t('pa.memory.notesTitle', labelOf(target)) }, 'head'),
+          notes.length
+            ? jsx('div', {
+                className: 'pa-notes pa-view',
+                children: notes.map(({ entry, i }, rank) => jsxs('div', {
+                  className: 'pa-note-row',
+                  'data-armed': armed(i, entry) ? '1' : '0',
+                  'data-longest': alone && rank === 0 ? '1' : '0',
                   children: [
-                    jsx('span', {
-                      className: 'pa-crumb-icon', 'aria-hidden': true, children: icon(target === 'user' ? UsersIcon : BrainIcon, 16)
-                    }, 'icon'),
-                    jsx('span', { role: 'heading', 'aria-level': 2, children: t('pa.memory.title', labelOf(target),
-                      store.entries.length) }, 'title')
-                  ]
-                }, 'title')
-              ]
-            }, 'head'),
-            jsxs('div', {
-              className: 'pa-dbody',
-              children: [
-                pct >= 90
-                  ? jsxs('div', {
-                      className: 'pa-banner',
-                      children: [
-                        jsx('span', { children: t('pa.memory.warnBody') }, 'body'),
-                        jsx(Tip, {
-                          label: t('pa.memory.draftHint'),
+                    jsx('span', { className: 'pa-note-n', children: String(rank + 1) }, 'n'),
+                    jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
+                    armed(i, entry)
+                      ? null
+                      : jsx(Tip, {
+                          label: t('pa.memory.noteLength', entry.length),
+                          children: jsx('span', {
+                            className: 'pa-len', 'data-long': entry.length * 10 >= store.limit ? '1' : undefined,
+                            'aria-label': t('pa.memory.noteLength', entry.length), role: 'img',
+                            children: jsx('i', { style: { width: `${Math.round((100 * entry.length) / longest)}%` } })
+                          })
+                        }, 'len'),
+                    armed(i, entry)
+                      ? null
+                      : jsx(Tip, {
+                          label: t('pa.memory.deleteTip', rank + 1),
                           children: jsx('span', {
                             className: 'pa-tipwrap',
                             children: jsx(Button, {
-                              className: 'pa-draft-merge', variant: 'outline', size: 'sm',
-                              onClick: () => void draftMerge(), children: t('pa.memory.draftMerge')
-                            }, 'draft')
+                              variant: 'ghost', size: 'icon-xs', className: 'pa-note-del',
+                              'aria-label': `${t('pa.memory.delete')}: ${t('pa.memory.note', rank + 1, entry.length)}`,
+                              onClick: () => setConfirming({ target, i, text: entry }),
+                              children: jsx(Glyph, { of: 'trash' }, 'icon')
+                            }, 'btn')
                           }, 'wrap')
-                        }, 'tip')
-                      ]
-                    }, 'warn')
-                  : null,
-                store.entries.length
-                  ? jsx('div', {
-                      className: 'pa-notes pa-view',
-                      children: store.entries.map((entry, i) => jsxs('div', {
-                        className: 'pa-note-row',
-                        'data-armed': armed(i, entry) ? '1' : '0',
-                        'data-longest': i === longestAt ? '1' : '0',
-                        children: [
-                          jsx('span', { className: 'pa-note-n', children: String(i + 1) }, 'n'),
-                          jsx('div', { className: 'pa-note-text', children: entry }, 'text'),
-                          armed(i, entry)
-                            ? null
-                            : jsx('span', { className: 'pa-note-len', children: t('pa.memory.noteLength', entry.length) },
-                              'len'),
-                          armed(i, entry)
-                            ? null
-                            : jsx(Tip, {
-                                label: t('pa.memory.deleteTip', i + 1),
-                                children: jsx('span', {
-                                  className: 'pa-tipwrap',
-                                  children: jsx(Button, {
-                                    variant: TrashIcon ? 'ghost' : 'text', size: TrashIcon ? 'icon-xs' : 'inline',
-                                    className: 'pa-note-del',
-                                    'aria-label': `${t('pa.memory.delete')}: ${t('pa.memory.note', i + 1, entry.length)}`,
-                                    onClick: () => setConfirming({ target, i, text: entry }),
-                                    children: TrashIcon ? jsx(TrashIcon, {}, 'icon') : t('pa.memory.delete')
-                                  }, 'btn')
-                                }, 'wrap')
-                              }, 'arm'),
-                          armed(i, entry)
-                            ? jsxs('div', {
-                                className: 'pa-note-ask',
-                                ref: askAt,
-                                role: 'alert',
-                                children: [
-                                  jsx('span', { children: t('pa.memory.deleteConfirm') }, 'copy'),
-                                  jsx(Button, {
-                                    variant: 'outline', size: 'sm', disabled: busy,
-                                    onClick: () => setConfirming(null), children: t('pa.memory.deleteCancel')
-                                  }, 'cancel'),
-                                  jsx(Button, {
-                                    variant: 'destructive', size: 'sm', loading: busy,
-                                    onClick: () => void removeEntry(entry), children: t('pa.memory.delete')
-                                  }, 'confirm')
-                                ]
-                              }, 'confirming')
-                            : null
-                        ]
-                      }, i))
-                    }, `notes-${target}`)
-                  : jsx(PanelEmpty, {
-                      icon: 'note', title: t('pa.memory.emptyTitle', labelOf(target)),
-                      description: t(target === 'user' ? 'pa.memory.emptyProfile' : 'pa.memory.emptyMemory')
-                    }, 'empty'),
-                jsx(TechDetails, {
-                  t,
-                  rows: [
-                    { label: t('pa.tech.file'), value: store.file },
-                    { label: t('pa.tech.size'), value: t('pa.tech.sizeValue', store.chars ?? 0, store.limit ?? 0) }
+                        }, 'arm'),
+                    armed(i, entry)
+                      ? jsxs('div', {
+                          className: 'pa-note-ask',
+                          ref: askAt,
+                          role: 'alert',
+                          children: [
+                            jsx('span', { children: t('pa.memory.deleteConfirm') }, 'copy'),
+                            jsx(Button, {
+                              variant: 'outline', size: 'sm', disabled: busy,
+                              onClick: () => setConfirming(null), children: t('pa.memory.deleteCancel')
+                            }, 'cancel'),
+                            jsx(Button, {
+                              variant: 'destructive', size: 'sm', loading: busy,
+                              onClick: () => void removeEntry(entry), children: t('pa.memory.delete')
+                            }, 'confirm')
+                          ]
+                        }, 'confirming')
+                      : null
                   ]
-                }, `tech-${target}`)
-              ]
-            }, 'body')
-          ]
-        }, 'panel')
-      }, 'detail')
+                }, `${i}`))
+              }, `notes-${target}`)
+            : jsx(PanelEmpty, {
+                icon: 'note', title: t('pa.memory.emptyTitle', labelOf(target)),
+                description: t(target === 'user' ? 'pa.memory.emptyProfile' : 'pa.memory.emptyMemory')
+              }, 'empty'),
+          jsx('span', { className: 'pa-promise', children: t('pa.footer.promise') }, 'promise'),
+          jsx(TechDetails, {
+            t,
+            rows: [
+              { label: t('pa.tech.file'), value: store.file },
+              { label: t('pa.tech.size'), value: t('pa.tech.sizeValue', store.chars ?? 0, store.limit ?? 0) }
+            ]
+          }, `tech-${target}`)
+        ]
+      }, 'notes')
     ]
-  }, 'split')
+  }, 'memory')
+}
+
+function MiniRing({ id, store, error, t, onOpen }) {
+  const { pct } = fill(store)
+  const word = t(id === 'user' ? 'pa.kpi.profileLabel' : 'pa.kpi.memoryLabel')
+  return jsxs('button', {
+    type: 'button',
+    className: 'pa-mring',
+    'data-k': id,
+    'data-reading': store || error ? undefined : '1',
+    disabled: !store && !error,
+    'aria-label': store ? t('pa.kpi.meter', word, pct) : t(error ? 'pa.kpi.unread' : 'pa.kpi.reading', word),
+    onClick: () => onOpen('memory', id),
+    children: [
+      jsx(Ring, { pct: store ? pct : 0, box: 36, r: 15, warm: pct >= 90 }, 'ring'),
+      jsxs('span', { children: [jsx('b', { children: store ? `${pct}%` : '—' }, 'pct'), word] }, 'text')
+    ]
+  }, id)
 }
 
 function Pane() {
   const t = usePluginI18n(ID)
-  const [view, setView] = useState('pending')
-  const { data, error, at, seq, refresh, n } = usePending()
+  const [view, setView] = useState('line')
+  const [memFile, setMemFile] = useState(null)
+  const [selectOn, setSelectOn] = useState(false)
+  const [recOpen, setRecOpen] = useState(false)
+  const { data, error, at, seq, refresh } = usePending()
   const mem = usePolling(api.memory, 60000)
   const hist = usePolling(api.history, 30000)
-  const barRef = useBarFit()
   const refreshAll = () => {
     const until = refresh()
     mem.refresh()
@@ -4605,11 +4570,16 @@ function Pane() {
   const still = typeof window !== 'undefined' && window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
     : false
-  const entries = hist.data?.entries || []
-  const issues = view === 'pending' ? (data?.issues || []) : []
-  const viewError = view === 'memory' ? (mem.data ? mem.error : null) : view === 'history' ? (hist.data ? hist.error : null)
+  const open = (to, file) => {
+    setSelectOn(false)
+    if (to === 'memory') setMemFile(file || null)
+    setView(to === 'pending' ? 'line' : to)
+  }
+  const n = data ? units(data).length : 0
+  const issues = view === 'line' ? (data?.issues || []) : []
+  const viewError = view === 'memory' ? (mem.data ? mem.error : null) : view === 'written' ? (hist.data ? hist.error : null)
     : (data ? error : null)
-  const viewRetry = view === 'memory' ? mem.refresh : view === 'history' ? hist.refresh : refresh
+  const viewRetry = view === 'memory' ? mem.refresh : view === 'written' ? hist.refresh : refresh
   const notices = [
     staleNotice(t, viewError, viewRetry),
     issues.length
@@ -4620,9 +4590,9 @@ function Pane() {
         }, 'issues')
       : null
   ].filter(Boolean)
-  const side = [
-    view === 'pending' ? jsx(DayProgress, { entries, n }, 'progress') : null,
-    jsx(BarMeters, { data: mem.data, t, reading: !mem.data && !mem.error }, 'meters')
+  const sentence = !data ? (error ? jsx('b', { children: t('pa.line.errorTitle') }, 'b') : t('pa.line.reading')) : [
+    jsx('b', { children: n ? t('pa.line.lead', n) : t('pa.line.emptyLead') }, 'b'), ' ',
+    n ? t('pa.line.tail') : t('pa.line.emptyTail')
   ]
 
   return jsxs('div', {
@@ -4630,74 +4600,77 @@ function Pane() {
     role: 'region',
     'aria-label': t('pa.pane.title'),
     'data-still': still ? '1' : '0',
+    'data-view': view,
     style: { height: '100%', minHeight: 0, color: 'var(--ui-text-primary)' },
     children: [
       jsx('style', { children: STYLE }, 'css'),
-      jsxs('div', {
-        className: 'pa-bar',
-        ref: barRef,
-        style: { minHeight: H.bar },
+      view === 'line' && !recOpen ? jsxs('div', {
+        className: 'pa-hd',
         children: [
-          jsx('div', { className: 'pa-bar-title', role: 'heading', 'aria-level': 1, children: t('pa.pane.title') }, 'title'),
-          jsx('div', {
-            className: 'pa-bar-tabs',
-            children: jsx(Tabs, {
-              label: t('pa.tab.label'),
-              idBase: 'pa-view',
-              value: view,
-              onSelect: setView,
-              items: ['pending', 'history', 'memory'].map(id => ({
-                id,
-                label: id === 'pending' && n ? [t(TAB_KEY[id]), pendingBadge(n)] : t(TAB_KEY[id])
-              }))
-            }, 'tabs')
-          }, 'tabs'),
           jsxs('div', {
-            className: 'pa-bar-side',
+            className: 'pa-hd-text',
             children: [
-              ...side,
-              jsxs('label', {
-                className: 'pa-alerts-row',
+              jsx('div', { className: 'pa-h1', role: 'heading', 'aria-level': 1, children: t('pa.pane.title') }, 'title'),
+              jsx('p', { className: 'pa-hd-line', role: 'status', children: sentence }, 'line')
+            ]
+          }, 'text'),
+          jsxs('div', {
+            className: 'pa-hd-side',
+            children: [
+              jsx('div', {
+                className: 'pa-rings',
+                children: ['memory', 'user'].map(id => (!mem.data || mem.data[id]
+                  ? jsx(MiniRing, { id, store: mem.data?.[id], error: mem.error, t, onOpen: open }, id) : null))
+              }, 'rings'),
+              jsxs('div', {
+                className: 'pa-tools',
                 children: [
-                  jsx('span', { className: 'pa-alerts-word', children: t('pa.footer.alerts') }, 'word'),
-                  jsx(Switch, {
-                    className: 'pa-alerts',
-                    size: 'xs',
-                    checked: !muted,
-                    'aria-label': t('pa.footer.alerts'),
-                    onCheckedChange: on => setAlertsMuted(!on)
-                  }, 'switch')
+                  view === 'line' && n > 1
+                    ? jsx(Button, {
+                        className: 'pa-select', variant: 'text', size: 'sm', 'aria-pressed': selectOn ? 'true' : 'false',
+                        onClick: () => setSelectOn(!selectOn), children: t('pa.stage.select')
+                      }, 'select')
+                    : null,
+                  jsxs('label', {
+                    className: 'pa-alerts-row',
+                    children: [
+                      jsx('span', { className: 'pa-alerts-word', children: t('pa.footer.alerts') }, 'word'),
+                      jsx(Switch, {
+                        className: 'pa-alerts',
+                        size: 'xs',
+                        checked: !muted,
+                        'aria-label': t('pa.footer.alerts'),
+                        onCheckedChange: on => setAlertsMuted(!on)
+                      }, 'switch')
+                    ]
+                  }, 'alerts'),
+                  jsx(RefreshButton, {
+                    label: t('pa.action.refresh'),
+                    tip: at ? t('pa.action.refreshAt', clock(at)) : t('pa.action.refresh'),
+                    onClick: refreshAll
+                  }, 'refresh')
                 ]
-              }, 'alerts'),
-              jsx(RefreshButton, {
-                label: t('pa.action.refresh'),
-                tip: at ? t('pa.action.refreshAt', clock(at)) : t('pa.action.refresh'),
-                onClick: refreshAll
-              }, 'refresh')
+              }, 'tools')
             ]
           }, 'side')
         ]
-      }, 'bar'),
+      }, 'hd') : null,
       notices.length ? jsx('div', { className: 'pa-strip', children: notices }, 'strip') : null,
-      hist.data && data ? jsx(TopCard, {
-        t, entries, cut: (Number(hist.data?.counts?.total) || 0) > entries.length, n, onChanged: refreshPane,
-        slim: Boolean(n) || view !== 'pending', away: view !== 'pending',
-        mem: mem.data, onOpen: setView
-      }, 'top') : null,
+      view !== 'line' ? jsx(BackBar, { label: t('pa.rec.back'), pos: '', onBack: () => open('line') }, 'back') : null,
       jsx('div', {
-        role: 'tabpanel',
-        id: 'pa-view-panel',
-        'aria-labelledby': `pa-view-${view}`,
         className: 'pa-body pa-view',
         children: view === 'memory'
-          ? jsx(MemoryView, { data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane }, 'memory')
-          : view === 'history'
-            ? jsx(HistoryList, {
-                data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane, onOpen: setView
-              }, 'history')
-            : jsx(NeedsYou, {
-                data, error, refresh, onChanged: refreshPane, hist, mem: mem.data, onOpen: setView
-              }, 'pending')
+          ? jsx(MemoryPage, {
+              data: mem.data, error: mem.error, refresh: mem.refresh, onChanged: refreshPane, file: memFile
+            }, 'memory')
+          : view === 'written'
+            ? jsx(WrittenPage, {
+                data: hist.data, error: hist.error, refresh: hist.refresh, onChanged: refreshPane, onOpen: open
+              }, 'written')
+            : jsx(TheLine, {
+                data, error, refresh, onChanged: refreshPane, hist, onOpen: open, selectOn, setSelectOn,
+                onRecord: setRecOpen
+              }, 'line')
       }, `view-${view}`)
     ]
   })

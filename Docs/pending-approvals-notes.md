@@ -1957,3 +1957,59 @@ advice line had the same problem. The verdict card now shows an "N checks to rea
 glyph, a `pa-chip-btn` like the finding chips) that opens the full review; the verdict title and the
 other chips are unchanged. render_check's "Advice chip" block is red on the 1.17.0 `plugin.js` (4
 problems) and checks the one/two counts, the collapsed-then-expanded state and no chip without advice.
+
+## The line (unreleased)
+
+The owner found the panel complex and blind to what happens in the background. A full read of the
+backend showed it already returns the missing facts (where a change came from, review status and
+finish time, reviewer model and cost, each parked change's leave date) while the main screen read
+none of them, and showed 17 buttons and 76 separate texts on its default frame. Two rounds that only
+moved boxes were rejected ("the same design, only the boxes moved"); the owner then chose to draw the
+flow itself. The brief, the station rules, the source mapping and the action table are in
+`Docs/approvals-line-redesign-2026-10-30.md`; the approved mockups are in
+`Docs/approvals-line-mockups/`.
+
+- **Stations, not rows.** A record is drawn under the first station that holds it: rules (stale,
+  hard check, description fix, last error), then Reviewer (`unassigned`, `queued`, `running`,
+  `failed`), then You (`done`). The order matches the backend's own gates, so a card never sits
+  further down the line than the backend would let it go.
+- **Check all posts `/review` once per record.** The owner pressed it, so the review-on-click rule
+  (1.20.0) holds; the bulk `/reviews` route stays unused, as the audit requires.
+- **Only backend times.** `staged_at`, `review.finished`, `test.finished`, `recur.expires`, history
+  `ts`. The backend keeps a review's start (`started`) but does not return it, so no "reading for"
+  timer is drawn; inventing one would show a time nothing measured.
+- **Sources** come from `recur.path` (skills) or `item.origin`. The session kind (cron, kanban,
+  subagent) is not returned, so it is never guessed; unknown paths read "source not recorded".
+- **Narrow panes** stack the stations vertically through `@container` (never `@media`, which reads
+  the window, not the pane).
+
+Render-check promises retired with the old layout, each replaced by the nearest promise the line
+keeps (so a later reader knows the check was moved on purpose, not lost):
+
+- **Candidates header** (collapsed button with `aria-controls`, fixed height, matching row heights):
+  Parked is always drawn. The check now asserts "Parked · N", each card's leave day, that parked
+  cards cannot be picked in Select, and that an empty line offers a collapsed "See parked".
+- **Memory opens on the fullest file by default**: the Memory page is reached only through a file's
+  ring. The check asserts that only the nearly-full ring is warm and that it opens that file.
+- **A group card's second line names its files**: the second line is the source now. The check
+  asserts it does not repeat the title and that the record names every file (`SKILL.md`, `notes.md`).
+- **Removed structure**: fixed deck heights (173/74 px), row identity colours, the top bar with its
+  pips and day progress, `.pa-headline`/`.pa-counts`, group-row checkboxes. Covered instead by the
+  Written pins, the header-fits checks, the header sentence and group picking through Select.
+
+The new structure checks fail on the 1.21.1 panel (`node tests/render_check.mjs <1.21.1 plugin.js>`
+exits 1; e.g. "the line is not drawn as one list of stations", "one station holds the owner's next
+move; 0 are lit").
+
+Audit rules retired with the old layout (the static audit and its canaries; every other rule and
+canary was re-pointed to the line, e.g. the list hairline to `.pa-tools`, the selected row's
+`aria-current` to the chosen Written entry and the journey's station, Activity's list to `.pa-tl`):
+
+- **Tab track ground and radius** (`.pa-tabs`): the tab bar is gone; the frame check reads the
+  station node (`.pa-node`) instead, and its canary breaks the station ground.
+- **Tab radius, active tab ground and ring** (`.pa-root .pa-tab`): no tabs are drawn any more.
+
+`tests/preview.png` and `tests/preview-light.png` were redrawn for the line from the 1000 px preview
+(first 1151 px of the page). They were captured with headless Edge, because the Electron binary that
+`tests/shot.mjs` needs was not available on the machine that made the change; the next `shot.mjs` run
+replaces them with the measured capture.

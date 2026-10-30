@@ -5,6 +5,29 @@ Notable changes to the Approvals panel. The version is carried in three places â
 fails the build when they disagree, because a plugin that reports two versions depending on where you
 look has no version at all.
 
+## Unreleased
+
+### Changed
+
+* **The panel draws what happens to a change as a line.** Five stops join left to right: Hermes
+  proposes, Your rules, Reviewer, You, Written. Every waiting change is a card under the stop it is
+  at, so you can see where it is held and what it waits for. The stop that needs you next has a blue
+  ring. The arrow into Written is dashed, because nothing is written until you save. Under the first
+  stop you see where the changes came from (your chat, after a chat ended, /refine, an automatic job).
+  Under Reviewer you see which changes still wait for you to start the check (**Check all**), which
+  are being read, and which failed, with the time. Parked skill changes hang below the line, each
+  with the day it leaves.
+* **A change opens as its own page**: the trip it has made so far, with the real times, the change
+  itself, the reviewer's findings, the side-by-side test and its results, and Later / Don't save /
+  Save at the bottom. Everything you could do before is still there: groups, "Save only", the
+  shorter description, Review again, Save anyway, and every lock.
+* **History becomes Written**, a timeline of pins grouped by day, with Undo, Force undo and Restore
+  next to the chosen entry. **Memory** opens from the two rings at the top: notes longest first, the
+  nearly-full banner and Ask Hermes to combine notes.
+* **Removed**: the left rail and tabs, the top card and week chart, the day progress dots and bar
+  meters. Their information is now on the line or in Written.
+* Below 760 px the line turns vertical, so the panel still works in a narrow side pane.
+
 ## 1.21.1
 
 ### Fixed
