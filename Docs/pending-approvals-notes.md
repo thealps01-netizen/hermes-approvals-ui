@@ -2008,3 +2008,8 @@ canary was re-pointed to the line, e.g. the list hairline to `.pa-tools`, the se
 - **Tab track ground and radius** (`.pa-tabs`): the tab bar is gone; the frame check reads the
   station node (`.pa-node`) instead, and its canary breaks the station ground.
 - **Tab radius, active tab ground and ring** (`.pa-root .pa-tab`): no tabs are drawn any more.
+
+`tests/preview.png` and `tests/preview-light.png` were redrawn for the line from the 1000 px preview
+(first 1151 px of the page). They were captured with headless Edge, because the Electron binary that
+`tests/shot.mjs` needs was not available on the machine that made the change; the next `shot.mjs` run
+replaces them with the measured capture.
