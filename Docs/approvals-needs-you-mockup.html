@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approvals — "Needs you" prototype (2026-10-20)</title>
+<style>
+:root{
+  --fg:var(--foreground,#e8eaf0);--mfg:var(--muted-foreground,#99a0ad);--ac:var(--accent,#4c8dff);
+  --bd:var(--border,#283041);--cd:var(--card,#141a25);
+  --ok:#3fb97a;--warn:#e3a33b;--bad:#e5566b;
+  --s1:color-mix(in srgb,var(--fg) 4%,transparent);--s2:color-mix(in srgb,var(--fg) 8%,transparent);
+  --s3:color-mix(in srgb,var(--fg) 14%,transparent)
+}
+*{box-sizing:border-box}
+.pg{width:880px;color:var(--fg);font-size:13.5px;line-height:1.5}
+.lbl{font-size:11.5px;color:var(--mfg);margin:0 0 8px}
+.shell{border:1px solid var(--bd);border-radius:16px;background:var(--cd);overflow:hidden}
+.top{display:flex;align-items:flex-end;gap:18px;padding:30px 36px 22px}
+.date{color:var(--mfg);font-size:12.5px}
+.h{font-size:38px;font-weight:650;letter-spacing:-.025em;line-height:1.05;margin:4px 0 10px}
+.counts{display:flex;gap:18px;color:var(--mfg)}
+.counts b{color:var(--fg);font-size:15px;margin-right:4px}
+.sp{flex:1}
+.gauges{display:flex;gap:10px}
+.g{display:flex;align-items:center;gap:9px;padding:8px 12px 8px 8px;border:1px solid var(--bd);border-radius:12px}
+.ring{width:34px;height:34px;border-radius:50%;display:grid;place-items:center}
+.ring i{width:26px;height:26px;border-radius:50%;background:var(--cd);display:grid;place-items:center;font-style:normal;
+  font-size:10px;font-weight:650}
+.g small{display:block;color:var(--mfg);font-size:11px;line-height:1.2}
+.tabs{display:flex;gap:6px;padding:0 30px;border-bottom:1px solid var(--bd)}
+.tab{padding:10px 8px;color:var(--mfg);cursor:default}
+.tab.on{color:var(--fg);box-shadow:inset 0 -2px var(--ac)}
+.tab .n{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--ac);color:#fff;
+  font-size:11px;font-weight:650;margin-left:6px;padding:0 5px}
+.body{padding:26px 36px 30px;display:grid;grid-template-columns:1fr 250px;gap:26px}
+.stage{position:relative;min-height:400px}
+.card{position:relative;border:1px solid var(--bd);border-radius:16px;background:var(--cd);
+  box-shadow:0 1px 0 var(--s2) inset,0 18px 40px -22px rgba(0,0,0,.55);overflow:hidden;
+  transition:transform .32s cubic-bezier(.2,.8,.2,1),opacity .32s}
+.card.out{transform:translateY(-14px) scale(.98);opacity:0}
+.card.in{animation:rise .36s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.card,.card.in{transition:none;animation:none}}
+.under{position:absolute;left:14px;right:14px;top:10px;bottom:-10px;border:1px solid var(--bd);border-radius:16px;
+  background:var(--s1);z-index:-1}
+.ch{display:flex;align-items:center;gap:10px;padding:18px 22px 0}
+.kind{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mfg)}
+.kind .dot{width:8px;height:8px;border-radius:50%}
+.pager{color:var(--mfg);font-size:12px;display:flex;align-items:center;gap:5px}
+.pager i{width:6px;height:6px;border-radius:50%;background:var(--s3)}
+.pager i.on{background:var(--fg)}
+.ask{padding:12px 22px 0;font-size:13px;color:var(--mfg)}
+.hero{margin:8px 22px 0;padding:18px 20px;border-radius:12px;background:var(--s1);border:1px solid var(--bd);
+  font-size:21px;font-weight:550;letter-spacing:-.01em;line-height:1.35}
+.hero .was{display:block;font-size:13.5px;font-weight:400;color:var(--mfg);margin-top:8px;letter-spacing:0}
+.hero .was s{text-decoration-color:var(--bad)}
+.fx{padding:10px 22px 0;color:var(--mfg);font-size:12.5px}
+.sec{padding:16px 22px 0}
+.sec h4{margin:0 0 8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);font-weight:600}
+.checks{display:flex;flex-direction:column;gap:6px}
+.ck{display:flex;gap:9px;align-items:flex-start}
+.ck .m{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;flex:none;margin-top:1px}
+.m.ok{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+.m.bad{background:color-mix(in srgb,var(--bad) 20%,transparent);color:var(--bad)}
+.m.wait{background:var(--s2);color:var(--mfg)}
+.ck small{color:var(--mfg)}
+.by{color:var(--mfg);font-size:11.5px;margin-top:8px}
+.acts{display:flex;align-items:center;gap:8px;padding:18px 22px;margin-top:18px;border-top:1px solid var(--bd)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;padding:0 16px;border-radius:10px;
+  border:1px solid var(--bd);background:transparent;color:var(--fg);font:inherit;font-size:13px;cursor:pointer}
+.btn:hover{background:var(--s1)}
+.btn.pri{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.q{border-color:transparent;color:var(--mfg)}
+.btn.sm{height:28px;padding:0 11px;font-size:12px;border-radius:8px}
+.side h4{margin:0 0 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);font-weight:600}
+.next{display:flex;flex-direction:column;gap:6px;margin-bottom:24px}
+.ni{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--bd);border-radius:12px;cursor:pointer}
+.ni:hover{background:var(--s1)}
+.ni .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.ni small{display:block;color:var(--mfg);font-size:11.5px}
+.done{display:flex;flex-direction:column;gap:6px}
+.di{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;background:var(--s1)}
+.di small{display:block;color:var(--mfg);font-size:11.5px}
+.ul{color:var(--fg);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-size:12px}
+.foot{display:flex;align-items:center;gap:10px;padding:14px 36px;border-top:1px solid var(--bd);color:var(--mfg);font-size:12px}
+.lock{width:16px;height:16px;border-radius:5px;background:var(--s2);display:grid;place-items:center;font-size:10px}
+.sw{width:30px;height:17px;border-radius:9px;background:var(--ac);position:relative}
+.sw:after{content:'';position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.toast{position:absolute;left:50%;bottom:-6px;transform:translate(-50%,10px);opacity:0;pointer-events:none;
+  background:var(--fg);color:var(--cd);border-radius:10px;padding:9px 14px;font-size:12.5px;display:flex;gap:14px;
+  transition:.25s;white-space:nowrap}
+.toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast b{cursor:pointer;text-decoration:underline}
+.clear{display:none;text-align:center;padding:70px 20px}
+.clear .big{width:64px;height:64px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;font-size:28px;
+  background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.clear h3{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+.clear p{margin:0;color:var(--mfg)}
+.fixbox{margin:12px 22px 0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fixbox div{border:1px solid var(--bd);border-radius:10px;padding:10px 12px;font-size:12.5px}
+.fixbox small{display:block;color:var(--mfg);font-size:11px;margin-bottom:4px}
+.mini{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.mini .shell{padding:16px 18px;font-size:12.5px}
+.row{display:flex;align-items:center;gap:10px}
+.notes{margin-top:14px;color:var(--mfg);font-size:12.5px;line-height:1.6}
+.notes b{color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="pg">
+<p class="lbl">Tıklanabilir örnek — gerçek panel değil. “Save to memory”, “Don't save”, “Undo” ve sağdaki sıradakiler çalışır.</p>
+
+<div class="shell">
+  <div class="top">
+    <div>
+      <div class="date">Tuesday, 20 October</div>
+      <div class="h" id="headline">3 things need you</div>
+      <div class="counts" id="counts"><span><b>1</b>memory</span><span><b>2</b>skills</span><span><b>1</b>needs a fix</span></div>
+    </div>
+    <div class="sp"></div>
+    <div class="gauges">
+      <div class="g"><div class="ring" id="memRing" style="background:conic-gradient(var(--warn) 99%,var(--s2) 0)"><i id="memPct">99%</i></div>
+        <div>Memory<small id="memTxt">2189 / 2200 · nearly full</small></div></div>
+      <div class="g"><div class="ring" style="background:conic-gradient(var(--ok) 84%,var(--s2) 0)"><i>84%</i></div>
+        <div>Profile<small>1158 / 1375</small></div></div>
+    </div>
+  </div>
+  <div class="tabs"><span class="tab on">Needs you<span class="n" id="tabN">3</span></span><span class="tab">Activity</span><span class="tab">Memory</span></div>
+
+  <div class="body">
+    <div class="stage">
+      <div class="under" id="under"></div>
+      <div id="cardHost"></div>
+      <div class="clear" id="clear"><div class="big">✓</div><h3>All clear</h3>
+        <p id="clearTxt">Nothing is waiting. Hermes will ask here before it writes again.</p></div>
+      <div class="toast" id="toast"><span id="toastTxt"></span><b id="undoBtn">Undo</b></div>
+    </div>
+    <div class="side">
+      <h4>Up next</h4><div class="next" id="next"></div>
+      <h4>Just done</h4>
+      <div class="done" id="done">
+        <div class="di"><div style="flex:1">Saved to Profile<small>“Prefers Turkish chat replies” · 10:42</small></div><span class="ul">Undo</span></div>
+        <div class="di"><div style="flex:1">Not saved<small>Delete skill: old-notes · 09:10</small></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="lock">🔒</span><span>Nothing is written to your memory or skills without you.</span>
+    <span class="sp"></span><span>Alerts</span><span class="sw"></span></div>
+</div>
+
+<div class="mini">
+  <div><p class="lbl">Activity sekmesi</p><div class="shell">
+    <div class="row" style="margin-bottom:10px"><b>Today</b><span class="sp"></span><span style="color:var(--mfg)">3 saved · 1 not saved · 1 failed</span></div>
+    <div class="di" style="margin-bottom:6px"><div style="flex:1">Saved to Profile<small>Prefers Turkish chat replies · 10:42</small></div><span class="ul">Undo</span></div>
+    <div class="di" style="margin-bottom:6px"><div style="flex:1">Couldn't save — skill rules<small>Edit skill: wiki-recall · 08:55</small></div><span class="ul">Why</span></div>
+    <div class="di"><div style="flex:1">Not saved<small>Delete skill: old-notes · 09:10</small></div></div>
+  </div></div>
+  <div><p class="lbl">Memory sekmesi</p><div class="shell">
+    <div class="row" style="margin-bottom:8px"><div class="ring" style="background:conic-gradient(var(--warn) 99%,var(--s2) 0);width:44px;height:44px"><i style="width:34px;height:34px;font-size:11px">99%</i></div>
+      <div><b>Memory is nearly full</b><div style="color:var(--mfg);font-size:12px">24 notes · 2189 / 2200 characters</div></div></div>
+    <div style="color:var(--mfg);margin-bottom:10px">A new note fits only if an older one is shortened or merged. Hermes can propose which.</div>
+    <button class="btn sm pri">Draft a merge</button> <button class="btn sm q">See all notes</button>
+  </div></div>
+</div>
+
+<div class="notes">
+  <b>Örneklerden alınan dersler:</b> başlık insan diliyle (“3 things need you”, Harbor) · yazılacak şeyin kendisi kartın
+  kahramanı, bağlamı altında (Harbor'daki tutar gibi) · düğme sonucu söyler: “Save to memory”, “Don't save” (Harbor
+  “Approve &amp; Send”) · ikinci görüşün kontrolleri tek tek (Harbor “Policy match”) · karar sonrası “Undo” hemen
+  orada · güven cümlesi alt satırda (“Nothing is written… without you”).
+</div>
+</div>
+
+<script>
+const R = [
+  {id:'m', dot:'var(--ok)', kind:'Memory · MEMORY.md', ask:'Hermes wants to remember:',
+   hero:'Hermes keeps the write-approval gate on by default.',
+   fx:'Memory goes from 2189 to 2196 of 2200 characters', add:7,
+   checks:[['ok','Not already in your memory'],['ok','Doesn\u2019t contradict your other notes'],['ok','Follows your rules · written in English']],
+   by:'Second opinion by gpt-5.5 · included in your plan · 2 hours ago',
+   pri:'Save to memory', sec:"Don't save", short:'Remember the approval gate', sub:'Memory · looks fine'},
+  {id:'s', dot:'var(--bad)', kind:'Skill · hermes-agent', ask:'Hermes wrote a skill description that is too long (172 characters, the limit is 60). Shortened, it reads:',
+   hero:'Use when building or auditing a Hermes desktop plugin panel.<span class="was">As Hermes wrote it: Use when building or editing a Hermes desktop plugin (panel pages, cards, routes, i18n, tests)…</span>',
+   fx:'53 characters · the second opinion reads it again before it is saved', fix:true,
+   checks:[['bad','Too long for the skill rules (172 / 60)'],['ok','This skill is yours to edit']],
+   by:'Rule check · 5 minutes ago',
+   pri:'Use the short version', sec:"Don't save", short:'Change hermes-agent', sub:'Skill · needs a fix'},
+  {id:'n', dot:'var(--warn)', kind:'Skill · new', ask:'Hermes wants to add a new skill:',
+   hero:'release-notes — “Use when a release needs notes written from the changelog.”',
+   fx:'Adds 1 file · 1.2 kB', checks:[['wait','Second opinion is still reading it…']],
+   by:'Started 12 minutes ago', pri:'Save skill', sec:"Don't save", short:'Add release-notes skill', sub:'Skill · being checked'}
+]
+let queue = [...R], last = null, mem = 2189, saved = 0
+const $ = id => document.getElementById(id)
+function card(r){
+  const i = R.indexOf(r)
+  const checks = r.checks.map(([k,t]) => `<div class="ck"><span class="m ${k}">${k==='ok'?'✓':k==='bad'?'!':'…'}</span><span>${t}</span></div>`).join('')
+  const fix = ''
+  return `<div class="card in"><div class="ch"><span class="kind"><span class="dot" style="background:${r.dot}"></span>${r.kind}</span>
+    <span class="sp" style="flex:1"></span><span class="pager">${queue.map(q=>`<i class="${q===r?'on':''}"></i>`).join('')}</span></div>
+    <div class="ask">${r.ask}</div><div class="hero">${r.hero}</div><div class="fx">${r.fx}</div>${fix}
+    <div class="sec"><h4>Checked for you</h4><div class="checks">${checks}</div><div class="by">${r.by}</div></div>
+    <div class="acts"><button class="btn q" onclick="later()">Later</button><span style="flex:1"></span>
+      <button class="btn" onclick="decide(false)">${r.sec}</button>
+      <button class="btn pri" ${r.checks[0][0]==='wait'?'disabled style="opacity:.45;cursor:default"':''} onclick="decide(true)">${r.pri}</button></div></div>`
+}
+function render(){
+  const n = queue.length
+  $('headline').textContent = n ? (n===1?'1 thing needs you':`${n} things need you`) : 'You\u2019re all caught up'
+  $('tabN').textContent = n; $('tabN').style.display = n ? '' : 'none'
+  const mm = queue.filter(q=>q.id==='m').length, sk = queue.filter(q=>q.id!=='m').length, fx = queue.filter(q=>q.fix).length
+  $('counts').innerHTML = n ? `<span><b>${mm}</b>memory</span><span><b>${sk}</b>skills</span>${fx?`<span><b>${fx}</b>needs a fix</span>`:''}` : `<span><b>${saved}</b>saved today</span>`
+  $('cardHost').innerHTML = n ? card(queue[0]) : ''
+  $('under').style.display = n>1 ? '' : 'none'
+  $('clear').style.display = n ? 'none' : 'block'
+  $('next').innerHTML = queue.slice(1).map(q=>`<div class="ni" onclick="pick('${q.id}')"><span class="dot" style="background:${q.dot}"></span><div>${q.short}<small>${q.sub}</small></div></div>`).join('') || '<div style="color:var(--mfg);font-size:12px">Nothing else.</div>'
+  const p = Math.min(100, mem/2200*100)
+  $('memPct').textContent = Math.floor(p)+'%'; $('memTxt').textContent = `${mem} / 2200 · nearly full`
+}
+function toast(t, undo){ $('toastTxt').textContent = t; $('toast').classList.add('on'); $('undoBtn').style.display = undo?'':'none'
+  clearTimeout(window.tt); window.tt = setTimeout(()=>$('toast').classList.remove('on'), 5000) }
+function decide(ok){
+  const r = queue[0], c = document.querySelector('.card'); c.classList.add('out')
+  setTimeout(()=>{ queue.shift(); last = {r, ok}
+    if (ok){ saved++; if (r.add) mem += r.add }
+    const t = ok ? (r.id==='m'?'Saved to memory':r.fix?'Saved with the short description':'Skill saved') : 'Not saved'
+    $('done').insertAdjacentHTML('afterbegin', `<div class="di"><div style="flex:1">${t}<small>${r.short} · now</small></div>${ok?'<span class="ul">Undo</span>':''}</div>`)
+    render(); toast(t, ok) }, 260)
+}
+function later(){ queue.push(queue.shift()); render() }
+function pick(id){ const i = queue.findIndex(q=>q.id===id); queue.unshift(queue.splice(i,1)[0]); render() }
+$('undoBtn').onclick = () => { if(!last) return; queue.unshift(last.r); if(last.ok){ saved--; if(last.r.add) mem -= last.r.add }
+  $('done').firstElementChild.remove(); last = null; $('toast').classList.remove('on'); render() }
+render()
+</script>
+</body>
+</html>

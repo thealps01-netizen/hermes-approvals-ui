@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T10:30:00+03:00",
+  "title": "Design System: Approvals",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Accent", "canonical": "var(--ui-accent)" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "var(--ui-text-primary)" },
+      "ink-soft": { "role": "neutral", "displayName": "Soft ink", "canonical": "var(--ui-text-secondary)" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "var(--ui-stroke-tertiary)" }
+    },
+    "shadows": [
+      { "name": "chosen-edge", "value": "inset 3px 0 0 var(--ui-accent)", "purpose": "The chosen card." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "760px" },
+      { "name": "list-only", "value": "560px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "One waiting change in the list; one button, one status badge.",
+      "html": "<button class=\"ds-card\"><span class=\"ds-card-t\">MEMORY.md</span><span class=\"ds-card-s\">Add a note</span></button>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;padding:8px 12px;border:0;border-bottom:1px solid var(--ui-stroke-tertiary);border-radius:8px;background:none;color:var(--ui-text-primary);font-size:13px}.ds-card:hover{background:var(--ui-row-hover-background)}.ds-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px}.ds-card-s{font-size:12px;color:var(--ui-text-secondary)}"
+    },
+    {
+      "name": "Empty message",
+      "kind": "custom",
+      "refersTo": "empty-message",
+      "description": "What a tab shows when it has nothing: a headline and one or two sentences.",
+      "html": "<div class=\"ds-empty\"><h2>No activity yet</h2><p>Every save and every “Don’t save” shows up here.</p></div>",
+      "css": ".ds-empty{display:flex;flex-direction:column;gap:8px;max-width:44ch;color:var(--ui-text-secondary);font-size:13px}.ds-empty h2{margin:0;font-size:14px;font-weight:600;color:var(--ui-text-primary)}.ds-empty p{margin:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Careful Editor's Desk",
+    "overview": "The panel is a desk where one person reads a proposed change and decides. The text of the change has the lead role; lists, badges and buttons are the desk around it. The panel is a guest in the Hermes Desktop app: it uses the app's UI kit and theme variables, so it changes with the owner's theme and never brings its own palette or font.",
+    "keyCharacteristics": [
+      "Reading first: the change text is the largest, calmest block on the page.",
+      "One accent, used for the chosen item and the main action.",
+      "Flat surfaces separated by hairlines; no drop shadows.",
+      "Three tabs, one level; a list on the left, the chosen item beside it.",
+      "Empty is a normal, pleasant state."
+    ],
+    "rules": [
+      { "name": "The Guest Rule", "body": "No hex value in the panel. A colour is a --ui-* variable or a color-mix of one with transparent.", "section": "colors" },
+      { "name": "The 12-13 Rule", "body": "Almost all text is 12 or 13 px. A larger size marks exactly one thing on screen.", "section": "typography" },
+      { "name": "The No-Lift Rule", "body": "Nothing floats. A drop shadow belongs to the app's menus, not to the panel.", "section": "elevation" }
+    ],
+    "dos": ["Do give the change text the most room and the strongest ink."],
+    "donts": ["Don't write a hex colour or set a font family."]
+  }
+}

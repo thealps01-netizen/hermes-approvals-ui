@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Approvals · the line</title>
+<style>
+:root{--ui-accent:rgb(74, 132, 254);--ui-accent-secondary:rgb(74, 132, 254);--ui-base:rgb(230, 237, 243);--ui-bg-card:color(srgb 0.589836 0.719328 0.97495 / 0.0784);--ui-bg-chrome:color(srgb 0.0509804 0.0625882 0.0810196);--ui-bg-editor:color(srgb 0.0549804 0.059451 0.0717647);--ui-bg-elevated:color(srgb 0.0862745 0.0952941 0.112157);--ui-bg-input:rgb(252, 252, 252);--ui-bg-primary:color(srgb 0.500804 0.659402 0.981228 / 0.244);--ui-bg-quaternary:color(srgb 0.554367 0.695455 0.977451 / 0.088);--ui-bg-quinary:color(srgb 0.591421 0.720394 0.974839 / 0.0590999);--ui-bg-secondary:color(srgb 0.511397 0.666532 0.980481 / 0.1723);--ui-bg-sidebar:color(srgb 0.00392157 0.0156863 0.0352941);--ui-bg-tertiary:color(srgb 0.513539 0.667974 0.98033 / 0.126);--ui-blue:rgb(0, 83, 253);--ui-border:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-chat-bubble-background:color(srgb 0.0592157 0.0862745 0.130196);--ui-chat-bubble-opaque-background:color(srgb 0.0549804 0.059451 0.0717647);--ui-chat-surface-background:color(srgb 0.0509804 0.0625882 0.0810196);--ui-control-active-background:color(srgb 0.513539 0.667974 0.98033 / 0.126);--ui-control-hover-background:color(srgb 0.525876 0.676278 0.97946 / 0.0976);--ui-cyan:rgb(111, 155, 166);--ui-danger:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-diff-add-background:color(srgb 0.333333 0.647059 0.513726 / 0.12);--ui-diff-add-border:rgb(85, 165, 131);--ui-diff-add-foreground:color(srgb 0.586667 0.781177 0.69851);--ui-diff-remove-background:color(srgb 0.905882 0.368627 0.470588 / 0.12);--ui-diff-remove-border:rgb(231, 94, 120);--ui-diff-remove-foreground:color(srgb 0.941647 0.608549 0.671765);--ui-editor-surface-background:color(srgb 0.0509804 0.0625882 0.0810196);--ui-green:rgb(85, 165, 131);--ui-inline-code-background:color(srgb 1 1 1 / 0.07);--ui-inline-code-foreground:color(srgb 1 1 1 / 0.88);--ui-orange:rgb(219, 112, 75);--ui-panel-background:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-purple:rgb(158, 148, 213);--ui-red:rgb(231, 94, 120);--ui-row-active-background:color(srgb 0.513539 0.667974 0.98033 / 0.126);--ui-row-hover-background:color(srgb 0.546284 0.690014 0.978021 / 0.0688);--ui-row-open-background:color(srgb 0.513539 0.667974 0.98033 / 0.03528);--ui-sash-hover-background:color(srgb 0.290196 0.517647 0.996078 / 0.06);--ui-sash-hover-border:color(srgb 0.36572 0.568481 0.990753 / 0.2989);--ui-selection-background:color(srgb 1 0.823529 0.290196 / 0.38);--ui-sidebar-surface-background:color(srgb 0.00392157 0.0156863 0.0352941);--ui-stroke-primary:color(srgb 0.437329 0.616679 0.985704 / 0.316);--ui-stroke-quaternary:color(srgb 0.485794 0.6493 0.982287 / 0.0882);--ui-stroke-secondary:color(srgb 0.454601 0.628304 0.984486 / 0.2188);--ui-stroke-tertiary:color(srgb 0.480054 0.645436 0.982691 / 0.145);--ui-success:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-surface-background:color(srgb 0.0549804 0.059451 0.0717647);--ui-surface-secondary:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-tab-hover-darken:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-terminal-surface-background:color(srgb 0.0509804 0.0625882 0.0810196);--ui-text-primary:color(srgb 0.901961 0.929412 0.952941 / 0.94);--ui-text-quaternary:color(srgb 0.901961 0.929412 0.952941 / 0.36);--ui-text-secondary:color(srgb 0.901961 0.929412 0.952941 / 0.74);--ui-text-tertiary:color(srgb 0.901961 0.929412 0.952941 / 0.54);--ui-warm:rgb(74, 132, 254);--ui-widget-surface-background:color(srgb 0.0483827 0.0523169 0.0631529);--ui-yellow:rgb(192, 133, 50)}
+:root.light{--ui-accent:rgb(0, 83, 253);--ui-accent-secondary:rgb(0, 83, 253);--ui-base:rgb(23, 23, 26);--ui-bg-card:color(srgb 0.0441777 0.210244 0.556143 / 0.0784);--ui-bg-chrome:color(srgb 0.97098 0.978196 0.996235);--ui-bg-editor:color(srgb 0.990824 0.990824 0.990824);--ui-bg-elevated:color(srgb 0.991529 0.991529 0.991529);--ui-bg-input:rgb(252, 252, 252);--ui-bg-primary:color(srgb 0.0310511 0.244487 0.685696 / 0.244);--ui-bg-quaternary:color(srgb 0.0389483 0.223886 0.607754 / 0.088);--ui-bg-quinary:color(srgb 0.0444113 0.209635 0.553836 / 0.0590999);--ui-bg-secondary:color(srgb 0.032613 0.240413 0.670281 / 0.1723);--ui-bg-sidebar:color(srgb 0.952941 0.968627 1);--ui-bg-tertiary:color(srgb 0.0329287 0.239589 0.667165 / 0.126);--ui-blue:rgb(0, 83, 253);--ui-border:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-chat-bubble-background:color(srgb 0.988235 0.988235 0.988235);--ui-chat-bubble-opaque-background:color(srgb 0.990824 0.990824 0.990824);--ui-chat-surface-background:color(srgb 0.97098 0.978196 0.996235);--ui-control-active-background:color(srgb 0.0329287 0.239589 0.667165 / 0.126);--ui-control-hover-background:color(srgb 0.0347477 0.234844 0.649213 / 0.0976);--ui-cyan:rgb(76, 127, 140);--ui-danger:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-diff-add-background:color(srgb 0.121569 0.541176 0.396078 / 0.12);--ui-diff-add-border:rgb(31, 138, 101);--ui-diff-add-foreground:color(srgb 0.085098 0.378824 0.277255);--ui-diff-remove-background:color(srgb 0.811765 0.176471 0.337255 / 0.12);--ui-diff-remove-border:rgb(207, 45, 86);--ui-diff-remove-foreground:color(srgb 0.568235 0.123529 0.236078);--ui-editor-surface-background:color(srgb 0.97098 0.978196 0.996235);--ui-green:rgb(31, 138, 101);--ui-inline-code-background:color(srgb 0.0784314 0.0784314 0.0784314 / 0.05);--ui-inline-code-foreground:color(srgb 0.0784314 0.0784314 0.0784314 / 0.88);--ui-orange:rgb(219, 112, 75);--ui-panel-background:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-purple:rgb(158, 148, 213);--ui-red:rgb(207, 45, 86);--ui-row-active-background:color(srgb 0.0329287 0.239589 0.667165 / 0.126);--ui-row-hover-background:color(srgb 0.0377565 0.226995 0.619517 / 0.0688);--ui-row-open-background:color(srgb 0.0329287 0.239589 0.667165 / 0.03528);--ui-sash-hover-background:color(srgb 0 0.32549 0.992157 / 0.06);--ui-sash-hover-border:color(srgb 0.0111349 0.296443 0.88226 / 0.2989);--ui-selection-background:color(srgb 1 0.823529 0.290196 / 0.55);--ui-sidebar-surface-background:color(srgb 0.952941 0.968627 1);--ui-stroke-primary:color(srgb 0.0216927 0.2689 0.778059 / 0.316);--ui-stroke-quaternary:color(srgb 0.0288382 0.25026 0.707536 / 0.0882);--ui-stroke-secondary:color(srgb 0.0242392 0.262258 0.752927 / 0.2188);--ui-stroke-tertiary:color(srgb 0.0279919 0.252468 0.715889 / 0.145);--ui-success:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-surface-background:color(srgb 0.990824 0.990824 0.990824);--ui-surface-secondary:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-tab-hover-darken:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-terminal-surface-background:color(srgb 0.97098 0.978196 0.996235);--ui-text-primary:color(srgb 0.0901961 0.0901961 0.101961 / 0.94);--ui-text-quaternary:color(srgb 0.0901961 0.0901961 0.101961 / 0.36);--ui-text-secondary:color(srgb 0.0901961 0.0901961 0.101961 / 0.74);--ui-text-tertiary:color(srgb 0.0901961 0.0901961 0.101961 / 0.54);--ui-warm:rgb(207, 128, 109);--ui-widget-surface-background:color(srgb 0.990824 0.990824 0.990824);--ui-yellow:rgb(192, 133, 50);color-scheme:light}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1000px;height:760px;overflow:hidden}
+body{background:var(--ui-bg-chrome);color:var(--ui-text-primary);font:13px/1.45 system-ui,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+::selection{background:var(--ui-selection-background)}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:20px 28px 14px;border-bottom:1px solid var(--ui-stroke-tertiary)}
+h1{font-size:22px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
+h2{font-size:16px;line-height:1.3;font-weight:600}
+.promise{display:flex;gap:6px;align-items:center;color:var(--ui-text-secondary);font-size:12.5px;margin-top:5px}
+.tabs{display:flex;gap:2px}
+.tab{display:flex;gap:6px;align-items:center;padding:5px 10px;font-size:12.5px;color:var(--ui-text-secondary);border-radius:3px}
+.tab.on{color:var(--ui-text-primary);background:var(--ui-row-active-background)}
+.num{min-width:18px;padding:0 5px;border-radius:9px;background:var(--ui-accent);color:#fcfcfc;font-size:12px;font-weight:600;text-align:center;line-height:16px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font:inherit;font-size:12px;line-height:1.2;border-radius:2px;border:1px solid transparent;white-space:nowrap;background:transparent;color:var(--ui-text-primary)}
+.btn.primary{background:var(--ui-accent);color:#fcfcfc}
+.btn.outline{border-color:var(--ui-stroke-secondary)}
+.btn.text{color:var(--ui-text-secondary)}
+.btn[disabled]{opacity:.45}
+.ico{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.muted{color:var(--ui-text-secondary)}
+.faint{color:var(--ui-text-secondary)}
+.small{font-size:12px}
+.diff{border:1px solid var(--ui-stroke-tertiary);border-radius:4px;background:var(--ui-bg-editor);overflow:hidden;font-size:12.5px}
+.diff .f{display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--ui-stroke-quaternary);font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--ui-text-secondary)}
+.diff .l{display:flex;gap:8px;padding:3px 10px}
+.diff .l i{font-style:normal;width:8px;color:var(--ui-text-secondary)}
+.diff .add{background:var(--ui-diff-add-background)}
+.diff .rem{background:var(--ui-diff-remove-background)}
+.diff .rem span{text-decoration:line-through;text-decoration-color:var(--ui-diff-remove-border)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--c,var(--ui-text-tertiary))}
+.ok{--c:var(--ui-green)}.fix{--c:var(--ui-orange)}.bad{--c:var(--ui-red)}.run{--c:var(--ui-accent)}
+.hd{display:flex;justify-content:space-between;align-items:center;padding:18px 26px 6px}
+.hd p{color:var(--ui-text-secondary);margin-top:3px}
+.hd p b{color:var(--ui-text-primary);font-weight:500}
+.rings{display:flex;gap:18px;align-items:center}
+.ring{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--ui-text-secondary)}
+.ring svg{width:34px;height:34px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:4}
+.ring .bg{stroke:var(--ui-stroke-secondary)}
+.ring .fg{stroke:var(--ui-text-secondary);stroke-linecap:round}
+.ring b{display:block;color:var(--ui-text-primary);font-weight:600;font-size:13px}
+.stage{position:relative;padding:14px 22px 0}
+.wire{position:absolute;left:0;top:14px;width:1000px;height:60px;overflow:visible}
+.wire line{stroke:var(--ui-stroke-primary);stroke-width:2}
+.wire .lit{stroke:var(--ui-accent)}
+.wire .dash{stroke-dasharray:4 5}
+.wire path{fill:var(--ui-stroke-primary)}
+.wire .litp{fill:var(--ui-accent)}
+.cols{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;position:relative}
+.st{display:flex;flex-direction:column;align-items:center;text-align:center}
+.node{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;background:var(--ui-bg-elevated);border:2px solid var(--ui-stroke-primary);color:var(--ui-text-primary)}
+.node .ico{width:28px;height:28px;stroke-width:1.5}
+.node.lit{border:3px solid var(--ui-accent);color:var(--ui-accent)}
+.node .cnt{position:absolute;top:-6px;right:-10px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--ui-bg-chrome);border:1px solid var(--ui-stroke-primary);font-size:12px;font-weight:600;line-height:18px}
+.st h2{font-size:13px;margin-top:8px}
+.st .sub{font-size:12px;color:var(--ui-text-secondary);margin-top:1px}
+.body{display:flex;flex-direction:column;gap:8px;margin-top:12px;width:100%;text-align:left}
+.card{background:var(--ui-bg-elevated);border:1px solid var(--ui-stroke-tertiary);border-radius:8px;padding:8px 10px}
+.card .k{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ui-text-secondary)}
+.card .t{font-weight:500;margin-top:2px;line-height:1.35}
+.card .s{font-size:12px;color:var(--ui-text-secondary);margin-top:3px;line-height:1.35}
+.card q{color:var(--ui-text-primary)}
+.card .acts{display:flex;gap:6px;margin-top:8px}
+.card.ready{border:1.5px solid var(--ui-accent)}
+.card.stop{border-color:color-mix(in srgb,var(--ui-red) 55%,var(--ui-stroke-tertiary))}
+.src{display:flex;gap:9px;align-items:center;padding:6px 8px;border-radius:8px;border:1px dashed var(--ui-stroke-secondary)}
+.src .ico{width:18px;height:18px;color:var(--ui-text-secondary)}
+.src b{font-size:16px;font-weight:600;min-width:12px}
+.src span{font-size:12px;color:var(--ui-text-secondary);line-height:1.3}
+.gate{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ui-text-secondary)}
+.grp{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--ui-text-secondary);margin-top:2px}
+.grp b{color:var(--ui-text-primary);font-weight:600}
+.grp .btn{padding:2px 8px}
+.tools{display:flex;gap:14px;align-items:center;padding-left:18px;margin-left:4px;border-left:1px solid var(--ui-stroke-tertiary)}
+.sw{display:flex;gap:7px;align-items:center;font-size:12px;color:var(--ui-text-secondary)}
+.sw i{width:26px;height:14px;border-radius:7px;background:var(--ui-accent);position:relative}
+.sw i::after{content:'';position:absolute;right:2px;top:2px;width:10px;height:10px;border-radius:50%;background:var(--ui-bg-chrome)}
+.more{align-self:flex-start;margin-top:2px}
+.done{display:flex;gap:7px;align-items:center;font-size:12px;color:var(--ui-text-secondary);padding:4px 0}
+.done b{color:var(--ui-text-primary);font-weight:500}
+.done .btn{margin-left:auto;padding:2px 6px}
+.tick{color:var(--ui-green)}.stopc{color:var(--ui-red)}.spin{color:var(--ui-accent)}
+.park{position:relative;margin:30px 22px 0;padding-left:70px !important;display:grid;grid-template-columns:auto 1fr 1fr;gap:12px;align-items:center;padding:10px 14px;border:1.5px dashed var(--ui-stroke-secondary);border-radius:10px}
+.park .pn{display:flex;gap:10px;align-items:center}
+.park .pn .node{position:relative;z-index:1;width:40px;height:40px;border-width:1.5px}
+.park .pn .node .ico{width:20px;height:20px}
+.park h3{font-size:13px}
+.park p{font-size:12px;color:var(--ui-text-secondary)}
+.park .card{padding:6px 10px}
+.clock{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ui-text-secondary);margin-top:2px}
+.park::before{content:"";position:absolute;left:88.5px;bottom:100%;height:170px;width:2px;background:repeating-linear-gradient(var(--ui-stroke-primary) 0 4px,transparent 4px 9px)}
+.allclear{position:absolute;left:22px;right:216px;top:236px;display:flex;gap:14px;align-items:center;justify-content:center;padding:22px;border:1.5px dashed var(--ui-stroke-secondary);border-radius:12px}.allclear .node{width:48px;height:48px;color:var(--ui-green)}.allclear h2{font-size:15px}.allclear p{color:var(--ui-text-secondary);font-size:12px}</style></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.2-3.6 4-5 7-5s5.8 1.4 7 5"/></symbol>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16.2v.1"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z"/><path d="M12 6.5v13"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+<symbol id="i-spin" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+<symbol id="i-right" viewBox="0 0 24 24"><path d="M10 7l5 5-5 5"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/><path d="M18.5 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
+<symbol id="i-left" viewBox="0 0 24 24"><path d="M14 7l-5 5 5 5"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></symbol>
+</svg>
+<div class="hd">
+  <div><h1>Approvals</h1><p><b>Nothing is on the line.</b> When Hermes wants to change its memory or a skill, it stops here for you.</p></div>
+  <div class="rings">
+    <div class="ring"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15"/><circle class="fg" cx="18" cy="18" r="15" stroke-dasharray="89.5 94.2"/></svg><span><b>95%</b>Memory</span></div>
+    <div class="ring"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15"/><circle class="fg" cx="18" cy="18" r="15" stroke-dasharray="79.1 94.2"/></svg><span><b>84%</b>Profile</span></div>
+    <div class="tools"><span class="sw"><i></i>Alerts</span><button class="btn text" aria-label="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button></div>
+  </div>
+</div>
+
+<div class="stage">
+  <svg class="wire" viewBox="0 0 1000 60">
+    <line x1="145" y1="30" x2="271" y2="30"/><path d="M271 25l9 5-9 5z"/>
+    <line x1="339" y1="30" x2="465" y2="30"/><path d="M465 25l9 5-9 5z"/>
+    <line x1="533" y1="30" x2="659" y2="30"/><path d="M659 25l9 5-9 5z"/>
+    <line x1="727" y1="30" x2="853" y2="30" class="dash"/><path d="M853 25l9 5-9 5z"/>
+  </svg>
+  <div class="cols">
+    <div class="st"><div class="node"><svg class="ico"><use href="#i-spark"/></svg></div>
+      <h2>Hermes proposes</h2><div class="sub">held, nothing written</div>
+      <div class="body"><div class="gate" style="justify-content:center">Nothing here</div></div></div>
+
+    <div class="st"><div class="node"><svg class="ico"><use href="#i-shield"/></svg></div>
+      <h2>Your rules</h2><div class="sub">instant · free</div>
+      <div class="body"><div class="gate" style="justify-content:center">Nothing here</div></div></div>
+
+    <div class="st"><div class="node"><svg class="ico"><use href="#i-eye"/></svg></div>
+      <h2>Reviewer</h2><div class="sub">Haiku 4.5 · starts when you press</div>
+      <div class="body"><div class="gate" style="justify-content:center">Nothing here</div></div></div>
+
+    <div class="st"><div class="node"><svg class="ico"><use href="#i-person"/></svg></div>
+      <h2>You</h2><div class="sub">save or don’t save</div>
+      <div class="body"><div class="gate" style="justify-content:center">Nothing here</div></div></div>
+
+    <div class="st"><div class="node"><svg class="ico"><use href="#i-book"/></svg></div>
+      <h2>Written</h2><div class="sub">today · can be undone</div>
+      <div class="body">
+        <div class="done"><svg class="ico tick"><use href="#i-check"/></svg><span><b>Saved</b> a memory note</span><button class="btn text">Undo</button></div>
+        <div class="done"><svg class="ico"><use href="#i-undo"/></svg><span><b>Not saved</b> a skill edit</span><button class="btn text">Restore</button></div>
+        <div class="done"><svg class="ico"><use href="#i-hourglass"/></svg><span><b>maps</b> left after 14 days</span><button class="btn text">Restore</button></div>
+        <button class="btn text more">All activity <svg class="ico"><use href="#i-right"/></svg></button>
+      </div></div>
+  </div>
+</div>
+
+<div class="allclear"><div class="node"><svg class="ico"><use href="#i-check"/></svg></div><div><h2>All caught up</h2><p>3 decided today · 2 parked changes wait on their own and need nothing from you.</p></div><button class="btn text">See parked</button></div>
+</body></html>
